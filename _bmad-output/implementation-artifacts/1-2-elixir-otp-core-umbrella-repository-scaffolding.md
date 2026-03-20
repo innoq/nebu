@@ -47,7 +47,7 @@ so that Elixir development can begin with a correct supervision tree structure.
   - [x] Rename default `Permissions` → `Nebu.Permissions` (Application → `Nebu.Permissions.Application`)
 
 - [x] Task 4: Create core Dockerfile (multi-stage) (needed for `build-core` Makefile target)
-  - [x] Stage 1 `builder`: `elixir:1.18-alpine`
+  - [x] Stage 1 `builder`: `elixir:1.19-alpine`
   - [x] Stage 2 `runtime`: `alpine:3.19` (with libstdc++, openssl, ncurses)
   - [x] Output: OTP release via `mix release`
 
@@ -197,7 +197,7 @@ defmodule Nebu.Room.MixProject do
       config_path: "../../config/config.exs",
       deps_path: "../../deps",
       lockfile: "../../mix.lock",
-      elixir: "~> 1.18",
+      elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
       deps: deps()
     ]
@@ -275,7 +275,7 @@ Log levels:
 
 ```dockerfile
 # core/Dockerfile
-FROM elixir:1.18-alpine AS builder
+FROM elixir:1.19-alpine AS builder
 WORKDIR /app
 RUN mix local.hex --force && mix local.rebar --force
 COPY mix.exs mix.lock ./
@@ -299,7 +299,7 @@ Story 1.1 created **stub/placeholder** Makefile targets. Story 1.2 MUST fill in 
 
 Existing variable from Story 1.1:
 ```makefile
-DOCKER_ELIXIR = docker run --rm -v $(PWD):/workspace -w /workspace elixir:1.18-alpine
+DOCKER_ELIXIR = docker run --rm -v $(PWD):/workspace -w /workspace elixir:1.19-alpine
 ```
 
 Update these targets:
@@ -335,7 +335,7 @@ Pattern: `use ExUnit.Case`, single `test` block with trivial assertion. Tests wi
 From Story 1.1 (done), the following is already in place — DO NOT recreate:
 
 - Root `Makefile` with all 9 targets already defined (including `build-core` and `test-unit-elixir` as stubs)
-- `DOCKER_ELIXIR = docker run --rm -v $(PWD):/workspace -w /workspace elixir:1.18-alpine` variable already defined in Makefile
+- `DOCKER_ELIXIR = docker run --rm -v $(PWD):/workspace -w /workspace elixir:1.19-alpine` variable already defined in Makefile
 - `proto/` directory already exists with `.gitkeep`
 - `gateway/go.mod` (module `github.com/nebu/nebu`), `media/go.mod` already in place
 - `.gitignore` exists (added during Story 1.1 code review)

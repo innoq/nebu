@@ -789,9 +789,9 @@ GET  /_matrix/media/v3/thumbnail/{serverName}/{mediaId}
 ## Tech Stack
 
 ```
-API Gateway:        Go 1.23+
-Media Gateway:      Go 1.23+
-Core:               Elixir/OTP 1.18+
+API Gateway:        Go 1.26+
+Media Gateway:      Go 1.26+
+Core:               Elixir/OTP 1.19+
 Signaturen:         Ed25519 via :crypto (OTP built-in)
 PII Verschlüsslung: X25519 + AES-256-GCM via :crypto (OTP built-in)
 Sessions/Cache:     ETS (OTP built-in)              ← kein Redis
@@ -1094,7 +1094,7 @@ volumes:
 
 ```dockerfile
 # gateway/Dockerfile  (identisch für media/)
-FROM golang:1.23-alpine AS builder
+FROM golang:1.26-alpine AS builder
 WORKDIR /app
 COPY . .
 RUN go build -o gateway ./cmd/gateway
@@ -1108,7 +1108,7 @@ ENTRYPOINT ["gateway"]
 
 ```dockerfile
 # core/Dockerfile
-FROM elixir:1.18-alpine AS builder
+FROM elixir:1.19-alpine AS builder
 RUN apk add --no-cache git
 WORKDIR /app
 COPY . .

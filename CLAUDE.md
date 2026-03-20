@@ -12,9 +12,9 @@ This project is currently in early development. The `main.go` is a placeholder; 
 
 | Layer | Technology |
 |---|---|
-| API Gateway | Go 1.23+ |
-| Media Gateway | Go 1.23+ |
-| Core / Messaging | Elixir/OTP 1.18+ |
+| API Gateway | Go 1.26+ |
+| Media Gateway | Go 1.26+ |
+| Core / Messaging | Elixir/OTP 1.19+ |
 | Gateway ↔ Core | gRPC (protobuf) |
 | Database | PostgreSQL 16+ |
 | Sessions / Cache | ETS (Elixir built-in) — kein Redis |

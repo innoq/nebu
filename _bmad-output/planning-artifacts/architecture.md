@@ -1103,8 +1103,8 @@ nebu/
 ```makefile
 # Makefile — alle Kommandos via Build-Container
 
-DOCKER_GO      = docker run --rm -v $(PWD):/workspace -w /workspace golang:1.23-alpine
-DOCKER_ELIXIR  = docker run --rm -v $(PWD):/workspace -w /workspace elixir:1.18-alpine
+DOCKER_GO      = docker run --rm -v $(PWD):/workspace -w /workspace golang:1.26-alpine
+DOCKER_ELIXIR  = docker run --rm -v $(PWD):/workspace -w /workspace elixir:1.19-alpine
 DOCKER_BUF     = docker run --rm -v $(PWD):/workspace -w /workspace bufbuild/buf
 
 # Proto Code-Generation
@@ -1152,7 +1152,7 @@ setup:
 
 ```dockerfile
 # gateway/Dockerfile
-FROM golang:1.23-alpine AS builder
+FROM golang:1.26-alpine AS builder
 WORKDIR /workspace
 COPY go.mod go.sum ./
 RUN go mod download
@@ -1166,7 +1166,7 @@ ENTRYPOINT ["/gateway"]
 
 ```dockerfile
 # core/Dockerfile
-FROM elixir:1.18-alpine AS builder
+FROM elixir:1.19-alpine AS builder
 WORKDIR /app
 RUN mix local.hex --force && mix local.rebar --force
 COPY mix.exs mix.lock ./

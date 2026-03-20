@@ -1,5 +1,5 @@
 # core/Dockerfile
-FROM elixir:1.18-alpine AS builder
+FROM elixir:1.19-alpine AS builder
 WORKDIR /app
 RUN mix local.hex --force && mix local.rebar --force
 COPY mix.exs mix.lock ./

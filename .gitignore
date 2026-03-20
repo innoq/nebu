@@ -23,6 +23,7 @@ vendor/
 
 # Secrets
 .secrets/
+.env
 
 # IDE
 .idea/

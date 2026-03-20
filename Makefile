@@ -2,8 +2,8 @@
 # All build commands run inside Docker containers.
 # No local Go, Elixir, or buf installation required.
 
-DOCKER_GO     = docker run --rm -v $(PWD):/workspace -w /workspace golang:1.23-alpine
-DOCKER_ELIXIR = docker run --rm -v $(PWD):/workspace -w /workspace elixir:1.18-alpine
+DOCKER_GO     = docker run --rm -v $(PWD):/workspace -w /workspace golang:1.26-alpine
+DOCKER_ELIXIR = docker run --rm -v $(PWD):/workspace -w /workspace elixir:1.19-alpine
 DOCKER_BUF    = docker run --rm -v $(PWD):/workspace -w /workspace bufbuild/buf
 
 .PHONY: build-gateway build-core dev setup test-unit-go test-unit-elixir test-integration proto gen-api

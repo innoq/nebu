@@ -90,7 +90,7 @@ so that all subsequent stories have a consistent, buildable foundation.
   - [x] Verify: `make -n <each-target>` does not error
 
 - [x] Task 8: Create `gateway/Dockerfile` multi-stage placeholder (needed by `build-gateway` target)
-  - [x] Stage 1 `builder`: `golang:1.23-alpine`
+  - [x] Stage 1 `builder`: `golang:1.26-alpine`
   - [x] Stage 2 `runtime`: `gcr.io/distroless/static`
 
 ## Dev Notes
@@ -168,8 +168,8 @@ func main() {
 All build commands run inside Docker containers. **No local Go, Elixir, or buf installation is required.** This is a hard requirement.
 
 ```makefile
-DOCKER_GO    = docker run --rm -v $(PWD):/workspace -w /workspace golang:1.23-alpine
-DOCKER_ELIXIR = docker run --rm -v $(PWD):/workspace -w /workspace elixir:1.18-alpine
+DOCKER_GO    = docker run --rm -v $(PWD):/workspace -w /workspace golang:1.26-alpine
+DOCKER_ELIXIR = docker run --rm -v $(PWD):/workspace -w /workspace elixir:1.19-alpine
 DOCKER_BUF   = docker run --rm -v $(PWD):/workspace -w /workspace bufbuild/buf
 ```
 
@@ -194,7 +194,7 @@ gateway/testdata/            ← Test fixtures (Go unit tests)
 Use `gcr.io/distroless/static` as the runtime image (NOT alpine), as specified in the architecture. This is smallest possible runtime for a static Go binary:
 
 ```dockerfile
-FROM golang:1.23-alpine AS builder
+FROM golang:1.26-alpine AS builder
 WORKDIR /workspace
 COPY go.mod go.sum ./
 RUN go mod download
@@ -260,7 +260,7 @@ _No blocking issues encountered._
 - `gateway/internal/config/config.go`: `Config` struct with all 5 NEBU_ env vars; `NEBU_INTERNAL_SECRET_FILE` stores file path (not secret value); default `core:9000` for `NEBU_CORE_GRPC_ADDR`
 - `gateway/internal/config/config_test.go`: 3 unit tests — defaults, env var overrides, file-path pattern enforcement — all pass
 - Root `Makefile`: 9 Docker-only targets; all verified via `make -n <target>`
-- `gateway/Dockerfile`: multi-stage with `golang:1.23-alpine` builder and `gcr.io/distroless/static` runtime
+- `gateway/Dockerfile`: multi-stage with `golang:1.26-alpine` builder and `gcr.io/distroless/static` runtime
 - `go build ./...` from `gateway/` → exit 0; `go test ./...` → 3 tests pass, 0 fail
 
 ### File List
