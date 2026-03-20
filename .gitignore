@@ -37,3 +37,12 @@ Thumbs.db
 
 # Docker
 docker-compose.override.yml
+
+# Elixir / OTP
+_build/
+deps/
+*.beam
+.elixir_ls/
+.fetch
+erl_crash.dump
+*.ez

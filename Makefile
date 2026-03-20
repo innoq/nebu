@@ -12,9 +12,9 @@ DOCKER_BUF    = docker run --rm -v $(PWD):/workspace -w /workspace bufbuild/buf
 build-gateway:
 	docker build -t nebu-gateway:dev ./gateway
 
-## build-core: Build the Elixir/OTP Core Docker image
+## build-core: Compile the Elixir/OTP Core inside container (mix compile)
 build-core:
-	docker build -t nebu-core:dev ./core
+	$(DOCKER_ELIXIR) sh -c "cd core && mix local.hex --force && mix deps.get && mix compile"
 
 ## dev: Start the full local development stack (gateway, core, postgres, keycloak)
 dev:
@@ -36,7 +36,7 @@ test-unit-go:
 
 ## test-unit-elixir: Run Elixir unit tests inside container
 test-unit-elixir:
-	$(DOCKER_ELIXIR) sh -c "cd core && mix test"
+	$(DOCKER_ELIXIR) sh -c "cd core && mix local.hex --force && mix test"
 
 ## test-integration: Run full stack integration tests (Godog / Gherkin)
 test-integration:
