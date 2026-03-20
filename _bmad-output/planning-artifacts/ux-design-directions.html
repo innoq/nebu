@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nebu Admin UI — Final Composite</title>
+<style>
+  :root {
+    --bg-base: #111827;
+    --bg-surface: #1f2937;
+    --bg-raised: #374151;
+    --bg-border: #374151;
+    --text-primary: #f9fafb;
+    --text-secondary: #9ca3af;
+    --text-disabled: #4b5563;
+    --color-primary: #f97316;
+    --color-primary-hover: #ea580c;
+    --color-primary-subtle: #431407;
+    --status-ok: #22c55e;
+    --status-ok-bg: #052e16;
+    --status-warn: #f59e0b;
+    --status-warn-bg: #451a03;
+    --status-error: #ef4444;
+    --status-error-bg: #450a0a;
+    --status-neutral: #6b7280;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui,-apple-system,'Segoe UI',sans-serif; background: var(--bg-base); color: var(--text-primary); height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+
+  /* ── App Shell ── */
+  .topbar { height: 48px; background: var(--bg-raised); border-bottom: 1px solid var(--bg-border); display: flex; align-items: center; padding: 0 16px; gap: 12px; flex-shrink: 0; }
+  .topbar-logo { font-weight: 700; font-size: 15px; color: var(--color-primary); letter-spacing: -0.02em; }
+  .topbar-instance { font-size: 12px; color: var(--text-secondary); }
+  .topbar-spacer { flex: 1; }
+  .topbar-avatar { width: 28px; height: 28px; background: var(--color-primary-subtle); border: 1px solid var(--color-primary); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--color-primary); font-weight: 600; }
+  .topbar-sys { font-size: 11px; display: flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 10px; }
+  .topbar-sys.ok { background: var(--status-ok-bg); color: var(--status-ok); }
+  .topbar-sys.warn { background: var(--status-warn-bg); color: var(--status-warn); }
+
+  .app-body { display: flex; flex: 1; overflow: hidden; }
+
+  /* ── Sidebar ── */
+  .sidebar { width: 240px; background: var(--bg-surface); border-right: 1px solid var(--bg-border); display: flex; flex-direction: column; flex-shrink: 0; overflow-y: auto; }
+  .nav-section-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-disabled); padding: 14px 16px 4px; }
+  .nav-item { height: 40px; display: flex; align-items: center; gap: 10px; padding: 0 14px; font-size: 13px; color: var(--text-secondary); cursor: pointer; position: relative; transition: all 0.1s; user-select: none; }
+  .nav-item:hover { background: var(--bg-raised); color: var(--text-primary); }
+  .nav-item.active { color: var(--color-primary); background: var(--color-primary-subtle); }
+  .nav-item.active::before { content: ''; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px; background: var(--color-primary); border-radius: 0 2px 2px 0; }
+  .nav-icon { font-size: 15px; width: 20px; text-align: center; }
+  .nav-badge { margin-left: auto; font-size: 10px; padding: 1px 6px; border-radius: 10px; font-weight: 600; }
+  .nav-badge.warn { background: var(--status-warn-bg); color: var(--status-warn); }
+  .nav-badge.error { background: var(--status-error-bg); color: var(--status-error); }
+  .nav-sep { height: 1px; background: var(--bg-border); margin: 6px 0; }
+  .nav-spacer { flex: 1; }
+
+  /* ── Content ── */
+  .content-area { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+  .page { display: none; flex: 1; overflow: hidden; flex-direction: column; }
+  .page.active { display: flex; }
+
+  /* ── Shared ── */
+  .page-header { display: flex; align-items: flex-start; justify-content: space-between; padding: 24px 32px 16px; flex-shrink: 0; }
+  .page-title { font-size: 20px; font-weight: 600; letter-spacing: -0.02em; }
+  .page-subtitle { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+  .btn { padding: 7px 14px; border-radius: 6px; border: none; font-size: 13px; cursor: pointer; font-weight: 500; transition: all 0.15s; }
+  .btn-primary { background: var(--color-primary); color: #fff; }
+  .btn-primary:hover { background: var(--color-primary-hover); }
+  .btn-secondary { background: var(--bg-raised); color: var(--text-primary); border: 1px solid var(--bg-border); }
+  .btn-danger { background: var(--status-error-bg); color: var(--status-error); border: 1px solid var(--status-error-bg); }
+  .badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .badge.ok { background: var(--status-ok-bg); color: var(--status-ok); }
+  .badge.warn { background: var(--status-warn-bg); color: var(--status-warn); }
+  .badge.error { background: var(--status-error-bg); color: var(--status-error); }
+  .badge.neutral { background: #1f2937; color: var(--text-secondary); border: 1px solid var(--bg-border); }
+  .badge.primary { background: var(--color-primary-subtle); color: var(--color-primary); }
+  .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+  .dot.ok { background: var(--status-ok); }
+  .dot.warn { background: var(--status-warn); }
+  .dot.error { background: var(--status-error); }
+  .dot.neutral { background: var(--status-neutral); }
+  .monospace { font-family: 'JetBrains Mono','Fira Code',monospace; font-size: 11px; color: var(--text-secondary); word-break: break-all; }
+  .section-title { font-size: 11px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 10px; }
+
+  /* ── SENTINEL pattern ── */
+  .sentinel-content { padding: 0 32px 24px; overflow-y: auto; flex: 1; }
+  .status-banner { display: flex; gap: 12px; margin-bottom: 24px; }
+  .status-card { flex: 1; background: var(--bg-surface); border-radius: 8px; padding: 16px; border: 1px solid var(--bg-border); }
+  .status-card.ok { border-top: 3px solid var(--status-ok); }
+  .status-card.warn { border-top: 3px solid var(--status-warn); }
+  .status-card.error { border-top: 3px solid var(--status-error); }
+  .status-card-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-secondary); margin-bottom: 6px; }
+  .status-card-dot { font-size: 20px; font-weight: 700; }
+  .status-card-dot.ok { color: var(--status-ok); }
+  .status-card-dot.warn { color: var(--status-warn); }
+  .status-card-dot.error { color: var(--status-error); }
+  .status-card-sub { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+  .alert-item { background: var(--bg-surface); border-radius: 8px; padding: 12px 16px; margin-bottom: 8px; border-left: 3px solid transparent; display: flex; align-items: center; gap: 12px; font-size: 13px; }
+  .alert-item.warn { border-color: var(--status-warn); }
+  .alert-item.error { border-color: var(--status-error); }
+  .alert-icon { font-size: 16px; }
+  .alert-text { flex: 1; }
+  .alert-title { font-weight: 500; }
+  .alert-desc { font-size: 12px; color: var(--text-secondary); margin-top: 1px; }
+  .alert-action { font-size: 12px; color: var(--color-primary); cursor: pointer; white-space: nowrap; }
+  .metric-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-bottom: 24px; }
+  .metric-card { background: var(--bg-surface); border-radius: 8px; padding: 16px; border: 1px solid var(--bg-border); }
+  .metric-label { font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
+  .metric-value { font-size: 28px; font-weight: 700; letter-spacing: -0.03em; }
+  .metric-delta { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+
+  /* ── MATRIX pattern ── */
+  .matrix-layout { display: flex; flex: 1; overflow: hidden; }
+  .master-list { width: 300px; background: var(--bg-surface); border-right: 1px solid var(--bg-border); display: flex; flex-direction: column; flex-shrink: 0; }
+  .master-search { padding: 12px; border-bottom: 1px solid var(--bg-border); flex-shrink: 0; }
+  .master-search input { width: 100%; background: var(--bg-base); border: 1px solid var(--bg-border); border-radius: 6px; padding: 7px 10px; color: var(--text-primary); font-size: 13px; outline: none; }
+  .master-search input:focus { border-color: var(--color-primary); }
+  .master-items { flex: 1; overflow-y: auto; }
+  .master-item { padding: 10px 16px; border-bottom: 1px solid var(--bg-border); cursor: pointer; transition: background 0.1s; }
+  .master-item:hover { background: var(--bg-raised); }
+  .master-item.active { background: var(--color-primary-subtle); border-left: 3px solid var(--color-primary); }
+  .master-item-title { font-size: 13px; font-weight: 500; display: flex; justify-content: space-between; align-items: center; }
+  .master-item-sub { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+  .detail-content { flex: 1; overflow-y: auto; padding: 24px 28px; background: var(--bg-base); }
+  .detail-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
+  .detail-title { font-size: 18px; font-weight: 700; }
+  .detail-actions { display: flex; gap: 8px; }
+  .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 20px; }
+  .detail-stat { background: var(--bg-surface); border-radius: 6px; padding: 12px 14px; border: 1px solid var(--bg-border); }
+  .detail-stat-label { font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; }
+  .detail-stat-value { font-size: 20px; font-weight: 700; }
+  .detail-table { background: var(--bg-surface); border-radius: 6px; border: 1px solid var(--bg-border); overflow: hidden; margin-bottom: 16px; }
+  .detail-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 14px; border-bottom: 1px solid var(--bg-border); font-size: 13px; }
+  .detail-row:last-child { border-bottom: none; }
+  .detail-key { color: var(--text-secondary); font-size: 12px; }
+
+  /* ── ATLAS pattern ── */
+  .atlas-content { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+  .atlas-filters { padding: 12px 32px; border-bottom: 1px solid var(--bg-border); display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+  .atlas-filters input, .atlas-filters select { background: var(--bg-surface); border: 1px solid var(--bg-border); border-radius: 6px; padding: 6px 10px; color: var(--text-primary); font-size: 12px; outline: none; }
+  .atlas-filters input:focus, .atlas-filters select:focus { border-color: var(--color-primary); }
+  .atlas-table-wrap { flex: 1; overflow-y: auto; padding: 0 32px 24px; }
+  .data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .data-table th { text-align: left; padding: 8px 12px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-secondary); border-bottom: 1px solid var(--bg-border); font-weight: 600; position: sticky; top: 0; background: var(--bg-base); }
+  .data-table td { padding: 9px 12px; border-bottom: 1px solid var(--bg-border); color: var(--text-primary); }
+  .data-table tr:hover td { background: var(--bg-surface); }
+  .data-table tr:last-child td { border-bottom: none; }
+
+  /* ── FORGE pattern (wizard) ── */
+  .forge-outer { flex: 1; overflow-y: auto; padding: 24px 32px; display: flex; }
+  .forge-inner { max-width: 560px; width: 100%; }
+  .wizard-steps { display: flex; margin-bottom: 32px; }
+  .wizard-step { flex: 1; text-align: center; padding: 6px 4px; font-size: 11px; color: var(--text-disabled); border-bottom: 2px solid var(--bg-border); }
+  .wizard-step.done { color: var(--status-ok); border-color: var(--status-ok); }
+  .wizard-step.active { color: var(--color-primary); border-color: var(--color-primary); font-weight: 600; }
+  .wizard-step-num { display: block; font-size: 16px; font-weight: 700; margin-bottom: 2px; }
+  .wizard-card { background: var(--bg-surface); border-radius: 10px; padding: 24px; border: 1px solid var(--bg-border); margin-bottom: 12px; }
+  .wizard-question { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+  .wizard-hint { font-size: 13px; color: var(--text-secondary); margin-bottom: 20px; }
+  .form-group { margin-bottom: 16px; }
+  .form-label { font-size: 12px; color: var(--text-secondary); margin-bottom: 5px; display: block; font-weight: 500; }
+  .form-input { width: 100%; background: var(--bg-base); border: 1px solid var(--bg-border); border-radius: 6px; padding: 8px 12px; color: var(--text-primary); font-size: 13px; outline: none; }
+  .form-input:focus { border-color: var(--color-primary); }
+  .form-hint { font-size: 11px; color: var(--text-disabled); margin-top: 4px; }
+  .summary-box { background: var(--bg-base); border-radius: 6px; padding: 12px 14px; margin-bottom: 20px; }
+  .summary-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 12px; border-bottom: 1px solid var(--bg-border); }
+  .summary-row:last-child { border-bottom: none; }
+  .summary-key { color: var(--text-secondary); }
+  .wizard-actions { display: flex; gap: 8px; }
+  .draft-hint { font-size: 11px; color: var(--text-disabled); margin-top: 10px; display: flex; align-items: center; gap: 4px; }
+
+  /* ── Config ── */
+  .config-content { flex: 1; overflow-y: auto; padding: 0 32px 24px; }
+  .config-section { background: var(--bg-surface); border-radius: 8px; border: 1px solid var(--bg-border); margin-bottom: 16px; overflow: hidden; }
+  .config-section-header { padding: 14px 16px; border-bottom: 1px solid var(--bg-border); display: flex; justify-content: space-between; align-items: center; }
+  .config-section-title { font-size: 13px; font-weight: 600; }
+  .config-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-bottom: 1px solid var(--bg-border); font-size: 13px; }
+  .config-row:last-child { border-bottom: none; }
+  .config-key { color: var(--text-secondary); font-size: 12px; }
+  .config-val { font-weight: 500; }
+
+  /* ── Crypto ── */
+  .crypto-content { flex: 1; overflow-y: auto; padding: 0 32px 24px; }
+
+  /* ── Compliance Matrix view ── */
+  .compliance-view { display: flex; flex: 1; flex-direction: column; overflow: hidden; }
+  .compliance-header { padding: 0 32px 16px; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--bg-raised); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- ══ Topbar ══ -->
+<div class="topbar">
+  <span class="topbar-logo">Nebu</span>
+  <span class="topbar-instance">acme-corp.nebu.internal</span>
+  <div class="topbar-spacer"></div>
+  <span id="sys-indicator" class="topbar-sys warn">⚠ DB Replik. 2,4s</span>
+  <div class="topbar-avatar" style="margin-left:12px">KJ</div>
+</div>
+
+<!-- ══ App Body ══ -->
+<div class="app-body">
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="nav-section-label">Übersicht</div>
+    <div class="nav-item active" onclick="nav('dashboard',this)"><span class="nav-icon">⬡</span>Dashboard</div>
+    <div class="nav-sep"></div>
+    <div class="nav-section-label">Verwaltung</div>
+    <div class="nav-item" onclick="nav('users',this)"><span class="nav-icon">👤</span>Benutzer</div>
+    <div class="nav-item" onclick="nav('rooms',this)"><span class="nav-icon">💬</span>Räume</div>
+    <div class="nav-item" onclick="nav('roles',this)"><span class="nav-icon">🔑</span>Rollen &amp; Rechte</div>
+    <div class="nav-sep"></div>
+    <div class="nav-section-label">Compliance</div>
+    <div class="nav-item" onclick="nav('compliance',this)"><span class="nav-icon">🛡</span>Compliance Access<span class="nav-badge warn">1</span></div>
+    <div class="nav-item" onclick="nav('audit',this)"><span class="nav-icon">📋</span>Audit Log</div>
+    <div class="nav-sep"></div>
+    <div class="nav-section-label">System</div>
+    <div class="nav-item" onclick="nav('config',this)"><span class="nav-icon">⚙</span>Konfiguration</div>
+    <div class="nav-item" onclick="nav('crypto',this)"><span class="nav-icon">🔐</span>Kryptografie</div>
+    <div class="nav-spacer"></div>
+    <div class="nav-sep"></div>
+    <div class="nav-item" style="font-size:12px;color:var(--text-disabled)"><span class="nav-icon">🔒</span>acme-idp (OIDC)</div>
+  </div>
+
+  <!-- Content Area -->
+  <div class="content-area">
+
+    <!-- ══════════════════════════════════
+         DASHBOARD — Sentinel Pattern
+    ═══════════════════════════════════ -->
+    <div id="page-dashboard" class="page active">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Dashboard</div>
+          <div class="page-subtitle">Systemzustand · Stand 09:14 Uhr</div>
+        </div>
+      </div>
+      <div class="sentinel-content">
+        <div class="status-banner">
+          <div class="status-card ok">
+            <div class="status-card-title">Gateway</div>
+            <div class="status-card-dot ok">●</div>
+            <div class="status-card-sub">3 Instanzen · 45ms Ø</div>
+          </div>
+          <div class="status-card ok">
+            <div class="status-card-title">Chat-Server</div>
+            <div class="status-card-dot ok">●</div>
+            <div class="status-card-sub">Cluster gesund · 2 Nodes</div>
+          </div>
+          <div class="status-card warn">
+            <div class="status-card-title">Datenbank</div>
+            <div class="status-card-dot warn">●</div>
+            <div class="status-card-sub">Replica-2 Verzug 2,4 s</div>
+          </div>
+          <div class="status-card ok">
+            <div class="status-card-title">Nachrichtenzustellung</div>
+            <div class="status-card-dot ok">●</div>
+            <div class="status-card-sub">Rückstand 0 · alle Queues leer</div>
+          </div>
+        </div>
+
+        <div class="section-title">Handlungsbedarf</div>
+        <div class="alert-item warn">
+          <span class="alert-icon">⚠</span>
+          <div class="alert-text">
+            <div class="alert-title">Replikationsverzug: Datenbank Replica-2</div>
+            <div class="alert-desc">Replica hängt 2,4 s nach · Primary gesund · seit 14 min</div>
+          </div>
+          <span class="alert-action" onclick="nav('config',document.querySelector('.nav-item:nth-child(10)'))">→ Details</span>
+        </div>
+        <div class="alert-item warn">
+          <span class="alert-icon">🛡</span>
+          <div class="alert-text">
+            <div class="alert-title">Offene Compliance-Anfrage wartet auf Zweitzustimmung</div>
+            <div class="alert-desc">Dr. Petra Wagner · gestellt vor 2 h · läuft ab in 22 h</div>
+          </div>
+          <span class="alert-action" onclick="nav('compliance',document.querySelectorAll('.nav-item')[5])">→ Genehmigen</span>
+        </div>
+
+        <div class="metric-row" style="margin-top:24px">
+          <div class="metric-card"><div class="metric-label">Aktive Nutzer</div><div class="metric-value">847</div><div class="metric-delta">+12 heute</div></div>
+          <div class="metric-card"><div class="metric-label">Räume</div><div class="metric-value">143</div><div class="metric-delta">4 neu diese Woche</div></div>
+          <div class="metric-card"><div class="metric-label">Nachrichten / h</div><div class="metric-value">2,4k</div><div class="metric-delta">Ø 2,1k</div></div>
+          <div class="metric-card"><div class="metric-label">Events / s</div><div class="metric-value">38</div><div class="metric-delta">Ø 35</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════
+         BENUTZER — Matrix Pattern
+    ═══════════════════════════════════ -->
+    <div id="page-users" class="page">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Benutzer</div>
+          <div class="page-subtitle">847 aktive Accounts · OIDC: acme-idp</div>
+        </div>
+      </div>
+      <div class="matrix-layout">
+        <div class="master-list">
+          <div class="master-search"><input placeholder="🔍  Benutzer suchen…"></div>
+          <div style="padding:6px 12px;border-bottom:1px solid var(--bg-border);display:flex;gap:6px">
+            <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:var(--color-primary-subtle);color:var(--color-primary);cursor:pointer">Alle</span>
+            <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:var(--bg-raised);color:var(--text-secondary);cursor:pointer">Admins</span>
+            <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:var(--bg-raised);color:var(--text-secondary);cursor:pointer">Inaktiv</span>
+          </div>
+          <div class="master-items">
+            <div class="master-item active" onclick="selectItem(this)">
+              <div class="master-item-title">Kai Jung <span class="badge primary" style="font-size:10px">Admin</span></div>
+              <div class="master-item-sub">kai.jung@acme.de · zuletzt: heute</div>
+            </div>
+            <div class="master-item" onclick="selectItem(this)">
+              <div class="master-item-title">Dr. Petra Wagner <span class="badge neutral" style="font-size:10px">Compliance</span></div>
+              <div class="master-item-sub">p.wagner@acme.de · zuletzt: heute</div>
+            </div>
+            <div class="master-item" onclick="selectItem(this)">
+              <div class="master-item-title">Marcus Weber</div>
+              <div class="master-item-sub">m.weber@acme.de · zuletzt: gestern</div>
+            </div>
+            <div class="master-item" onclick="selectItem(this)">
+              <div class="master-item-title">Anna Schmidt</div>
+              <div class="master-item-sub">a.schmidt@acme.de · zuletzt: vor 3 Tagen</div>
+            </div>
+            <div class="master-item" onclick="selectItem(this)">
+              <div class="master-item-title">Thomas Bauer</div>
+              <div class="master-item-sub">t.bauer@acme.de · zuletzt: vor 2 Wochen</div>
+            </div>
+            <div class="master-item" onclick="selectItem(this)">
+              <div class="master-item-title">Lena Hoffmann <span class="badge neutral" style="font-size:10px">Inaktiv</span></div>
+              <div class="master-item-sub">l.hoffmann@acme.de · nie eingeloggt</div>
+            </div>
+            <div class="master-item" onclick="selectItem(this)">
+              <div class="master-item-title">Stefan Krause</div>
+              <div class="master-item-sub">s.krause@acme.de · zuletzt: heute</div>
+            </div>
+          </div>
+        </div>
+        <div class="detail-content">
+          <div class="detail-header">
+            <div>
+              <div class="detail-title">Kai Jung</div>
+              <div class="monospace" style="margin-top:3px">@kai.jung:acme-corp.nebu.internal</div>
+            </div>
+            <div class="detail-actions">
+              <button class="btn btn-secondary" style="font-size:12px">Rolle ändern</button>
+              <button class="btn btn-danger" style="font-size:12px">Deaktivieren</button>
+            </div>
+          </div>
+          <div class="detail-grid">
+            <div class="detail-stat"><div class="detail-stat-label">Räume</div><div class="detail-stat-value">34</div></div>
+            <div class="detail-stat"><div class="detail-stat-label">Letzte Anmeldung</div><div class="detail-stat-value" style="font-size:14px">heute 08:51</div></div>
+          </div>
+          <div class="section-title">Profil</div>
+          <div class="detail-table">
+            <div class="detail-row"><span class="detail-key">E-Mail</span><span>kai.jung@acme.de</span></div>
+            <div class="detail-row"><span class="detail-key">Rolle</span><span><span class="badge primary">Instance Admin</span></span></div>
+            <div class="detail-row"><span class="detail-key">OIDC-Sub</span><span class="monospace">sub:a1b2c3d4-acme-idp</span></div>
+            <div class="detail-row"><span class="detail-key">Account erstellt</span><span>15.01.2025</span></div>
+            <div class="detail-row"><span class="detail-key">Status</span><span><span class="badge ok"><span class="dot ok"></span> Aktiv</span></span></div>
+          </div>
+          <div class="section-title">Mitglied in (Top 5)</div>
+          <div class="detail-table">
+            <div class="detail-row"><span>#general</span><span class="badge neutral">Öffentlich</span></div>
+            <div class="detail-row"><span>#legal-compliance</span><span class="badge neutral">Privat 🔒</span></div>
+            <div class="detail-row"><span>#admin-intern</span><span class="badge neutral">Privat 🔒</span></div>
+            <div class="detail-row"><span>#projekt-alpha</span><span class="badge neutral">Privat 🔒</span></div>
+            <div class="detail-row"><span style="color:var(--text-secondary);font-size:12px">+ 30 weitere</span><span></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════
+         RÄUME — Matrix Pattern
+    ═══════════════════════════════════ -->
+    <div id="page-rooms" class="page">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Räume</div>
+          <div class="page-subtitle">143 Räume · 8 archiviert</div>
+        </div>
+        <button class="btn btn-primary">+ Raum erstellen</button>
+      </div>
+      <div class="matrix-layout">
+        <div class="master-list">
+          <div class="master-search"><input placeholder="🔍  Raum suchen…"></div>
+          <div style="padding:6px 12px;border-bottom:1px solid var(--bg-border);display:flex;gap:6px">
+            <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:var(--color-primary-subtle);color:var(--color-primary);cursor:pointer">Alle</span>
+            <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:var(--bg-raised);color:var(--text-secondary);cursor:pointer">Aktiv</span>
+            <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:var(--bg-raised);color:var(--text-secondary);cursor:pointer">Verschlüsselt</span>
+          </div>
+          <div class="master-items">
+            <div class="master-item active" onclick="selectItem(this)">
+              <div class="master-item-title">#general <span class="badge ok" style="font-size:10px"><span class="dot ok"></span> Aktiv</span></div>
+              <div class="master-item-sub">847 Mitglieder · Öffentlich</div>
+            </div>
+            <div class="master-item" onclick="selectItem(this)">
+              <div class="master-item-title">#legal-compliance <span class="badge ok" style="font-size:10px"><span class="dot ok"></span> Aktiv</span></div>
+              <div class="master-item-sub">12 Mitglieder · Privat 🔒</div>
+            </div>
+            <div class="master-item" onclick="selectItem(this)">
+              <div class="master-item-title">#projekt-alpha <span class="badge warn" style="font-size:10px">Max 80%</span></div>
+              <div class="master-item-sub">28 Mitglieder · Privat 🔒</div>
+            </div>
+            <div class="master-item" onclick="selectItem(this)">
+              <div class="master-item-title">#hr-intern <span class="badge ok" style="font-size:10px"><span class="dot ok"></span> Aktiv</span></div>
+              <div class="master-item-sub">5 Mitglieder · Privat 🔒</div>
+            </div>
+            <div class="master-item" onclick="selectItem(this)">
+              <div class="master-item-title" style="color:var(--text-secondary)">#old-projekt-beta <span class="badge neutral" style="font-size:10px">Inaktiv</span></div>
+              <div class="master-item-sub">3 Mitglieder · Privat 🔒</div>
+            </div>
+          </div>
+        </div>
+        <div class="detail-content">
+          <div class="detail-header">
+            <div>
+              <div class="detail-title">#general</div>
+              <div class="monospace" style="margin-top:3px">!aBc123xYz:acme-corp.nebu.internal</div>
+            </div>
+            <div class="detail-actions">
+              <button class="btn btn-secondary" style="font-size:12px">Konfigurieren</button>
+              <button class="btn btn-danger" style="font-size:12px">Archivieren</button>
+            </div>
+          </div>
+          <div class="detail-grid">
+            <div class="detail-stat"><div class="detail-stat-label">Mitglieder</div><div class="detail-stat-value">847</div></div>
+            <div class="detail-stat"><div class="detail-stat-label">Nachrichten / h</div><div class="detail-stat-value">1,2k</div></div>
+          </div>
+          <div class="section-title">Konfiguration (Admin)</div>
+          <div class="detail-table">
+            <div class="detail-row"><span class="detail-key">Sichtbarkeit</span><span>Öffentlich</span></div>
+            <div class="detail-row"><span class="detail-key">Verschlüsselung</span><span>Deaktiviert</span></div>
+            <div class="detail-row"><span class="detail-key">Max. Mitglieder</span><span>Unbegrenzt</span></div>
+            <div class="detail-row"><span class="detail-key">Node-Zuweisung</span><span style="color:var(--text-secondary)">Automatisch</span></div>
+            <div class="detail-row"><span class="detail-key">Archivierung</span><span style="color:var(--text-secondary)">Nicht konfiguriert</span></div>
+            <div class="detail-row"><span class="detail-key">Erstellt von</span><span>kai.jung@acme.de · 15.01.2025</span></div>
+          </div>
+          <div class="section-title">Status</div>
+          <div class="detail-table">
+            <div class="detail-row"><span class="detail-key">Zustand</span><span><span class="badge ok"><span class="dot ok"></span> Aktiv</span></span></div>
+            <div class="detail-row"><span class="detail-key">Letzte Nachricht</span><span>vor 3 min</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════
+         ROLLEN — Matrix Pattern
+    ═══════════════════════════════════ -->
+    <div id="page-roles" class="page">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Rollen &amp; Rechte</div>
+          <div class="page-subtitle">4 systemdefinierte Rollen</div>
+        </div>
+      </div>
+      <div class="matrix-layout">
+        <div class="master-list">
+          <div class="master-items" style="padding-top:8px">
+            <div class="master-item active" onclick="selectItem(this)">
+              <div class="master-item-title">Instance Admin <span class="badge primary" style="font-size:10px">2</span></div>
+              <div class="master-item-sub">Vollzugriff auf alle Funktionen</div>
+            </div>
+            <div class="master-item" onclick="selectItem(this)">
+              <div class="master-item-title">Compliance Officer <span class="badge neutral" style="font-size:10px">3</span></div>
+              <div class="master-item-sub">Compliance Access + Audit Log</div>
+            </div>
+            <div class="master-item" onclick="selectItem(this)">
+              <div class="master-item-title">Room Moderator <span class="badge neutral" style="font-size:10px">12</span></div>
+              <div class="master-item-sub">Eigene Räume verwalten</div>
+            </div>
+            <div class="master-item" onclick="selectItem(this)">
+              <div class="master-item-title">User <span class="badge neutral" style="font-size:10px">830</span></div>
+              <div class="master-item-sub">Standard-Zugriff</div>
+            </div>
+          </div>
+        </div>
+        <div class="detail-content">
+          <div class="detail-header">
+            <div><div class="detail-title">Instance Admin</div><div style="font-size:13px;color:var(--text-secondary);margin-top:2px">Systemrolle · nicht editierbar</div></div>
+          </div>
+          <div class="section-title">Berechtigungen</div>
+          <div class="detail-table">
+            <div class="detail-row"><span>Benutzer verwalten</span><span class="badge ok">✓</span></div>
+            <div class="detail-row"><span>Räume verwalten (alle)</span><span class="badge ok">✓</span></div>
+            <div class="detail-row"><span>Systemkonfiguration</span><span class="badge ok">✓</span></div>
+            <div class="detail-row"><span>Compliance Access genehmigen</span><span class="badge ok">✓</span></div>
+            <div class="detail-row"><span>Audit Log einsehen</span><span class="badge ok">✓</span></div>
+            <div class="detail-row"><span>Kryptografie verwalten</span><span class="badge ok">✓</span></div>
+          </div>
+          <div class="section-title">Nutzer mit dieser Rolle</div>
+          <div class="detail-table">
+            <div class="detail-row"><span>Kai Jung</span><span style="font-size:12px;color:var(--text-secondary)">kai.jung@acme.de</span></div>
+            <div class="detail-row"><span>Marcus Weber</span><span style="font-size:12px;color:var(--text-secondary)">m.weber@acme.de</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════
+         COMPLIANCE — Matrix + Forge
+    ═══════════════════════════════════ -->
+    <div id="page-compliance" class="page">
+      <!-- Matrix: Antragsübersicht -->
+      <div id="compliance-matrix" style="display:flex;flex-direction:column;flex:1;overflow:hidden">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Compliance Access</div>
+            <div class="page-subtitle">Vier-Augen-Prinzip · zeitlich begrenzt · Ed25519-signiert</div>
+          </div>
+          <button class="btn btn-primary" onclick="showWizard()">+ Neuer Antrag</button>
+        </div>
+        <div class="matrix-layout">
+          <div class="master-list">
+            <div style="padding:6px 12px;border-bottom:1px solid var(--bg-border);display:flex;gap:6px">
+              <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:var(--color-primary-subtle);color:var(--color-primary);cursor:pointer">Alle</span>
+              <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:var(--bg-raised);color:var(--text-secondary);cursor:pointer">Offen</span>
+              <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:var(--bg-raised);color:var(--text-secondary);cursor:pointer">Abgeschlossen</span>
+            </div>
+            <div class="master-items">
+              <div class="master-item active" onclick="selectItem(this)">
+                <div class="master-item-title">Dr. Petra Wagner <span class="badge warn" style="font-size:10px">Wartet</span></div>
+                <div class="master-item-sub">Max Müller · heute 07:12 · läuft ab 22 h</div>
+              </div>
+              <div class="master-item" onclick="selectItem(this)">
+                <div class="master-item-title">Dr. Petra Wagner <span class="badge ok" style="font-size:10px">Abgeschlossen</span></div>
+                <div class="master-item-sub">Anna Schmidt · 10.03.2026</div>
+              </div>
+              <div class="master-item" onclick="selectItem(this)">
+                <div class="master-item-title">Kai Jung <span class="badge ok" style="font-size:10px">Abgeschlossen</span></div>
+                <div class="master-item-sub">Thomas Bauer · 22.01.2026</div>
+              </div>
+            </div>
+          </div>
+          <div class="detail-content">
+            <div class="detail-header">
+              <div>
+                <div class="detail-title">Antrag vom 17.03.2026</div>
+                <div style="font-size:13px;color:var(--status-warn);margin-top:2px">⏳ Wartet auf Zweitzustimmung · läuft ab in 22 h</div>
+              </div>
+              <div class="detail-actions">
+                <button class="btn btn-primary" style="font-size:12px">✓ Genehmigen</button>
+                <button class="btn btn-danger" style="font-size:12px">✗ Ablehnen</button>
+              </div>
+            </div>
+            <div class="section-title">Antragsdetails</div>
+            <div class="detail-table">
+              <div class="detail-row"><span class="detail-key">Gestellt von</span><span>Dr. Petra Wagner</span></div>
+              <div class="detail-row"><span class="detail-key">Betroffene Person</span><span>Max Müller (max.mueller@acme.de)</span></div>
+              <div class="detail-row"><span class="detail-key">Zeitraum</span><span>01.01.2026 – 28.02.2026</span></div>
+              <div class="detail-row"><span class="detail-key">Gestellt</span><span>17.03.2026 07:12 Uhr</span></div>
+              <div class="detail-row"><span class="detail-key">Läuft ab</span><span>18.03.2026 07:12 Uhr</span></div>
+            </div>
+            <div class="section-title">Begründung</div>
+            <div style="background:var(--bg-surface);border-radius:6px;padding:14px;border:1px solid var(--bg-border);font-size:13px;line-height:1.6;margin-bottom:16px">
+              Verdacht auf Weitergabe vertraulicher Informationen gemäß §26 BDSG. Interne Untersuchung durch Rechtsabteilung angefordert.
+            </div>
+            <div class="section-title">Vier-Augen-Status</div>
+            <div class="detail-table">
+              <div class="detail-row"><span class="detail-key">Erstgenehmigung</span><span><span class="badge ok">✓ Dr. Petra Wagner</span></span></div>
+              <div class="detail-row"><span class="detail-key">Zweitgenehmigung</span><span><span class="badge warn">⏳ Ausstehend (Instance Admin)</span></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Forge: Wizard -->
+      <div id="compliance-wizard" style="display:none;flex-direction:column;flex:1;overflow:hidden">
+        <div class="page-header">
+          <div>
+            <div style="font-size:12px;color:var(--text-secondary);margin-bottom:4px"><span style="color:var(--color-primary);cursor:pointer" onclick="hideWizard()">← Compliance Access</span></div>
+            <div class="page-title">Neuen Antrag stellen</div>
+          </div>
+        </div>
+        <div class="forge-outer">
+          <div class="forge-inner">
+            <div class="wizard-steps">
+              <div class="wizard-step done"><span class="wizard-step-num">1</span>Zeitraum</div>
+              <div class="wizard-step done"><span class="wizard-step-num">2</span>Person</div>
+              <div class="wizard-step active"><span class="wizard-step-num">3</span>Begründung</div>
+              <div class="wizard-step"><span class="wizard-step-num">4</span>Zusammenfassung</div>
+            </div>
+            <div class="wizard-card">
+              <div class="wizard-question">Was ist der Grund für diesen Zugriff?</div>
+              <div class="wizard-hint">Ein bis zwei Sätze. Der Text wird mit Ihrem Namen und Zeitstempel unveränderlich im Audit Log gespeichert.</div>
+              <div class="form-group">
+                <textarea class="form-input" rows="3" style="resize:none;line-height:1.6" placeholder="z.B. Verdacht auf Weitergabe vertraulicher Informationen gemäß §26 BDSG …"></textarea>
+                <div class="form-hint">Max. 500 Zeichen</div>
+              </div>
+              <div class="summary-box">
+                <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-disabled);margin-bottom:6px;font-weight:600">Bisherige Angaben</div>
+                <div class="summary-row"><span class="summary-key">Zeitraum</span><span>01.01.2026 – 28.02.2026</span></div>
+                <div class="summary-row"><span class="summary-key">Person</span><span>Max Müller (max.mueller@acme.de)</span></div>
+              </div>
+              <div class="wizard-actions">
+                <button class="btn btn-secondary">← Zurück</button>
+                <button class="btn btn-primary">Weiter: Zusammenfassung →</button>
+              </div>
+            </div>
+            <div class="draft-hint"><span>●</span> Zwischenstand gespeichert · diese URL kann geteilt werden</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════
+         AUDIT LOG — Atlas Pattern
+    ═══════════════════════════════════ -->
+    <div id="page-audit" class="page">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Audit Log</div>
+          <div class="page-subtitle">Unveränderliches Ereignisprotokoll · append-only</div>
+        </div>
+        <button class="btn btn-secondary" style="font-size:12px">↓ Export</button>
+      </div>
+      <div class="atlas-content">
+        <div class="atlas-filters">
+          <input type="date" value="2026-03-17" style="width:140px">
+          <input type="date" value="2026-03-17" style="width:140px">
+          <select>
+            <option>Alle Ereignisse</option>
+            <option>Auth / Login</option>
+            <option>Compliance</option>
+            <option>Admin-Aktionen</option>
+            <option>Raum-Ereignisse</option>
+          </select>
+          <input placeholder="Benutzer filtern…" style="width:180px">
+          <span style="font-size:12px;color:var(--text-secondary);margin-left:auto">1.847 Einträge</span>
+        </div>
+        <div class="atlas-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width:160px">Zeitstempel</th>
+                <th style="width:180px">Ereignis</th>
+                <th style="width:200px">Akteur</th>
+                <th>Ziel / Details</th>
+                <th style="width:80px">Ergebnis</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="monospace" style="font-size:11px">2026-03-17 09:14:03</td>
+                <td><span class="badge neutral">compliance.request.created</span></td>
+                <td>p.wagner@acme.de</td>
+                <td style="color:var(--text-secondary);font-size:12px">Person: max.mueller@acme.de · Zeitraum: 01.01–28.02.2026</td>
+                <td><span class="badge ok">OK</span></td>
+              </tr>
+              <tr>
+                <td class="monospace" style="font-size:11px">2026-03-17 08:51:22</td>
+                <td><span class="badge neutral">auth.login</span></td>
+                <td>kai.jung@acme.de</td>
+                <td style="color:var(--text-secondary);font-size:12px">OIDC: acme-idp · IP: 10.0.1.42</td>
+                <td><span class="badge ok">OK</span></td>
+              </tr>
+              <tr>
+                <td class="monospace" style="font-size:11px">2026-03-17 08:49:11</td>
+                <td><span class="badge neutral">auth.login</span></td>
+                <td>p.wagner@acme.de</td>
+                <td style="color:var(--text-secondary);font-size:12px">OIDC: acme-idp · IP: 10.0.1.88</td>
+                <td><span class="badge ok">OK</span></td>
+              </tr>
+              <tr>
+                <td class="monospace" style="font-size:11px">2026-03-16 17:32:44</td>
+                <td><span class="badge neutral">room.config.updated</span></td>
+                <td>kai.jung@acme.de</td>
+                <td style="color:var(--text-secondary);font-size:12px">#projekt-alpha · max_members: 30 → 50</td>
+                <td><span class="badge ok">OK</span></td>
+              </tr>
+              <tr>
+                <td class="monospace" style="font-size:11px">2026-03-16 14:18:09</td>
+                <td><span class="badge neutral">user.role.changed</span></td>
+                <td>kai.jung@acme.de</td>
+                <td style="color:var(--text-secondary);font-size:12px">l.hoffmann@acme.de · User → Room Moderator</td>
+                <td><span class="badge ok">OK</span></td>
+              </tr>
+              <tr>
+                <td class="monospace" style="font-size:11px">2026-03-16 11:05:31</td>
+                <td><span class="badge neutral">auth.login</span></td>
+                <td>unknown</td>
+                <td style="color:var(--text-secondary);font-size:12px">OIDC: acme-idp · IP: 185.220.101.45 · ungültige Sub</td>
+                <td><span class="badge error">Fehler</span></td>
+              </tr>
+              <tr>
+                <td class="monospace" style="font-size:11px">2026-03-15 09:00:00</td>
+                <td><span class="badge neutral">compliance.access.approved</span></td>
+                <td>kai.jung@acme.de</td>
+                <td style="color:var(--text-secondary);font-size:12px">Antrag von p.wagner@acme.de · Ziel: a.schmidt@acme.de</td>
+                <td><span class="badge ok">OK</span></td>
+              </tr>
+              <tr>
+                <td class="monospace" style="font-size:11px">2026-03-15 08:44:17</td>
+                <td><span class="badge neutral">compliance.export.downloaded</span></td>
+                <td>p.wagner@acme.de</td>
+                <td style="color:var(--text-secondary);font-size:12px">Export-Hash: <span class="monospace">a3f8c1…d92e</span> · Ed25519 verifiziert</td>
+                <td><span class="badge ok">OK</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════
+         KONFIGURATION — Sentinel-Stil
+    ═══════════════════════════════════ -->
+    <div id="page-config" class="page">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Konfiguration</div>
+          <div class="page-subtitle">Instanzeinstellungen · Änderungen sofort wirksam</div>
+        </div>
+        <button class="btn btn-primary" style="font-size:12px">Änderungen speichern</button>
+      </div>
+      <div class="config-content">
+        <div class="config-section">
+          <div class="config-section-header"><span class="config-section-title">Allgemein</span></div>
+          <div class="config-row"><span class="config-key">Instanzname</span><input class="form-input" value="acme-corp" style="width:240px;padding:5px 10px;font-size:13px"></div>
+          <div class="config-row"><span class="config-key">Öffentliche URL</span><input class="form-input" value="https://chat.acme.de" style="width:240px;padding:5px 10px;font-size:13px"></div>
+          <div class="config-row"><span class="config-key">Sprache</span>
+            <select class="form-input" style="width:160px;padding:5px 10px;font-size:13px"><option>Deutsch</option><option>English</option></select>
+          </div>
+        </div>
+        <div class="config-section">
+          <div class="config-section-header">
+            <span class="config-section-title">OIDC-Authentifizierung</span>
+            <span class="badge ok"><span class="dot ok"></span> Verbunden</span>
+          </div>
+          <div class="config-row"><span class="config-key">Provider-URL (Issuer)</span><span class="config-val monospace">https://idp.acme.de/realms/main</span></div>
+          <div class="config-row"><span class="config-key">Client-ID</span><span class="config-val monospace">nebu-chat</span></div>
+          <div class="config-row"><span class="config-key">Client-Secret</span><span style="color:var(--text-disabled)">••••••••••••  <span style="color:var(--color-primary);cursor:pointer;font-size:12px">Ändern</span></span></div>
+          <div class="config-row"><span class="config-key">Letzter Token-Check</span><span class="config-val">heute 09:14 Uhr · OK</span></div>
+        </div>
+        <div class="config-section">
+          <div class="config-section-header"><span class="config-section-title">Limits</span></div>
+          <div class="config-row"><span class="config-key">Max. Mitglieder pro Raum</span><input class="form-input" value="500" style="width:100px;padding:5px 10px;font-size:13px"></div>
+          <div class="config-row"><span class="config-key">Max. Räume pro Nutzer</span><input class="form-input" value="100" style="width:100px;padding:5px 10px;font-size:13px"></div>
+          <div class="config-row"><span class="config-key">Max. Payload-Größe</span><input class="form-input" value="65536" style="width:100px;padding:5px 10px;font-size:13px"> <span style="font-size:12px;color:var(--text-secondary);margin-left:6px">Bytes (Standard: 65 536)</span></div>
+          <div class="config-row"><span class="config-key">Upload-Größe Max.</span><input class="form-input" value="10" style="width:100px;padding:5px 10px;font-size:13px"> <span style="font-size:12px;color:var(--text-secondary);margin-left:6px">MB</span></div>
+        </div>
+        <div class="config-section">
+          <div class="config-section-header">
+            <span class="config-section-title">Datenbank</span>
+            <span class="badge warn"><span class="dot warn"></span> Replica-2 verzögert</span>
+          </div>
+          <div class="config-row"><span class="config-key">Primary</span><span class="config-val monospace">postgres-primary:5432</span></div>
+          <div class="config-row"><span class="config-key">Replica-1</span><span><span class="badge ok" style="font-size:11px"><span class="dot ok"></span> OK</span> <span class="monospace" style="margin-left:6px">postgres-replica-1:5432</span></span></div>
+          <div class="config-row"><span class="config-key">Replica-2</span><span><span class="badge warn" style="font-size:11px"><span class="dot warn"></span> Verzug 2,4 s</span> <span class="monospace" style="margin-left:6px">postgres-replica-2:5432</span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════
+         KRYPTOGRAFIE — Card View
+    ═══════════════════════════════════ -->
+    <div id="page-crypto" class="page">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Kryptografie</div>
+          <div class="page-subtitle">Ed25519-Schlüsselpaar · Nachrichten-Signierung + PII-Verschlüsselung</div>
+        </div>
+      </div>
+      <div class="crypto-content">
+        <div class="config-section">
+          <div class="config-section-header">
+            <span class="config-section-title">Ed25519-Schlüsselpaar (Instanz)</span>
+            <span class="badge ok"><span class="dot ok"></span> Aktiv</span>
+          </div>
+          <div class="config-row"><span class="config-key">Öffentlicher Schlüssel (Fingerprint)</span><span class="monospace">SHA256:a3f8c1d9e2b4f7a1c8d5e9f2a4b7c1d9e2f5a8b3</span></div>
+          <div class="config-row"><span class="config-key">Schlüsseltyp</span><span class="config-val">Ed25519 (RFC 8032)</span></div>
+          <div class="config-row"><span class="config-key">Generiert</span><span class="config-val">15.01.2025 · beim Bootstrap</span></div>
+          <div class="config-row"><span class="config-key">Verwendung</span><span class="config-val">Nachrichten-Signierung · Compliance-Export-Signierung</span></div>
+        </div>
+        <div class="config-section">
+          <div class="config-section-header">
+            <span class="config-section-title">PII-Verschlüsselung</span>
+            <span class="badge ok"><span class="dot ok"></span> Aktiv</span>
+          </div>
+          <div class="config-row"><span class="config-key">Methode</span><span class="config-val">Ed25519-Privat-Key als PII-Encryption-Key</span></div>
+          <div class="config-row"><span class="config-key">Tier-2 PII-Felder</span><span class="config-val">E-Mail, OIDC-Sub, Displayname</span></div>
+          <div class="config-row"><span class="config-key">DSGVO-Löschung</span><span style="font-size:12px;color:var(--text-secondary)">Schlüssellöschung = kryptografische Vernichtung aller Tier-2-Felder</span></div>
+        </div>
+        <div class="config-section">
+          <div class="config-section-header"><span class="config-section-title">Aktionen</span></div>
+          <div class="config-row">
+            <span class="config-key">Öffentlichen Schlüssel exportieren</span>
+            <button class="btn btn-secondary" style="font-size:12px">↓ Export PEM</button>
+          </div>
+          <div class="config-row">
+            <span class="config-key">Schlüsselpaar rotieren</span>
+            <button class="btn btn-secondary" style="font-size:12px;color:var(--status-warn)">⚠ Rotation starten</button>
+          </div>
+          <div style="padding:10px 16px;font-size:12px;color:var(--text-disabled);line-height:1.5">
+            ⚠ Rotation invalidiert alle laufenden Compliance-Exporte und erzwingt Re-Verschlüsselung aller Tier-2-PII-Felder. Nur im Wartungsfenster durchführen.
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /content-area -->
+</div><!-- /app-body -->
+
+<script>
+function nav(page, el) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  if (el) el.classList.add('active');
+  // Reset compliance to matrix view when navigating away and back
+  if (page === 'compliance') {
+    document.getElementById('compliance-matrix').style.display = 'flex';
+    document.getElementById('compliance-wizard').style.display = 'none';
+  }
+}
+
+function selectItem(el) {
+  const parent = el.closest('.master-list') || el.closest('.master-items');
+  if (parent) parent.querySelectorAll('.master-item').forEach(i => i.classList.remove('active'));
+  el.classList.add('active');
+}
+
+function showWizard() {
+  document.getElementById('compliance-matrix').style.display = 'none';
+  document.getElementById('compliance-wizard').style.display = 'flex';
+}
+
+function hideWizard() {
+  document.getElementById('compliance-matrix').style.display = 'flex';
+  document.getElementById('compliance-wizard').style.display = 'none';
+}
+</script>
+</body>
+</html>

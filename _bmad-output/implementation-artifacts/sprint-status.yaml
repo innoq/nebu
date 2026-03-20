@@ -1,0 +1,202 @@
+# generated: 2026-03-20
+# last_updated: 2026-03-20
+# project: open-chat
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - SM typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: 2026-03-20
+last_updated: 2026-03-20
+# story 1-2 created: 1-2 → ready-for-dev: 2026-03-20
+# story 1-1 done (code review passed): 2026-03-20
+# story 1-1 created: epic-1 → in-progress, 1-1 → ready-for-dev
+# story 1-1 in-progress: 2026-03-20
+# story 1-1 review: 2026-03-20
+project: open-chat
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+
+development_status:
+  # ─────────────────────────────────────────────────────────────────────────
+  # Epic 1: Operators Can Deploy and Observe a Running Nebu Instance
+  # ─────────────────────────────────────────────────────────────────────────
+  epic-1: in-progress
+  1-1-go-gateway-media-gateway-repository-scaffolding: done
+  1-2-elixir-otp-core-umbrella-repository-scaffolding: ready-for-dev
+  1-3-golang-migrate-setup-postgresql-docker-service: backlog
+  1-4-message-buffer-message-dead-letter-schema-migration: backlog
+  1-5-server-config-table-postgresql-rls-policy: backlog
+  1-6-grpc-proto-contract-definition-buf-configuration: backlog
+  1-7-go-grpc-client-skeleton: backlog
+  1-8-elixir-grpc-server-skeleton: backlog
+  1-9-docker-compose-stack-make-setup-psk-node-security: backlog
+  1-10-elixir-node-registration-internal-nodes-register: backlog
+  1-11-health-readiness-endpoints-go-gateway: backlog
+  1-12-health-endpoint-elixir-core: backlog
+  1-13-prometheus-metrics-endpoint-go-gateway: backlog
+  1-14-tls-configuration-for-external-connections: backlog
+  1-15-go-unit-test-target: backlog
+  1-16-elixir-unit-test-target: backlog
+  1-17-make-gen-api-oapi-codegen-build-target: backlog
+  1-18-godog-integration-test-framework-setup: backlog
+  1-19-first-gherkin-scenario-stack-health-smoke-test: backlog
+  epic-1-retrospective: optional
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Epic 2: Users Can Authenticate with SSO and Have a Verified Cryptographic Identity
+  # ─────────────────────────────────────────────────────────────────────────
+  epic-2: backlog
+  2-1-users-user-keys-schema-migration: backlog
+  2-2-sessions-schema-migration: backlog
+  2-3-oidc-provider-configuration: backlog
+  2-4-oidc-jwt-token-validation-middleware: backlog
+  2-5-oidc-claim-to-role-mapping: backlog
+  2-6-admin-ui-oidc-client-authorization-code-flow-with-pkce: backlog
+  2-7-auth-token-flow-go-to-elixir-via-grpc-metadata: backlog
+  2-8-ed25519-keypair-generation-unit-tests: backlog
+  2-9-x25519-keypair-generation-unit-tests: backlog
+  2-10-operational-pii-encryption-at-rest-unit-tests: backlog
+  2-11-sensitive-pii-encryption-x25519-ecdh-aes-256-gcm-unit-tests: backlog
+  2-12-user-record-db-write-on-first-login: backlog
+  2-13-user-provisioning-orchestration-keypairs-pii-encryption: backlog
+  2-14-validatetoken-grpc-handler: backlog
+  2-15-bootstrap-mode-auto-instance-admin-assignment: backlog
+  2-16-bootstrap-mode-permanent-deactivation: backlog
+  2-17-get-matrix-client-v3-login-sso-flow-discovery: backlog
+  2-18-post-matrix-client-v3-login-oidc-token-exchange: backlog
+  2-19-post-matrix-client-v3-logout-session-invalidation: backlog
+  2-20-dex-dev-setup: backlog
+  2-21-gherkin-auth-scenario-end-to-end-oidc-login: backlog
+  epic-2-retrospective: optional
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Epic 3: Operators Have a Minimal Admin UI for Bootstrap and Debugging
+  # ─────────────────────────────────────────────────────────────────────────
+  epic-3: backlog
+  3-1-go-template-engine-setup-go-embed: backlog
+  3-2-tailwind-css-daisyui-build-pipeline: backlog
+  3-3-self-hosted-woff2-fonts-static-asset-serving: backlog
+  3-4-base-layout-template-nav-shell-slots: backlog
+  3-5-active-navigation-url-state: backlog
+  3-6-bootstrap-detection-middleware: backlog
+  3-7-bootstrap-ui-welcome-page-setup-form: backlog
+  3-8-bootstrap-api-handler-post-admin-bootstrap: backlog
+  3-9-admin-oidc-login-flow-pkce-state: backlog
+  3-10-oidc-callback-handler-session-cookie: backlog
+  3-11-admin-session-middleware-cookie-validation: backlog
+  3-12-error-pages-401-403-404-500: backlog
+  3-13-dashboard-page-ssr-metrics-skeleton: backlog
+  3-14-vue-js-self-hosted-sse-live-metrics-widget: backlog
+  3-15-gherkin-bootstrap-dashboard-flow: backlog
+  epic-3-retrospective: optional
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Epic 4: End-Users Can Chat in Rooms Using Any Standard Matrix Client
+  # ─────────────────────────────────────────────────────────────────────────
+  epic-4: backlog
+  4-1-horde-registry-dynamicsupervisor-setup: backlog
+  4-2-room-genserver-lifecycle-create-join-leave: backlog
+  4-3-ed25519-unit-tests-nebu-eventid-content-hash-module: backlog
+  4-4-room-genserver-send-event-ed25519-signing-txnid-idempotency: backlog
+  4-5-session-manager-ets-session-store: backlog
+  4-6-session-manager-postgresql-since-token-invalidation: backlog
+  4-7-presence-manager: backlog
+  4-8-grpc-eventbus-server-streaming-getroomstate-unary: backlog
+  4-9-post-createroom: backlog
+  4-10-post-join-room-invitations-fr20-21: backlog
+  4-11-put-rooms-roomid-send-eventtype-txnid: backlog
+  4-12-get-rooms-roomid-messages: backlog
+  4-13-room-power-levels-enforcement: backlog
+  4-14-get-sync-initial-sync: backlog
+  4-15-get-sync-incremental-sync-long-polling-since-token: backlog
+  4-16-message-buffer-drain-strategy-linear-mvp: backlog
+  4-17-typing-indicators-read-receipts: backlog
+  4-18-profile-presence-api: backlog
+  4-19-media-gateway-upload-aes-256-gcm-size-limit: backlog
+  4-20-media-gateway-download-decryption: backlog
+  4-21-gherkin-room-create-send-receive-end-to-end: backlog
+  4-22-matrix-client-smoke-test-matrix-js-sdk-http-level: backlog
+  4-23-load-test-silber-tier-500-concurrent-k6-setup-run: backlog
+  epic-4-retrospective: optional
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Epic 5: Compliance Officers Can Securely Request and Export Audited Communication Data
+  # ─────────────────────────────────────────────────────────────────────────
+  epic-5: backlog
+  5-1-audit-log-schema-rls-aufbewahrungskonfiguration: backlog
+  5-2-audit-log-writer-generisch-alle-admin-aktionen-atomare-garantie: backlog
+  5-3-compliance-access-request-api: backlog
+  5-4-four-eyes-approval-api-admin-dashboard-pending-badge: backlog
+  5-5-compliance-session-handler-24h-jwt-sub-binding-expiry-audit: backlog
+  5-6-compliance-data-export-ed25519-signatur: backlog
+  5-7-atomare-dsgvo-deletion-key-loschung-audit-auch-bei-fehler: backlog
+  5-8-operational-pii-anonymisierung-deleted-user: backlog
+  5-9-gherkin-compliance-flow-end-to-end: backlog
+  epic-5-retrospective: optional
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Epic 6: Instance Admins Can Manage the Instance Programmatically via Admin API
+  # ─────────────────────────────────────────────────────────────────────────
+  epic-6: backlog
+  6-1-openapi-spec-first-setup-codegen-pipeline-strictserverinterface-live-endpoint: backlog
+  6-2-admin-api-response-format-cursor-pagination: backlog
+  6-3-admin-api-router-role-auth-middleware: backlog
+  6-4-user-list-get-api: backlog
+  6-5-user-deactivation-reactivation-session-invalidierung: backlog
+  6-6-user-role-assignment-api-role-overrides-tabelle-middleware-integration: backlog
+  6-7-room-list-get-api: backlog
+  6-8-room-settings-update-api-max-members-visibility-serverweite-defaults: backlog
+  6-9-room-archivierung-kein-physisches-loschen-events-bleiben-erhalten: backlog
+  6-10-server-config-api-metrics-api: backlog
+  6-11-gherkin-admin-api-crud-flow: backlog
+  epic-6-retrospective: optional
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Epic 7: Instance Admins Have a Full Admin UI for Day-to-Day Operations
+  # ─────────────────────────────────────────────────────────────────────────
+  epic-7: backlog
+  7-1-obsidian-color-system-vollstandig-typography-ux-dr1-ux-dr2: backlog
+  7-2-masterdetaillayout-detailpanel-c4-c5-bookmarkbare-url-routen: backlog
+  7-3-interaction-components-c6-wizardstepper-c7-c10: backlog
+  7-4-display-components-c11-c14-inkl-inlineedit-alertbanner: backlog
+  7-5-user-list-page-suche-debounced-load-more-skeleton-wcag-landmarks: backlog
+  7-6-user-detail-panel-inlineedit-displayname-status-bookmarkbare-url: backlog
+  7-7-user-role-ui-deactivation-confirmation-dialog: backlog
+  7-8-room-list-page-suche-filter-pagination: backlog
+  7-9-room-detail-panel-settings-edit-archive-ui-confirmation-pattern: backlog
+  7-10-server-config-ui-get-patch-api-v1-admin-config: backlog
+  7-11-compliance-access-request-list-four-eyes-approval-ui: backlog
+  7-12-audit-log-view-atlas-pattern-zeitraum-filter-read-only: backlog
+  7-13-wcag-audit-axe-core-report-automatisierter-scan-aller-admin-seiten: backlog
+  7-14-gherkin-admin-ui-smoke-flows-user-deactivate-room-archive-via-ui: backlog
+  epic-7-retrospective: optional

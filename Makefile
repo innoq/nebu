@@ -1,0 +1,51 @@
+# Nebu — Docker-only build system
+# All build commands run inside Docker containers.
+# No local Go, Elixir, or buf installation required.
+
+DOCKER_GO     = docker run --rm -v $(PWD):/workspace -w /workspace golang:1.23-alpine
+DOCKER_ELIXIR = docker run --rm -v $(PWD):/workspace -w /workspace elixir:1.18-alpine
+DOCKER_BUF    = docker run --rm -v $(PWD):/workspace -w /workspace bufbuild/buf
+
+.PHONY: build-gateway build-core dev setup test-unit-go test-unit-elixir test-integration proto gen-api
+
+## build-gateway: Build the Go Gateway Docker image (multi-stage)
+build-gateway:
+	docker build -t nebu-gateway:dev ./gateway
+
+## build-core: Build the Elixir/OTP Core Docker image
+build-core:
+	docker build -t nebu-core:dev ./core
+
+## dev: Start the full local development stack (gateway, core, postgres, keycloak)
+dev:
+	docker compose up
+
+## setup: First-time setup — generate .secrets/internal_secret and test keys
+setup:
+	@mkdir -p .secrets
+	@if [ ! -f .secrets/internal_secret ]; then \
+		openssl rand -hex 32 > .secrets/internal_secret; \
+		echo "Generated .secrets/internal_secret"; \
+	else \
+		echo ".secrets/internal_secret already exists, skipping"; \
+	fi
+
+## test-unit-go: Run Go unit tests inside container
+test-unit-go:
+	$(DOCKER_GO) sh -c "cd gateway && go test ./..."
+
+## test-unit-elixir: Run Elixir unit tests inside container
+test-unit-elixir:
+	$(DOCKER_ELIXIR) sh -c "cd core && mix test"
+
+## test-integration: Run full stack integration tests (Godog / Gherkin)
+test-integration:
+	docker compose -f docker-compose.test.yml up --abort-on-container-exit
+
+## proto: Generate gRPC stubs from .proto definitions (via buf)
+proto:
+	$(DOCKER_BUF) generate
+
+## gen-api: Generate Go server stubs from openapi.yaml (oapi-codegen)
+gen-api:
+	$(DOCKER_GO) sh -c "cd gateway && go generate ./..."
