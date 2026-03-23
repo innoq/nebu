@@ -42,9 +42,18 @@ test-unit-elixir:
 test-integration:
 	docker compose -f docker-compose.test.yml up --abort-on-container-exit
 
-## proto: Generate gRPC stubs from .proto definitions (via buf)
+## proto: Generate gRPC stubs from .proto definitions (via buf + protoc)
+## Step 1: buf generates Go stubs using remote plugins
+## Step 2: protoc + protoc-gen-elixir generates Elixir stubs
 proto:
-	$(DOCKER_BUF) generate
+	docker run --rm -v $(PWD):/workspace -w /workspace/proto bufbuild/buf generate
+	docker run --rm -v $(PWD):/workspace -w /workspace/proto \
+		elixir:1.19-alpine sh -c '\
+		apk add -q --no-cache protobuf && \
+		mix local.hex --force --quiet && \
+		mix escript.install --force hex protobuf && \
+		mkdir -p ../core/apps/event_dispatcher/lib/pb && \
+		protoc --plugin=protoc-gen-elixir=/root/.mix/escripts/protoc-gen-elixir --elixir_out=../core/apps/event_dispatcher/lib/pb --proto_path=. core.proto'
 
 ## gen-api: Generate Go server stubs from openapi.yaml (oapi-codegen)
 gen-api:

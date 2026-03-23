@@ -35,7 +35,15 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-20
-last_updated: 2026-03-20
+last_updated: 2026-03-23
+# story 1-6 done (code review passed): 2026-03-23
+# story 1-6 review: 2026-03-23
+# story 1-6 in-progress: 2026-03-23
+# story 1-6 created: 1-6 → ready-for-dev: 2026-03-23
+# story 1-5 done (code review passed): 2026-03-20
+# story 1-5 review: 2026-03-20
+# story 1-5 in-progress: 2026-03-20
+# story 1-5 created: 1-5 → ready-for-dev: 2026-03-20
 # story 1-4 done (code review passed): 2026-03-20
 # story 1-4 review: 2026-03-20
 # story 1-4 in-progress: 2026-03-20
@@ -66,8 +74,8 @@ development_status:
   1-2-elixir-otp-core-umbrella-repository-scaffolding: done
   1-3-golang-migrate-setup-postgresql-docker-service: done
   1-4-message-buffer-message-dead-letter-schema-migration: done
-  1-5-server-config-table-postgresql-rls-policy: backlog
-  1-6-grpc-proto-contract-definition-buf-configuration: backlog
+  1-5-server-config-table-postgresql-rls-policy: done
+  1-6-grpc-proto-contract-definition-buf-configuration: done
   1-7-go-grpc-client-skeleton: backlog
   1-8-elixir-grpc-server-skeleton: backlog
   1-9-docker-compose-stack-make-setup-psk-node-security: backlog

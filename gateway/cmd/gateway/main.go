@@ -24,5 +24,15 @@ func main() {
 	}
 
 	slog.Info("migrations complete")
+
+	serverName, err := db.InitServerConfig(cfg.DBURL, cfg.ServerName)
+	if err != nil {
+		slog.Error("server config initialization failed: " + err.Error())
+		os.Exit(1)
+	}
+	if serverName != "" {
+		slog.Info("Gateway using server name", "server_name", serverName)
+	}
+
 	// HTTP listener started in Story 1.11
 }

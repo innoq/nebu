@@ -1,0 +1,123 @@
+syntax = "proto3";
+
+package core;
+
+option go_package = "github.com/nebu/nebu/internal/grpc/pb";
+
+// CoreService: all gRPC operations between Go Gateway and Elixir Core.
+// Go is always the client; Elixir is always the server.
+service CoreService {
+  // Matrix operations (unary request/response)
+  rpc SendEvent(SendEventRequest)           returns (SendEventResponse);
+  rpc CreateRoom(CreateRoomRequest)         returns (CreateRoomResponse);
+  rpc JoinRoom(JoinRoomRequest)             returns (JoinRoomResponse);
+  rpc GetMessages(GetMessagesRequest)       returns (GetMessagesResponse);
+  rpc SetPresence(SetPresenceRequest)       returns (SetPresenceResponse);
+  rpc SetTyping(SetTypingRequest)           returns (SetTypingResponse);
+  rpc ValidateToken(ValidateTokenRequest)   returns (ValidateTokenResponse);
+  rpc GetPendingEvents(GetPendingEventsRequest)   returns (GetPendingEventsResponse);
+
+  // Event Bus — server-streaming, one stream per Go instance
+  rpc EventBus(EventBusRequest)             returns (stream Event);
+}
+
+// Shared event type used across multiple RPCs
+message Event {
+  string event_id   = 1;
+  string room_id    = 2;
+  string sender_id  = 3;
+  string event_type = 4;
+  bytes  content    = 5;  // JSON-encoded event content
+  int64  origin_ts  = 6;  // Unix milliseconds
+  int64  server_ts  = 7;  // Unix milliseconds
+}
+
+// SendEvent
+message SendEventRequest {
+  string room_id    = 1;
+  string sender_id  = 2;
+  string event_type = 3;
+  string txn_id     = 4;  // idempotency key
+  bytes  content    = 5;
+  int64  origin_ts  = 6;  // Unix milliseconds
+}
+message SendEventResponse {
+  string event_id = 1;
+}
+
+// CreateRoom
+message CreateRoomRequest {
+  string          creator_id = 1;
+  optional string name       = 2;
+  optional string topic      = 3;
+  bool            is_direct  = 4;
+}
+message CreateRoomResponse {
+  string room_id = 1;
+}
+
+// JoinRoom
+message JoinRoomRequest {
+  string user_id          = 1;
+  string room_id_or_alias = 2;
+}
+message JoinRoomResponse {
+  string room_id = 1;
+}
+
+// GetMessages
+message GetMessagesRequest {
+  string          room_id    = 1;
+  string          from_token = 2;
+  optional string to_token   = 3;
+  int32           limit      = 4;
+  string          direction  = 5;  // "b" (backward) or "f" (forward)
+}
+message GetMessagesResponse {
+  repeated Event events     = 1;
+  string         next_batch = 2;
+  string         prev_batch = 3;
+}
+
+// SetPresence
+message SetPresenceRequest {
+  string          user_id    = 1;
+  string          presence   = 2;  // "online", "offline", "unavailable"
+  optional string status_msg = 3;
+}
+message SetPresenceResponse {}
+
+// SetTyping
+message SetTypingRequest {
+  string room_id    = 1;
+  string user_id    = 2;
+  bool   typing     = 3;
+  int32  timeout_ms = 4;
+}
+message SetTypingResponse {}
+
+// ValidateToken — Go validates OIDC token, Elixir trusts Go fully (ADR G2)
+message ValidateTokenRequest {
+  string token = 1;
+}
+message ValidateTokenResponse {
+  bool   valid       = 1;
+  string user_id     = 2;
+  string system_role = 3;  // "user" | "instance_admin" | "compliance_officer"
+}
+
+// GetPendingEvents — GELB-status fallback (unary polling instead of streaming)
+message GetPendingEventsRequest {
+  string node_id     = 1;
+  string since_token = 2;
+}
+message GetPendingEventsResponse {
+  repeated Event events     = 1;
+  string         next_token = 2;
+}
+
+// EventBus — server-streaming, one stream per Go gateway instance
+message EventBusRequest {
+  string          node_id     = 1;
+  optional string since_token = 2;
+}
