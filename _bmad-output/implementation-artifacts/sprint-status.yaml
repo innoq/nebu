@@ -36,6 +36,10 @@
 
 generated: 2026-03-20
 last_updated: 2026-03-23
+# story 1-9 done (code review passed): 2026-03-23
+# story 1-9 review: 2026-03-23
+# story 1-9 in-progress: 2026-03-23
+# story 1-9 created: 1-9 → ready-for-dev: 2026-03-23
 # story 1-8 done (code review passed): 2026-03-23
 # story 1-8 review: 2026-03-23
 # story 1-8 created: 1-8 → ready-for-dev: 2026-03-23
@@ -84,7 +88,7 @@ development_status:
   1-6-grpc-proto-contract-definition-buf-configuration: done
   1-7-go-grpc-client-skeleton: done
   1-8-elixir-grpc-server-skeleton: done
-  1-9-docker-compose-stack-make-setup-psk-node-security: backlog
+  1-9-docker-compose-stack-make-setup-psk-node-security: done
   1-10-elixir-node-registration-internal-nodes-register: backlog
   1-11-health-readiness-endpoints-go-gateway: backlog
   1-12-health-endpoint-elixir-core: backlog

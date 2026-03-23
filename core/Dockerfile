@@ -13,7 +13,7 @@ RUN mix deps.get --only prod
 COPY . .
 RUN MIX_ENV=prod mix release
 
-FROM alpine:3.19 AS runtime
+FROM alpine:3.23 AS runtime
 RUN apk add --no-cache libstdc++ openssl ncurses
 COPY --from=builder /app/_build/prod/rel/nebu ./
 ENTRYPOINT ["./bin/nebu", "start"]

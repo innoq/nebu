@@ -1,3 +1,7 @@
+secrets:
+  internal_secret:
+    file: .secrets/internal_secret
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -14,6 +18,43 @@ services:
       retries: 5
     volumes:
       - postgres_data:/var/lib/postgresql/data
+
+  gateway:
+    build: ./gateway
+    depends_on:
+      postgres:
+        condition: service_healthy
+    secrets: [internal_secret]
+    environment:
+      NEBU_DB_URL: "postgresql://nebu:nebu_dev_password@postgres:5432/nebu"
+      NEBU_CORE_GRPC_ADDR: "core:9000"
+      NEBU_INTERNAL_SECRET_FILE: "/run/secrets/internal_secret"
+      NEBU_SERVER_NAME: "localhost"
+      NEBU_OIDC_ISSUER: "http://dex:5556"
+    ports:
+      - "8008:8008"
+
+  core:
+    build: ./core
+    depends_on:
+      postgres:
+        condition: service_healthy
+    secrets: [internal_secret]
+    environment:
+      NEBU_DB_URL: "postgresql://nebu:nebu_dev_password@postgres:5432/nebu"
+      DATABASE_URL: "ecto://nebu:nebu_dev_password@postgres:5432/nebu"
+      NEBU_INTERNAL_SECRET_FILE: "/run/secrets/internal_secret"
+    ports:
+      - "9000:9000"
+      - "4000:4000"
+
+  dex:
+    image: ghcr.io/dexidp/dex:v2.40.0
+    command: ["dex", "serve", "/etc/dex/config.yaml"]
+    volumes:
+      - ./dev/dex/config.yaml:/etc/dex/config.yaml:ro
+    ports:
+      - "5556:5556"
 
 volumes:
   postgres_data:

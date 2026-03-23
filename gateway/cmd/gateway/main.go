@@ -45,5 +45,6 @@ func main() {
 
 	_ = coreClient // passed to HTTP handlers in Story 1.11
 
-	// HTTP listener started in Story 1.11
+	// HTTP listener blocks here — replaced by http.ListenAndServe in Story 1.11
+	select {}
 }

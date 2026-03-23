@@ -1,0 +1,30 @@
+issuer: http://dex:5556
+
+storage:
+  type: memory
+
+web:
+  http: 0.0.0.0:5556
+
+enablePasswordDB: true
+
+staticPasswords:
+  - email: "kai@example.com"
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4u"
+    username: "kai"
+    userID: "kai-id"
+  - email: "compliance@example.com"
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4u"
+    username: "compliance"
+    userID: "compliance-id"
+  - email: "alex@example.com"
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4u"
+    username: "alex"
+    userID: "alex-id"
+
+staticClients:
+  - id: nebu-gateway
+    redirectURIs:
+      - "http://localhost:8008/_matrix/client/v3/login/sso/redirect/oidc"
+    name: "Nebu Gateway"
+    secret: nebu-dev-secret
