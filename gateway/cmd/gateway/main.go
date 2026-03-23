@@ -6,6 +6,7 @@ import (
 
 	"github.com/nebu/nebu/internal/config"
 	"github.com/nebu/nebu/internal/db"
+	coregrpc "github.com/nebu/nebu/internal/grpc"
 )
 
 func main() {
@@ -33,6 +34,16 @@ func main() {
 	if serverName != "" {
 		slog.Info("Gateway using server name", "server_name", serverName)
 	}
+
+	coreClient, err := coregrpc.New(cfg.CoreGRPCAddr)
+	if err != nil {
+		slog.Error("failed to create gRPC client", "err", err)
+		os.Exit(1)
+	}
+	defer coreClient.Close()
+	slog.Info("gRPC client initialized", "addr", cfg.CoreGRPCAddr)
+
+	_ = coreClient // passed to HTTP handlers in Story 1.11
 
 	// HTTP listener started in Story 1.11
 }

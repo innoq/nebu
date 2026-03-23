@@ -36,6 +36,9 @@
 
 generated: 2026-03-20
 last_updated: 2026-03-23
+# story 1-7 done (code review passed): 2026-03-23
+# story 1-7 review: 2026-03-23
+# story 1-7 created: 1-7 → ready-for-dev: 2026-03-23
 # story 1-6 done (code review passed): 2026-03-23
 # story 1-6 review: 2026-03-23
 # story 1-6 in-progress: 2026-03-23
@@ -76,7 +79,7 @@ development_status:
   1-4-message-buffer-message-dead-letter-schema-migration: done
   1-5-server-config-table-postgresql-rls-policy: done
   1-6-grpc-proto-contract-definition-buf-configuration: done
-  1-7-go-grpc-client-skeleton: backlog
+  1-7-go-grpc-client-skeleton: done
   1-8-elixir-grpc-server-skeleton: backlog
   1-9-docker-compose-stack-make-setup-psk-node-security: backlog
   1-10-elixir-node-registration-internal-nodes-register: backlog
