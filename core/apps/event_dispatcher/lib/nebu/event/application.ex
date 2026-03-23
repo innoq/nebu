@@ -9,6 +9,11 @@ defmodule Nebu.Event.Application do
     ]
 
     opts = [strategy: :one_for_one, name: Nebu.Event.Supervisor]
-    Supervisor.start_link(children, opts)
+    result = Supervisor.start_link(children, opts)
+
+    # Fire-and-forget: does not block or crash supervisor on failure (AC #4)
+    Task.start(fn -> Nebu.NodeRegistration.register_with_gateway() end)
+
+    result
   end
 end

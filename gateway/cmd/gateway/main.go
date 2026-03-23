@@ -2,11 +2,15 @@ package main
 
 import (
 	"log/slog"
+	"net/http"
 	"os"
+	"strings"
 
 	"github.com/nebu/nebu/internal/config"
 	"github.com/nebu/nebu/internal/db"
 	coregrpc "github.com/nebu/nebu/internal/grpc"
+	"github.com/nebu/nebu/internal/middleware"
+	"github.com/nebu/nebu/internal/registry"
 )
 
 func main() {
@@ -45,6 +49,26 @@ func main() {
 
 	_ = coreClient // passed to HTTP handlers in Story 1.11
 
-	// HTTP listener blocks here — replaced by http.ListenAndServe in Story 1.11
-	select {}
+	// Read PSK from file once at startup
+	pskBytes, err := os.ReadFile(cfg.InternalSecretFile)
+	if err != nil {
+		slog.Error("failed to read internal secret file", "path", cfg.InternalSecretFile, "err", err)
+		os.Exit(1)
+	}
+	internalSecret := strings.TrimSpace(string(pskBytes))
+
+	// Set up HTTP mux with node registry behind PSK middleware
+	mux := http.NewServeMux()
+	reg := registry.New()
+	regHandler := registry.NewHandler(reg)
+	pskHandler := middleware.PSKMiddleware(internalSecret)(regHandler)
+
+	mux.Handle("POST /internal/nodes/register", pskHandler)
+	mux.Handle("GET /internal/nodes", pskHandler)
+
+	slog.Info("HTTP server starting", "addr", ":8008")
+	if err := http.ListenAndServe(":8008", mux); err != nil {
+		slog.Error("HTTP server failed", "err", err)
+		os.Exit(1)
+	}
 }

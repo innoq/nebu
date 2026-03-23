@@ -44,6 +44,7 @@ services:
       NEBU_DB_URL: "postgresql://nebu:nebu_dev_password@postgres:5432/nebu"
       DATABASE_URL: "ecto://nebu:nebu_dev_password@postgres:5432/nebu"
       NEBU_INTERNAL_SECRET_FILE: "/run/secrets/internal_secret"
+      NEBU_GATEWAY_INTERNAL_URL: "http://gateway:8008"
     ports:
       - "9000:9000"
       - "4000:4000"
