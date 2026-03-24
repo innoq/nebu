@@ -35,7 +35,10 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-20
-last_updated: 2026-03-23
+last_updated: 2026-03-24
+# story 1-11 done (code review passed): 2026-03-24
+# story 1-11 review: 2026-03-24
+# story 1-11 in-progress: 2026-03-23
 # story 1-11 created: 1-11 → ready-for-dev: 2026-03-23
 # story 1-10 done (code review passed): 2026-03-23
 # story 1-10 review: 2026-03-23
@@ -95,7 +98,7 @@ development_status:
   1-8-elixir-grpc-server-skeleton: done
   1-9-docker-compose-stack-make-setup-psk-node-security: done
   1-10-elixir-node-registration-internal-nodes-register: done
-  1-11-health-readiness-endpoints-go-gateway: ready-for-dev
+  1-11-health-readiness-endpoints-go-gateway: done
   1-12-health-endpoint-elixir-core: backlog
   1-13-prometheus-metrics-endpoint-go-gateway: backlog
   1-14-tls-configuration-for-external-connections: backlog

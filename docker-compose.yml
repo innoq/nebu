@@ -33,6 +33,13 @@ services:
       NEBU_OIDC_ISSUER: "http://dex:5556"
     ports:
       - "8008:8008"
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "/healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   core:
     build: ./core

@@ -57,3 +57,26 @@ func CheckDB(dbURL string) error {
 	defer db.Close()
 	return db.Ping()
 }
+
+// GetMigrationVersion returns the highest applied migration version.
+// Returns (0, nil) if no migrations have been applied yet — caller treats 0 as DOWN.
+// Used by the /ready endpoint to verify migration state.
+func GetMigrationVersion(dbURL string) (int64, error) {
+	database, err := sql.Open("pgx", dbURL)
+	if err != nil {
+		return 0, fmt.Errorf("opening db for migration version: %w", err)
+	}
+	defer database.Close()
+
+	var version int64
+	err = database.QueryRow(
+		"SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1",
+	).Scan(&version)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("querying schema_migrations: %w", err)
+	}
+	return version, nil
+}

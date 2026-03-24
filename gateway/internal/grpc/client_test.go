@@ -7,6 +7,7 @@ import (
 	"time"
 
 	pb "github.com/nebu/nebu/internal/grpc/pb"
+	"google.golang.org/grpc/connectivity"
 )
 
 func newTestClient(t *testing.T) *Client {
@@ -16,6 +17,25 @@ func newTestClient(t *testing.T) *Client {
 		t.Fatalf("New() unexpected error: %v", err)
 	}
 	return c
+}
+
+func TestState_returnsValidConnectivityState(t *testing.T) {
+	c := newTestClient(t)
+	defer c.Close()
+
+	s := c.State()
+	// For an unconnected client the state is Idle (initial state after NewClient).
+	// Any valid connectivity.State value is acceptable here.
+	validStates := map[connectivity.State]bool{
+		connectivity.Idle:             true,
+		connectivity.Connecting:       true,
+		connectivity.Ready:            true,
+		connectivity.TransientFailure: true,
+		connectivity.Shutdown:         true,
+	}
+	if !validStates[s] {
+		t.Errorf("State() returned unexpected value %v", s)
+	}
 }
 
 func TestNew_returnsWithoutBlocking(t *testing.T) {

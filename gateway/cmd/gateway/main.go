@@ -9,6 +9,7 @@ import (
 	"github.com/nebu/nebu/internal/config"
 	"github.com/nebu/nebu/internal/db"
 	coregrpc "github.com/nebu/nebu/internal/grpc"
+	"github.com/nebu/nebu/internal/health"
 	"github.com/nebu/nebu/internal/middleware"
 	"github.com/nebu/nebu/internal/registry"
 )
@@ -47,7 +48,19 @@ func main() {
 	defer coreClient.Close()
 	slog.Info("gRPC client initialized", "addr", cfg.CoreGRPCAddr)
 
-	_ = coreClient // passed to HTTP handlers in Story 1.11
+	// Public HTTP server on :8080 (health, readiness — no auth)
+	pubMux := http.NewServeMux()
+	healthHandler := health.NewHandler(cfg.DBURL, coreClient)
+	pubMux.HandleFunc("GET /health", healthHandler.Health)
+	pubMux.HandleFunc("GET /ready", healthHandler.Ready)
+
+	go func() {
+		slog.Info("Public HTTP server starting", "addr", ":8080")
+		if err := http.ListenAndServe(":8080", pubMux); err != nil {
+			slog.Error("Public HTTP server failed", "err", err)
+			os.Exit(1)
+		}
+	}()
 
 	// Read PSK from file once at startup
 	pskBytes, err := os.ReadFile(cfg.InternalSecretFile)

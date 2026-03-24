@@ -57,6 +57,12 @@ func (c *Client) Close() error {
 	return c.conn.Close()
 }
 
+// State returns the current connectivity state of the gRPC connection.
+// Used by the /ready health endpoint.
+func (c *Client) State() connectivity.State {
+	return c.conn.GetState()
+}
+
 // SendEvent stub — implemented in Epic 4.
 func (c *Client) SendEvent(ctx context.Context, req *pb.SendEventRequest) (*pb.SendEventResponse, error) {
 	return nil, nil
