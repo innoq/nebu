@@ -24,7 +24,8 @@ defmodule Nebu.Event.MixProject do
 
   defp deps do
     [
-      {:grpc, "~> 0.8"}
+      {:grpc, "~> 0.8"},
+      {:jason, "~> 1.4"}
     ]
   end
 end

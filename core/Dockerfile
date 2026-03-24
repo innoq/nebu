@@ -14,6 +14,6 @@ COPY . .
 RUN MIX_ENV=prod mix release
 
 FROM alpine:3.23 AS runtime
-RUN apk add --no-cache libstdc++ openssl ncurses
+RUN apk add --no-cache libstdc++ openssl ncurses curl
 COPY --from=builder /app/_build/prod/rel/nebu ./
 ENTRYPOINT ["./bin/nebu", "start"]

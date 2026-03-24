@@ -5,6 +5,7 @@ defmodule Nebu.Event.Application do
   @impl true
   def start(_type, _args) do
     children = [
+      Nebu.Health.Server,
       {GRPC.Server.Supervisor, endpoint: Nebu.EventDispatcher.Endpoint, port: 9000, start_server: true}
     ]
 
