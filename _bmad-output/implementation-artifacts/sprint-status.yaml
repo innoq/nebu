@@ -36,6 +36,10 @@
 
 generated: 2026-03-20
 last_updated: 2026-03-24
+# story 1-13 done (code review passed): 2026-03-24
+# story 1-13 review: 2026-03-24
+# story 1-13 in-progress: 2026-03-24
+# story 1-13 created: 1-13 → ready-for-dev: 2026-03-24
 # story 1-12 done (code review passed): 2026-03-24
 # story 1-12 review: 2026-03-24
 # story 1-12 in-progress: 2026-03-24
@@ -104,7 +108,7 @@ development_status:
   1-10-elixir-node-registration-internal-nodes-register: done
   1-11-health-readiness-endpoints-go-gateway: done
   1-12-health-endpoint-elixir-core: done
-  1-13-prometheus-metrics-endpoint-go-gateway: backlog
+  1-13-prometheus-metrics-endpoint-go-gateway: done
   1-14-tls-configuration-for-external-connections: backlog
   1-15-go-unit-test-target: backlog
   1-16-elixir-unit-test-target: backlog
