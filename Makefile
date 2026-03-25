@@ -32,7 +32,7 @@ setup:
 
 ## test-unit-go: Run Go unit tests inside container
 test-unit-go:
-	$(DOCKER_GO) sh -c "cd gateway && go test ./..."
+	$(DOCKER_GO) sh -c "apk add -q --no-cache gcc musl-dev && cd gateway && go test -race ./..."
 
 ## test-unit-elixir: Run Elixir unit tests inside container
 test-unit-elixir:
