@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"log/slog"
 	"net/http"
 	"os"
@@ -60,10 +61,30 @@ func main() {
 	pubMux.Handle("GET /metrics", promhttp.Handler())
 
 	go func() {
-		slog.Info("Public HTTP server starting", "addr", ":8080")
-		if err := http.ListenAndServe(":8080", metrics.Middleware(pubMux)); err != nil {
-			slog.Error("Public HTTP server failed", "err", err)
-			os.Exit(1)
+		handler := metrics.Middleware(pubMux)
+		if cfg.TLSCertFile != "" && cfg.TLSKeyFile != "" {
+			srv := &http.Server{
+				Addr:    ":8443",
+				Handler: handler,
+				TLSConfig: &tls.Config{
+					MinVersion: tls.VersionTLS12,
+				},
+			}
+			slog.Info("Public HTTPS server starting", "addr", ":8443")
+			if err := srv.ListenAndServeTLS(cfg.TLSCertFile, cfg.TLSKeyFile); err != nil {
+				slog.Error("Public HTTPS server failed", "err", err)
+				os.Exit(1)
+			}
+		} else {
+			if cfg.TLSCertFile != "" || cfg.TLSKeyFile != "" {
+				slog.Error("Partial TLS configuration: both NEBU_TLS_CERT_FILE and NEBU_TLS_KEY_FILE must be set — falling back to plain HTTP")
+			}
+			slog.Warn("TLS disabled — not suitable for production")
+			slog.Info("Public HTTP server starting", "addr", ":8080")
+			if err := http.ListenAndServe(":8080", handler); err != nil {
+				slog.Error("Public HTTP server failed", "err", err)
+				os.Exit(1)
+			}
 		}
 	}()
 

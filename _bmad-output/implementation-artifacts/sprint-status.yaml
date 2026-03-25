@@ -35,7 +35,11 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-20
-last_updated: 2026-03-24
+last_updated: 2026-03-25
+# story 1-14 done (code review passed): 2026-03-25
+# story 1-14 review: 2026-03-24
+# story 1-14 in-progress: 2026-03-24
+# story 1-14 created: 1-14 → ready-for-dev: 2026-03-24
 # story 1-13 done (code review passed): 2026-03-24
 # story 1-13 review: 2026-03-24
 # story 1-13 in-progress: 2026-03-24
@@ -109,7 +113,7 @@ development_status:
   1-11-health-readiness-endpoints-go-gateway: done
   1-12-health-endpoint-elixir-core: done
   1-13-prometheus-metrics-endpoint-go-gateway: done
-  1-14-tls-configuration-for-external-connections: backlog
+  1-14-tls-configuration-for-external-connections: done
   1-15-go-unit-test-target: backlog
   1-16-elixir-unit-test-target: backlog
   1-17-make-gen-api-oapi-codegen-build-target: backlog

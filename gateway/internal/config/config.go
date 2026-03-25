@@ -9,6 +9,9 @@ type Config struct {
 	OIDCIssuer         string // NEBU_OIDC_ISSUER
 	InternalSecretFile string // NEBU_INTERNAL_SECRET_FILE (path to mounted secret file)
 	ServerName         string // NEBU_SERVER_NAME
+	TLSCertFile        string // NEBU_TLS_CERT_FILE
+	TLSKeyFile         string // NEBU_TLS_KEY_FILE
+	TLSClientCAFile    string // NEBU_TLS_CLIENT_CA_FILE (mTLS Phase 2 — not wired up in MVP)
 }
 
 // Load reads configuration from environment variables.
@@ -20,6 +23,9 @@ func Load() Config {
 		OIDCIssuer:         os.Getenv("NEBU_OIDC_ISSUER"),
 		InternalSecretFile: os.Getenv("NEBU_INTERNAL_SECRET_FILE"),
 		ServerName:         os.Getenv("NEBU_SERVER_NAME"),
+		TLSCertFile:        os.Getenv("NEBU_TLS_CERT_FILE"),
+		TLSKeyFile:         os.Getenv("NEBU_TLS_KEY_FILE"),
+		TLSClientCAFile:    os.Getenv("NEBU_TLS_CLIENT_CA_FILE"),
 	}
 }
 

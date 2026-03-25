@@ -13,6 +13,9 @@ func TestLoad_Defaults(t *testing.T) {
 	os.Unsetenv("NEBU_OIDC_ISSUER")
 	os.Unsetenv("NEBU_INTERNAL_SECRET_FILE")
 	os.Unsetenv("NEBU_SERVER_NAME")
+	os.Unsetenv("NEBU_TLS_CERT_FILE")
+	os.Unsetenv("NEBU_TLS_KEY_FILE")
+	os.Unsetenv("NEBU_TLS_CLIENT_CA_FILE")
 
 	cfg := config.Load()
 
@@ -30,6 +33,33 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 	if cfg.ServerName != "" {
 		t.Errorf("ServerName: got %q, want empty", cfg.ServerName)
+	}
+	if cfg.TLSCertFile != "" {
+		t.Errorf("TLSCertFile: got %q, want empty", cfg.TLSCertFile)
+	}
+	if cfg.TLSKeyFile != "" {
+		t.Errorf("TLSKeyFile: got %q, want empty", cfg.TLSKeyFile)
+	}
+	if cfg.TLSClientCAFile != "" {
+		t.Errorf("TLSClientCAFile: got %q, want empty", cfg.TLSClientCAFile)
+	}
+}
+
+func TestLoad_TLSFields(t *testing.T) {
+	t.Setenv("NEBU_TLS_CERT_FILE", "/certs/server.crt")
+	t.Setenv("NEBU_TLS_KEY_FILE", "/certs/server.key")
+	t.Setenv("NEBU_TLS_CLIENT_CA_FILE", "/certs/ca.crt")
+
+	cfg := config.Load()
+
+	if cfg.TLSCertFile != "/certs/server.crt" {
+		t.Errorf("TLSCertFile: got %q, want /certs/server.crt", cfg.TLSCertFile)
+	}
+	if cfg.TLSKeyFile != "/certs/server.key" {
+		t.Errorf("TLSKeyFile: got %q, want /certs/server.key", cfg.TLSKeyFile)
+	}
+	if cfg.TLSClientCAFile != "/certs/ca.crt" {
+		t.Errorf("TLSClientCAFile: got %q, want /certs/ca.crt", cfg.TLSClientCAFile)
 	}
 }
 
