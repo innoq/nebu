@@ -36,6 +36,10 @@
 
 generated: 2026-03-20
 last_updated: 2026-03-25
+# story 1-18 done (code review passed): 2026-03-25
+# story 1-18 review: 2026-03-25
+# story 1-18 in-progress: 2026-03-25
+# story 1-18 created: 1-18 → ready-for-dev: 2026-03-25
 # story 1-17 done (code review passed): 2026-03-25
 # story 1-17 review: 2026-03-25
 # story 1-17 in-progress: 2026-03-25
@@ -129,7 +133,7 @@ development_status:
   1-15-go-unit-test-target: done
   1-16-elixir-unit-test-target: done
   1-17-make-gen-api-oapi-codegen-build-target: done
-  1-18-godog-integration-test-framework-setup: backlog
+  1-18-godog-integration-test-framework-setup: done
   1-19-first-gherkin-scenario-stack-health-smoke-test: backlog
   epic-1-retrospective: optional
 

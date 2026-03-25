@@ -40,7 +40,13 @@ test-unit-elixir:
 
 ## test-integration: Run full stack integration tests (Godog / Gherkin)
 test-integration:
-	docker compose -f docker-compose.test.yml up --abort-on-container-exit
+	docker compose up -d --wait && \
+	docker run --rm -v $(PWD):/workspace -w /workspace \
+		--add-host=host.docker.internal:host-gateway \
+		-e NEBU_TEST_GATEWAY_URL=http://host.docker.internal:8080 \
+		golang:1.26-alpine \
+		sh -c "apk add -q --no-cache gcc musl-dev && cd gateway && go test -v ./test/integration/..."; \
+	EXIT=$$?; docker compose down; exit $$EXIT
 
 ## proto: Generate gRPC stubs from .proto definitions (via buf + protoc)
 ## Step 1: buf generates Go stubs using remote plugins
