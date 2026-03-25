@@ -36,7 +36,7 @@ test-unit-go:
 
 ## test-unit-elixir: Run Elixir unit tests inside container
 test-unit-elixir:
-	$(DOCKER_ELIXIR) sh -c "cd core && mix local.hex --force && mix test"
+	$(DOCKER_ELIXIR) sh -c "cd core && mix local.hex --force && mix deps.get && mix test --warnings-as-errors"
 
 ## test-integration: Run full stack integration tests (Godog / Gherkin)
 test-integration:

@@ -36,6 +36,10 @@
 
 generated: 2026-03-20
 last_updated: 2026-03-25
+# story 1-16 done (code review passed): 2026-03-25
+# story 1-16 review: 2026-03-25
+# story 1-16 in-progress: 2026-03-25
+# story 1-16 created: 1-16 → ready-for-dev: 2026-03-25
 # story 1-15 done (code review passed): 2026-03-25
 # story 1-15 review: 2026-03-25
 # story 1-15 in-progress: 2026-03-25
@@ -119,7 +123,7 @@ development_status:
   1-13-prometheus-metrics-endpoint-go-gateway: done
   1-14-tls-configuration-for-external-connections: done
   1-15-go-unit-test-target: done
-  1-16-elixir-unit-test-target: backlog
+  1-16-elixir-unit-test-target: done
   1-17-make-gen-api-oapi-codegen-build-target: backlog
   1-18-godog-integration-test-framework-setup: backlog
   1-19-first-gherkin-scenario-stack-health-smoke-test: backlog
