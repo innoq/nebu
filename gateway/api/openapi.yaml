@@ -1,0 +1,25 @@
+openapi: "3.0.3"
+info:
+  title: Nebu Admin API
+  version: "0.1.0"
+paths:
+  /api/v1/health:
+    get:
+      operationId: GetApiV1Health
+      summary: Admin health check
+      responses:
+        "200":
+          description: Health status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string

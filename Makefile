@@ -57,4 +57,8 @@ proto:
 
 ## gen-api: Generate Go server stubs from openapi.yaml (oapi-codegen)
 gen-api:
-	$(DOCKER_GO) sh -c "cd gateway && go generate ./..."
+	$(DOCKER_GO) sh -c "go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest \
+		-generate types,std-http-server \
+		-package admin \
+		-o gateway/internal/admin/api_gen.go \
+		gateway/api/openapi.yaml"
