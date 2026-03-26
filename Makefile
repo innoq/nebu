@@ -44,6 +44,7 @@ test-integration:
 	docker run --rm -v $(PWD):/workspace -w /workspace \
 		--add-host=host.docker.internal:host-gateway \
 		-e NEBU_TEST_GATEWAY_URL=http://host.docker.internal:8080 \
+		-e NEBU_TEST_CORE_URL=http://host.docker.internal:4000 \
 		golang:1.26-alpine \
 		sh -c "apk add -q --no-cache gcc musl-dev && cd gateway && go test -v ./test/integration/..."; \
 	EXIT=$$?; docker compose down; exit $$EXIT

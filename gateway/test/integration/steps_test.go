@@ -1,0 +1,82 @@
+package integration_test
+
+import (
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+
+	"github.com/cucumber/godog"
+)
+
+// lastStatusCode and lastBody hold the most recent HTTP response.
+// Scenarios run sequentially in godog — no concurrency concern.
+var lastStatusCode int
+var lastBody string
+
+// theDockerComposeStackIsStarted is a no-op: make test-integration runs
+// `docker compose up -d --wait` before `go test`, so the stack is always up.
+func theDockerComposeStackIsStarted() error {
+	return nil
+}
+
+// iCallGETOnGateway makes a GET request to gatewayURL+path and stores the response.
+// Matches steps: "I call GET /health on the gateway", "I call GET /ready on the gateway"
+func iCallGETOnGateway(path string) error {
+	url := gatewayURL + path
+	resp, err := http.Get(url) //nolint:noctx
+	if err != nil {
+		return fmt.Errorf("GET %s failed: %w", url, err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("reading body from %s: %w", url, err)
+	}
+	lastStatusCode = resp.StatusCode
+	lastBody = string(body)
+	return nil
+}
+
+// iCallGETOnCore makes a GET request to coreURL+path and stores the response.
+// Matches step: "I call GET :4000/health on the core" (captures "/health" from ":4000/health")
+func iCallGETOnCore(path string) error {
+	url := coreURL + path
+	resp, err := http.Get(url) //nolint:noctx
+	if err != nil {
+		return fmt.Errorf("GET %s failed: %w", url, err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("reading body from %s: %w", url, err)
+	}
+	lastStatusCode = resp.StatusCode
+	lastBody = string(body)
+	return nil
+}
+
+// theResponseStatusIs asserts the last response had the expected HTTP status code.
+func theResponseStatusIs(expected int) error {
+	if lastStatusCode != expected {
+		return fmt.Errorf("expected HTTP %d, got %d (body: %s)", expected, lastStatusCode, lastBody)
+	}
+	return nil
+}
+
+// theResponseBodyContains asserts the last response body contains the expected substring.
+func theResponseBodyContains(expected string) error {
+	if !strings.Contains(lastBody, expected) {
+		return fmt.Errorf("expected body to contain %q, got: %s", expected, lastBody)
+	}
+	return nil
+}
+
+// InitializeScenario registers all step definitions for the integration test suite.
+func InitializeScenario(sc *godog.ScenarioContext) {
+	sc.Step(`^the docker compose stack is started$`, theDockerComposeStackIsStarted)
+	sc.Step(`^I call GET (/\S+) on the gateway$`, iCallGETOnGateway)
+	sc.Step(`^I call GET :4000(/\S+) on the core$`, iCallGETOnCore)
+	sc.Step(`^the response status is (\d+)$`, theResponseStatusIs)
+	sc.Step(`^the response body contains "([^"]*)"$`, theResponseBodyContains)
+}

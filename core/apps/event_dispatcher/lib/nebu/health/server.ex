@@ -23,7 +23,7 @@ defmodule Nebu.Health.Server do
   def init(_opts) do
     port = Application.get_env(:event_dispatcher, :health_port, @port)
 
-    case :gen_tcp.listen(port, [:binary, packet: :http, active: false, reuseaddr: true]) do
+    case :gen_tcp.listen(port, [:binary, packet: :http_bin, active: false, reuseaddr: true]) do
       {:ok, listen_socket} ->
         Task.start_link(fn -> accept(listen_socket) end)
         {:ok, listen_socket}

@@ -3,7 +3,6 @@ Feature: Stack Health Smoke Test
   I want to verify the full stack starts and is healthy
   So that CI has a definitive green signal the deployment works
 
-  @pending
   Scenario: Full stack health check passes
     Given the docker compose stack is started
     When I call GET /health on the gateway

@@ -1,0 +1,24 @@
+# Nebu CI Pipeline
+# All builds run inside Docker containers — no local Go or Elixir installation required.
+# Runners must have Docker daemon access (either Docker socket mount or DinD).
+
+stages:
+  - unit
+  - integration
+
+unit-tests:
+  stage: unit
+  script:
+    - make test-unit-go
+    - make test-unit-elixir
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+integration-test:
+  stage: integration
+  script:
+    - make test-integration
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
