@@ -1,22 +1,90 @@
 # Nebu CI Pipeline
-# All builds run inside Docker containers — no local Go or Elixir installation required.
-# Runners must have Docker daemon access (either Docker socket mount or DinD).
+#
+# Custom CI images are stored in the GitLab Container Registry and pre-install
+# build dependencies (gcc for race detector, hex/rebar for Elixir).
+#
+# Build jobs rebuild images when their Dockerfiles change.
+# Manual trigger available for initial setup (run build-ci-go + build-ci-elixir
+# once before first pipeline run that uses them).
+#
+# Unit tests run directly inside custom images — no Docker-in-Docker needed.
+# Integration test requires DinD to start the docker compose stack.
+
+variables:
+  DOCKER_DRIVER: overlay2
+  CI_GO_IMAGE: $CI_REGISTRY_IMAGE/ci-go:1.26
+  CI_ELIXIR_IMAGE: $CI_REGISTRY_IMAGE/ci-elixir:1.19
 
 stages:
+  - build-ci-images
   - unit
   - integration
 
-unit-tests:
-  stage: unit
+# ─── CI Image Builds ──────────────────────────────────────────────────────────
+
+.build_ci_image: &build_ci_image
+  stage: build-ci-images
+  image: docker:latest
+  services:
+    - docker:dind
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+
+build-ci-go:
+  <<: *build_ci_image
   script:
-    - make test-unit-go
-    - make test-unit-elixir
+    - docker build -t $CI_REGISTRY_IMAGE/ci-go:1.26 -f docker/Dockerfile.ci.go .
+    - docker push $CI_REGISTRY_IMAGE/ci-go:1.26
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes: [docker/Dockerfile.ci.go]
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes: [docker/Dockerfile.ci.go]
+    - when: manual
+      allow_failure: true
+
+build-ci-elixir:
+  <<: *build_ci_image
+  script:
+    - docker build -t $CI_REGISTRY_IMAGE/ci-elixir:1.19 -f docker/Dockerfile.ci.elixir .
+    - docker push $CI_REGISTRY_IMAGE/ci-elixir:1.19
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes: [docker/Dockerfile.ci.elixir]
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes: [docker/Dockerfile.ci.elixir]
+    - when: manual
+      allow_failure: true
+
+# ─── Unit Tests ───────────────────────────────────────────────────────────────
+# Run directly in custom images — no DinD, no make overhead.
+
+unit-tests-go:
+  stage: unit
+  image: $CI_REGISTRY_IMAGE/ci-go:1.26
+  script:
+    - cd gateway && go test -race ./...
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
 
+unit-tests-elixir:
+  stage: unit
+  image: $CI_REGISTRY_IMAGE/ci-elixir:1.19
+  script:
+    - cd core && mix deps.get && mix test --warnings-as-errors
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+# ─── Integration Test ─────────────────────────────────────────────────────────
+# Requires DinD: starts docker compose stack, runs Gherkin tests, tears down.
+
 integration-test:
   stage: integration
+  image: docker:latest
+  services:
+    - docker:dind
   script:
     - make test-integration
   rules:

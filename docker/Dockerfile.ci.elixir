@@ -1,0 +1,8 @@
+FROM elixir:1.19-alpine
+
+# Pre-install hex package manager and rebar3 build tool.
+# Eliminates the ~15s `mix local.hex --force && mix local.rebar --force` overhead
+# on every CI test run. mix deps.get still runs in the job (project-specific).
+RUN mix local.hex --force && mix local.rebar --force
+
+WORKDIR /workspace
