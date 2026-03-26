@@ -36,6 +36,10 @@
 
 generated: 2026-03-20
 last_updated: 2026-03-26
+# story 2-1 done (code review passed): 2026-03-26
+# story 2-1 review: 2026-03-26
+# story 2-1 in-progress: 2026-03-26
+# story 2-1 created: epic-2 → in-progress, 2-1 → ready-for-dev: 2026-03-26
 # epic-1-retrospective done: 2026-03-26
 # story 1-19 done (code review passed): 2026-03-26
 # story 1-19 review: 2026-03-26
@@ -145,8 +149,8 @@ development_status:
   # ─────────────────────────────────────────────────────────────────────────
   # Epic 2: Users Can Authenticate with SSO and Have a Verified Cryptographic Identity
   # ─────────────────────────────────────────────────────────────────────────
-  epic-2: backlog
-  2-1-users-user-keys-schema-migration: backlog
+  epic-2: in-progress
+  2-1-users-user-keys-schema-migration: done
   2-2-sessions-schema-migration: backlog
   2-3-oidc-provider-configuration: backlog
   2-4-oidc-jwt-token-validation-middleware: backlog

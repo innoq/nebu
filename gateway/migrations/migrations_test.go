@@ -12,6 +12,12 @@ func TestFS_ContainsExpectedMigrationFiles(t *testing.T) {
 	files := []string{
 		"000001_init.up.sql",
 		"000001_init.down.sql",
+		"000002_message_buffer.up.sql",
+		"000002_message_buffer.down.sql",
+		"000003_server_config.up.sql",
+		"000003_server_config.down.sql",
+		"000004_users.up.sql",
+		"000004_users.down.sql",
 	}
 
 	for _, name := range files {
