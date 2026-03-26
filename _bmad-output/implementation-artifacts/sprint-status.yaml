@@ -36,6 +36,7 @@
 
 generated: 2026-03-20
 last_updated: 2026-03-26
+# epic-1-retrospective done: 2026-03-26
 # story 1-19 done (code review passed): 2026-03-26
 # story 1-19 review: 2026-03-26
 # story 1-19 in-progress: 2026-03-26
@@ -139,7 +140,7 @@ development_status:
   1-17-make-gen-api-oapi-codegen-build-target: done
   1-18-godog-integration-test-framework-setup: done
   1-19-first-gherkin-scenario-stack-health-smoke-test: done
-  epic-1-retrospective: optional
+  epic-1-retrospective: done
 
   # ─────────────────────────────────────────────────────────────────────────
   # Epic 2: Users Can Authenticate with SSO and Have a Verified Cryptographic Identity
