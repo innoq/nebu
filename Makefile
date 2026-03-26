@@ -39,14 +39,16 @@ test-unit-elixir:
 	$(DOCKER_ELIXIR) sh -c "cd core && mix local.hex --force && mix deps.get && mix test --warnings-as-errors"
 
 ## test-integration: Run full stack integration tests (Godog / Gherkin)
+## The test runner joins the nebu_default compose network so it can reach
+## gateway:8080 and core:4000 by service name — works locally and in DinD CI.
 test-integration:
 	docker compose up -d --wait && \
 	docker run --rm -v $(PWD):/workspace -w /workspace \
-		--add-host=host.docker.internal:host-gateway \
-		-e NEBU_TEST_GATEWAY_URL=http://host.docker.internal:8080 \
-		-e NEBU_TEST_CORE_URL=http://host.docker.internal:4000 \
+		--network=nebu_default \
+		-e NEBU_TEST_GATEWAY_URL=http://gateway:8080 \
+		-e NEBU_TEST_CORE_URL=http://core:4000 \
 		golang:1.26-alpine \
-		sh -c "apk add -q --no-cache gcc musl-dev && cd gateway && go test -v ./test/integration/..."; \
+		sh -c "apk add -q --no-cache gcc musl-dev && cd gateway && go test -v -tags integration ./test/integration/..."; \
 	EXIT=$$?; docker compose down; exit $$EXIT
 
 ## proto: Generate gRPC stubs from .proto definitions (via buf + protoc)

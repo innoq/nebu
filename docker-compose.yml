@@ -1,3 +1,5 @@
+name: nebu
+
 secrets:
   internal_secret:
     file: .secrets/internal_secret
