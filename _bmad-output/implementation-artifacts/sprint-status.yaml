@@ -36,6 +36,10 @@
 
 generated: 2026-03-20
 last_updated: 2026-03-26
+# story 2-3 done (code review passed): 2026-03-26
+# story 2-3 review: 2026-03-26
+# story 2-3 in-progress: 2026-03-26
+# story 2-3 created: 2-3 → ready-for-dev: 2026-03-26
 # story 2-2 done (code review passed): 2026-03-26
 # story 2-2 review: 2026-03-26
 # story 2-2 in-progress: 2026-03-26
@@ -156,7 +160,7 @@ development_status:
   epic-2: in-progress
   2-1-users-user-keys-schema-migration: done
   2-2-sessions-schema-migration: done
-  2-3-oidc-provider-configuration: backlog
+  2-3-oidc-provider-configuration: done
   2-4-oidc-jwt-token-validation-middleware: backlog
   2-5-oidc-claim-to-role-mapping: backlog
   2-6-admin-ui-oidc-client-authorization-code-flow-with-pkce: backlog

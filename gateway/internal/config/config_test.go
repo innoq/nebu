@@ -11,6 +11,8 @@ func TestLoad_Defaults(t *testing.T) {
 	os.Unsetenv("NEBU_CORE_GRPC_ADDR")
 	os.Unsetenv("NEBU_DB_URL")
 	os.Unsetenv("NEBU_OIDC_ISSUER")
+	os.Unsetenv("NEBU_OIDC_CLIENT_ID")
+	os.Unsetenv("NEBU_OIDC_CLIENT_SECRET")
 	os.Unsetenv("NEBU_INTERNAL_SECRET_FILE")
 	os.Unsetenv("NEBU_SERVER_NAME")
 	os.Unsetenv("NEBU_TLS_CERT_FILE")
@@ -27,6 +29,12 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 	if cfg.OIDCIssuer != "" {
 		t.Errorf("OIDCIssuer: got %q, want empty", cfg.OIDCIssuer)
+	}
+	if cfg.OIDCClientID != "" {
+		t.Errorf("OIDCClientID: got %q, want empty", cfg.OIDCClientID)
+	}
+	if cfg.OIDCClientSecret != "" {
+		t.Errorf("OIDCClientSecret: got %q, want empty", cfg.OIDCClientSecret)
 	}
 	if cfg.InternalSecretFile != "" {
 		t.Errorf("InternalSecretFile: got %q, want empty", cfg.InternalSecretFile)
@@ -67,6 +75,8 @@ func TestLoad_EnvVarsOverrideDefaults(t *testing.T) {
 	t.Setenv("NEBU_CORE_GRPC_ADDR", "custom-core:9999")
 	t.Setenv("NEBU_DB_URL", "postgres://user:pass@db/nebu")
 	t.Setenv("NEBU_OIDC_ISSUER", "https://auth.example.com")
+	t.Setenv("NEBU_OIDC_CLIENT_ID", "nebu-gateway")
+	t.Setenv("NEBU_OIDC_CLIENT_SECRET", "nebu-dev-secret")
 	t.Setenv("NEBU_INTERNAL_SECRET_FILE", "/run/secrets/internal_secret")
 	t.Setenv("NEBU_SERVER_NAME", "nebu.example.com")
 
@@ -80,6 +90,12 @@ func TestLoad_EnvVarsOverrideDefaults(t *testing.T) {
 	}
 	if cfg.OIDCIssuer != "https://auth.example.com" {
 		t.Errorf("OIDCIssuer: got %q", cfg.OIDCIssuer)
+	}
+	if cfg.OIDCClientID != "nebu-gateway" {
+		t.Errorf("OIDCClientID: got %q", cfg.OIDCClientID)
+	}
+	if cfg.OIDCClientSecret != "nebu-dev-secret" {
+		t.Errorf("OIDCClientSecret: got %q", cfg.OIDCClientSecret)
 	}
 	if cfg.InternalSecretFile != "/run/secrets/internal_secret" {
 		t.Errorf("InternalSecretFile: got %q", cfg.InternalSecretFile)
