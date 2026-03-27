@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "mcp__filesystem__read_text_file"
+      "mcp__filesystem__read_text_file",
+      "Bash(make test-unit-go:*)"
     ]
   }
 }
