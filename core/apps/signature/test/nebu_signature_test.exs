@@ -29,4 +29,43 @@ defmodule Nebu.SignatureTest do
       refute :crypto.verify(:eddsa, :none, tampered, signature, [pub, :ed25519])
     end
   end
+
+  describe "generate_encryption_keypair/0" do
+    test "returns binary keypair of correct length" do
+      {pub, priv} = Signature.generate_encryption_keypair()
+      assert is_binary(pub)
+      assert is_binary(priv)
+      assert byte_size(pub) == 32
+      assert byte_size(priv) == 32
+    end
+
+    test "ecdh_shared_secret: ECDH exchange produces identical shared secrets on both sides" do
+      {alice_pub, alice_priv} = Signature.generate_encryption_keypair()
+      {bob_pub, bob_priv} = Signature.generate_encryption_keypair()
+
+      alice_shared = :crypto.compute_key(:ecdh, bob_pub, alice_priv, :x25519)
+      bob_shared = :crypto.compute_key(:ecdh, alice_pub, bob_priv, :x25519)
+
+      assert alice_shared == bob_shared
+      assert byte_size(alice_shared) == 32
+    end
+  end
+
+  describe "derive_aes_key/1" do
+    test "returns a 32-byte AES-256 key from shared secret" do
+      {_alice_pub, alice_priv} = Signature.generate_encryption_keypair()
+      {bob_pub, _bob_priv} = Signature.generate_encryption_keypair()
+
+      shared = :crypto.compute_key(:ecdh, bob_pub, alice_priv, :x25519)
+      aes_key = Signature.derive_aes_key(shared)
+
+      assert is_binary(aes_key)
+      assert byte_size(aes_key) == 32
+    end
+
+    test "derive_aes_key is deterministic: same input yields same key" do
+      shared_secret = :crypto.strong_rand_bytes(32)
+      assert Signature.derive_aes_key(shared_secret) == Signature.derive_aes_key(shared_secret)
+    end
+  end
 end
