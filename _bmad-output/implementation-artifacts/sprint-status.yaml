@@ -36,6 +36,9 @@
 
 generated: 2026-03-20
 last_updated: 2026-03-27
+# story 2-8 done (code review passed): 2026-03-27
+# story 2-8 review: 2026-03-27
+# story 2-8 in-progress: 2026-03-27
 # story 2-8 created: 2-8 → ready-for-dev: 2026-03-27
 # story 2-7 done (code review passed): 2026-03-27
 # story 2-7 review: 2026-03-27
@@ -178,7 +181,7 @@ development_status:
   2-5-oidc-claim-to-role-mapping: done
   2-6-admin-ui-oidc-client-authorization-code-flow-with-pkce: done
   2-7-auth-token-flow-go-to-elixir-via-grpc-metadata: done
-  2-8-ed25519-keypair-generation-unit-tests: backlog
+  2-8-ed25519-keypair-generation-unit-tests: done
   2-9-x25519-keypair-generation-unit-tests: backlog
   2-10-operational-pii-encryption-at-rest-unit-tests: backlog
   2-11-sensitive-pii-encryption-x25519-ecdh-aes-256-gcm-unit-tests: backlog
