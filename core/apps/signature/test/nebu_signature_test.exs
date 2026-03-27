@@ -97,4 +97,24 @@ defmodule Nebu.SignatureTest do
       assert {:error, :decryption_failed} = Signature.decrypt_operational_pii(ciphertext, nonce, wrong_key)
     end
   end
+
+  describe "encrypt_sensitive_pii/2 and decrypt_sensitive_pii/4" do
+    test "encrypt_decrypt_roundtrip: recovers plaintext with matching private key" do
+      {recipient_pub, recipient_priv} = Signature.generate_encryption_keypair()
+      plaintext = "kai.mueller@example.com"
+
+      {ciphertext, ephemeral_pub, nonce} = Signature.encrypt_sensitive_pii(plaintext, recipient_pub)
+
+      assert {:ok, ^plaintext} = Signature.decrypt_sensitive_pii(ciphertext, ephemeral_pub, nonce, recipient_priv)
+    end
+
+    test "deletion_makes_irrecoverable: nil private key returns {:error, :no_private_key}" do
+      {recipient_pub, _recipient_priv} = Signature.generate_encryption_keypair()
+      plaintext = "idp-subject-uuid-1234"
+
+      {ciphertext, ephemeral_pub, nonce} = Signature.encrypt_sensitive_pii(plaintext, recipient_pub)
+
+      assert {:error, :no_private_key} = Signature.decrypt_sensitive_pii(ciphertext, ephemeral_pub, nonce, nil)
+    end
+  end
 end

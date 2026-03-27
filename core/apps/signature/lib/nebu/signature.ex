@@ -91,4 +91,59 @@ defmodule Nebu.Signature do
       _ -> {:error, :decryption_failed}
     end
   end
+
+  @doc """
+  Encrypts Sensitive PII (Tier 2: email, IdP subject) with the recipient's X25519 public key.
+
+  Uses ephemeral ECDH: a fresh X25519 keypair is generated per call, shared secret derived,
+  then AES-256-GCM encryption applied. The ephemeral public key must be stored alongside
+  the ciphertext so decryption can reconstruct the shared secret.
+
+  Returns `{ciphertext, ephemeral_public_key, nonce}` where:
+  - `ciphertext` = encrypted data with appended 16-byte GCM auth tag
+  - `ephemeral_public_key` = 32-byte public key of the ephemeral sender (store in DB)
+  - `nonce` = 12-byte random nonce (store in DB)
+
+  DSGVO: deleting `recipient_private_key` renders this data permanently irrecoverable.
+  """
+  @spec encrypt_sensitive_pii(binary(), binary()) :: {binary(), binary(), binary()}
+  def encrypt_sensitive_pii(plaintext, recipient_public_key) do
+    {ephemeral_pub, ephemeral_priv} = :crypto.generate_key(:ecdh, :x25519)
+    shared = :crypto.compute_key(:ecdh, recipient_public_key, ephemeral_priv, :x25519)
+    aes_key = derive_aes_key(shared)
+    nonce = :crypto.strong_rand_bytes(12)
+    {ciphertext, tag} = :crypto.crypto_one_time_aead(:aes_256_gcm, aes_key, nonce, plaintext, <<>>, 16, true)
+    {ciphertext <> tag, ephemeral_pub, nonce}
+  end
+
+  @doc """
+  Decrypts Sensitive PII (Tier 2) encrypted by `encrypt_sensitive_pii/2`.
+
+  Returns `{:ok, plaintext}` on success.
+  Returns `{:error, :no_private_key}` when `recipient_private_key` is `nil` — DSGVO deletion case.
+  Returns `{:error, :decryption_failed}` if AES-GCM authentication fails.
+
+  `recipient_private_key` must match the public key used during encryption.
+  `ephemeral_public_key` must be the 32-byte value returned by `encrypt_sensitive_pii/2`.
+  `nonce` must be the 12-byte value returned by `encrypt_sensitive_pii/2`.
+  """
+  @spec decrypt_sensitive_pii(binary(), binary(), binary(), binary() | nil) ::
+          {:ok, binary()} | {:error, :no_private_key} | {:error, :decryption_failed}
+  def decrypt_sensitive_pii(_, _, _, nil), do: {:error, :no_private_key}
+
+  def decrypt_sensitive_pii(ciphertext_with_tag, ephemeral_public_key, nonce, recipient_private_key) do
+    shared = :crypto.compute_key(:ecdh, ephemeral_public_key, recipient_private_key, :x25519)
+    aes_key = derive_aes_key(shared)
+    ct_size = byte_size(ciphertext_with_tag) - 16
+    <<ciphertext::binary-size(ct_size), tag::binary-size(16)>> = ciphertext_with_tag
+
+    try do
+      case :crypto.crypto_one_time_aead(:aes_256_gcm, aes_key, nonce, ciphertext, <<>>, tag, false) do
+        :error -> {:error, :decryption_failed}
+        plaintext -> {:ok, plaintext}
+      end
+    rescue
+      _ -> {:error, :decryption_failed}
+    end
+  end
 end
