@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"log/slog"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/nebu/nebu/internal/admin"
+	"github.com/nebu/nebu/internal/auth"
 	"github.com/nebu/nebu/internal/config"
 	"github.com/nebu/nebu/internal/db"
 	coregrpc "github.com/nebu/nebu/internal/grpc"
@@ -22,6 +24,10 @@ func main() {
 	slog.Info("Nebu Gateway starting")
 
 	cfg := config.Load()
+
+	// auth.NewProvider tolerates an unreachable OIDC provider at startup
+	// (logs warning, starts background retry). LoginHandler checks Inner() != nil.
+	oidcProvider := auth.NewProvider(context.Background(), cfg.OIDCIssuer)
 
 	if cfg.DBURL == "" {
 		slog.Error("database configuration required", "error", "NEBU_DB_URL not set")
@@ -96,6 +102,8 @@ func main() {
 	}
 	internalSecret := strings.TrimSpace(string(pskBytes))
 
+	adminAuth := admin.NewAdminAuth(oidcProvider, cfg.OIDCClientID, cfg.OIDCClientSecret, cfg.OIDCClaimRole, []byte(internalSecret))
+
 	// Set up HTTP mux with node registry behind PSK middleware
 	mux := http.NewServeMux()
 	reg := registry.New()
@@ -104,6 +112,9 @@ func main() {
 
 	mux.Handle("POST /internal/nodes/register", pskHandler)
 	mux.Handle("GET /internal/nodes", pskHandler)
+
+	mux.HandleFunc("GET /admin/auth/login", adminAuth.LoginHandler)
+	mux.HandleFunc("GET /admin/auth/callback", adminAuth.CallbackHandler)
 
 	slog.Info("HTTP server starting", "addr", ":8008")
 	if err := http.ListenAndServe(":8008", mux); err != nil {

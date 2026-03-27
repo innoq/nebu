@@ -5,8 +5,10 @@ go 1.26
 require (
 	github.com/coreos/go-oidc/v3 v3.17.0
 	github.com/cucumber/godog v0.15.1
+	github.com/go-jose/go-jose/v4 v4.1.3
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/prometheus/client_golang v1.23.2
+	golang.org/x/oauth2 v0.34.0
 	google.golang.org/grpc v1.79.3
 	google.golang.org/protobuf v1.36.11
 )
@@ -16,7 +18,6 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cucumber/gherkin/go/v26 v26.2.0 // indirect
 	github.com/cucumber/messages/go/v21 v21.0.1 // indirect
-	github.com/go-jose/go-jose/v4 v4.1.3 // indirect
 	github.com/gofrs/uuid v4.3.1+incompatible // indirect
 	github.com/hashicorp/go-immutable-radix v1.3.1 // indirect
 	github.com/hashicorp/go-memdb v1.3.4 // indirect
@@ -34,7 +35,6 @@ require (
 	github.com/spf13/pflag v1.0.7 // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	golang.org/x/net v0.48.0 // indirect
-	golang.org/x/oauth2 v0.34.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.39.0 // indirect
 	golang.org/x/text v0.32.0 // indirect
