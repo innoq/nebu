@@ -68,4 +68,33 @@ defmodule Nebu.SignatureTest do
       assert Signature.derive_aes_key(shared_secret) == Signature.derive_aes_key(shared_secret)
     end
   end
+
+  describe "encrypt_operational_pii/2 and decrypt_operational_pii/3" do
+    test "encrypt_decrypt_roundtrip: random nonces, both decrypt correctly" do
+      server_key = :crypto.strong_rand_bytes(32)
+      plaintext = "Kai Müller"
+
+      {ciphertext1, nonce1} = Signature.encrypt_operational_pii(plaintext, server_key)
+      {ciphertext2, nonce2} = Signature.encrypt_operational_pii(plaintext, server_key)
+
+      # Nonces must differ (random per call)
+      assert nonce1 != nonce2
+      # Ciphertexts must differ (different nonces → different ciphertexts)
+      assert ciphertext1 != ciphertext2
+
+      # Both decrypt to original plaintext
+      assert {:ok, ^plaintext} = Signature.decrypt_operational_pii(ciphertext1, nonce1, server_key)
+      assert {:ok, ^plaintext} = Signature.decrypt_operational_pii(ciphertext2, nonce2, server_key)
+    end
+
+    test "wrong_key_fails: different server key returns {:error, :decryption_failed}" do
+      server_key = :crypto.strong_rand_bytes(32)
+      wrong_key = :crypto.strong_rand_bytes(32)
+      plaintext = "avatar.example.com/kai.jpg"
+
+      {ciphertext, nonce} = Signature.encrypt_operational_pii(plaintext, server_key)
+
+      assert {:error, :decryption_failed} = Signature.decrypt_operational_pii(ciphertext, nonce, wrong_key)
+    end
+  end
 end

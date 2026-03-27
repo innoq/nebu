@@ -36,6 +36,10 @@
 
 generated: 2026-03-20
 last_updated: 2026-03-27
+# story 2-10 done (code review passed): 2026-03-27
+# story 2-10 review: 2026-03-27
+# story 2-10 in-progress: 2026-03-27
+# story 2-10 created: 2-10 → ready-for-dev: 2026-03-27
 # story 2-9 done (code review passed): 2026-03-27
 # story 2-9 review: 2026-03-27
 # story 2-9 in-progress: 2026-03-27
@@ -187,7 +191,7 @@ development_status:
   2-7-auth-token-flow-go-to-elixir-via-grpc-metadata: done
   2-8-ed25519-keypair-generation-unit-tests: done
   2-9-x25519-keypair-generation-unit-tests: done
-  2-10-operational-pii-encryption-at-rest-unit-tests: backlog
+  2-10-operational-pii-encryption-at-rest-unit-tests: done
   2-11-sensitive-pii-encryption-x25519-ecdh-aes-256-gcm-unit-tests: backlog
   2-12-user-record-db-write-on-first-login: backlog
   2-13-user-provisioning-orchestration-keypairs-pii-encryption: backlog
