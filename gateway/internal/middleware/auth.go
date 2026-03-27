@@ -19,7 +19,20 @@ const (
 	ContextKeyPreferredUsername contextKey = "preferred_username"
 	ContextKeyEmail             contextKey = "email"
 	ContextKeyNebuRole          contextKey = "nebu_role"
+	ContextKeySystemRole        contextKey = "system_role"
 )
+
+// mapRole converts a raw OIDC claim value to a canonical Nebu system role.
+// Only "instance_admin" and "compliance_officer" are privileged roles.
+// All other values (including empty string) map to "user".
+func mapRole(rawClaim string) string {
+	switch rawClaim {
+	case "instance_admin", "compliance_officer":
+		return rawClaim
+	default:
+		return "user"
+	}
+}
 
 type matrixError struct {
 	ErrCode string `json:"errcode"`
@@ -33,8 +46,9 @@ func writeMatrixError(w http.ResponseWriter, status int, errcode, message string
 }
 
 // JWTMiddleware validates OIDC JWT tokens. On success, populates context with
-// sub, preferred_username, email, nebu_role claims for downstream handlers.
-func JWTMiddleware(provider *auth.Provider, clientID string) func(http.Handler) http.Handler {
+// sub, preferred_username, email, the raw role claim value (ContextKeyNebuRole),
+// and the mapped canonical system role (ContextKeySystemRole).
+func JWTMiddleware(provider *auth.Provider, clientID string, claimName string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
@@ -62,23 +76,25 @@ func JWTMiddleware(provider *auth.Provider, clientID string) func(http.Handler) 
 				return
 			}
 
-			var claims struct {
-				Sub               string `json:"sub"`
-				PreferredUsername string `json:"preferred_username"`
-				Email             string `json:"email"`
-				NebuRole          string `json:"nebu_role"`
-			}
-			if err := idToken.Claims(&claims); err != nil {
+			var allClaims map[string]interface{}
+			if err := idToken.Claims(&allClaims); err != nil {
 				log.Printf("failed to extract JWT claims: %v", err)
 				writeMatrixError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
 				return
 			}
 
+			sub, _ := allClaims["sub"].(string)
+			preferredUsername, _ := allClaims["preferred_username"].(string)
+			email, _ := allClaims["email"].(string)
+			rawRole, _ := allClaims[claimName].(string)
+			systemRole := mapRole(rawRole)
+
 			ctx := r.Context()
-			ctx = context.WithValue(ctx, ContextKeySub, claims.Sub)
-			ctx = context.WithValue(ctx, ContextKeyPreferredUsername, claims.PreferredUsername)
-			ctx = context.WithValue(ctx, ContextKeyEmail, claims.Email)
-			ctx = context.WithValue(ctx, ContextKeyNebuRole, claims.NebuRole)
+			ctx = context.WithValue(ctx, ContextKeySub, sub)
+			ctx = context.WithValue(ctx, ContextKeyPreferredUsername, preferredUsername)
+			ctx = context.WithValue(ctx, ContextKeyEmail, email)
+			ctx = context.WithValue(ctx, ContextKeyNebuRole, rawRole)
+			ctx = context.WithValue(ctx, ContextKeySystemRole, systemRole)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

@@ -18,6 +18,7 @@ func TestLoad_Defaults(t *testing.T) {
 	os.Unsetenv("NEBU_TLS_CERT_FILE")
 	os.Unsetenv("NEBU_TLS_KEY_FILE")
 	os.Unsetenv("NEBU_TLS_CLIENT_CA_FILE")
+	os.Unsetenv("NEBU_OIDC_CLAIM_ROLE")
 
 	cfg := config.Load()
 
@@ -50,6 +51,9 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 	if cfg.TLSClientCAFile != "" {
 		t.Errorf("TLSClientCAFile: got %q, want empty", cfg.TLSClientCAFile)
+	}
+	if cfg.OIDCClaimRole != "nebu_role" {
+		t.Errorf("OIDCClaimRole: got %q, want %q", cfg.OIDCClaimRole, "nebu_role")
 	}
 }
 
@@ -102,6 +106,26 @@ func TestLoad_EnvVarsOverrideDefaults(t *testing.T) {
 	}
 	if cfg.ServerName != "nebu.example.com" {
 		t.Errorf("ServerName: got %q", cfg.ServerName)
+	}
+}
+
+func TestLoad_OIDCClaimRole_Default(t *testing.T) {
+	os.Unsetenv("NEBU_OIDC_CLAIM_ROLE")
+
+	cfg := config.Load()
+
+	if cfg.OIDCClaimRole != "nebu_role" {
+		t.Errorf("OIDCClaimRole default: got %q, want %q", cfg.OIDCClaimRole, "nebu_role")
+	}
+}
+
+func TestLoad_OIDCClaimRole_CustomValue(t *testing.T) {
+	t.Setenv("NEBU_OIDC_CLAIM_ROLE", "roles")
+
+	cfg := config.Load()
+
+	if cfg.OIDCClaimRole != "roles" {
+		t.Errorf("OIDCClaimRole: got %q, want %q", cfg.OIDCClaimRole, "roles")
 	}
 }
 

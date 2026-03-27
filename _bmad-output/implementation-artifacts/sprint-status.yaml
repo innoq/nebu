@@ -36,6 +36,10 @@
 
 generated: 2026-03-20
 last_updated: 2026-03-27
+# story 2-5 done (code review passed): 2026-03-27
+# story 2-5 review: 2026-03-27
+# story 2-5 in-progress: 2026-03-27
+# story 2-5 created: 2-5 → ready-for-dev: 2026-03-27
 # story 2-4 done (code review passed): 2026-03-27
 # story 2-4 created: 2-4 → ready-for-dev: 2026-03-26
 # story 2-3 done (code review passed): 2026-03-26
@@ -164,7 +168,7 @@ development_status:
   2-2-sessions-schema-migration: done
   2-3-oidc-provider-configuration: done
   2-4-oidc-jwt-token-validation-middleware: done
-  2-5-oidc-claim-to-role-mapping: backlog
+  2-5-oidc-claim-to-role-mapping: done
   2-6-admin-ui-oidc-client-authorization-code-flow-with-pkce: backlog
   2-7-auth-token-flow-go-to-elixir-via-grpc-metadata: backlog
   2-8-ed25519-keypair-generation-unit-tests: backlog

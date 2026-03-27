@@ -14,6 +14,7 @@ type Config struct {
 	TLSCertFile        string // NEBU_TLS_CERT_FILE
 	TLSKeyFile         string // NEBU_TLS_KEY_FILE
 	TLSClientCAFile    string // NEBU_TLS_CLIENT_CA_FILE (mTLS Phase 2 — not wired up in MVP)
+	OIDCClaimRole      string // NEBU_OIDC_CLAIM_ROLE (default: "nebu_role")
 }
 
 // Load reads configuration from environment variables.
@@ -30,6 +31,7 @@ func Load() Config {
 		TLSCertFile:        os.Getenv("NEBU_TLS_CERT_FILE"),
 		TLSKeyFile:         os.Getenv("NEBU_TLS_KEY_FILE"),
 		TLSClientCAFile:    os.Getenv("NEBU_TLS_CLIENT_CA_FILE"),
+		OIDCClaimRole:      getEnvOrDefault("NEBU_OIDC_CLAIM_ROLE", "nebu_role"),
 	}
 }
 
