@@ -10,6 +10,7 @@ defmodule Nebu.MixProject do
       releases: [
         nebu: [
           applications: [
+            nebu_db: :permanent,
             event_dispatcher: :permanent,
             permissions: :permanent,
             presence: :permanent,
@@ -23,10 +24,9 @@ defmodule Nebu.MixProject do
   end
 
   defp deps do
-    []
-    # Dependencies added in subsequent stories:
-    # Story 1.3: ecto_sql, postgrex (database)
-    # Story 1.6: grpc, protobuf (gRPC)
-    # Story 4.x: horde, libcluster (clustering)
+    [
+      {:ecto_sql, "~> 3.12"},
+      {:postgrex, "~> 0.19"}
+    ]
   end
 end

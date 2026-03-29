@@ -6,6 +6,12 @@ import Config
 #   url: System.get_env("NEBU_DB_URL") || raise "NEBU_DB_URL not set"
 
 if config_env() in [:prod, :dev] do
+  config :nebu_db, Nebu.Repo,
+    url: System.get_env("NEBU_DB_URL") || raise("NEBU_DB_URL is not set"),
+    pool_size: 10
+end
+
+if config_env() in [:prod, :dev] do
   pii_key_hex =
     System.get_env("NEBU_PII_ENCRYPTION_KEY") ||
       raise "NEBU_PII_ENCRYPTION_KEY is not set. Must be a 64-char hex string (32 bytes)."

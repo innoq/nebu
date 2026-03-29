@@ -1,7 +1,1 @@
-defmodule Nebu.SessionTest do
-  use ExUnit.Case
-
-  test "placeholder: session_manager app starts" do
-    assert :ok == :ok
-  end
-end
+# Tests for session_manager are in test/nebu/session/user_store_test.exs

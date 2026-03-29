@@ -1,9 +1,9 @@
-defmodule Nebu.Session.MixProject do
+defmodule Nebu.DB.MixProject do
   use Mix.Project
 
   def project do
     [
-      app: :session_manager,
+      app: :nebu_db,
       version: "0.1.0",
       build_path: "../../_build",
       config_path: "../../config/config.exs",
@@ -18,13 +18,14 @@ defmodule Nebu.Session.MixProject do
   def application do
     [
       extra_applications: [:logger],
-      mod: {Nebu.Session.Application, []}
+      mod: {Nebu.DB.Application, []}
     ]
   end
 
   defp deps do
     [
-      {:nebu_db, in_umbrella: true}
+      {:ecto_sql, "~> 3.12"},
+      {:postgrex, "~> 0.19"}
     ]
   end
 end
