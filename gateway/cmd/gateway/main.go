@@ -127,8 +127,16 @@ func main() {
 	bootstrapHandler := admin.NewBootstrapHandler(admin.NewPostgresBootstrapChecker(bootstrapDB))
 	mux.HandleFunc("GET /admin/bootstrap", bootstrapHandler.Handler)
 
-	loginHandler := matrix.NewLoginHandler(cfg.OIDCDisplayName)
+	loginHandler := matrix.NewLoginHandler(matrix.LoginConfig{
+		DisplayName:   cfg.OIDCDisplayName,
+		Provider:      oidcProvider,
+		CoreClient:    coreClient,
+		ServerName:    serverName,
+		ClientID:      cfg.OIDCClientID,
+		RoleClaimName: cfg.OIDCClaimRole,
+	})
 	mux.HandleFunc("GET /_matrix/client/v3/login", loginHandler.GetLogin)
+	mux.HandleFunc("POST /_matrix/client/v3/login", loginHandler.PostLogin)
 
 	slog.Info("HTTP server starting", "addr", ":8008")
 	if err := http.ListenAndServe(":8008", mux); err != nil {
