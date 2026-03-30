@@ -35,7 +35,11 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-20
-last_updated: 2026-03-29
+last_updated: 2026-03-30
+# story 2-14 done (code review passed): 2026-03-30
+# story 2-14 review: 2026-03-30
+# story 2-14 in-progress: 2026-03-30
+# story 2-14 created: 2-14 → ready-for-dev: 2026-03-30
 # story 2-13 review: 2026-03-29
 # story 2-13 created: 2-13 → ready-for-dev: 2026-03-29
 # story 2-12 done (code review passed): 2026-03-27
@@ -203,7 +207,7 @@ development_status:
   2-11-sensitive-pii-encryption-x25519-ecdh-aes-256-gcm-unit-tests: done
   2-12-user-record-db-write-on-first-login: done
   2-13-user-provisioning-orchestration-keypairs-pii-encryption: review
-  2-14-validatetoken-grpc-handler: backlog
+  2-14-validatetoken-grpc-handler: review
   2-15-bootstrap-mode-auto-instance-admin-assignment: backlog
   2-16-bootstrap-mode-permanent-deactivation: backlog
   2-17-get-matrix-client-v3-login-sso-flow-discovery: backlog

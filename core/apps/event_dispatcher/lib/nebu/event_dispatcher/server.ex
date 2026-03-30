@@ -27,8 +27,42 @@ defmodule Nebu.EventDispatcher.Server do
     {:ok, %Core.SetTypingResponse{}}
   end
 
-  def validate_token(_request, _stream) do
-    {:ok, %Core.ValidateTokenResponse{}}
+  def validate_token(request, stream) do
+    {user_id, system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
+
+    if is_nil(user_id) or user_id == "" do
+      raise GRPC.RPCError,
+        status: GRPC.Status.unauthenticated(),
+        message: "missing x-user-id metadata"
+    end
+
+    case Nebu.Session.TokenValidator.validate(
+           user_id,
+           system_role,
+           request.display_name,
+           request.email
+         ) do
+      {:ok, user} ->
+        {:ok,
+         %Core.ValidateTokenResponse{
+           user_id: user.user_id,
+           system_role: user.system_role,
+           display_name: user.display_name,
+           is_active: user.is_active
+         }}
+
+      {:error, :deactivated} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.permission_denied(),
+          message: "user account is deactivated"
+
+      {:error, reason} ->
+        Logger.error("validate_token failed", user_id: user_id, error: inspect(reason))
+
+        raise GRPC.RPCError,
+          status: GRPC.Status.internal(),
+          message: "internal error"
+    end
   end
 
   def get_pending_events(_request, _stream) do

@@ -93,9 +93,9 @@ func (c *Client) SetTyping(ctx context.Context, req *pb.SetTypingRequest) (*pb.S
 	return nil, nil
 }
 
-// ValidateToken stub — implemented in Epic 2.
+// ValidateToken calls the Elixir core to validate/provision a user.
 func (c *Client) ValidateToken(ctx context.Context, req *pb.ValidateTokenRequest) (*pb.ValidateTokenResponse, error) {
-	return nil, nil
+	return c.core.ValidateToken(ctx, req)
 }
 
 // GetPendingEvents stub — implemented in Epic 4.

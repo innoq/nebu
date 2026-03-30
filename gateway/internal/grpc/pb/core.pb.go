@@ -793,9 +793,12 @@ func (*SetTypingResponse) Descriptor() ([]byte, []int) {
 }
 
 // ValidateToken — Go validates OIDC token, Elixir trusts Go fully (ADR G2)
+// user_id and system_role arrive via gRPC metadata (x-user-id, x-system-role).
+// display_name and email are for new-user provisioning only.
 type ValidateTokenRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Token         string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
+	DisplayName   string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"` // OIDC preferred_username claim (Operational PII, Tier 1)
+	Email         string                 `protobuf:"bytes,3,opt,name=email,proto3" json:"email,omitempty"`                                // OIDC email claim (Sensitive PII, Tier 2)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -830,18 +833,26 @@ func (*ValidateTokenRequest) Descriptor() ([]byte, []int) {
 	return file_core_proto_rawDescGZIP(), []int{13}
 }
 
-func (x *ValidateTokenRequest) GetToken() string {
+func (x *ValidateTokenRequest) GetDisplayName() string {
 	if x != nil {
-		return x.Token
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *ValidateTokenRequest) GetEmail() string {
+	if x != nil {
+		return x.Email
 	}
 	return ""
 }
 
 type ValidateTokenResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Valid         bool                   `protobuf:"varint,1,opt,name=valid,proto3" json:"valid,omitempty"`
-	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	SystemRole    string                 `protobuf:"bytes,3,opt,name=system_role,json=systemRole,proto3" json:"system_role,omitempty"` // "user" | "instance_admin" | "compliance_officer"
+	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`                // @{sub}:{server_name}
+	SystemRole    string                 `protobuf:"bytes,3,opt,name=system_role,json=systemRole,proto3" json:"system_role,omitempty"`    // "user" | "instance_admin" | "compliance_officer"
+	DisplayName   string                 `protobuf:"bytes,4,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"` // Decrypted from Operational PII (Tier 1)
+	IsActive      bool                   `protobuf:"varint,5,opt,name=is_active,json=isActive,proto3" json:"is_active,omitempty"`         // User account status
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -876,13 +887,6 @@ func (*ValidateTokenResponse) Descriptor() ([]byte, []int) {
 	return file_core_proto_rawDescGZIP(), []int{14}
 }
 
-func (x *ValidateTokenResponse) GetValid() bool {
-	if x != nil {
-		return x.Valid
-	}
-	return false
-}
-
 func (x *ValidateTokenResponse) GetUserId() string {
 	if x != nil {
 		return x.UserId
@@ -895,6 +899,20 @@ func (x *ValidateTokenResponse) GetSystemRole() string {
 		return x.SystemRole
 	}
 	return ""
+}
+
+func (x *ValidateTokenResponse) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *ValidateTokenResponse) GetIsActive() bool {
+	if x != nil {
+		return x.IsActive
+	}
+	return false
 }
 
 // GetPendingEvents — GELB-status fallback (unary polling instead of streaming)
@@ -1122,14 +1140,16 @@ const file_core_proto_rawDesc = "" +
 	"\x06typing\x18\x03 \x01(\bR\x06typing\x12\x1d\n" +
 	"\n" +
 	"timeout_ms\x18\x04 \x01(\x05R\ttimeoutMs\"\x13\n" +
-	"\x11SetTypingResponse\",\n" +
-	"\x14ValidateTokenRequest\x12\x14\n" +
-	"\x05token\x18\x01 \x01(\tR\x05token\"g\n" +
-	"\x15ValidateTokenResponse\x12\x14\n" +
-	"\x05valid\x18\x01 \x01(\bR\x05valid\x12\x17\n" +
+	"\x11SetTypingResponse\"U\n" +
+	"\x14ValidateTokenRequest\x12!\n" +
+	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12\x14\n" +
+	"\x05email\x18\x03 \x01(\tR\x05emailJ\x04\b\x01\x10\x02\"\x97\x01\n" +
+	"\x15ValidateTokenResponse\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\x12\x1f\n" +
 	"\vsystem_role\x18\x03 \x01(\tR\n" +
-	"systemRole\"S\n" +
+	"systemRole\x12!\n" +
+	"\fdisplay_name\x18\x04 \x01(\tR\vdisplayName\x12\x1b\n" +
+	"\tis_active\x18\x05 \x01(\bR\bisActiveJ\x04\b\x01\x10\x02\"S\n" +
 	"\x17GetPendingEventsRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1f\n" +
 	"\vsince_token\x18\x02 \x01(\tR\n" +

@@ -97,13 +97,19 @@ message SetTypingRequest {
 message SetTypingResponse {}
 
 // ValidateToken — Go validates OIDC token, Elixir trusts Go fully (ADR G2)
+// user_id and system_role arrive via gRPC metadata (x-user-id, x-system-role).
+// display_name and email are for new-user provisioning only.
 message ValidateTokenRequest {
-  string token = 1;
+  reserved 1;               // was: token (removed per ADR G2 — no token forwarding)
+  string display_name = 2;  // OIDC preferred_username claim (Operational PII, Tier 1)
+  string email        = 3;  // OIDC email claim (Sensitive PII, Tier 2)
 }
 message ValidateTokenResponse {
-  bool   valid       = 1;
-  string user_id     = 2;
-  string system_role = 3;  // "user" | "instance_admin" | "compliance_officer"
+  reserved 1;               // was: valid (redundant — success = valid, errors use gRPC status codes)
+  string user_id      = 2;  // @{sub}:{server_name}
+  string system_role  = 3;  // "user" | "instance_admin" | "compliance_officer"
+  string display_name = 4;  // Decrypted from Operational PII (Tier 1)
+  bool   is_active    = 5;  // User account status
 }
 
 // GetPendingEvents — GELB-status fallback (unary polling instead of streaming)

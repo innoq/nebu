@@ -168,7 +168,8 @@ defmodule Core.ValidateTokenRequest do
     protoc_gen_elixir_version: "0.16.0",
     syntax: :proto3
 
-  field :token, 1, type: :string
+  field :display_name, 2, type: :string, json_name: "displayName"
+  field :email, 3, type: :string
 end
 
 defmodule Core.ValidateTokenResponse do
@@ -179,9 +180,10 @@ defmodule Core.ValidateTokenResponse do
     protoc_gen_elixir_version: "0.16.0",
     syntax: :proto3
 
-  field :valid, 1, type: :bool
   field :user_id, 2, type: :string, json_name: "userId"
   field :system_role, 3, type: :string, json_name: "systemRole"
+  field :display_name, 4, type: :string, json_name: "displayName"
+  field :is_active, 5, type: :bool, json_name: "isActive"
 end
 
 defmodule Core.GetPendingEventsRequest do

@@ -140,3 +140,15 @@ ADRs are tracked in `docs/architecture/adr/`:
 
 This project uses BMAD agents for structured development. Architecture is complete.
 Next step: `bmad-create-epics-and-stories` to break the architecture into implementable stories.
+
+## Elixir Conventions
+- GenServer state: immer via handle_* callbacks, nie direkt
+- Fehler: let it crash + Supervisor, kein defensive try/rescue
+- Ecto: Changesets für alle Validierungen, kein direkt insert!
+- Supervisor-Strategien: one_for_one default, begründe Abweichungen
+- Keine Prozess-Registrierung ohne via-Tuple oder Registry
+
+## Go Conventions
+- Errors: explicit handling, kein panic in Library-Code
+- Context: immer als ersten Parameter durchreichen
+- Interfaces: klein halten, definiert vom Consumer
