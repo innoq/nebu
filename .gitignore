@@ -49,3 +49,4 @@ erl_crash.dump
 *.ez
 # Override global gitignore: Elixir source lives in lib/
 !lib/
+/.claude/

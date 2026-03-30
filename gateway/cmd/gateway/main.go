@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"database/sql"
 	"log/slog"
 	"net/http"
 	"os"
@@ -115,6 +116,15 @@ func main() {
 
 	mux.HandleFunc("GET /admin/auth/login", adminAuth.LoginHandler)
 	mux.HandleFunc("GET /admin/auth/callback", adminAuth.CallbackHandler)
+
+	bootstrapDB, err := sql.Open("pgx", cfg.DBURL)
+	if err != nil {
+		slog.Error("failed to open DB for bootstrap checker", "err", err)
+		os.Exit(1)
+	}
+	defer bootstrapDB.Close()
+	bootstrapHandler := admin.NewBootstrapHandler(admin.NewPostgresBootstrapChecker(bootstrapDB))
+	mux.HandleFunc("GET /admin/bootstrap", bootstrapHandler.Handler)
 
 	slog.Info("HTTP server starting", "addr", ":8008")
 	if err := http.ListenAndServe(":8008", mux); err != nil {

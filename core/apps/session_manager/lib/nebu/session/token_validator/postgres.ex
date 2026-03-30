@@ -55,11 +55,13 @@ defmodule Nebu.Session.TokenValidator.Postgres do
   defp provision_new_user(user_id, system_role, display_name, email) do
     server_key = Application.get_env(:signature, :pii_encryption_key)
 
-    with {:ok, ^user_id} <- Nebu.Session.UserStore.upsert_user(user_id, system_role),
-         {:ok, :provisioned} <- Nebu.Session.UserProvisioner.provision_user(user_id, display_name, email, server_key) do
+    with {:ok, {^user_id, resolved_role}} <-
+           Nebu.Session.BootstrapChecker.upsert_with_bootstrap(user_id, system_role),
+         {:ok, :provisioned} <-
+           Nebu.Session.UserProvisioner.provision_user(user_id, display_name, email, server_key) do
       {:ok, %{
         user_id: user_id,
-        system_role: system_role,
+        system_role: resolved_role,
         display_name: display_name,
         is_active: true
       }}
