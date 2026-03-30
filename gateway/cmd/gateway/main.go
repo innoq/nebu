@@ -138,6 +138,11 @@ func main() {
 	mux.HandleFunc("GET /_matrix/client/v3/login", loginHandler.GetLogin)
 	mux.HandleFunc("POST /_matrix/client/v3/login", loginHandler.PostLogin)
 
+	denylist := middleware.NewDenylist()
+	logoutHandler := matrix.NewLogoutHandler(denylist)
+	jwtMiddleware := middleware.JWTMiddleware(oidcProvider, cfg.OIDCClientID, cfg.OIDCClaimRole, denylist)
+	mux.Handle("POST /_matrix/client/v3/logout", jwtMiddleware(http.HandlerFunc(logoutHandler.PostLogout)))
+
 	slog.Info("HTTP server starting", "addr", ":8008")
 	if err := http.ListenAndServe(":8008", mux); err != nil {
 		slog.Error("HTTP server failed", "err", err)

@@ -20,6 +20,7 @@ const (
 	ContextKeyEmail             contextKey = "email"
 	ContextKeyNebuRole          contextKey = "nebu_role"
 	ContextKeySystemRole        contextKey = "system_role"
+	ContextKeyTokenExpiry       contextKey = "token_expiry"
 )
 
 // mapRole converts a raw OIDC claim value to a canonical Nebu system role.
@@ -47,8 +48,9 @@ func writeMatrixError(w http.ResponseWriter, status int, errcode, message string
 
 // JWTMiddleware validates OIDC JWT tokens. On success, populates context with
 // sub, preferred_username, email, the raw role claim value (ContextKeyNebuRole),
-// and the mapped canonical system role (ContextKeySystemRole).
-func JWTMiddleware(provider *auth.Provider, clientID string, claimName string) func(http.Handler) http.Handler {
+// the mapped canonical system role (ContextKeySystemRole), and token expiry
+// (ContextKeyTokenExpiry). Pass nil for denylist to disable denylist checking.
+func JWTMiddleware(provider *auth.Provider, clientID string, claimName string, denylist *Denylist) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
@@ -57,6 +59,12 @@ func JWTMiddleware(provider *auth.Provider, clientID string, claimName string) f
 				return
 			}
 			rawToken := strings.TrimPrefix(authHeader, "Bearer ")
+
+			// Denylist check: token was explicitly logged out
+			if denylist != nil && denylist.Contains(rawToken) {
+				writeMatrixError(w, http.StatusUnauthorized, "M_UNKNOWN_TOKEN", "Token has been logged out")
+				return
+			}
 
 			inner := provider.Inner()
 			if inner == nil {
@@ -95,6 +103,7 @@ func JWTMiddleware(provider *auth.Provider, clientID string, claimName string) f
 			ctx = context.WithValue(ctx, ContextKeyEmail, email)
 			ctx = context.WithValue(ctx, ContextKeyNebuRole, rawRole)
 			ctx = context.WithValue(ctx, ContextKeySystemRole, systemRole)
+			ctx = context.WithValue(ctx, ContextKeyTokenExpiry, idToken.Expiry)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
