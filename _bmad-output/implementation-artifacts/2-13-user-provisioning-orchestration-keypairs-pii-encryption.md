@@ -1,6 +1,6 @@
 # Story 2.13: User Provisioning Orchestration — Keypairs + PII Encryption
 
-Status: review
+Status: done
 
 ## Story
 
@@ -564,3 +564,4 @@ claude-sonnet-4-6 (1M context)
 ## Change Log
 
 - 2026-03-29: Story 2-13 implemented — migration 000006 (email PII columns), UserProvisioner behaviour + Postgres implementation, unit tests. All tests green (6 session_manager, migrations ok).
+- 2026-03-30: Code review passed — 0 HIGH, 0 MEDIUM, 2 LOW (commit label cosmetic, sprint tracking gap). All ACs verified, all tasks confirmed done. Status → done.
