@@ -19,6 +19,7 @@ func TestLoad_Defaults(t *testing.T) {
 	os.Unsetenv("NEBU_TLS_KEY_FILE")
 	os.Unsetenv("NEBU_TLS_CLIENT_CA_FILE")
 	os.Unsetenv("NEBU_OIDC_CLAIM_ROLE")
+	os.Unsetenv("NEBU_OIDC_DISPLAY_NAME")
 
 	cfg := config.Load()
 
@@ -55,6 +56,9 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.OIDCClaimRole != "nebu_role" {
 		t.Errorf("OIDCClaimRole: got %q, want %q", cfg.OIDCClaimRole, "nebu_role")
 	}
+	if cfg.OIDCDisplayName != "SSO" {
+		t.Errorf("OIDCDisplayName: got %q, want %q", cfg.OIDCDisplayName, "SSO")
+	}
 }
 
 func TestLoad_TLSFields(t *testing.T) {
@@ -83,6 +87,7 @@ func TestLoad_EnvVarsOverrideDefaults(t *testing.T) {
 	t.Setenv("NEBU_OIDC_CLIENT_SECRET", "nebu-dev-secret")
 	t.Setenv("NEBU_INTERNAL_SECRET_FILE", "/run/secrets/internal_secret")
 	t.Setenv("NEBU_SERVER_NAME", "nebu.example.com")
+	t.Setenv("NEBU_OIDC_DISPLAY_NAME", "My Provider")
 
 	cfg := config.Load()
 
@@ -107,6 +112,9 @@ func TestLoad_EnvVarsOverrideDefaults(t *testing.T) {
 	if cfg.ServerName != "nebu.example.com" {
 		t.Errorf("ServerName: got %q", cfg.ServerName)
 	}
+	if cfg.OIDCDisplayName != "My Provider" {
+		t.Errorf("OIDCDisplayName: got %q, want %q", cfg.OIDCDisplayName, "My Provider")
+	}
 }
 
 func TestLoad_OIDCClaimRole_Default(t *testing.T) {
@@ -126,6 +134,26 @@ func TestLoad_OIDCClaimRole_CustomValue(t *testing.T) {
 
 	if cfg.OIDCClaimRole != "roles" {
 		t.Errorf("OIDCClaimRole: got %q, want %q", cfg.OIDCClaimRole, "roles")
+	}
+}
+
+func TestLoad_OIDCDisplayName_Default(t *testing.T) {
+	os.Unsetenv("NEBU_OIDC_DISPLAY_NAME")
+
+	cfg := config.Load()
+
+	if cfg.OIDCDisplayName != "SSO" {
+		t.Errorf("OIDCDisplayName default: got %q, want %q", cfg.OIDCDisplayName, "SSO")
+	}
+}
+
+func TestLoad_OIDCDisplayName_CustomValue(t *testing.T) {
+	t.Setenv("NEBU_OIDC_DISPLAY_NAME", "Corporate SSO")
+
+	cfg := config.Load()
+
+	if cfg.OIDCDisplayName != "Corporate SSO" {
+		t.Errorf("OIDCDisplayName: got %q, want %q", cfg.OIDCDisplayName, "Corporate SSO")
 	}
 }
 

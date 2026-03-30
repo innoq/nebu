@@ -15,6 +15,7 @@ import (
 	"github.com/nebu/nebu/internal/db"
 	coregrpc "github.com/nebu/nebu/internal/grpc"
 	"github.com/nebu/nebu/internal/health"
+	"github.com/nebu/nebu/internal/matrix"
 	"github.com/nebu/nebu/internal/middleware"
 	"github.com/nebu/nebu/internal/registry"
 	"github.com/prometheus/client_golang/prometheus"
@@ -125,6 +126,9 @@ func main() {
 	defer bootstrapDB.Close()
 	bootstrapHandler := admin.NewBootstrapHandler(admin.NewPostgresBootstrapChecker(bootstrapDB))
 	mux.HandleFunc("GET /admin/bootstrap", bootstrapHandler.Handler)
+
+	loginHandler := matrix.NewLoginHandler(cfg.OIDCDisplayName)
+	mux.HandleFunc("GET /_matrix/client/v3/login", loginHandler.GetLogin)
 
 	slog.Info("HTTP server starting", "addr", ":8008")
 	if err := http.ListenAndServe(":8008", mux); err != nil {

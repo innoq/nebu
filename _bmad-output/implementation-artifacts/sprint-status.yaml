@@ -36,6 +36,10 @@
 
 generated: 2026-03-20
 last_updated: 2026-03-30
+# story 2-17 done (code review passed): 2026-03-30
+# story 2-17 review: 2026-03-30
+# story 2-17 in-progress: 2026-03-30
+# story 2-17 created: 2-17 → ready-for-dev: 2026-03-30
 # story 2-13 done (code review passed): 2026-03-30
 # story 2-16 done (code review passed): 2026-03-30
 # story 2-16 review: 2026-03-30
@@ -219,7 +223,7 @@ development_status:
   2-14-validatetoken-grpc-handler: done
   2-15-bootstrap-mode-auto-instance-admin-assignment: done
   2-16-bootstrap-mode-permanent-deactivation: done
-  2-17-get-matrix-client-v3-login-sso-flow-discovery: backlog
+  2-17-get-matrix-client-v3-login-sso-flow-discovery: done
   2-18-post-matrix-client-v3-login-oidc-token-exchange: backlog
   2-19-post-matrix-client-v3-logout-session-invalidation: backlog
   2-20-dex-dev-setup: backlog
