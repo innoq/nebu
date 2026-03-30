@@ -20,6 +20,8 @@ func TestFS_ContainsExpectedMigrationFiles(t *testing.T) {
 		"000004_users.down.sql",
 		"000005_sessions.up.sql",
 		"000005_sessions.down.sql",
+		"000006_users_email_pii.up.sql",
+		"000006_users_email_pii.down.sql",
 	}
 
 	for _, name := range files {
