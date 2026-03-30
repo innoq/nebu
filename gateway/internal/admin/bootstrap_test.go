@@ -54,16 +54,8 @@ func TestBootstrapHandler_NotActive(t *testing.T) {
 	rr := httptest.NewRecorder()
 	handler.Handler(rr, req)
 
-	if rr.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", rr.Code)
-	}
-
-	var resp bootstrapResponse
-	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
-		t.Fatalf("json decode: %v", err)
-	}
-	if resp.BootstrapActive {
-		t.Error("expected bootstrap_active=false, got true")
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", rr.Code)
 	}
 }
 

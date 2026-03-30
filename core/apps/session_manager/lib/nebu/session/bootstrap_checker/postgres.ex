@@ -25,6 +25,12 @@ defmodule Nebu.Session.BootstrapChecker.Postgres do
   ON CONFLICT (key) DO NOTHING
   """
 
+  @complete_sql """
+  INSERT INTO server_config (key, value, set_at)
+  VALUES ('bootstrap_completed', 'true', $1)
+  ON CONFLICT (key) DO NOTHING
+  """
+
   @impl Nebu.Session.BootstrapChecker
   def upsert_with_bootstrap(user_id, system_role) do
     Nebu.Repo.transaction(fn ->
@@ -45,6 +51,7 @@ defmodule Nebu.Session.BootstrapChecker.Postgres do
       # Record bootstrap activation flag if bootstrap triggered
       if is_bootstrap do
         Ecto.Adapters.SQL.query!(Nebu.Repo, @flag_sql, [now_ms])
+        Ecto.Adapters.SQL.query!(Nebu.Repo, @complete_sql, [now_ms])
       end
 
       {user_id, stored_role}

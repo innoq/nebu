@@ -16,6 +16,7 @@ defmodule Nebu.Session.BootstrapCheckerTest do
         case bootstrap_active do
           [{:bootstrap_active, true}] ->
             :ets.insert(:bootstrap_test, {:bootstrap_active, false})
+            :ets.insert(:bootstrap_test, {:bootstrap_completed, true})
             "instance_admin"
 
           _ ->
@@ -86,6 +87,36 @@ defmodule Nebu.Session.BootstrapCheckerTest do
       # Second user — bootstrap already consumed
       assert {:ok, {"@second:nebu.local", "user"}} =
                BootstrapChecker.upsert_with_bootstrap("@second:nebu.local", "user")
+    end
+
+    test "bootstrap triggers — bootstrap_completed recorded" do
+      :ets.insert(:bootstrap_test, {:bootstrap_active, true})
+
+      assert {:ok, {"@kai:nebu.local", "instance_admin"}} =
+               BootstrapChecker.upsert_with_bootstrap("@kai:nebu.local", "user")
+
+      assert [{:bootstrap_completed, true}] =
+               :ets.lookup(:bootstrap_test, :bootstrap_completed)
+    end
+
+    test "after bootstrap_completed, subsequent calls use OIDC role (role passthrough)" do
+      :ets.insert(:bootstrap_test, {:bootstrap_active, true})
+
+      # First call — bootstrap triggers
+      assert {:ok, {"@first:nebu.local", "instance_admin"}} =
+               BootstrapChecker.upsert_with_bootstrap("@first:nebu.local", "user")
+
+      # Verify bootstrap_completed is set
+      assert [{:bootstrap_completed, true}] =
+               :ets.lookup(:bootstrap_test, :bootstrap_completed)
+
+      # Second call — bootstrap_completed prevents re-trigger, OIDC role preserved
+      assert {:ok, {"@second:nebu.local", "user"}} =
+               BootstrapChecker.upsert_with_bootstrap("@second:nebu.local", "user")
+
+      # Third call with admin role — OIDC role preserved, not overridden to instance_admin
+      assert {:ok, {"@third:nebu.local", "instance_admin"}} =
+               BootstrapChecker.upsert_with_bootstrap("@third:nebu.local", "instance_admin")
     end
 
     test "delegation respects configured module" do

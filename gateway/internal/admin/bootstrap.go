@@ -36,8 +36,13 @@ func (h *BootstrapHandler) Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !active {
+		http.NotFound(w, r)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(bootstrapResponse{BootstrapActive: active})
+	_ = json.NewEncoder(w).Encode(bootstrapResponse{BootstrapActive: true})
 }
 
 // PostgresBootstrapChecker checks bootstrap status against PostgreSQL.
