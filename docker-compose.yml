@@ -26,15 +26,18 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      dex:
+        condition: service_healthy
     secrets: [internal_secret]
     environment:
       NEBU_DB_URL: "postgresql://nebu:nebu_dev_password@postgres:5432/nebu"
       NEBU_CORE_GRPC_ADDR: "core:9000"
       NEBU_INTERNAL_SECRET_FILE: "/run/secrets/internal_secret"
       NEBU_SERVER_NAME: "localhost"
-      NEBU_OIDC_ISSUER: "http://dex:5556"
+      NEBU_OIDC_ISSUER: "http://dex:5556/dex"
       NEBU_OIDC_CLIENT_ID: "nebu-gateway"
       NEBU_OIDC_CLIENT_SECRET: "nebu-dev-secret"
+      NEBU_OIDC_CLAIM_ROLE: "groups"
     ports:
       - "8008:8008"
       - "8080:8080"
@@ -67,12 +70,20 @@ services:
       start_period: 30s
 
   dex:
-    image: ghcr.io/dexidp/dex:v2.40.0
+    image: dexidp/dex:v2.41.1
     command: ["dex", "serve", "/etc/dex/config.yaml"]
     volumes:
       - ./dev/dex/config.yaml:/etc/dex/config.yaml:ro
+      - dex_data:/var/dex
     ports:
       - "5556:5556"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:5556/dex/.well-known/openid-configuration || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
 
 volumes:
   postgres_data:
+  dex_data:

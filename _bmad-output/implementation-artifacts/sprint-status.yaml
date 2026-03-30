@@ -36,6 +36,10 @@
 
 generated: 2026-03-20
 last_updated: 2026-03-30
+# story 2-20 done (code review passed): 2026-03-30
+# story 2-20 review: 2026-03-30
+# story 2-20 in-progress: 2026-03-30
+# story 2-20 created: 2-20 → ready-for-dev: 2026-03-30
 # story 2-19 done (code review passed): 2026-03-30
 # story 2-19 review: 2026-03-30
 # story 2-19 in-progress: 2026-03-30
@@ -234,7 +238,7 @@ development_status:
   2-17-get-matrix-client-v3-login-sso-flow-discovery: done
   2-18-post-matrix-client-v3-login-oidc-token-exchange: done
   2-19-post-matrix-client-v3-logout-session-invalidation: done
-  2-20-dex-dev-setup: backlog
+  2-20-dex-dev-setup: done
   2-21-gherkin-auth-scenario-end-to-end-oidc-login: backlog
   epic-2-retrospective: optional
 

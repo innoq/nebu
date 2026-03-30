@@ -322,6 +322,56 @@ func TestJWTMiddleware_SystemRoleInContext(t *testing.T) {
 	}
 }
 
+func TestJWTMiddleware_ArrayRoleClaim(t *testing.T) {
+	srv, key := setupOIDCServer(t)
+	provider := auth.NewProvider(context.Background(), srv.URL)
+
+	signer, err := jose.NewSigner(
+		jose.SigningKey{Algorithm: jose.RS256, Key: key},
+		(&jose.SignerOptions{}).WithHeader("kid", "test-key-1"),
+	)
+	if err != nil {
+		t.Fatalf("NewSigner: %v", err)
+	}
+	cl := josejwt.Claims{
+		Subject:  "user-789",
+		Issuer:   srv.URL,
+		Audience: josejwt.Audience{"nebu-gateway"},
+		Expiry:   josejwt.NewNumericDate(time.Now().Add(time.Hour)),
+		IssuedAt: josejwt.NewNumericDate(time.Now().Add(-time.Minute)),
+	}
+	// Dex delivers groups as an array (e.g. ["instance_admin"])
+	extra := map[string]any{
+		"preferred_username": "kai",
+		"email":              "kai@example.com",
+		"groups":             []any{"instance_admin"},
+	}
+	rawToken, err := josejwt.Signed(signer).Claims(cl).Claims(extra).Serialize()
+	if err != nil {
+		t.Fatalf("Serialize: %v", err)
+	}
+
+	var capturedSystemRole string
+	handler := middleware.JWTMiddleware(provider, "nebu-gateway", "groups", nil)(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			capturedSystemRole, _ = r.Context().Value(middleware.ContextKeySystemRole).(string)
+			w.WriteHeader(http.StatusOK)
+		}),
+	)
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Authorization", "Bearer "+rawToken)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rr.Code)
+	}
+	if capturedSystemRole != "instance_admin" {
+		t.Errorf("expected system_role=instance_admin for array groups claim, got %q", capturedSystemRole)
+	}
+}
+
 func TestJWTMiddleware_DenylistedToken(t *testing.T) {
 	srv, key := setupOIDCServer(t)
 	provider := auth.NewProvider(context.Background(), srv.URL)

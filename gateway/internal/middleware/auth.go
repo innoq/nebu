@@ -23,6 +23,24 @@ const (
 	ContextKeyTokenExpiry       contextKey = "token_expiry"
 )
 
+// extractRoleClaim reads a role claim by name from JWT claims.
+// Handles both string and []interface{} (e.g. Dex groups claim) by returning the first element.
+func extractRoleClaim(claims map[string]interface{}, claimName string) string {
+	v, ok := claims[claimName]
+	if !ok {
+		return ""
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	if arr, ok := v.([]interface{}); ok && len(arr) > 0 {
+		if s, ok := arr[0].(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
 // mapRole converts a raw OIDC claim value to a canonical Nebu system role.
 // Only "instance_admin" and "compliance_officer" are privileged roles.
 // All other values (including empty string) map to "user".
@@ -94,7 +112,7 @@ func JWTMiddleware(provider *auth.Provider, clientID string, claimName string, d
 			sub, _ := allClaims["sub"].(string)
 			preferredUsername, _ := allClaims["preferred_username"].(string)
 			email, _ := allClaims["email"].(string)
-			rawRole, _ := allClaims[claimName].(string)
+			rawRole := extractRoleClaim(allClaims, claimName)
 			systemRole := mapRole(rawRole)
 
 			ctx := r.Context()

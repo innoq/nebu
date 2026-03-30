@@ -16,7 +16,7 @@ build-gateway:
 build-core:
 	$(DOCKER_ELIXIR) sh -c "cd core && mix local.hex --force && mix deps.get && mix compile"
 
-## dev: Start the full local development stack (gateway, core, postgres, keycloak)
+## dev: Start the full local development stack (gateway, core, postgres, dex)
 dev:
 	docker compose up
 
@@ -29,6 +29,11 @@ setup:
 	else \
 		echo ".secrets/internal_secret already exists, skipping"; \
 	fi
+	@echo ""
+	@echo "Dev credentials (Dex local users):"
+	@echo "  kai@example.com        / changeme  (instance_admin)"
+	@echo "  compliance@example.com / changeme  (compliance_officer)"
+	@echo "  alex@example.com       / changeme  (user)"
 
 ## test-unit-go: Run Go unit tests inside container
 test-unit-go:

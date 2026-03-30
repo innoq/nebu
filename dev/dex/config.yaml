@@ -1,30 +1,50 @@
-issuer: http://dex:5556
+issuer: http://dex:5556/dex
 
 storage:
-  type: memory
+  type: sqlite3
+  config:
+    file: /var/dex/dex.db
 
 web:
   http: 0.0.0.0:5556
 
+oauth2:
+  responseTypes: [code]
+  skipApprovalScreen: true
+
 enablePasswordDB: true
+
+staticClients:
+  - id: nebu-gateway
+    name: "Nebu Gateway"
+    secret: nebu-dev-secret
+    redirectURIs:
+      - "http://localhost:8008/_matrix/client/v3/login/sso/redirect/oidc"
+
+  - id: nebu-admin
+    name: "Nebu Admin UI"
+    secret: nebu-admin-secret
+    redirectURIs:
+      - "http://localhost:8080/admin/callback"
 
 staticPasswords:
   - email: "kai@example.com"
     hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4u"
     username: "kai"
-    userID: "kai-id"
+    userID: "00000000-0000-0000-0000-000000000001"
+    groups:
+      - instance_admin
+
   - email: "compliance@example.com"
     hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4u"
     username: "compliance"
-    userID: "compliance-id"
+    userID: "00000000-0000-0000-0000-000000000002"
+    groups:
+      - compliance_officer
+
   - email: "alex@example.com"
     hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4u"
     username: "alex"
-    userID: "alex-id"
-
-staticClients:
-  - id: nebu-gateway
-    redirectURIs:
-      - "http://localhost:8008/_matrix/client/v3/login/sso/redirect/oidc"
-    name: "Nebu Gateway"
-    secret: nebu-dev-secret
+    userID: "00000000-0000-0000-0000-000000000003"
+    groups:
+      - user
