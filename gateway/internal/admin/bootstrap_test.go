@@ -3,9 +3,9 @@ package admin
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -20,9 +20,19 @@ func (f *fakeBootstrapChecker) IsBootstrapActive(_ context.Context) (bool, error
 	return f.active, f.err
 }
 
+func newTestBootstrapHandler(t *testing.T, checker BootstrapStatusChecker) *BootstrapHandler {
+	t.Helper()
+	tmpl, err := NewTemplateHandler()
+	if err != nil {
+		t.Fatalf("NewTemplateHandler: %v", err)
+	}
+	return NewBootstrapHandler(checker, tmpl)
+}
+
+// TestBootstrapHandler_Active verifies that an active bootstrap renders step 1 HTML.
 func TestBootstrapHandler_Active(t *testing.T) {
 	checker := &fakeBootstrapChecker{active: true}
-	handler := NewBootstrapHandler(checker)
+	handler := newTestBootstrapHandler(t, checker)
 
 	req := httptest.NewRequest("GET", "/admin/bootstrap", nil)
 	rr := httptest.NewRecorder()
@@ -33,41 +43,12 @@ func TestBootstrapHandler_Active(t *testing.T) {
 	}
 
 	ct := rr.Header().Get("Content-Type")
-	if ct != "application/json" {
-		t.Errorf("expected Content-Type application/json, got %q", ct)
+	if !strings.HasPrefix(ct, "text/html") {
+		t.Errorf("expected Content-Type text/html, got %q", ct)
 	}
 
-	var resp bootstrapResponse
-	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
-		t.Fatalf("json decode: %v", err)
-	}
-	if !resp.BootstrapActive {
-		t.Error("expected bootstrap_active=true, got false")
-	}
-}
-
-func TestBootstrapHandler_NotActive(t *testing.T) {
-	checker := &fakeBootstrapChecker{active: false}
-	handler := NewBootstrapHandler(checker)
-
-	req := httptest.NewRequest("GET", "/admin/bootstrap", nil)
-	rr := httptest.NewRecorder()
-	handler.Handler(rr, req)
-
-	if rr.Code != http.StatusNotFound {
-		t.Errorf("expected 404, got %d", rr.Code)
-	}
-}
-
-func TestBootstrapHandler_Error(t *testing.T) {
-	checker := &fakeBootstrapChecker{err: errFakeDB}
-	handler := NewBootstrapHandler(checker)
-
-	req := httptest.NewRequest("GET", "/admin/bootstrap", nil)
-	rr := httptest.NewRecorder()
-	handler.Handler(rr, req)
-
-	if rr.Code != http.StatusInternalServerError {
-		t.Errorf("expected 500, got %d", rr.Code)
+	body := rr.Body.String()
+	if !strings.Contains(body, `name="instance_name"`) {
+		t.Error("expected HTML to contain instance_name input field")
 	}
 }

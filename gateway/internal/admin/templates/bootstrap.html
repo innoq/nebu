@@ -1,0 +1,263 @@
+{{ template "base" . }}
+{{ define "title" }}Bootstrap Setup — Nebu Admin{{ end }}
+{{ define "content" }}
+<div class="max-w-lg mx-auto">
+  <h1 class="text-2xl font-bold mb-6">Bootstrap Setup</h1>
+
+  <!-- DaisyUI steps progress indicator -->
+  <ul class="steps steps-horizontal w-full mb-8">
+    <li class="step {{ if ge .Step 1 }}step-primary{{ end }}">Instance</li>
+    <li class="step {{ if ge .Step 2 }}step-primary{{ end }}">OIDC</li>
+    <li class="step {{ if ge .Step 3 }}step-primary{{ end }}">Keys</li>
+    <li class="step {{ if ge .Step 4 }}step-primary{{ end }}">Admin</li>
+  </ul>
+
+  <div class="card bg-base-200 shadow-md">
+    <div class="card-body">
+
+      {{ if eq .Step 1 }}
+      <!-- Step 1: Instance Name -->
+      <h2 class="card-title">Step 1: Instance Name</h2>
+      <form method="POST" action="/admin/bootstrap">
+        <input type="hidden" name="step" value="1">
+
+        <div class="form-control mb-4">
+          <label class="label" for="instance_name">
+            <span class="label-text">Instance Name</span>
+          </label>
+          <input
+            type="text"
+            id="instance_name"
+            name="instance_name"
+            class="input input-bordered"
+            required
+            minlength="3"
+            maxlength="64"
+            pattern="[a-zA-Z0-9-]+"
+            placeholder="my-nebu-instance"
+            value="{{ .InstanceName }}"
+          >
+          {{ if .Errors }}{{ if index .Errors "instance_name" }}
+          <div class="alert alert-error mt-2">
+            <span>{{ index .Errors "instance_name" }}</span>
+          </div>
+          {{ end }}{{ end }}
+        </div>
+
+        <div class="card-actions justify-end">
+          <button type="submit" class="btn btn-primary">Next</button>
+        </div>
+      </form>
+      {{ end }}
+
+      {{ if eq .Step 2 }}
+      <!-- Step 2: OIDC Configuration -->
+      <h2 class="card-title">Step 2: OIDC Configuration</h2>
+      <form method="POST" action="/admin/bootstrap">
+        <input type="hidden" name="step" value="2">
+        <input type="hidden" name="instance_name" value="{{ .InstanceName }}">
+
+        <div class="form-control mb-4">
+          <label class="label" for="oidc_issuer">
+            <span class="label-text">OIDC Issuer URL</span>
+          </label>
+          <input
+            type="url"
+            id="oidc_issuer"
+            name="oidc_issuer"
+            class="input input-bordered"
+            required
+            placeholder="https://auth.example.com/realms/nebu"
+            value="{{ .OIDCIssuer }}"
+          >
+          {{ if .Errors }}{{ if index .Errors "oidc_issuer" }}
+          <div class="alert alert-error mt-2">
+            <span>{{ index .Errors "oidc_issuer" }}</span>
+          </div>
+          {{ end }}{{ end }}
+        </div>
+
+        <div class="form-control mb-4">
+          <label class="label" for="oidc_client_id">
+            <span class="label-text">OIDC Client ID</span>
+          </label>
+          <input
+            type="text"
+            id="oidc_client_id"
+            name="oidc_client_id"
+            class="input input-bordered"
+            required
+            placeholder="nebu-admin"
+            value="{{ .OIDCClientID }}"
+          >
+          {{ if .Errors }}{{ if index .Errors "oidc_client_id" }}
+          <div class="alert alert-error mt-2">
+            <span>{{ index .Errors "oidc_client_id" }}</span>
+          </div>
+          {{ end }}{{ end }}
+        </div>
+
+        <div class="form-control mb-4">
+          <label class="label" for="oidc_client_secret">
+            <span class="label-text">OIDC Client Secret</span>
+          </label>
+          <input
+            type="password"
+            id="oidc_client_secret"
+            name="oidc_client_secret"
+            class="input input-bordered"
+            required
+            placeholder="••••••••"
+          >
+          {{ if .Errors }}{{ if index .Errors "oidc_client_secret" }}
+          <div class="alert alert-error mt-2">
+            <span>{{ index .Errors "oidc_client_secret" }}</span>
+          </div>
+          {{ end }}{{ end }}
+        </div>
+
+        <div class="mb-4">
+          <button type="button" id="test-oidc-btn" class="btn btn-outline btn-sm">
+            Test Connection
+          </button>
+          <div id="oidc-test-result" class="mt-2" aria-live="assertive"></div>
+        </div>
+
+        <div class="card-actions justify-between">
+          <button type="submit" name="go_back" value="1" class="btn btn-ghost">Back</button>
+          <button type="submit" class="btn btn-primary">Next</button>
+        </div>
+      </form>
+      {{ end }}
+
+      {{ if eq .Step 3 }}
+      <!-- Step 3: Key Generation -->
+      <h2 class="card-title">Step 3: Key Generation</h2>
+      <form method="POST" action="/admin/bootstrap">
+        <input type="hidden" name="step" value="3">
+        <input type="hidden" name="instance_name" value="{{ .InstanceName }}">
+        <input type="hidden" name="oidc_issuer" value="{{ .OIDCIssuer }}">
+        <input type="hidden" name="oidc_client_id" value="{{ .OIDCClientID }}">
+
+        <div class="alert alert-info mb-4">
+          <div>
+            <p class="font-semibold mb-1">Cryptographic Key Pairs</p>
+            <p>Nebu will generate two key pairs for your instance:</p>
+            <ul class="list-disc list-inside mt-2 text-sm">
+              <li><strong>Ed25519</strong> — signing key pair for event signatures and identity verification</li>
+              <li><strong>X25519</strong> — encryption key pair for end-to-end encrypted message content</li>
+            </ul>
+            <p class="mt-2 text-sm">Keys are generated server-side and stored securely. The public Ed25519 fingerprint will be shown for verification.</p>
+          </div>
+        </div>
+
+        <div class="mb-4">
+          <button type="button" id="generate-keys-btn" class="btn btn-outline btn-sm">
+            Generate Keys
+          </button>
+          <div id="keys-result" class="mt-2" aria-live="assertive"></div>
+        </div>
+
+        <div class="card-actions justify-between">
+          <button type="submit" name="go_back" value="2" class="btn btn-ghost">Back</button>
+          <button type="submit" class="btn btn-primary">Next</button>
+        </div>
+      </form>
+      {{ end }}
+
+      {{ if eq .Step 4 }}
+      <!-- Step 4: First Admin -->
+      <h2 class="card-title">Step 4: First Administrator</h2>
+      <form method="POST" action="/admin/bootstrap">
+        <input type="hidden" name="step" value="4">
+        <input type="hidden" name="instance_name" value="{{ .InstanceName }}">
+        <input type="hidden" name="oidc_issuer" value="{{ .OIDCIssuer }}">
+        <input type="hidden" name="oidc_client_id" value="{{ .OIDCClientID }}">
+
+        <div class="alert alert-success mb-4">
+          <div>
+            <p class="font-semibold mb-1">Almost done!</p>
+            <p>Complete setup by logging in with your OIDC provider. The first user to log in will be assigned <code class="font-mono bg-base-300 px-1 rounded">instance_admin</code>.</p>
+          </div>
+        </div>
+
+        <div class="card-actions justify-between">
+          <button type="submit" name="go_back" value="3" class="btn btn-ghost">Back</button>
+          <button type="submit" class="btn btn-primary">Complete Setup</button>
+        </div>
+      </form>
+      {{ end }}
+
+    </div>
+  </div>
+</div>
+{{ end }}
+
+{{ define "scripts" }}
+<script>
+(function() {
+  // Escape HTML to prevent XSS when inserting server response text
+  function esc(s) {
+    var d = document.createElement('div');
+    d.appendChild(document.createTextNode(s));
+    return d.innerHTML;
+  }
+
+  // Test OIDC Connection (Step 2)
+  var testBtn = document.getElementById('test-oidc-btn');
+  if (testBtn) {
+    testBtn.addEventListener('click', async function(e) {
+      e.preventDefault();
+      var btn = this;
+      btn.disabled = true;
+      btn.classList.add('loading', 'loading-spinner');
+      var result = document.getElementById('oidc-test-result');
+      result.innerHTML = '';
+      try {
+        var form = btn.closest('form');
+        var data = new FormData(form);
+        var resp = await fetch('/admin/bootstrap/test-oidc', {method: 'POST', body: data});
+        var json = await resp.json();
+        if (json.ok) {
+          result.innerHTML = '<div class="alert alert-success"><span>&#10003; Connected to ' + esc(json.issuer || data.get('oidc_issuer')) + '</span></div>';
+        } else {
+          result.innerHTML = '<div class="alert alert-error"><span>&#10007; ' + esc(json.error || 'Unknown error') + '</span></div>';
+        }
+      } catch (err) {
+        result.innerHTML = '<div class="alert alert-error"><span>&#10007; Network error</span></div>';
+      } finally {
+        btn.disabled = false;
+        btn.classList.remove('loading', 'loading-spinner');
+      }
+    });
+  }
+
+  // Generate Keys (Step 3)
+  var genBtn = document.getElementById('generate-keys-btn');
+  if (genBtn) {
+    genBtn.addEventListener('click', async function(e) {
+      e.preventDefault();
+      var btn = this;
+      btn.disabled = true;
+      btn.classList.add('loading', 'loading-spinner');
+      var result = document.getElementById('keys-result');
+      result.innerHTML = '';
+      try {
+        var resp = await fetch('/admin/bootstrap/generate-keys', {method: 'POST'});
+        var json = await resp.json();
+        if (json.ok) {
+          result.innerHTML = '<div class="alert alert-success"><span>&#10003; Keys generated. Ed25519 public fingerprint: <code class="font-mono">' + esc(json.ed25519_public_fingerprint) + '</code></span></div>';
+        } else {
+          result.innerHTML = '<div class="alert alert-error"><span>&#10007; ' + esc(json.error || 'Key generation failed') + '</span></div>';
+        }
+      } catch (err) {
+        result.innerHTML = '<div class="alert alert-error"><span>&#10007; Network error</span></div>';
+      } finally {
+        btn.disabled = false;
+        btn.classList.remove('loading', 'loading-spinner');
+      }
+    });
+  }
+})();
+</script>
+{{ end }}

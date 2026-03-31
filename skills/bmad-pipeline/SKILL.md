@@ -140,7 +140,6 @@ Zeige: `✓ Kein Major Issue – commite automatisch.`
 ```bash
 git commit -m "$(cat <<'EOF'
 [KURZE_ZUSAMMENFASSUNG_AUS_STORY_ODER_REVIEW]
-
 EOF
 )"
 ```
@@ -182,8 +181,11 @@ Stoppe hier und warte auf den User.
 **Epic läuft noch:**
 
 ```
-✅ Pipeline abgeschlossen. Nächste Story bereit.
+✅ Story abgeschlossen. Nächste Story starten? [Y/n]
 ```
+
+- Bei `Y` oder Enter: Starte die Pipeline von vorne (Schritt 1: bmad-create-story).
+- Bei `n`: Beende die Pipeline.
 
 ---
 

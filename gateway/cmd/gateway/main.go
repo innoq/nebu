@@ -124,8 +124,14 @@ func main() {
 		os.Exit(1)
 	}
 	defer bootstrapDB.Close()
+	tmplHandler, err := admin.NewTemplateHandler()
+	if err != nil {
+		slog.Error("failed to initialize template handler", "err", err)
+		os.Exit(1)
+	}
+
 	checker := admin.NewPostgresBootstrapChecker(bootstrapDB)
-	bootstrapHandler := admin.NewBootstrapHandler(checker)
+	bootstrapHandler := admin.NewBootstrapHandler(checker, tmplHandler)
 	guard := admin.BootstrapGuard(checker)
 
 	// Static assets — no guard (needed to render bootstrap page)
@@ -134,6 +140,15 @@ func main() {
 
 	// Bootstrap page — guarded (guard checks bootstrap state)
 	mux.Handle("GET /admin/bootstrap", guard(http.HandlerFunc(bootstrapHandler.Handler)))
+	mux.Handle("POST /admin/bootstrap", guard(http.HandlerFunc(bootstrapHandler.StepHandler)))
+
+	// Stub endpoints for Story 3.8 (test-oidc and generate-keys)
+	mux.HandleFunc("POST /admin/bootstrap/test-oidc", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "Not implemented", http.StatusNotImplemented)
+	})
+	mux.HandleFunc("POST /admin/bootstrap/generate-keys", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "Not implemented", http.StatusNotImplemented)
+	})
 
 	loginHandler := matrix.NewLoginHandler(matrix.LoginConfig{
 		DisplayName:   cfg.OIDCDisplayName,
