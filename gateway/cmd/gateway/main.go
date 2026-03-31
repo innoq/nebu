@@ -124,10 +124,16 @@ func main() {
 		os.Exit(1)
 	}
 	defer bootstrapDB.Close()
-	bootstrapHandler := admin.NewBootstrapHandler(admin.NewPostgresBootstrapChecker(bootstrapDB))
-	mux.HandleFunc("GET /admin/bootstrap", bootstrapHandler.Handler)
+	checker := admin.NewPostgresBootstrapChecker(bootstrapDB)
+	bootstrapHandler := admin.NewBootstrapHandler(checker)
+	guard := admin.BootstrapGuard(checker)
+
+	// Static assets — no guard (needed to render bootstrap page)
 	mux.HandleFunc("GET /admin/static/admin.css", admin.ServeCSS)
 	mux.HandleFunc("GET /admin/static/fonts/{filename}", admin.ServeFontFile)
+
+	// Bootstrap page — guarded (guard checks bootstrap state)
+	mux.Handle("GET /admin/bootstrap", guard(http.HandlerFunc(bootstrapHandler.Handler)))
 
 	loginHandler := matrix.NewLoginHandler(matrix.LoginConfig{
 		DisplayName:   cfg.OIDCDisplayName,

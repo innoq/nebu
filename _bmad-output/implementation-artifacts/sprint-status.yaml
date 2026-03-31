@@ -36,6 +36,10 @@
 
 generated: 2026-03-20
 last_updated: 2026-03-31
+# story 3-6 done (code review passed): 2026-03-31
+# story 3-6 review: 2026-03-31
+# story 3-6 in-progress: 2026-03-31
+# story 3-6 created: 3-6 → ready-for-dev: 2026-03-31
 # story 3-5 done (code review passed): 2026-03-31
 # story 3-5 review: 2026-03-31
 # story 3-5 in-progress: 2026-03-31
@@ -276,7 +280,7 @@ development_status:
   3-3-self-hosted-woff2-fonts-static-asset-serving: done
   3-4-base-layout-template-nav-shell-slots: done
   3-5-active-navigation-url-state: done
-  3-6-bootstrap-detection-middleware: backlog
+  3-6-bootstrap-detection-middleware: done
   3-7-bootstrap-ui-welcome-page-setup-form: backlog
   3-8-bootstrap-api-handler-post-admin-bootstrap: backlog
   3-9-admin-oidc-login-flow-pkce-state: backlog
