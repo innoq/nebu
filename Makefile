@@ -7,7 +7,21 @@ DOCKER_ELIXIR = docker run --rm -v $(PWD):/workspace -w /workspace elixir:1.19-a
 DOCKER_BUF    = docker run --rm -v $(PWD):/workspace -w /workspace bufbuild/buf
 DOCKER_NODE   = docker run --rm -v $(PWD):/workspace -w /workspace node:22-alpine
 
-.PHONY: build-gateway build-core build-admin-css dev setup test-unit-go test-unit-elixir test-integration proto gen-api
+.PHONY: build-gateway build-core build-admin-css download-fonts dev setup test-unit-go test-unit-elixir test-integration proto gen-api
+
+## download-fonts: Download Inter + JetBrains Mono WOFF2 fonts (run once; commit results)
+download-fonts:
+	docker run --rm -v $(PWD):/workspace -w /workspace alpine:3.19 sh -c "\
+		apk add -q --no-cache curl && \
+		mkdir -p gateway/internal/admin/static/fonts && \
+		curl -fsSL -o gateway/internal/admin/static/fonts/Inter-Regular.woff2 \
+			'https://fonts.bunny.net/inter/files/inter-latin-400-normal.woff2' && \
+		curl -fsSL -o gateway/internal/admin/static/fonts/Inter-Medium.woff2 \
+			'https://fonts.bunny.net/inter/files/inter-latin-500-normal.woff2' && \
+		curl -fsSL -o gateway/internal/admin/static/fonts/Inter-SemiBold.woff2 \
+			'https://fonts.bunny.net/inter/files/inter-latin-600-normal.woff2' && \
+		curl -fsSL -o gateway/internal/admin/static/fonts/JetBrainsMono-Regular.woff2 \
+			'https://fonts.bunny.net/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2'"
 
 ## build-admin-css: Compile Tailwind CSS + DaisyUI into gateway/internal/admin/static/admin.css
 build-admin-css:
