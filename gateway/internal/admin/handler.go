@@ -3,8 +3,10 @@ package admin
 import (
 	"embed"
 	"html/template"
+	"io/fs"
 	"log/slog"
 	"net/http"
+	"path"
 )
 
 //go:embed templates
@@ -16,9 +18,25 @@ type TemplateHandler struct {
 	tmpl *template.Template
 }
 
-// NewTemplateHandler parses all templates from the embedded FS. Returns error if parsing fails.
+// NewTemplateHandler parses all templates from the embedded FS recursively.
+// Uses fs.WalkDir to collect all .html files under templates/ so that
+// subdirectories (e.g. templates/layouts/) are included automatically.
+// Returns error if parsing fails.
 func NewTemplateHandler() (*TemplateHandler, error) {
-	tmpl, err := template.ParseFS(adminFS, "templates/*.html")
+	var patterns []string
+	err := fs.WalkDir(adminFS, "templates", func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && path.Ext(p) == ".html" {
+			patterns = append(patterns, p)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	tmpl, err := template.ParseFS(adminFS, patterns...)
 	if err != nil {
 		return nil, err
 	}

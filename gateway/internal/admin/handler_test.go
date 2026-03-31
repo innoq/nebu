@@ -3,6 +3,7 @@ package admin
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -38,4 +39,49 @@ func TestTemplateHandler_render(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBaseLayout(t *testing.T) {
+	h, err := NewTemplateHandler()
+	if err != nil {
+		t.Fatalf("NewTemplateHandler: %v", err)
+	}
+
+	t.Run("layout contains landmarks without bootstrap mode", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		h.render(w, "base", PageData{BootstrapMode: false})
+		if w.Code != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", w.Code, http.StatusOK)
+		}
+		body := w.Body.String()
+		for _, want := range []string{"<header", "<nav", "<main"} {
+			if !strings.Contains(body, want) {
+				t.Errorf("expected body to contain %q", want)
+			}
+		}
+	})
+
+	t.Run("bootstrap nav item shown when BootstrapMode=true", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		h.render(w, "base", PageData{BootstrapMode: true})
+		if w.Code != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", w.Code, http.StatusOK)
+		}
+		body := w.Body.String()
+		if !strings.Contains(body, `data-navkey="bootstrap"`) {
+			t.Error("expected body to contain data-navkey=\"bootstrap\" when BootstrapMode=true")
+		}
+	})
+
+	t.Run("bootstrap nav item hidden when BootstrapMode=false", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		h.render(w, "base", PageData{BootstrapMode: false})
+		if w.Code != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", w.Code, http.StatusOK)
+		}
+		body := w.Body.String()
+		if strings.Contains(body, `data-navkey="bootstrap"`) {
+			t.Error("expected body NOT to contain data-navkey=\"bootstrap\" when BootstrapMode=false")
+		}
+	})
 }

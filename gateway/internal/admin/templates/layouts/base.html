@@ -1,0 +1,70 @@
+{{ define "base" }}<!DOCTYPE html>
+<html lang="en" data-theme="obsidian">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ block "title" . }}Nebu Admin{{ end }}</title>
+  <link rel="stylesheet" href="/admin/static/admin.css">
+</head>
+<body class="bg-base-100 text-base-content min-h-screen flex flex-col">
+
+  <!-- Topbar -->
+  <header class="h-12 bg-base-300 flex items-center justify-between px-4 shrink-0">
+    <span class="font-semibold text-base-content">Nebu Admin</span>
+    <!-- C3: TopbarStatusIndicator — placeholder; Story 3.13 wires real status -->
+    <span id="topbar-status" aria-live="polite" aria-label="System status: connecting"
+          class="flex items-center gap-1 text-sm text-warning">
+      <span class="w-2 h-2 rounded-full bg-warning inline-block" aria-hidden="true"></span>
+      Connecting&hellip;
+    </span>
+  </header>
+
+  <!-- Shell: sidebar + content -->
+  <div class="flex flex-1 overflow-hidden">
+
+    <!-- Sidebar Nav -->
+    <nav aria-label="Admin navigation"
+         class="w-60 bg-base-200 flex flex-col shrink-0 border-r border-base-300">
+      <ul role="list" class="flex flex-col gap-1 p-2 flex-1">
+        {{ if .BootstrapMode }}
+        <li>
+          <a href="/admin/bootstrap"
+             data-navkey="bootstrap"
+             class="flex items-center gap-2 px-3 py-3 rounded text-sm font-medium
+                    text-base-content hover:bg-base-300 focus:outline-none
+                    focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-base-200">
+            Bootstrap Setup
+          </a>
+        </li>
+        {{ end }}
+        <li>
+          <a href="/admin/dashboard"
+             data-navkey="dashboard"
+             class="flex items-center gap-2 px-3 py-3 rounded text-sm font-medium
+                    text-base-content hover:bg-base-300 focus:outline-none
+                    focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-base-200">
+            Dashboard
+          </a>
+        </li>
+        <li>
+          <a href="/admin/auth/logout"
+             data-navkey="logout"
+             class="flex items-center gap-2 px-3 py-3 rounded text-sm font-medium
+                    text-base-content hover:bg-base-300 focus:outline-none
+                    focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-base-200">
+            Logout
+          </a>
+        </li>
+      </ul>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="flex-1 overflow-auto p-8 max-w-screen-xl">
+      {{ block "content" . }}{{ end }}
+    </main>
+
+  </div>
+
+  {{ block "scripts" . }}{{ end }}
+</body>
+</html>{{ end }}

@@ -36,6 +36,10 @@
 
 generated: 2026-03-20
 last_updated: 2026-03-31
+# story 3-4 done (code review passed): 2026-03-31
+# story 3-4 review: 2026-03-31
+# story 3-4 in-progress: 2026-03-31
+# story 3-4 created: 3-4 → ready-for-dev: 2026-03-31
 # story 3-3 done (code review passed): 2026-03-31
 # story 3-3 review: 2026-03-31
 # story 3-3 in-progress: 2026-03-31
@@ -266,7 +270,7 @@ development_status:
   3-1-go-template-engine-setup-go-embed: done
   3-2-tailwind-css-daisyui-build-pipeline: done
   3-3-self-hosted-woff2-fonts-static-asset-serving: done
-  3-4-base-layout-template-nav-shell-slots: backlog
+  3-4-base-layout-template-nav-shell-slots: done
   3-5-active-navigation-url-state: backlog
   3-6-bootstrap-detection-middleware: backlog
   3-7-bootstrap-ui-welcome-page-setup-form: backlog

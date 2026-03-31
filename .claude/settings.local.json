@@ -2,7 +2,20 @@
   "permissions": {
     "allow": [
       "mcp__filesystem__read_text_file",
-      "Bash(make test-unit-go:*)"
+      "Bash(make test-unit-go:*)",
+      "Bash(make test-unit-elixir:*)",
+      "Bash(make proto:*)",
+      "Bash(mix test:*)",
+      "Bash(grep -r bootstrap /Users/philippbeyerlein/dev/01_gitlab/1200_philippb/open-chat --include=*.ex --include=*.go --include=*.proto)",
+      "Bash(grep -r bootstrap /Users/philippbeyerlein/dev/01_gitlab/1200_philippb/open-chat --include=*.md)",
+      "Bash(docker compose:*)",
+      "mcp__context7__query-docs",
+      "Bash(make test-integration:*)",
+      "Bash(docker run:*)",
+      "Bash(go test:*)",
+      "Bash(make build-admin-css:*)",
+      "Bash(git add:*)",
+      "Bash(go vet:*)"
     ]
   }
 }
