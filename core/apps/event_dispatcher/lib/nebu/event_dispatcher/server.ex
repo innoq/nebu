@@ -4,27 +4,27 @@ defmodule Nebu.EventDispatcher.Server do
   require Logger
 
   def send_event(_request, _stream) do
-    {:ok, %Core.SendEventResponse{}}
+    %Core.SendEventResponse{}
   end
 
   def create_room(_request, _stream) do
-    {:ok, %Core.CreateRoomResponse{}}
+    %Core.CreateRoomResponse{}
   end
 
   def join_room(_request, _stream) do
-    {:ok, %Core.JoinRoomResponse{}}
+    %Core.JoinRoomResponse{}
   end
 
   def get_messages(_request, _stream) do
-    {:ok, %Core.GetMessagesResponse{}}
+    %Core.GetMessagesResponse{}
   end
 
   def set_presence(_request, _stream) do
-    {:ok, %Core.SetPresenceResponse{}}
+    %Core.SetPresenceResponse{}
   end
 
   def set_typing(_request, _stream) do
-    {:ok, %Core.SetTypingResponse{}}
+    %Core.SetTypingResponse{}
   end
 
   def validate_token(request, stream) do
@@ -43,13 +43,12 @@ defmodule Nebu.EventDispatcher.Server do
            request.email
          ) do
       {:ok, user} ->
-        {:ok,
-         %Core.ValidateTokenResponse{
-           user_id: user.user_id,
-           system_role: user.system_role,
-           display_name: user.display_name,
-           is_active: user.is_active
-         }}
+        %Core.ValidateTokenResponse{
+          user_id: user.user_id,
+          system_role: user.system_role,
+          display_name: user.display_name,
+          is_active: user.is_active
+        }
 
       {:error, :deactivated} ->
         raise GRPC.RPCError,
@@ -66,7 +65,7 @@ defmodule Nebu.EventDispatcher.Server do
   end
 
   def get_pending_events(_request, _stream) do
-    {:ok, %Core.GetPendingEventsResponse{}}
+    %Core.GetPendingEventsResponse{}
   end
 
   def event_bus(_request, stream) do

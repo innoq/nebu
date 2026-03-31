@@ -81,4 +81,5 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^I call GET :4000(/\S+) on the core$`, iCallGETOnCore)
 	sc.Step(`^the response status is (\d+)$`, theResponseStatusIs)
 	sc.Step(`^the response body contains "([^"]*)"$`, theResponseBodyContains)
+	initializeAuthSteps(sc) // auth scenario step definitions
 }

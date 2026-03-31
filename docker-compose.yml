@@ -59,6 +59,7 @@ services:
       DATABASE_URL: "ecto://nebu:nebu_dev_password@postgres:5432/nebu"
       NEBU_INTERNAL_SECRET_FILE: "/run/secrets/internal_secret"
       NEBU_GATEWAY_INTERNAL_URL: "http://gateway:8008"
+      NEBU_PII_ENCRYPTION_KEY: "${NEBU_PII_ENCRYPTION_KEY:-6465766b65793030303030303030303030303030303030303030303030303030}"
     ports:
       - "9000:9000"
       - "4000:4000"

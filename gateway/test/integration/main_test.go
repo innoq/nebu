@@ -17,6 +17,14 @@ var gatewayURL string
 // Override via NEBU_TEST_CORE_URL env var (default: http://localhost:4000).
 var coreURL string
 
+// dexURL is the base URL for the Dex OIDC provider.
+// Override via NEBU_TEST_DEX_URL env var (default: http://dex:5556).
+var dexURL string
+
+// matrixURL is the base URL for Matrix Client-Server API calls (port 8008).
+// Override via NEBU_TEST_MATRIX_URL env var (default: http://gateway:8008).
+var matrixURL string
+
 func TestMain(m *testing.M) {
 	gatewayURL = os.Getenv("NEBU_TEST_GATEWAY_URL")
 	if gatewayURL == "" {
@@ -25,6 +33,14 @@ func TestMain(m *testing.M) {
 	coreURL = os.Getenv("NEBU_TEST_CORE_URL")
 	if coreURL == "" {
 		coreURL = "http://localhost:4000"
+	}
+	dexURL = os.Getenv("NEBU_TEST_DEX_URL")
+	if dexURL == "" {
+		dexURL = "http://dex:5556"
+	}
+	matrixURL = os.Getenv("NEBU_TEST_MATRIX_URL")
+	if matrixURL == "" {
+		matrixURL = "http://gateway:8008"
 	}
 	os.Exit(m.Run())
 }

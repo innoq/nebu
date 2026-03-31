@@ -36,7 +36,7 @@ defmodule Nebu.EventDispatcher.ValidateTokenTest do
   end
 
   defp build_stream(headers) do
-    %{adapter: %{payload: %{headers: headers}}}
+    %{http_request_headers: Map.new(headers)}
   end
 
   defp build_request(display_name \\ "kai.mueller", email \\ "kai@example.com") do
@@ -58,13 +58,12 @@ defmodule Nebu.EventDispatcher.ValidateTokenTest do
       stream = build_stream([{"x-user-id", "@kai:nebu.local"}, {"x-system-role", "user"}])
       request = build_request()
 
-      assert {:ok,
-              %Core.ValidateTokenResponse{
-                user_id: "@kai:nebu.local",
-                system_role: "user",
-                display_name: "kai.mueller",
-                is_active: true
-              }} = Server.validate_token(request, stream)
+      assert %Core.ValidateTokenResponse{
+               user_id: "@kai:nebu.local",
+               system_role: "user",
+               display_name: "kai.mueller",
+               is_active: true
+             } = Server.validate_token(request, stream)
     end
 
     test "raises PERMISSION_DENIED for deactivated user" do

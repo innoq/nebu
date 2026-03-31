@@ -11,6 +11,9 @@ web:
 oauth2:
   responseTypes: [code]
   skipApprovalScreen: true
+  grantTypes:
+    - authorization_code
+    - password
 
 enablePasswordDB: true
 
@@ -29,21 +32,21 @@ staticClients:
 
 staticPasswords:
   - email: "kai@example.com"
-    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4u"
+    hash: "$2a$10$E4ye88CWSgoigClMVojmGOu.gHlKe7L7RRf07QWZ60aZmZ7Rfak/6"
     username: "kai"
     userID: "00000000-0000-0000-0000-000000000001"
     groups:
       - instance_admin
 
   - email: "compliance@example.com"
-    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4u"
+    hash: "$2a$10$E4ye88CWSgoigClMVojmGOu.gHlKe7L7RRf07QWZ60aZmZ7Rfak/6"
     username: "compliance"
     userID: "00000000-0000-0000-0000-000000000002"
     groups:
       - compliance_officer
 
   - email: "alex@example.com"
-    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4u"
+    hash: "$2a$10$E4ye88CWSgoigClMVojmGOu.gHlKe7L7RRf07QWZ60aZmZ7Rfak/6"
     username: "alex"
     userID: "00000000-0000-0000-0000-000000000003"
     groups:

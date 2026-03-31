@@ -3,7 +3,7 @@ defmodule Nebu.Grpc.MetadataTest do
   alias Nebu.Grpc.Metadata
 
   defp build_stream(headers) do
-    %{adapter: %{payload: %{headers: headers}}}
+    %{http_request_headers: Map.new(headers)}
   end
 
   test "user_id/1 returns value when header present" do

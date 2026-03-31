@@ -23,11 +23,6 @@ defmodule Nebu.Grpc.Metadata do
   def trusted_identity(stream), do: {user_id(stream), system_role(stream)}
 
   defp get_header(stream, key) do
-    headers = stream.adapter.payload.headers
-
-    case List.keyfind(headers, key, 0) do
-      {^key, value} -> value
-      nil -> nil
-    end
+    Map.get(stream.http_request_headers, key)
   end
 end
