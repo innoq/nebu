@@ -10,17 +10,17 @@ import (
 )
 
 type LogoutHandler struct {
-	denylist *middleware.Denylist
+	store middleware.TokenStore
 }
 
-func NewLogoutHandler(denylist *middleware.Denylist) *LogoutHandler {
-	return &LogoutHandler{denylist: denylist}
+func NewLogoutHandler(store middleware.TokenStore) *LogoutHandler {
+	return &LogoutHandler{store: store}
 }
 
 func (h *LogoutHandler) PostLogout(w http.ResponseWriter, r *http.Request) {
 	rawToken := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	expiry, _ := r.Context().Value(middleware.ContextKeyTokenExpiry).(time.Time)
-	h.denylist.Add(rawToken, expiry)
+	_ = h.store.Invalidate(rawToken, expiry)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(struct{}{})
 }

@@ -129,7 +129,7 @@ func TestSignAndVerifyCookie(t *testing.T) {
 	}
 }
 
-// TestMapAdminRole verifies the role mapping table.
+// TestMapAdminRole verifies the role mapping table via the shared auth.MapSystemRole function.
 func TestMapAdminRole(t *testing.T) {
 	cases := []struct {
 		input string
@@ -142,9 +142,9 @@ func TestMapAdminRole(t *testing.T) {
 		{"random_role", "user"},
 	}
 	for _, tc := range cases {
-		got := mapAdminRole(tc.input)
+		got := auth.MapSystemRole(tc.input)
 		if got != tc.want {
-			t.Errorf("mapAdminRole(%q) = %q, want %q", tc.input, got, tc.want)
+			t.Errorf("auth.MapSystemRole(%q) = %q, want %q", tc.input, got, tc.want)
 		}
 	}
 }

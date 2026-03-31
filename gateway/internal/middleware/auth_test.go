@@ -378,7 +378,7 @@ func TestJWTMiddleware_DenylistedToken(t *testing.T) {
 	rawToken := signJWT(t, srv.URL, key, time.Now().Add(time.Hour))
 
 	denylist := middleware.NewDenylist()
-	denylist.Add(rawToken, time.Now().Add(time.Hour))
+	_ = denylist.Invalidate(rawToken, time.Now().Add(time.Hour))
 
 	handler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", denylist)(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -57,15 +57,6 @@ func writeMatrixError(w http.ResponseWriter, status int, errcode, message string
 	_ = json.NewEncoder(w).Encode(matrixError{ErrCode: errcode, Err: message})
 }
 
-func mapSystemRole(rawClaim string) string {
-	switch rawClaim {
-	case "instance_admin", "compliance_officer":
-		return rawClaim
-	default:
-		return "user"
-	}
-}
-
 func generateDeviceID() string {
 	b := make([]byte, 16)
 	_, _ = rand.Read(b)
@@ -137,7 +128,7 @@ func (h *LoginHandler) PostLogin(w http.ResponseWriter, r *http.Request) {
 	preferredUsername, _ := allClaims["preferred_username"].(string)
 	email, _ := allClaims["email"].(string)
 	rawRole, _ := allClaims[h.roleClaimName].(string)
-	systemRole := mapSystemRole(rawRole)
+	systemRole := auth.MapSystemRole(rawRole)
 
 	userID := coregrpc.FormatUserID(sub, h.serverName)
 	grpcCtx := coregrpc.WithUserMetadata(r.Context(), userID, systemRole)

@@ -95,6 +95,21 @@ adressiert werden:
 
 ---
 
+## Pinned Versions
+
+| Component | Version | Notes |
+|---|---|---|
+| Go | 1.26 | `golang:1.26-alpine` base image |
+| Elixir | 1.19 | `elixir:1.19-alpine` base image |
+| Erlang/OTP | 27 | Bundled with Elixir 1.19; native Ed25519/X25519 via `:crypto` |
+| Alpine | 3.23 | Runtime base image (builder and runtime must match OpenSSL version) |
+| PostgreSQL | 16 | `postgres:16-alpine` |
+| Buf CLI | latest stable | Used via `bufbuild/buf` Docker image for proto generation |
+
+> **Note:** Alpine builder and runtime versions must be kept in sync. Mismatch causes OpenSSL runtime crashes (learned in Story 1-9).
+
+---
+
 ## Starter Template & Project Scaffolding
 
 ### Primary Technology Domain

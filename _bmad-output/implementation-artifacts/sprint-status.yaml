@@ -36,6 +36,7 @@
 
 generated: 2026-03-20
 last_updated: 2026-03-31
+# epic-2-retrospective done: 2026-03-31
 # story 2-21 done (code review passed): 2026-03-31
 # story 2-21 review: 2026-03-31
 # story 2-21 in-progress: 2026-03-30
@@ -244,7 +245,7 @@ development_status:
   2-19-post-matrix-client-v3-logout-session-invalidation: done
   2-20-dex-dev-setup: done
   2-21-gherkin-auth-scenario-end-to-end-oidc-login: done
-  epic-2-retrospective: optional
+  epic-2-retrospective: done
 
   # ─────────────────────────────────────────────────────────────────────────
   # Epic 3: Operators Have a Minimal Admin UI for Bootstrap and Debugging

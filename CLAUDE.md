@@ -141,6 +141,29 @@ ADRs are tracked in `docs/architecture/adr/`:
 This project uses BMAD agents for structured development. Architecture is complete.
 Next step: `bmad-create-epics-and-stories` to break the architecture into implementable stories.
 
+## MCP Tools & Testing Conventions
+
+### Context7 — Current Library Docs
+Use the `context7` MCP server before implementing any story that touches external libraries or APIs. Load current docs first, do not rely on training data alone.
+
+**When to use:**
+- Any story using `go-oidc`, `grpc-go`, OTP `:crypto`, Dex API, `golang-migrate`, `oapi-codegen`, Tailwind, DaisyUI, Vue.js, Playwright
+- When API behavior is unclear or a library version has changed
+
+**How:** Call `mcp__context7__resolve-library-id` → `mcp__context7__query-docs` before writing implementation code.
+
+### Playwright — HTML/UI E2E Tests
+Use the `playwright` MCP server for all E2E tests that involve HTML pages, forms, buttons, or browser navigation (Admin UI, Bootstrap Wizard, Dashboard).
+
+**Split:**
+- **Playwright MCP** → browser-level tests (HTML pages, form submits, button clicks, redirects)
+- **Godog + net/http** → HTTP/gRPC-level tests (REST API, Matrix API, gRPC endpoints)
+
+**Why:** Godog HTTP-level navigation of Authorization Code flows is complex and brittle. Playwright handles real browser flows correctly.
+
+### OIDC / Auth Testing Standard
+All Gherkin tests involving OIDC must use Authorization Code + PKCE. ROPC is not supported by Dex v2.41+. Never use `grant_type=password` shortcuts in E2E tests.
+
 ## Elixir Conventions
 - GenServer state: immer via handle_* callbacks, nie direkt
 - Fehler: let it crash + Supervisor, kein defensive try/rescue

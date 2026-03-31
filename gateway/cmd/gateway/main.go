@@ -138,9 +138,15 @@ func main() {
 	mux.HandleFunc("GET /_matrix/client/v3/login", loginHandler.GetLogin)
 	mux.HandleFunc("POST /_matrix/client/v3/login", loginHandler.PostLogin)
 
-	denylist := middleware.NewDenylist()
-	logoutHandler := matrix.NewLogoutHandler(denylist)
-	jwtMiddleware := middleware.JWTMiddleware(oidcProvider, cfg.OIDCClientID, cfg.OIDCClaimRole, denylist)
+	tokenDB, err := sql.Open("pgx", cfg.DBURL)
+	if err != nil {
+		slog.Error("failed to open DB for token store", "err", err)
+		os.Exit(1)
+	}
+	defer tokenDB.Close()
+	tokenStore := db.NewPostgresTokenStore(tokenDB)
+	logoutHandler := matrix.NewLogoutHandler(tokenStore)
+	jwtMiddleware := middleware.JWTMiddleware(oidcProvider, cfg.OIDCClientID, cfg.OIDCClaimRole, tokenStore)
 	mux.Handle("POST /_matrix/client/v3/logout", jwtMiddleware(http.HandlerFunc(logoutHandler.PostLogout)))
 
 	slog.Info("HTTP server starting", "addr", ":8008")

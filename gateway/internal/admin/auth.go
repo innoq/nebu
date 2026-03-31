@@ -75,18 +75,6 @@ func (a *AdminAuth) verifyCookie(value string) ([]byte, error) {
 	return base64.RawURLEncoding.DecodeString(encoded)
 }
 
-// mapAdminRole maps a raw OIDC claim to a canonical Nebu system role.
-// Mirrors middleware.mapRole — both must remain in sync until refactored to shared package.
-// Future Story 6.3 will add role_overrides DB lookup — update both functions at that time.
-func mapAdminRole(rawClaim string) string {
-	switch rawClaim {
-	case "instance_admin", "compliance_officer":
-		return rawClaim
-	default:
-		return "user"
-	}
-}
-
 func (a *AdminAuth) buildOAuth2Config(r *http.Request) *oauth2.Config {
 	scheme := "https"
 	if r.TLS == nil {
@@ -212,7 +200,7 @@ func (a *AdminAuth) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 	sub, _ := claims["sub"].(string)
 	email, _ := claims["email"].(string)
 	rawRole, _ := claims[a.claimName].(string)
-	systemRole := mapAdminRole(rawRole)
+	systemRole := auth.MapSystemRole(rawRole)
 
 	sess := adminSessionCookie{
 		Sub:   sub,

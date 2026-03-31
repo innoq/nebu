@@ -12,8 +12,8 @@ import (
 )
 
 func TestPostLogout_ValidToken(t *testing.T) {
-	denylist := middleware.NewDenylist()
-	handler := matrix.NewLogoutHandler(denylist)
+	store := middleware.NewDenylist()
+	handler := matrix.NewLogoutHandler(store)
 
 	rawToken := "test-token-12345"
 	expiry := time.Now().Add(time.Hour)
@@ -29,17 +29,17 @@ func TestPostLogout_ValidToken(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", rr.Code)
 	}
-	if !denylist.Contains(rawToken) {
-		t.Error("expected token to be in denylist after logout")
+	if !store.IsInvalidated(rawToken) {
+		t.Error("expected token to be invalidated after logout")
 	}
 }
 
 func TestPostLogout_AddsCorrectExpiry(t *testing.T) {
-	denylist := middleware.NewDenylist()
-	handler := matrix.NewLogoutHandler(denylist)
+	store := middleware.NewDenylist()
+	handler := matrix.NewLogoutHandler(store)
 
 	rawToken := "expiry-test-token"
-	// Use a past expiry — the handler should still call Add(), but Contains()
+	// Use a past expiry — the handler should still call Invalidate(), but IsInvalidated()
 	// returns false because the entry is already expired. This proves the handler
 	// passes the context expiry through (not a hardcoded future value).
 	expiry := time.Now().Add(-time.Second)
@@ -55,14 +55,14 @@ func TestPostLogout_AddsCorrectExpiry(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", rr.Code)
 	}
-	if denylist.Contains(rawToken) {
-		t.Error("expected expired denylist entry to not be contained")
+	if store.IsInvalidated(rawToken) {
+		t.Error("expected expired entry to not be reported as invalidated")
 	}
 }
 
 func TestPostLogout_EmptyBody(t *testing.T) {
-	denylist := middleware.NewDenylist()
-	handler := matrix.NewLogoutHandler(denylist)
+	store := middleware.NewDenylist()
+	handler := matrix.NewLogoutHandler(store)
 
 	req := httptest.NewRequest("POST", "/_matrix/client/v3/logout", nil)
 	req.Header.Set("Authorization", "Bearer sometoken")

@@ -41,18 +41,6 @@ func extractRoleClaim(claims map[string]interface{}, claimName string) string {
 	return ""
 }
 
-// mapRole converts a raw OIDC claim value to a canonical Nebu system role.
-// Only "instance_admin" and "compliance_officer" are privileged roles.
-// All other values (including empty string) map to "user".
-func mapRole(rawClaim string) string {
-	switch rawClaim {
-	case "instance_admin", "compliance_officer":
-		return rawClaim
-	default:
-		return "user"
-	}
-}
-
 type matrixError struct {
 	ErrCode string `json:"errcode"`
 	Err     string `json:"error"`
@@ -67,8 +55,8 @@ func writeMatrixError(w http.ResponseWriter, status int, errcode, message string
 // JWTMiddleware validates OIDC JWT tokens. On success, populates context with
 // sub, preferred_username, email, the raw role claim value (ContextKeyNebuRole),
 // the mapped canonical system role (ContextKeySystemRole), and token expiry
-// (ContextKeyTokenExpiry). Pass nil for denylist to disable denylist checking.
-func JWTMiddleware(provider *auth.Provider, clientID string, claimName string, denylist *Denylist) func(http.Handler) http.Handler {
+// (ContextKeyTokenExpiry). Pass nil for store to disable invalidation checking.
+func JWTMiddleware(provider *auth.Provider, clientID string, claimName string, store TokenStore) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
@@ -78,8 +66,8 @@ func JWTMiddleware(provider *auth.Provider, clientID string, claimName string, d
 			}
 			rawToken := strings.TrimPrefix(authHeader, "Bearer ")
 
-			// Denylist check: token was explicitly logged out
-			if denylist != nil && denylist.Contains(rawToken) {
+			// Token invalidation check: token was explicitly logged out
+			if store != nil && store.IsInvalidated(rawToken) {
 				writeMatrixError(w, http.StatusUnauthorized, "M_UNKNOWN_TOKEN", "Token has been logged out")
 				return
 			}
@@ -113,7 +101,7 @@ func JWTMiddleware(provider *auth.Provider, clientID string, claimName string, d
 			preferredUsername, _ := allClaims["preferred_username"].(string)
 			email, _ := allClaims["email"].(string)
 			rawRole := extractRoleClaim(allClaims, claimName)
-			systemRole := mapRole(rawRole)
+			systemRole := auth.MapSystemRole(rawRole)
 
 			ctx := r.Context()
 			ctx = context.WithValue(ctx, ContextKeySub, sub)

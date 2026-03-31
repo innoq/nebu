@@ -7,43 +7,45 @@ import (
 	"github.com/nebu/nebu/internal/middleware"
 )
 
-func TestDenylist_ContainsMissingToken(t *testing.T) {
+func TestDenylist_IsInvalidated_UnknownToken(t *testing.T) {
 	d := middleware.NewDenylist()
-	if d.Contains("unknown-token") {
+	if d.IsInvalidated("unknown-token") {
 		t.Error("expected false for unknown token")
 	}
 }
 
-func TestDenylist_AddAndContains(t *testing.T) {
+func TestDenylist_InvalidateAndContains(t *testing.T) {
 	d := middleware.NewDenylist()
-	d.Add("my-token", time.Now().Add(time.Hour))
-	if !d.Contains("my-token") {
-		t.Error("expected true after Add")
+	if err := d.Invalidate("my-token", time.Now().Add(time.Hour)); err != nil {
+		t.Fatalf("Invalidate returned unexpected error: %v", err)
+	}
+	if !d.IsInvalidated("my-token") {
+		t.Error("expected true after Invalidate")
 	}
 }
 
 func TestDenylist_ExpiredEntry(t *testing.T) {
 	d := middleware.NewDenylist()
-	d.Add("expired-token", time.Now().Add(-time.Second))
-	if d.Contains("expired-token") {
+	_ = d.Invalidate("expired-token", time.Now().Add(-time.Second))
+	if d.IsInvalidated("expired-token") {
 		t.Error("expected false for expired token")
 	}
 }
 
 func TestDenylist_TwoDistinctTokens(t *testing.T) {
 	d := middleware.NewDenylist()
-	d.Add("token-a", time.Now().Add(time.Hour))
-	if d.Contains("token-b") {
-		t.Error("adding token-a should not deny token-b")
+	_ = d.Invalidate("token-a", time.Now().Add(time.Hour))
+	if d.IsInvalidated("token-b") {
+		t.Error("invalidating token-a should not affect token-b")
 	}
 }
 
-func TestDenylist_RepeatedAdd(t *testing.T) {
+func TestDenylist_RepeatedInvalidate(t *testing.T) {
 	d := middleware.NewDenylist()
 	expiry := time.Now().Add(time.Hour)
-	d.Add("repeat-token", expiry)
-	d.Add("repeat-token", expiry)
-	if !d.Contains("repeat-token") {
-		t.Error("expected true after repeated Add")
+	_ = d.Invalidate("repeat-token", expiry)
+	_ = d.Invalidate("repeat-token", expiry)
+	if !d.IsInvalidated("repeat-token") {
+		t.Error("expected true after repeated Invalidate")
 	}
 }
