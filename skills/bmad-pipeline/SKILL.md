@@ -141,7 +141,6 @@ Zeige: `✓ Kein Major Issue – commite automatisch.`
 git commit -m "$(cat <<'EOF'
 [KURZE_ZUSAMMENFASSUNG_AUS_STORY_ODER_REVIEW]
 
-Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 EOF
 )"
 ```

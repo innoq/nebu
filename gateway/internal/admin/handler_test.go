@@ -24,7 +24,7 @@ func TestTemplateHandler_render(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			w := httptest.NewRecorder()
-			h.render(w, tc.tmplName, nil)
+			h.render(w, tc.tmplName, PageData{})
 			if w.Code != tc.wantCode {
 				t.Errorf("status: got %d, want %d", w.Code, tc.wantCode)
 			}
@@ -39,6 +39,64 @@ func TestTemplateHandler_render(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestActiveNav(t *testing.T) {
+	h, err := NewTemplateHandler()
+	if err != nil {
+		t.Fatalf("NewTemplateHandler: %v", err)
+	}
+
+	t.Run("dashboard active when ActiveNav=dashboard", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		h.render(w, "base", PageData{ActiveNav: "dashboard"})
+		body := w.Body.String()
+		dashIdx := strings.Index(body, `data-navkey="dashboard"`)
+		if dashIdx < 0 {
+			t.Fatal("dashboard nav item not found")
+		}
+		dashBlock := body[max(0, dashIdx-200):min(len(body), dashIdx+200)]
+		if !strings.Contains(dashBlock, "active") {
+			t.Error("dashboard nav item should have active class when ActiveNav=dashboard")
+		}
+		logoutIdx := strings.Index(body, `data-navkey="logout"`)
+		if logoutIdx >= 0 {
+			logoutBlock := body[max(0, logoutIdx-200):min(len(body), logoutIdx+200)]
+			if strings.Contains(logoutBlock, "active") {
+				t.Error("logout nav item should NOT have active class when ActiveNav=dashboard")
+			}
+		}
+	})
+
+	t.Run("bootstrap active when ActiveNav=bootstrap and BootstrapMode=true", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		h.render(w, "base", PageData{ActiveNav: "bootstrap", BootstrapMode: true})
+		body := w.Body.String()
+		bootIdx := strings.Index(body, `data-navkey="bootstrap"`)
+		if bootIdx < 0 {
+			t.Fatal("bootstrap nav item not found")
+		}
+		bootBlock := body[max(0, bootIdx-200):min(len(body), bootIdx+200)]
+		if !strings.Contains(bootBlock, "active") {
+			t.Error("bootstrap nav item should have active class when ActiveNav=bootstrap")
+		}
+	})
+
+	t.Run("no active when ActiveNav empty", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		h.render(w, "base", PageData{ActiveNav: ""})
+		body := w.Body.String()
+		for _, key := range []string{"dashboard", "logout"} {
+			idx := strings.Index(body, `data-navkey="`+key+`"`)
+			if idx < 0 {
+				continue
+			}
+			block := body[max(0, idx-200):min(len(body), idx+200)]
+			if strings.Contains(block, "active") {
+				t.Errorf("nav item %q should NOT have active class when ActiveNav is empty", key)
+			}
+		}
+	})
 }
 
 func TestBaseLayout(t *testing.T) {

@@ -30,9 +30,10 @@
         <li>
           <a href="/admin/bootstrap"
              data-navkey="bootstrap"
-             class="flex items-center gap-2 px-3 py-3 rounded text-sm font-medium
-                    text-base-content hover:bg-base-300 focus:outline-none
-                    focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-base-200">
+             {{ if eq .ActiveNav "bootstrap" }}aria-current="page"{{ end }}
+             class="flex items-center gap-2 px-3 py-3 rounded text-sm
+                    {{ if eq .ActiveNav "bootstrap" }}active bg-primary text-primary-content font-semibold{{ else }}font-medium text-base-content hover:bg-base-300{{ end }}
+                    focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-base-200">
             Bootstrap Setup
           </a>
         </li>
@@ -40,18 +41,20 @@
         <li>
           <a href="/admin/dashboard"
              data-navkey="dashboard"
-             class="flex items-center gap-2 px-3 py-3 rounded text-sm font-medium
-                    text-base-content hover:bg-base-300 focus:outline-none
-                    focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-base-200">
+             {{ if eq .ActiveNav "dashboard" }}aria-current="page"{{ end }}
+             class="flex items-center gap-2 px-3 py-3 rounded text-sm
+                    {{ if eq .ActiveNav "dashboard" }}active bg-primary text-primary-content font-semibold{{ else }}font-medium text-base-content hover:bg-base-300{{ end }}
+                    focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-base-200">
             Dashboard
           </a>
         </li>
         <li>
           <a href="/admin/auth/logout"
              data-navkey="logout"
-             class="flex items-center gap-2 px-3 py-3 rounded text-sm font-medium
-                    text-base-content hover:bg-base-300 focus:outline-none
-                    focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-base-200">
+             {{ if eq .ActiveNav "logout" }}aria-current="page"{{ end }}
+             class="flex items-center gap-2 px-3 py-3 rounded text-sm
+                    {{ if eq .ActiveNav "logout" }}active bg-primary text-primary-content font-semibold{{ else }}font-medium text-base-content hover:bg-base-300{{ end }}
+                    focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-base-200">
             Logout
           </a>
         </li>
