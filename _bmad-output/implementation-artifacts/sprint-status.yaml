@@ -36,6 +36,10 @@
 
 generated: 2026-03-20
 last_updated: 2026-03-31
+# story 3-2 done (code review passed): 2026-03-31
+# story 3-2 review: 2026-03-31
+# story 3-2 in-progress: 2026-03-31
+# story 3-2 created: 3-2 → ready-for-dev: 2026-03-31
 # story 3-1 done (code review passed): 2026-03-31
 # story 3-1 review: 2026-03-31
 # story 3-1 in-progress: 2026-03-31
@@ -256,7 +260,7 @@ development_status:
   # ─────────────────────────────────────────────────────────────────────────
   epic-3: in-progress
   3-1-go-template-engine-setup-go-embed: done
-  3-2-tailwind-css-daisyui-build-pipeline: backlog
+  3-2-tailwind-css-daisyui-build-pipeline: done
   3-3-self-hosted-woff2-fonts-static-asset-serving: backlog
   3-4-base-layout-template-nav-shell-slots: backlog
   3-5-active-navigation-url-state: backlog

@@ -39,6 +39,11 @@ Thumbs.db
 # Docker
 docker-compose.override.yml
 
+# Node.js (Tailwind CSS build)
+gateway/internal/admin/node_modules/
+gateway/internal/admin/package.json
+gateway/internal/admin/package-lock.json
+
 # Elixir / OTP
 _build/
 deps/

@@ -5,11 +5,23 @@
 DOCKER_GO     = docker run --rm -v $(PWD):/workspace -w /workspace golang:1.26-alpine
 DOCKER_ELIXIR = docker run --rm -v $(PWD):/workspace -w /workspace elixir:1.19-alpine
 DOCKER_BUF    = docker run --rm -v $(PWD):/workspace -w /workspace bufbuild/buf
+DOCKER_NODE   = docker run --rm -v $(PWD):/workspace -w /workspace node:22-alpine
 
-.PHONY: build-gateway build-core dev setup test-unit-go test-unit-elixir test-integration proto gen-api
+.PHONY: build-gateway build-core build-admin-css dev setup test-unit-go test-unit-elixir test-integration proto gen-api
+
+## build-admin-css: Compile Tailwind CSS + DaisyUI into gateway/internal/admin/static/admin.css
+build-admin-css:
+	$(DOCKER_NODE) sh -c "\
+		cd gateway/internal/admin && \
+		npm install --silent tailwindcss@3 daisyui@4 && \
+		npx tailwindcss \
+			--config tailwind.config.js \
+			--input tailwind.input.css \
+			--output static/admin.css \
+			--minify"
 
 ## build-gateway: Build the Go Gateway Docker image (multi-stage)
-build-gateway:
+build-gateway: build-admin-css
 	docker build -t nebu-gateway:dev ./gateway
 
 ## build-core: Compile the Elixir/OTP Core inside container (mix compile)

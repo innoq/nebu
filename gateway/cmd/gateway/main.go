@@ -126,6 +126,7 @@ func main() {
 	defer bootstrapDB.Close()
 	bootstrapHandler := admin.NewBootstrapHandler(admin.NewPostgresBootstrapChecker(bootstrapDB))
 	mux.HandleFunc("GET /admin/bootstrap", bootstrapHandler.Handler)
+	mux.HandleFunc("GET /admin/static/admin.css", admin.ServeCSS)
 
 	loginHandler := matrix.NewLoginHandler(matrix.LoginConfig{
 		DisplayName:   cfg.OIDCDisplayName,
