@@ -1,6 +1,6 @@
 ---
 name: bmad-quick-dev
-description: Implement a Quick Tech Spec for small changes or features. Use when the user provides a quick tech spec and says "implement this quick spec" or "proceed with implementation of [quick tech spec]"
+description: 'Implements any user intent, requirement, story, bug fix or change request by producing clean working code artifacts that follow the project''s existing architecture, patterns and conventions. Use when the user wants to build, fix, tweak, refactor, add or modify any code, component or feature.'
 ---
 
-IT IS CRITICAL THAT YOU FOLLOW THIS COMMAND: LOAD the FULL {project-root}/_bmad/bmm/workflows/bmad-quick-flow/quick-dev/workflow.md, READ its entire contents and follow its directions exactly!
+Follow the instructions in ./workflow.md.
