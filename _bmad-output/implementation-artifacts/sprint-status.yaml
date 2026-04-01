@@ -35,7 +35,15 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-20
-last_updated: 2026-03-31
+last_updated: 2026-04-01
+# story 3-8 done (code review round 3 post-refactor passed): 2026-04-01
+# story 3-8 review (refactored sync.Map → PostgreSQL draft storage): 2026-04-01
+# story 3-8 done (code review round 2 passed): 2026-03-31
+# story 3-8 in-progress → review (3 MAJOR fixes applied): 2026-03-31
+# story 3-8 review → in-progress (3 MAJOR action items from code review): 2026-03-31
+# story 3-8 review: 2026-03-31
+# story 3-8 in-progress: 2026-03-31
+# story 3-8 created: 3-8 → ready-for-dev: 2026-03-31
 # story 3-7 done (code review passed): 2026-03-31
 # story 3-7 review: 2026-03-31
 # story 3-7 in-progress: 2026-03-31
@@ -286,7 +294,7 @@ development_status:
   3-5-active-navigation-url-state: done
   3-6-bootstrap-detection-middleware: done
   3-7-bootstrap-ui-welcome-page-setup-form: done
-  3-8-bootstrap-api-handler-post-admin-bootstrap: backlog
+  3-8-bootstrap-api-handler-post-admin-bootstrap: done
   3-9-admin-oidc-login-flow-pkce-state: backlog
   3-10-oidc-callback-handler-session-cookie: backlog
   3-11-admin-session-middleware-cookie-validation: backlog

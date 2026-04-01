@@ -131,7 +131,7 @@ func main() {
 	}
 
 	checker := admin.NewPostgresBootstrapChecker(bootstrapDB)
-	bootstrapHandler := admin.NewBootstrapHandler(checker, tmplHandler)
+	bootstrapHandler := admin.NewBootstrapHandler(checker, tmplHandler, bootstrapDB, []byte(internalSecret))
 	guard := admin.BootstrapGuard(checker)
 
 	// Static assets — no guard (needed to render bootstrap page)
@@ -142,13 +142,8 @@ func main() {
 	mux.Handle("GET /admin/bootstrap", guard(http.HandlerFunc(bootstrapHandler.Handler)))
 	mux.Handle("POST /admin/bootstrap", guard(http.HandlerFunc(bootstrapHandler.StepHandler)))
 
-	// Stub endpoints for Story 3.8 (test-oidc and generate-keys)
-	mux.HandleFunc("POST /admin/bootstrap/test-oidc", func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "Not implemented", http.StatusNotImplemented)
-	})
-	mux.HandleFunc("POST /admin/bootstrap/generate-keys", func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "Not implemented", http.StatusNotImplemented)
-	})
+	mux.Handle("POST /admin/bootstrap/test-oidc", guard(http.HandlerFunc(bootstrapHandler.TestOIDCHandler)))
+	mux.Handle("POST /admin/bootstrap/generate-keys", guard(http.HandlerFunc(bootstrapHandler.GenerateKeysHandler)))
 
 	loginHandler := matrix.NewLoginHandler(matrix.LoginConfig{
 		DisplayName:   cfg.OIDCDisplayName,

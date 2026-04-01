@@ -174,6 +174,23 @@
         <input type="hidden" name="oidc_issuer" value="{{ .OIDCIssuer }}">
         <input type="hidden" name="oidc_client_id" value="{{ .OIDCClientID }}">
 
+        {{if .Errors}}
+        <div role="alert" aria-live="polite" class="alert alert-error mb-4">
+          <ul>
+            {{range .Errors}}<li>{{.}}</li>{{end}}
+          </ul>
+        </div>
+        {{end}}
+
+        {{if .MaskedSecret}}
+        <div class="alert alert-info mb-4">
+          <div>
+            <p class="font-semibold mb-1">OIDC Client Secret saved</p>
+            <p class="text-sm">Secret stored: <code class="font-mono bg-base-300 px-1 rounded">{{ .MaskedSecret }}</code></p>
+          </div>
+        </div>
+        {{end}}
+
         <div class="alert alert-success mb-4">
           <div>
             <p class="font-semibold mb-1">Almost done!</p>

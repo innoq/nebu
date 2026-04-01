@@ -12,12 +12,14 @@ type PageData struct {
 // BootstrapPageData holds data for the Bootstrap Wizard page.
 // Step is 1–4. All field values carry accumulated state across steps.
 type BootstrapPageData struct {
-	PageData                  // embed for BootstrapMode + ActiveNav
+	PageData     // embed for BootstrapMode + ActiveNav
 	Step         int
 	InstanceName string
 	OIDCIssuer   string
 	OIDCClientID string
 	// OIDCClientSecret is intentionally NOT stored here (security)
+	// MaskedSecret is a display-only masked version of the OIDC client secret (e.g. "abc...xyz")
+	MaskedSecret string
 	// Errors carries per-field or global error messages for re-render
 	Errors map[string]string
 }
