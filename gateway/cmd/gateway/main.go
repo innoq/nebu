@@ -155,6 +155,11 @@ func main() {
 	mux.Handle("POST /admin/bootstrap/test-oidc", guard(http.HandlerFunc(bootstrapHandler.TestOIDCHandler)))
 	mux.Handle("POST /admin/bootstrap/generate-keys", guard(http.HandlerFunc(bootstrapHandler.GenerateKeysHandler)))
 
+	// Catch-all 404 for unmatched /admin/* paths (Go 1.22+ mux: most specific route wins)
+	mux.HandleFunc("GET /admin/", func(w http.ResponseWriter, r *http.Request) {
+		admin.Error404(w, r, tmplHandler)
+	})
+
 	loginHandler := matrix.NewLoginHandler(matrix.LoginConfig{
 		DisplayName:   cfg.OIDCDisplayName,
 		Provider:      oidcProvider,

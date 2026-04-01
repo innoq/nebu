@@ -1,0 +1,10 @@
+{{ template "base" . }}
+{{ define "title" }}Internal Server Error — Nebu Admin{{ end }}
+{{ define "content" }}
+<div class="max-w-lg mx-auto text-center mt-16">
+  <h1 class="text-3xl font-bold mb-4">Internal Server Error</h1>
+  <p class="text-base-content/70 mb-6">Something went wrong. Please try again or contact your system administrator.</p>
+  <a href="/admin/dashboard" class="btn btn-primary">Back to Dashboard</a>
+</div>
+{{ end }}
+{{ define "scripts" }}{{ end }}

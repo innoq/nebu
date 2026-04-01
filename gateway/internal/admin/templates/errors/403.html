@@ -1,0 +1,10 @@
+{{ template "base" . }}
+{{ define "title" }}Access Denied — Nebu Admin{{ end }}
+{{ define "content" }}
+<div class="max-w-lg mx-auto text-center mt-16">
+  <h1 class="text-3xl font-bold mb-4">Access Denied</h1>
+  <p class="text-base-content/70 mb-6">You do not have permission to access this page.</p>
+  <a href="/admin/dashboard" class="btn btn-primary">Back to Dashboard</a>
+</div>
+{{ end }}
+{{ define "scripts" }}{{ end }}

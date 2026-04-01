@@ -1,0 +1,10 @@
+{{ template "base" . }}
+{{ define "title" }}Authentication Required — Nebu Admin{{ end }}
+{{ define "content" }}
+<div class="max-w-lg mx-auto text-center mt-16">
+  <h1 class="text-3xl font-bold mb-4">Authentication Required</h1>
+  <p class="text-base-content/70 mb-6">Your session has expired or you are not logged in.</p>
+  <a href="/admin/login" class="btn btn-primary">Log in again</a>
+</div>
+{{ end }}
+{{ define "scripts" }}{{ end }}

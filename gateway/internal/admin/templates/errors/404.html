@@ -1,0 +1,10 @@
+{{ template "base" . }}
+{{ define "title" }}Page Not Found — Nebu Admin{{ end }}
+{{ define "content" }}
+<div class="max-w-lg mx-auto text-center mt-16">
+  <h1 class="text-3xl font-bold mb-4">Page Not Found</h1>
+  <p class="text-base-content/70 mb-6">The page you requested does not exist.</p>
+  <a href="/admin/dashboard" class="btn btn-primary">Back to Dashboard</a>
+</div>
+{{ end }}
+{{ define "scripts" }}{{ end }}
