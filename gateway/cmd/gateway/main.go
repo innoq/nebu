@@ -126,6 +126,7 @@ func main() {
 	}
 
 	adminAuth := admin.NewAdminAuth(oidcProvider, cfg.OIDCClientID, cfg.OIDCClientSecret, cfg.OIDCClaimRole, []byte(internalSecret), bootstrapDB, tmplHandler)
+	sessionGuard := admin.SessionGuard([]byte(internalSecret))
 
 	// Legacy routes (backward compatibility — Story 3.10 will supersede)
 	mux.HandleFunc("GET /admin/auth/login", adminAuth.LoginHandler)
@@ -135,7 +136,9 @@ func main() {
 	mux.HandleFunc("GET /admin/login", adminAuth.LoginPageHandler)
 	mux.HandleFunc("GET /admin/login/start", adminAuth.LoginStartHandler)
 	mux.HandleFunc("GET /admin/callback", adminAuth.CallbackHandler)
-	mux.HandleFunc("GET /admin/logout", adminAuth.LogoutHandler)
+	// Protected routes — require a valid admin session cookie (Story 3.11)
+	mux.Handle("GET /admin/logout", sessionGuard(http.HandlerFunc(adminAuth.LogoutHandler)))
+	// Story 3.13 will add: mux.Handle("GET /admin/dashboard", sessionGuard(http.HandlerFunc(dashboardHandler.Handler)))
 
 	checker := admin.NewPostgresBootstrapChecker(bootstrapDB)
 	bootstrapHandler := admin.NewBootstrapHandler(checker, tmplHandler, bootstrapDB, []byte(internalSecret))

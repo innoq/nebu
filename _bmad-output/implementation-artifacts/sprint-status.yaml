@@ -36,6 +36,8 @@
 
 generated: 2026-03-20
 last_updated: 2026-04-01
+# story 3-11 done (code review passed): 2026-04-01
+# story 3-11 created: 3-11 → ready-for-dev: 2026-04-01
 # story 3-10 review: 2026-04-01
 # story 3-10 in-progress: 2026-04-01
 # story 3-10 created: 3-10 → ready-for-dev: 2026-04-01
@@ -303,7 +305,7 @@ development_status:
   3-8-bootstrap-api-handler-post-admin-bootstrap: done
   3-9-admin-oidc-login-flow-pkce-state: review
   3-10-oidc-callback-handler-session-cookie: done
-  3-11-admin-session-middleware-cookie-validation: backlog
+  3-11-admin-session-middleware-cookie-validation: done
   3-12-error-pages-401-403-404-500: backlog
   3-13-dashboard-page-ssr-metrics-skeleton: backlog
   3-14-vue-js-self-hosted-sse-live-metrics-widget: backlog
