@@ -25,6 +25,14 @@ var dexURL string
 // Override via NEBU_TEST_MATRIX_URL env var (default: http://gateway:8008).
 var matrixURL string
 
+// dbURL is the PostgreSQL connection string for direct DB access in step definitions.
+// Override via NEBU_TEST_DB_URL env var (default: postgresql://nebu:nebu_dev_password@postgres:5432/nebu).
+var dbURL string
+
+// internalSecret is the gateway's HMAC internal secret, used to forge admin session cookies.
+// Override via NEBU_TEST_INTERNAL_SECRET env var (default: dev-secret-placeholder for local runs).
+var internalSecret string
+
 func TestMain(m *testing.M) {
 	gatewayURL = os.Getenv("NEBU_TEST_GATEWAY_URL")
 	if gatewayURL == "" {
@@ -41,6 +49,14 @@ func TestMain(m *testing.M) {
 	matrixURL = os.Getenv("NEBU_TEST_MATRIX_URL")
 	if matrixURL == "" {
 		matrixURL = "http://gateway:8008"
+	}
+	dbURL = os.Getenv("NEBU_TEST_DB_URL")
+	if dbURL == "" {
+		dbURL = "postgresql://nebu:nebu_dev_password@postgres:5432/nebu"
+	}
+	internalSecret = os.Getenv("NEBU_TEST_INTERNAL_SECRET")
+	if internalSecret == "" {
+		internalSecret = "dev-secret-placeholder"
 	}
 	os.Exit(m.Run())
 }

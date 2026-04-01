@@ -80,6 +80,8 @@ test-integration:
 		-e NEBU_TEST_CORE_URL=http://core:4000 \
 		-e NEBU_TEST_DEX_URL=http://dex:5556 \
 		-e NEBU_TEST_MATRIX_URL=http://gateway:8008 \
+		-e NEBU_TEST_DB_URL=postgresql://nebu:nebu_dev_password@postgres:5432/nebu \
+		-e NEBU_TEST_INTERNAL_SECRET=$$(cat .secrets/internal_secret) \
 		golang:1.26-alpine \
 		sh -c "apk add -q --no-cache gcc musl-dev && cd gateway && go test -v -tags integration ./test/integration/..."; \
 	EXIT=$$?; docker compose down; exit $$EXIT
