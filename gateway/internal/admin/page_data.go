@@ -9,6 +9,12 @@ type PageData struct {
 	ActiveNav     string
 }
 
+// LoginPageData holds data for the Admin login page.
+type LoginPageData struct {
+	PageData        // embed for BootstrapMode + ActiveNav
+	Error string    // optional error message (e.g. "auth_failed", "config_missing")
+}
+
 // BootstrapPageData holds data for the Bootstrap Wizard page.
 // Step is 1–4. All field values carry accumulated state across steps.
 type BootstrapPageData struct {

@@ -36,6 +36,9 @@
 
 generated: 2026-03-20
 last_updated: 2026-04-01
+# story 3-9 review: 2026-04-01
+# story 3-9 in-progress: 2026-04-01
+# story 3-9 created: 3-9 → ready-for-dev: 2026-04-01
 # story 3-8 done (code review round 3 post-refactor passed): 2026-04-01
 # story 3-8 review (refactored sync.Map → PostgreSQL draft storage): 2026-04-01
 # story 3-8 done (code review round 2 passed): 2026-03-31
@@ -295,7 +298,7 @@ development_status:
   3-6-bootstrap-detection-middleware: done
   3-7-bootstrap-ui-welcome-page-setup-form: done
   3-8-bootstrap-api-handler-post-admin-bootstrap: done
-  3-9-admin-oidc-login-flow-pkce-state: backlog
+  3-9-admin-oidc-login-flow-pkce-state: review
   3-10-oidc-callback-handler-session-cookie: backlog
   3-11-admin-session-middleware-cookie-validation: backlog
   3-12-error-pages-401-403-404-500: backlog

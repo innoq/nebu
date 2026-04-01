@@ -104,8 +104,6 @@ func main() {
 	}
 	internalSecret := strings.TrimSpace(string(pskBytes))
 
-	adminAuth := admin.NewAdminAuth(oidcProvider, cfg.OIDCClientID, cfg.OIDCClientSecret, cfg.OIDCClaimRole, []byte(internalSecret))
-
 	// Set up HTTP mux with node registry behind PSK middleware
 	mux := http.NewServeMux()
 	reg := registry.New()
@@ -114,9 +112,6 @@ func main() {
 
 	mux.Handle("POST /internal/nodes/register", pskHandler)
 	mux.Handle("GET /internal/nodes", pskHandler)
-
-	mux.HandleFunc("GET /admin/auth/login", adminAuth.LoginHandler)
-	mux.HandleFunc("GET /admin/auth/callback", adminAuth.CallbackHandler)
 
 	bootstrapDB, err := sql.Open("pgx", cfg.DBURL)
 	if err != nil {
@@ -129,6 +124,17 @@ func main() {
 		slog.Error("failed to initialize template handler", "err", err)
 		os.Exit(1)
 	}
+
+	adminAuth := admin.NewAdminAuth(oidcProvider, cfg.OIDCClientID, cfg.OIDCClientSecret, cfg.OIDCClaimRole, []byte(internalSecret), bootstrapDB, tmplHandler)
+
+	// Legacy routes (backward compatibility — Story 3.10 will supersede)
+	mux.HandleFunc("GET /admin/auth/login", adminAuth.LoginHandler)
+	mux.HandleFunc("GET /admin/auth/callback", adminAuth.CallbackHandler)
+
+	// New canonical routes (Story 3.9)
+	mux.HandleFunc("GET /admin/login", adminAuth.LoginPageHandler)
+	mux.HandleFunc("GET /admin/login/start", adminAuth.LoginStartHandler)
+	mux.HandleFunc("GET /admin/callback", adminAuth.CallbackHandler)
 
 	checker := admin.NewPostgresBootstrapChecker(bootstrapDB)
 	bootstrapHandler := admin.NewBootstrapHandler(checker, tmplHandler, bootstrapDB, []byte(internalSecret))

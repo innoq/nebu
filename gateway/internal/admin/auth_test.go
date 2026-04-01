@@ -95,13 +95,13 @@ func signAdminJWT(t *testing.T, issuer string, key *rsa.PrivateKey, expiry time.
 
 func newTestAdminAuth(t *testing.T, provider *auth.Provider) *AdminAuth {
 	t.Helper()
-	return NewAdminAuth(provider, "test-client-id", "test-client-secret", "nebu_role", []byte("test-secret-key"))
+	return NewAdminAuth(provider, "test-client-id", "test-client-secret", "nebu_role", []byte("test-secret-key"), nil, nil)
 }
 
 // TestSignAndVerifyCookie verifies that signCookie/verifyCookie round-trip correctly
 // and that a tampered value returns an error.
 func TestSignAndVerifyCookie(t *testing.T) {
-	a := NewAdminAuth(nil, "", "", "", []byte("my-secret"))
+	a := NewAdminAuth(nil, "", "", "", []byte("my-secret"), nil, nil)
 
 	payload := []byte(`{"state":"abc","verifier":"xyz","exp":9999999999}`)
 	signed := a.signCookie(payload)

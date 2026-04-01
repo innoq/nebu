@@ -1,13 +1,16 @@
 package admin
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -17,6 +20,56 @@ import (
 	"golang.org/x/oauth2"
 )
 
+// ErrOIDCConfigMissing is returned when required OIDC configuration is absent from server_config.
+var ErrOIDCConfigMissing = errors.New("OIDC configuration missing in server_config")
+
+// ServerConfigReader reads OIDC config from server_config.
+type ServerConfigReader interface {
+	LoadOIDCConfig(ctx context.Context) (issuer, clientID, clientSecret string, err error)
+}
+
+// postgresServerConfigReader wraps *sql.DB to implement ServerConfigReader.
+type postgresServerConfigReader struct {
+	db     *sql.DB
+	secret []byte
+}
+
+// LoadOIDCConfig queries server_config for OIDC settings and decrypts the client secret.
+func (r *postgresServerConfigReader) LoadOIDCConfig(ctx context.Context) (issuer, clientID, clientSecret string, err error) {
+	rows, err := r.db.QueryContext(ctx,
+		"SELECT key, value FROM server_config WHERE key IN ('oidc_issuer', 'oidc_client_id', 'oidc_client_secret')")
+	if err != nil {
+		return "", "", "", err
+	}
+	defer rows.Close()
+
+	vals := make(map[string]string)
+	for rows.Next() {
+		var k, v string
+		if err := rows.Scan(&k, &v); err != nil {
+			return "", "", "", err
+		}
+		vals[k] = v
+	}
+	if err := rows.Err(); err != nil {
+		return "", "", "", err
+	}
+
+	issuer = vals["oidc_issuer"]
+	clientID = vals["oidc_client_id"]
+	encSecret := vals["oidc_client_secret"]
+
+	if issuer == "" || clientID == "" || encSecret == "" {
+		return "", "", "", ErrOIDCConfigMissing
+	}
+
+	plain, err := decryptAES256GCM(r.secret, encSecret)
+	if err != nil {
+		return "", "", "", fmt.Errorf("decrypting oidc_client_secret: %w", err)
+	}
+	return issuer, clientID, plain, nil
+}
+
 // AdminAuth handles PKCE-protected OIDC Authorization Code flow for the Admin UI.
 type AdminAuth struct {
 	provider     *auth.Provider
@@ -24,16 +77,24 @@ type AdminAuth struct {
 	clientSecret string
 	claimName    string // from cfg.OIDCClaimRole
 	secret       []byte // HMAC key — same internalSecret as PSK
+	configReader ServerConfigReader
+	tmpl         *TemplateHandler
 }
 
 // NewAdminAuth creates an AdminAuth instance.
-func NewAdminAuth(provider *auth.Provider, clientID, clientSecret, claimName string, secret []byte) *AdminAuth {
+func NewAdminAuth(provider *auth.Provider, clientID, clientSecret, claimName string, secret []byte, db *sql.DB, tmpl *TemplateHandler) *AdminAuth {
+	var reader ServerConfigReader
+	if db != nil {
+		reader = &postgresServerConfigReader{db: db, secret: secret}
+	}
 	return &AdminAuth{
 		provider:     provider,
 		clientID:     clientID,
 		clientSecret: clientSecret,
 		claimName:    claimName,
 		secret:       secret,
+		configReader: reader,
+		tmpl:         tmpl,
 	}
 }
 
@@ -80,7 +141,7 @@ func (a *AdminAuth) buildOAuth2Config(r *http.Request) *oauth2.Config {
 	if r.TLS == nil {
 		scheme = "http"
 	}
-	redirectURL := scheme + "://" + r.Host + "/admin/auth/callback"
+	redirectURL := scheme + "://" + r.Host + "/admin/callback"
 	return &oauth2.Config{
 		ClientID:     a.clientID,
 		ClientSecret: a.clientSecret,
@@ -88,6 +149,90 @@ func (a *AdminAuth) buildOAuth2Config(r *http.Request) *oauth2.Config {
 		Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
 		Endpoint:     a.provider.Inner().Endpoint(),
 	}
+}
+
+// LoginPageHandler handles GET /admin/login.
+// Renders the login page with an SSO button. Accepts an optional ?error= query parameter.
+func (a *AdminAuth) LoginPageHandler(w http.ResponseWriter, r *http.Request) {
+	errorMsg := r.URL.Query().Get("error")
+	data := LoginPageData{
+		PageData: PageData{ActiveNav: "login"},
+		Error:    errorMsg,
+	}
+	a.tmpl.render(w, "login", data)
+}
+
+// LoginStartHandler handles GET /admin/login/start.
+// Reads OIDC config from DB, generates PKCE verifier + state, sets signed cookie, redirects to OIDC provider.
+func (a *AdminAuth) LoginStartHandler(w http.ResponseWriter, r *http.Request) {
+	if a.configReader == nil {
+		http.Error(w, "OIDC configuration not found in server config. Please complete the Bootstrap Wizard first.", http.StatusServiceUnavailable)
+		return
+	}
+
+	issuer, clientID, clientSecret, err := a.configReader.LoadOIDCConfig(r.Context())
+	if err != nil {
+		if errors.Is(err, ErrOIDCConfigMissing) {
+			http.Error(w, "OIDC configuration not found in server config. Please complete the Bootstrap Wizard first.", http.StatusServiceUnavailable)
+			return
+		}
+		http.Error(w, "Failed to load OIDC configuration: "+err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+
+	ctx := oidc.ClientContext(r.Context(), http.DefaultClient)
+	provider, err := oidc.NewProvider(ctx, issuer)
+	if err != nil {
+		http.Error(w, "OIDC provider discovery failed: "+err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+
+	scheme := "https"
+	if r.TLS == nil {
+		scheme = "http"
+	}
+
+	oauth2Config := &oauth2.Config{
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		RedirectURL:  scheme + "://" + r.Host + "/admin/callback",
+		Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
+		Endpoint:     provider.Endpoint(),
+	}
+
+	verifier := oauth2.GenerateVerifier()
+
+	stateBytes := make([]byte, 16)
+	if _, err := rand.Read(stateBytes); err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	state := hex.EncodeToString(stateBytes)
+
+	sc := oidcStateCookie{
+		State:    state,
+		Verifier: verifier,
+		Exp:      time.Now().Add(10 * time.Minute).Unix(),
+	}
+	payload, err := json.Marshal(sc)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	cookieValue := a.signCookie(payload)
+	http.SetCookie(w, &http.Cookie{
+		Name:     "admin_oidc_state",
+		Value:    cookieValue,
+		Path:     "/admin",
+		MaxAge:   600,
+		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	authURL := oauth2Config.AuthCodeURL(state, oauth2.S256ChallengeOption(verifier))
+	http.Redirect(w, r, authURL, http.StatusFound)
 }
 
 // LoginHandler handles GET /admin/auth/login.
@@ -224,11 +369,11 @@ func (a *AdminAuth) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteStrictMode,
 	})
 
-	// Delete the OIDC state cookie
+	// Delete the OIDC state cookie (covers both /admin/auth and /admin paths)
 	http.SetCookie(w, &http.Cookie{
 		Name:     "admin_oidc_state",
 		Value:    "",
-		Path:     "/admin/auth",
+		Path:     "/admin",
 		MaxAge:   -1,
 		HttpOnly: true,
 	})
