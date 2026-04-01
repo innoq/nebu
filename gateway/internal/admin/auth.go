@@ -279,8 +279,8 @@ func (a *AdminAuth) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, authURL, http.StatusFound)
 }
 
-// CallbackHandler handles GET /admin/auth/callback.
-// Validates state cookie, exchanges code for tokens, creates an admin session cookie.
+// CallbackHandler handles GET /admin/callback (and legacy GET /admin/auth/callback).
+// Validates state cookie, exchanges code for tokens, checks role, creates an admin session cookie.
 func (a *AdminAuth) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 	queryState := r.URL.Query().Get("state")
 	code := r.URL.Query().Get("code")
@@ -321,31 +321,40 @@ func (a *AdminAuth) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 	oauth2Config := a.buildOAuth2Config(r)
 	token, err := oauth2Config.Exchange(r.Context(), code, oauth2.VerifierOption(sc.Verifier))
 	if err != nil {
-		http.Redirect(w, r, "/admin/auth/login?error=auth_failed", http.StatusFound)
+		http.Redirect(w, r, "/admin/login?error=auth_failed", http.StatusFound)
 		return
 	}
 
 	rawIDToken, ok := token.Extra("id_token").(string)
 	if !ok || rawIDToken == "" {
-		http.Redirect(w, r, "/admin/auth/login?error=auth_failed", http.StatusFound)
+		http.Redirect(w, r, "/admin/login?error=auth_failed", http.StatusFound)
 		return
 	}
 
 	idToken, err := a.provider.Inner().Verifier(&oidc.Config{ClientID: a.clientID}).Verify(r.Context(), rawIDToken)
 	if err != nil {
-		http.Redirect(w, r, "/admin/auth/login?error=auth_failed", http.StatusFound)
+		http.Redirect(w, r, "/admin/login?error=auth_failed", http.StatusFound)
 		return
 	}
 
 	var claims map[string]interface{}
 	if err := idToken.Claims(&claims); err != nil {
-		http.Redirect(w, r, "/admin/auth/login?error=auth_failed", http.StatusFound)
+		http.Redirect(w, r, "/admin/login?error=auth_failed", http.StatusFound)
 		return
 	}
 	sub, _ := claims["sub"].(string)
 	email, _ := claims["email"].(string)
+	if sub == "" {
+		http.Error(w, "invalid token: missing sub claim", http.StatusBadRequest)
+		return
+	}
 	rawRole, _ := claims[a.claimName].(string)
 	systemRole := auth.MapSystemRole(rawRole)
+
+	if systemRole != "instance_admin" {
+		http.Error(w, "Access denied: instance_admin role required.", http.StatusForbidden)
+		return
+	}
 
 	sess := adminSessionCookie{
 		Sub:   sub,
@@ -376,7 +385,24 @@ func (a *AdminAuth) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		Path:     "/admin",
 		MaxAge:   -1,
 		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteLaxMode,
 	})
 
-	http.Redirect(w, r, "/admin/", http.StatusSeeOther)
+	http.Redirect(w, r, "/admin/dashboard", http.StatusSeeOther)
+}
+
+// LogoutHandler handles GET /admin/logout.
+// Deletes the admin session cookie and redirects to /admin/login.
+func (a *AdminAuth) LogoutHandler(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "admin_session",
+		Value:    "",
+		Path:     "/admin",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteStrictMode,
+	})
+	http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
 }

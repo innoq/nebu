@@ -135,6 +135,7 @@ func main() {
 	mux.HandleFunc("GET /admin/login", adminAuth.LoginPageHandler)
 	mux.HandleFunc("GET /admin/login/start", adminAuth.LoginStartHandler)
 	mux.HandleFunc("GET /admin/callback", adminAuth.CallbackHandler)
+	mux.HandleFunc("GET /admin/logout", adminAuth.LogoutHandler)
 
 	checker := admin.NewPostgresBootstrapChecker(bootstrapDB)
 	bootstrapHandler := admin.NewBootstrapHandler(checker, tmplHandler, bootstrapDB, []byte(internalSecret))

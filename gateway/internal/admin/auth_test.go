@@ -340,7 +340,7 @@ func TestAdminCallbackHandler_TokenExchangeFailure_Redirects(t *testing.T) {
 		t.Errorf("expected 302, got %d", rr.Code)
 	}
 	location := rr.Header().Get("Location")
-	if !strings.Contains(location, "/admin/auth/login?error=auth_failed") {
-		t.Errorf("expected redirect to /admin/auth/login?error=auth_failed, got %q", location)
+	if !strings.Contains(location, "/admin/login?error=auth_failed") {
+		t.Errorf("expected redirect to /admin/login?error=auth_failed, got %q", location)
 	}
 }

@@ -1,5 +1,5 @@
 # generated: 2026-03-20
-# last_updated: 2026-03-20
+# last_updated: 2026-04-01
 # project: open-chat
 # project_key: NOKEY
 # tracking_system: file-system
@@ -36,6 +36,9 @@
 
 generated: 2026-03-20
 last_updated: 2026-04-01
+# story 3-10 review: 2026-04-01
+# story 3-10 in-progress: 2026-04-01
+# story 3-10 created: 3-10 → ready-for-dev: 2026-04-01
 # story 3-9 review: 2026-04-01
 # story 3-9 in-progress: 2026-04-01
 # story 3-9 created: 3-9 → ready-for-dev: 2026-04-01
@@ -299,7 +302,7 @@ development_status:
   3-7-bootstrap-ui-welcome-page-setup-form: done
   3-8-bootstrap-api-handler-post-admin-bootstrap: done
   3-9-admin-oidc-login-flow-pkce-state: review
-  3-10-oidc-callback-handler-session-cookie: backlog
+  3-10-oidc-callback-handler-session-cookie: done
   3-11-admin-session-middleware-cookie-validation: backlog
   3-12-error-pages-401-403-404-500: backlog
   3-13-dashboard-page-ssr-metrics-skeleton: backlog
