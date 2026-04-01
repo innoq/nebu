@@ -11,12 +11,27 @@
   <!-- Topbar -->
   <header class="h-12 bg-base-300 flex items-center justify-between px-4 shrink-0">
     <span class="font-semibold text-base-content">Nebu Admin</span>
-    <!-- C3: TopbarStatusIndicator — placeholder; Story 3.13 wires real status -->
+    <!-- C3: TopbarStatusIndicator — server-side status (Story 3.13); falls back to "Connecting..." on non-dashboard pages -->
+    {{ if .TopbarStatus }}
+    <span id="topbar-status" aria-live="polite" aria-label="System status: {{ .TopbarLabel }}"
+          class="flex items-center gap-1 text-sm
+                 {{ if eq .TopbarStatus "success" }}text-success
+                 {{ else if eq .TopbarStatus "warning" }}text-warning
+                 {{ else }}text-error{{ end }}">
+      <span class="w-2 h-2 rounded-full inline-block
+                   {{ if eq .TopbarStatus "success" }}bg-success
+                   {{ else if eq .TopbarStatus "warning" }}bg-warning
+                   {{ else }}bg-error{{ end }}"
+            aria-hidden="true"></span>
+      {{ .TopbarLabel }}
+    </span>
+    {{ else }}
     <span id="topbar-status" aria-live="polite" aria-label="System status: connecting"
           class="flex items-center gap-1 text-sm text-warning">
       <span class="w-2 h-2 rounded-full bg-warning inline-block" aria-hidden="true"></span>
       Connecting&hellip;
     </span>
+    {{ end }}
   </header>
 
   <!-- Shell: sidebar + content -->

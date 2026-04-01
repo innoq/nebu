@@ -138,7 +138,10 @@ func main() {
 	mux.HandleFunc("GET /admin/callback", adminAuth.CallbackHandler)
 	// Protected routes — require a valid admin session cookie (Story 3.11)
 	mux.Handle("GET /admin/logout", sessionGuard(http.HandlerFunc(adminAuth.LogoutHandler)))
-	// Story 3.13 will add: mux.Handle("GET /admin/dashboard", sessionGuard(http.HandlerFunc(dashboardHandler.Handler)))
+
+	// Dashboard route (Story 3.13) — registered BEFORE catch-all "GET /admin/"
+	dashboardHandler := admin.NewDashboardHandler(tmplHandler, coreClient, bootstrapDB)
+	mux.Handle("GET /admin/dashboard", sessionGuard(http.HandlerFunc(dashboardHandler.Handler)))
 
 	checker := admin.NewPostgresBootstrapChecker(bootstrapDB)
 	bootstrapHandler := admin.NewBootstrapHandler(checker, tmplHandler, bootstrapDB, []byte(internalSecret))
