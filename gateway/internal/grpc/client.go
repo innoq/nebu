@@ -107,3 +107,8 @@ func (c *Client) GetPendingEvents(ctx context.Context, req *pb.GetPendingEventsR
 func (c *Client) EventBus(ctx context.Context, req *pb.EventBusRequest) (grpclib.ServerStreamingClient[pb.Event], error) {
 	return nil, nil
 }
+
+// GetMetrics stub — implemented in Epic 4.
+func (c *Client) GetMetrics(ctx context.Context, req *pb.GetMetricsRequest) (*pb.GetMetricsResponse, error) {
+	return nil, nil
+}

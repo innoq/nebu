@@ -19,6 +19,9 @@ service CoreService {
 
   // Event Bus — server-streaming, one stream per Go instance
   rpc EventBus(EventBusRequest)             returns (stream Event);
+
+  // GetMetrics — Admin Dashboard live metrics (Epic 3 skeleton; full implementation Epic 4)
+  rpc GetMetrics(GetMetricsRequest)         returns (GetMetricsResponse);
 }
 
 // Shared event type used across multiple RPCs
@@ -126,4 +129,13 @@ message GetPendingEventsResponse {
 message EventBusRequest {
   string          node_id     = 1;
   optional string since_token = 2;
+}
+
+// GetMetrics — Admin Dashboard live metrics (Epic 3 skeleton; full implementation Epic 4)
+message GetMetricsRequest {}
+
+message GetMetricsResponse {
+  float  msg_per_sec      = 1;  // messages per second (rolling 60s window)
+  int32  active_sessions  = 2;  // currently active user sessions
+  int32  room_count       = 3;  // total number of active rooms
 }

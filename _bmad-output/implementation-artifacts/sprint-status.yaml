@@ -36,6 +36,10 @@
 
 generated: 2026-03-20
 last_updated: 2026-04-01
+# story 3-14 done (code review passed, 2 MINOR fixes applied): 2026-04-01
+# story 3-14 review: 2026-04-01
+# story 3-14 in-progress: 2026-04-01
+# story 3-14 created: 3-14 → ready-for-dev: 2026-04-01
 # story 3-13 done (code review passed, 1 MAJOR fix applied): 2026-04-01
 # story 3-13 review: 2026-04-01
 # story 3-13 in-progress: 2026-04-01
@@ -316,7 +320,7 @@ development_status:
   3-11-admin-session-middleware-cookie-validation: done
   3-12-error-pages-401-403-404-500: done
   3-13-dashboard-page-ssr-metrics-skeleton: done
-  3-14-vue-js-self-hosted-sse-live-metrics-widget: backlog
+  3-14-vue-js-self-hosted-sse-live-metrics-widget: done
   3-15-gherkin-bootstrap-dashboard-flow: backlog
   epic-3-retrospective: optional
 

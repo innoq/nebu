@@ -221,3 +221,25 @@ defmodule Core.EventBusRequest do
   field :node_id, 1, type: :string, json_name: "nodeId"
   field :since_token, 2, proto3_optional: true, type: :string, json_name: "sinceToken"
 end
+
+defmodule Core.GetMetricsRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.GetMetricsRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+end
+
+defmodule Core.GetMetricsResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.GetMetricsResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :msg_per_sec, 1, type: :float, json_name: "msgPerSec"
+  field :active_sessions, 2, type: :int32, json_name: "activeSessions"
+  field :room_count, 3, type: :int32, json_name: "roomCount"
+end

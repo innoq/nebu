@@ -28,6 +28,7 @@ const (
 	CoreService_ValidateToken_FullMethodName    = "/core.CoreService/ValidateToken"
 	CoreService_GetPendingEvents_FullMethodName = "/core.CoreService/GetPendingEvents"
 	CoreService_EventBus_FullMethodName         = "/core.CoreService/EventBus"
+	CoreService_GetMetrics_FullMethodName       = "/core.CoreService/GetMetrics"
 )
 
 // CoreServiceClient is the client API for CoreService service.
@@ -48,6 +49,8 @@ type CoreServiceClient interface {
 	GetPendingEvents(ctx context.Context, in *GetPendingEventsRequest, opts ...grpc.CallOption) (*GetPendingEventsResponse, error)
 	// Event Bus — server-streaming, one stream per Go instance
 	EventBus(ctx context.Context, in *EventBusRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Event], error)
+	// GetMetrics — Admin Dashboard live metrics (Epic 3 skeleton; full implementation Epic 4)
+	GetMetrics(ctx context.Context, in *GetMetricsRequest, opts ...grpc.CallOption) (*GetMetricsResponse, error)
 }
 
 type coreServiceClient struct {
@@ -157,6 +160,16 @@ func (c *coreServiceClient) EventBus(ctx context.Context, in *EventBusRequest, o
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type CoreService_EventBusClient = grpc.ServerStreamingClient[Event]
 
+func (c *coreServiceClient) GetMetrics(ctx context.Context, in *GetMetricsRequest, opts ...grpc.CallOption) (*GetMetricsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetMetricsResponse)
+	err := c.cc.Invoke(ctx, CoreService_GetMetrics_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CoreServiceServer is the server API for CoreService service.
 // All implementations must embed UnimplementedCoreServiceServer
 // for forward compatibility.
@@ -175,6 +188,8 @@ type CoreServiceServer interface {
 	GetPendingEvents(context.Context, *GetPendingEventsRequest) (*GetPendingEventsResponse, error)
 	// Event Bus — server-streaming, one stream per Go instance
 	EventBus(*EventBusRequest, grpc.ServerStreamingServer[Event]) error
+	// GetMetrics — Admin Dashboard live metrics (Epic 3 skeleton; full implementation Epic 4)
+	GetMetrics(context.Context, *GetMetricsRequest) (*GetMetricsResponse, error)
 	mustEmbedUnimplementedCoreServiceServer()
 }
 
@@ -211,6 +226,9 @@ func (UnimplementedCoreServiceServer) GetPendingEvents(context.Context, *GetPend
 }
 func (UnimplementedCoreServiceServer) EventBus(*EventBusRequest, grpc.ServerStreamingServer[Event]) error {
 	return status.Error(codes.Unimplemented, "method EventBus not implemented")
+}
+func (UnimplementedCoreServiceServer) GetMetrics(context.Context, *GetMetricsRequest) (*GetMetricsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetMetrics not implemented")
 }
 func (UnimplementedCoreServiceServer) mustEmbedUnimplementedCoreServiceServer() {}
 func (UnimplementedCoreServiceServer) testEmbeddedByValue()                     {}
@@ -388,6 +406,24 @@ func _CoreService_EventBus_Handler(srv interface{}, stream grpc.ServerStream) er
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type CoreService_EventBusServer = grpc.ServerStreamingServer[Event]
 
+func _CoreService_GetMetrics_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetMetricsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).GetMetrics(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_GetMetrics_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).GetMetrics(ctx, req.(*GetMetricsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CoreService_ServiceDesc is the grpc.ServiceDesc for CoreService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -426,6 +462,10 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetPendingEvents",
 			Handler:    _CoreService_GetPendingEvents_Handler,
+		},
+		{
+			MethodName: "GetMetrics",
+			Handler:    _CoreService_GetMetrics_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

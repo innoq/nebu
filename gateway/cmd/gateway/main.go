@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"database/sql"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"github.com/nebu/nebu/internal/config"
 	"github.com/nebu/nebu/internal/db"
 	coregrpc "github.com/nebu/nebu/internal/grpc"
+	pb "github.com/nebu/nebu/internal/grpc/pb"
 	"github.com/nebu/nebu/internal/health"
 	"github.com/nebu/nebu/internal/matrix"
 	"github.com/nebu/nebu/internal/middleware"
@@ -21,6 +23,21 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
+
+// coreMetricsAdapter adapts *coregrpc.Client to satisfy the admin.MetricsReader interface.
+type coreMetricsAdapter struct {
+	client *coregrpc.Client
+}
+
+// GetMetrics calls the gRPC stub and maps the response fields.
+// If the stub returns nil response (Epic 4 not yet implemented), returns an error.
+func (a *coreMetricsAdapter) GetMetrics(ctx context.Context) (float64, int, int, error) {
+	resp, err := a.client.GetMetrics(ctx, &pb.GetMetricsRequest{})
+	if err != nil || resp == nil {
+		return 0, 0, 0, fmt.Errorf("core unavailable")
+	}
+	return float64(resp.MsgPerSec), int(resp.ActiveSessions), int(resp.RoomCount), nil
+}
 
 func main() {
 	slog.Info("Nebu Gateway starting")
@@ -150,6 +167,12 @@ func main() {
 	// Static assets — no guard (needed to render bootstrap page)
 	mux.HandleFunc("GET /admin/static/admin.css", admin.ServeCSS)
 	mux.HandleFunc("GET /admin/static/fonts/{filename}", admin.ServeFontFile)
+	mux.HandleFunc("GET /admin/static/vendor/{filename}", admin.ServeVendorFile)
+	mux.HandleFunc("GET /admin/static/metrics-widget.js", admin.ServeMetricsWidgetJS)
+
+	// SSE live metrics endpoint — behind session guard
+	sseMetricsHandler := admin.NewSSEMetricsHandler(&coreMetricsAdapter{client: coreClient})
+	mux.Handle("GET /admin/sse/metrics", sessionGuard(http.HandlerFunc(sseMetricsHandler.Handler)))
 
 	// Bootstrap page — guarded (guard checks bootstrap state)
 	mux.Handle("GET /admin/bootstrap", guard(http.HandlerFunc(bootstrapHandler.Handler)))

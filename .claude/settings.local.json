@@ -15,7 +15,8 @@
       "Bash(go test:*)",
       "Bash(make build-admin-css:*)",
       "Bash(git add:*)",
-      "Bash(go vet:*)"
+      "Bash(go vet:*)",
+      "Bash(make build-gateway:*)"
     ]
   }
 }

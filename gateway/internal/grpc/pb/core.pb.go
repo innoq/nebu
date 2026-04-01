@@ -1073,6 +1073,103 @@ func (x *EventBusRequest) GetSinceToken() string {
 	return ""
 }
 
+// GetMetrics — Admin Dashboard live metrics (Epic 3 skeleton; full implementation Epic 4)
+type GetMetricsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetMetricsRequest) Reset() {
+	*x = GetMetricsRequest{}
+	mi := &file_core_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetMetricsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetMetricsRequest) ProtoMessage() {}
+
+func (x *GetMetricsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetMetricsRequest.ProtoReflect.Descriptor instead.
+func (*GetMetricsRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{18}
+}
+
+type GetMetricsResponse struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	MsgPerSec      float32                `protobuf:"fixed32,1,opt,name=msg_per_sec,json=msgPerSec,proto3" json:"msg_per_sec,omitempty"`             // messages per second (rolling 60s window)
+	ActiveSessions int32                  `protobuf:"varint,2,opt,name=active_sessions,json=activeSessions,proto3" json:"active_sessions,omitempty"` // currently active user sessions
+	RoomCount      int32                  `protobuf:"varint,3,opt,name=room_count,json=roomCount,proto3" json:"room_count,omitempty"`                // total number of active rooms
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *GetMetricsResponse) Reset() {
+	*x = GetMetricsResponse{}
+	mi := &file_core_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetMetricsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetMetricsResponse) ProtoMessage() {}
+
+func (x *GetMetricsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetMetricsResponse.ProtoReflect.Descriptor instead.
+func (*GetMetricsResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *GetMetricsResponse) GetMsgPerSec() float32 {
+	if x != nil {
+		return x.MsgPerSec
+	}
+	return 0
+}
+
+func (x *GetMetricsResponse) GetActiveSessions() int32 {
+	if x != nil {
+		return x.ActiveSessions
+	}
+	return 0
+}
+
+func (x *GetMetricsResponse) GetRoomCount() int32 {
+	if x != nil {
+		return x.RoomCount
+	}
+	return 0
+}
+
 var File_core_proto protoreflect.FileDescriptor
 
 const file_core_proto_rawDesc = "" +
@@ -1162,7 +1259,13 @@ const file_core_proto_rawDesc = "" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12$\n" +
 	"\vsince_token\x18\x02 \x01(\tH\x00R\n" +
 	"sinceToken\x88\x01\x01B\x0e\n" +
-	"\f_since_token2\xdc\x04\n" +
+	"\f_since_token\"\x13\n" +
+	"\x11GetMetricsRequest\"|\n" +
+	"\x12GetMetricsResponse\x12\x1e\n" +
+	"\vmsg_per_sec\x18\x01 \x01(\x02R\tmsgPerSec\x12'\n" +
+	"\x0factive_sessions\x18\x02 \x01(\x05R\x0eactiveSessions\x12\x1d\n" +
+	"\n" +
+	"room_count\x18\x03 \x01(\x05R\troomCount2\x9d\x05\n" +
 	"\vCoreService\x12<\n" +
 	"\tSendEvent\x12\x16.core.SendEventRequest\x1a\x17.core.SendEventResponse\x12?\n" +
 	"\n" +
@@ -1173,7 +1276,9 @@ const file_core_proto_rawDesc = "" +
 	"\tSetTyping\x12\x16.core.SetTypingRequest\x1a\x17.core.SetTypingResponse\x12H\n" +
 	"\rValidateToken\x12\x1a.core.ValidateTokenRequest\x1a\x1b.core.ValidateTokenResponse\x12Q\n" +
 	"\x10GetPendingEvents\x12\x1d.core.GetPendingEventsRequest\x1a\x1e.core.GetPendingEventsResponse\x120\n" +
-	"\bEventBus\x12\x15.core.EventBusRequest\x1a\v.core.Event0\x01B'Z%github.com/nebu/nebu/internal/grpc/pbb\x06proto3"
+	"\bEventBus\x12\x15.core.EventBusRequest\x1a\v.core.Event0\x01\x12?\n" +
+	"\n" +
+	"GetMetrics\x12\x17.core.GetMetricsRequest\x1a\x18.core.GetMetricsResponseB'Z%github.com/nebu/nebu/internal/grpc/pbb\x06proto3"
 
 var (
 	file_core_proto_rawDescOnce sync.Once
@@ -1187,7 +1292,7 @@ func file_core_proto_rawDescGZIP() []byte {
 	return file_core_proto_rawDescData
 }
 
-var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
+var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_core_proto_goTypes = []any{
 	(*Event)(nil),                    // 0: core.Event
 	(*SendEventRequest)(nil),         // 1: core.SendEventRequest
@@ -1207,6 +1312,8 @@ var file_core_proto_goTypes = []any{
 	(*GetPendingEventsRequest)(nil),  // 15: core.GetPendingEventsRequest
 	(*GetPendingEventsResponse)(nil), // 16: core.GetPendingEventsResponse
 	(*EventBusRequest)(nil),          // 17: core.EventBusRequest
+	(*GetMetricsRequest)(nil),        // 18: core.GetMetricsRequest
+	(*GetMetricsResponse)(nil),       // 19: core.GetMetricsResponse
 }
 var file_core_proto_depIdxs = []int32{
 	0,  // 0: core.GetMessagesResponse.events:type_name -> core.Event
@@ -1220,17 +1327,19 @@ var file_core_proto_depIdxs = []int32{
 	13, // 8: core.CoreService.ValidateToken:input_type -> core.ValidateTokenRequest
 	15, // 9: core.CoreService.GetPendingEvents:input_type -> core.GetPendingEventsRequest
 	17, // 10: core.CoreService.EventBus:input_type -> core.EventBusRequest
-	2,  // 11: core.CoreService.SendEvent:output_type -> core.SendEventResponse
-	4,  // 12: core.CoreService.CreateRoom:output_type -> core.CreateRoomResponse
-	6,  // 13: core.CoreService.JoinRoom:output_type -> core.JoinRoomResponse
-	8,  // 14: core.CoreService.GetMessages:output_type -> core.GetMessagesResponse
-	10, // 15: core.CoreService.SetPresence:output_type -> core.SetPresenceResponse
-	12, // 16: core.CoreService.SetTyping:output_type -> core.SetTypingResponse
-	14, // 17: core.CoreService.ValidateToken:output_type -> core.ValidateTokenResponse
-	16, // 18: core.CoreService.GetPendingEvents:output_type -> core.GetPendingEventsResponse
-	0,  // 19: core.CoreService.EventBus:output_type -> core.Event
-	11, // [11:20] is the sub-list for method output_type
-	2,  // [2:11] is the sub-list for method input_type
+	18, // 11: core.CoreService.GetMetrics:input_type -> core.GetMetricsRequest
+	2,  // 12: core.CoreService.SendEvent:output_type -> core.SendEventResponse
+	4,  // 13: core.CoreService.CreateRoom:output_type -> core.CreateRoomResponse
+	6,  // 14: core.CoreService.JoinRoom:output_type -> core.JoinRoomResponse
+	8,  // 15: core.CoreService.GetMessages:output_type -> core.GetMessagesResponse
+	10, // 16: core.CoreService.SetPresence:output_type -> core.SetPresenceResponse
+	12, // 17: core.CoreService.SetTyping:output_type -> core.SetTypingResponse
+	14, // 18: core.CoreService.ValidateToken:output_type -> core.ValidateTokenResponse
+	16, // 19: core.CoreService.GetPendingEvents:output_type -> core.GetPendingEventsResponse
+	0,  // 20: core.CoreService.EventBus:output_type -> core.Event
+	19, // 21: core.CoreService.GetMetrics:output_type -> core.GetMetricsResponse
+	12, // [12:22] is the sub-list for method output_type
+	2,  // [2:12] is the sub-list for method input_type
 	2,  // [2:2] is the sub-list for extension type_name
 	2,  // [2:2] is the sub-list for extension extendee
 	0,  // [0:2] is the sub-list for field type_name
@@ -1251,7 +1360,7 @@ func file_core_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_core_proto_rawDesc), len(file_core_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   18,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
