@@ -185,8 +185,8 @@ func TestBootstrapWizard_StepHandler_BackNavigation(t *testing.T) {
 	if !strings.Contains(body, `name="instance_name"`) {
 		t.Error("back navigation to step 1 should render step 1 with instance_name field")
 	}
-	// Should NOT show step 2 fields when going back
-	if strings.Contains(body, `name="oidc_issuer"`) {
-		t.Error("back navigation to step 1 should not show oidc_issuer field")
+	// Should NOT show step 2 visible form when going back (hidden carry-fields are OK)
+	if strings.Contains(body, `Step 2: OIDC Configuration`) {
+		t.Error("back navigation to step 1 should not show step 2 content")
 	}
 }

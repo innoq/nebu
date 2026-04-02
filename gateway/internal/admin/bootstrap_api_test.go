@@ -151,8 +151,8 @@ func TestFinalizeHandler_Success(t *testing.T) {
 	if rr.Code != http.StatusSeeOther {
 		t.Errorf("expected 303 SeeOther, got %d", rr.Code)
 	}
-	if loc := rr.Header().Get("Location"); loc != "/admin/login" {
-		t.Errorf("expected redirect to /admin/login, got %q", loc)
+	if loc := rr.Header().Get("Location"); loc != "/admin/login/start?mode=bootstrap" {
+		t.Errorf("expected redirect to /admin/login/start?mode=bootstrap, got %q", loc)
 	}
 	if persister.callCount != 1 {
 		t.Errorf("expected persister to be called once, got %d", persister.callCount)

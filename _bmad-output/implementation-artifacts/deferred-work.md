@@ -1,16 +1,7 @@
 # Deferred Work
 
-Items deferred during code review. Each entry references the source story and the reason for deferral.
+## Deferred from: code review of story-3-9 (2026-04-02)
 
----
-
-## Deferred from: code review of 3-10-oidc-callback-handler-session-cookie (2026-04-01)
-
-- **GET /admin/logout has no CSRF protection** — Spec mandates GET; SameSite=Strict on session cookie provides reasonable cross-site protection. Formal CSRF hardening (e.g. POST + token) should be addressed in a dedicated security review story.
-- **Legacy-route Cookie-Path-Mismatch** — `LoginHandler` sets `admin_oidc_state` with `Path=/admin/auth`; `CallbackHandler` deletes with `Path=/admin`. The legacy cookie under `/admin/auth` is not cleaned up. Pre-existing from Story 3.9; will be resolved when legacy routes (`GET /admin/auth/login`, `GET /admin/auth/callback`) are removed.
-
-## Deferred from: code review of 3-11-admin-session-middleware-cookie-validation (2026-04-01)
-
-- **INFO: Inkonsistentes Logging in SessionGuard** — Fehlende Cookie und Signatur-Fehler werden nicht geloggt (nur Redirect), waehrend JSON-Parse-Fehler korrekt mit `slog.Warn` geloggt werden. Stylistic consistency, kein Bug.
-- **INFO: Duplikat-Logik verifySessionCookie vs AdminAuth.verifyCookie** — Beide Funktionen implementieren identische HMAC-Verifikation. Refactoring zu einer shared Funktion wuerde Wartungsrisiko reduzieren. Bewusste Architektur-Entscheidung per Story-Spec (Option A).
-- **INFO: Leeres Secret nicht validiert** — `SessionGuard` prueft nicht ob `secret` leer ist. In Praxis durch `main.go` PSK-Read und `strings.TrimSpace` abgesichert. Defense-in-depth Improvement fuer spaetere Security-Haertung.
+- `extractFirstRoleClaim` takes only the first array element — if OIDC provider returns `["viewer", "instance_admin"]`, only `"viewer"` is used. Should check all elements for target role. Pre-existing OIDC pattern, not caused by current change.
+- Catch-all `GET /admin/` handler silently swallows DB errors (returns 404 instead of 500). Unlike `BootstrapGuard` which returns 500 on DB error, the catch-all degrades silently. Operational observability gap.
+- `bootstrap-done.html` hardcodes `instance_admin` role name instead of reading from session. Acceptable for bootstrap-only page but should use actual session data if the page is ever reused.
