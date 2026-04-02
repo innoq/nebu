@@ -1,0 +1,104 @@
+{{ template "base" . }}
+{{ define "title" }}Select Admin Claim — Nebu Admin{{ end }}
+{{ define "content" }}
+<div class="max-w-lg mx-auto">
+  <h1 class="text-2xl font-bold mb-6">Bootstrap Setup</h1>
+
+  <!-- DaisyUI steps progress indicator -->
+  <ul class="steps steps-horizontal w-full mb-8">
+    <li class="step step-primary">Instance</li>
+    <li class="step step-primary">OIDC</li>
+    <li class="step step-primary">Connect</li>
+  </ul>
+
+  <div class="card bg-base-200 shadow-md">
+    <div class="card-body">
+      <h2 class="card-title">Step 3: Select Admin Group Claim</h2>
+
+      {{ if .Error }}
+      <div role="alert" aria-live="polite" class="alert alert-error mb-4">
+        <span>{{ .Error }}</span>
+      </div>
+      {{ end }}
+
+      <div class="alert alert-info mb-4">
+        <div>
+          <p class="font-semibold mb-1">Logged in as <code class="font-mono bg-base-300 px-1 rounded">{{ .Email }}</code></p>
+          <p class="text-sm">The following claims were found in your OIDC token. Select the value that identifies admin users in your organisation.</p>
+        </div>
+      </div>
+
+      {{ if .Claims }}
+      <form method="POST" action="/admin/bootstrap/select-claim">
+        <div class="mb-4">
+          <label class="label">
+            <span class="label-text font-semibold">Discovered Claims</span>
+          </label>
+
+          {{ range .Claims }}
+          <div class="mb-3">
+            <p class="text-sm text-base-content/60 font-mono mb-1">{{ .Key }}</p>
+            <div class="flex flex-wrap gap-2">
+              {{ range .Values }}
+              <label class="cursor-pointer">
+                <input type="radio" name="admin_group_claim" value="{{ . }}" class="sr-only peer" required>
+                <span class="badge badge-outline peer-checked:badge-primary peer-checked:font-semibold px-3 py-2 text-sm transition-colors">
+                  {{ . }}
+                </span>
+              </label>
+              {{ end }}
+            </div>
+          </div>
+          {{ end }}
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="form-control mb-4">
+          <label class="label">
+            <span class="label-text">Or enter a custom claim value</span>
+          </label>
+          <input
+            type="text"
+            id="custom_claim"
+            class="input input-bordered input-sm"
+            placeholder="e.g. corp_admin"
+            oninput="document.querySelector('[name=admin_group_claim][type=radio]:checked') && (document.querySelector('[name=admin_group_claim][type=radio]:checked').checked = false); if(this.value) { document.getElementById('custom_claim_hidden').name='admin_group_claim'; document.getElementById('custom_claim_hidden').value=this.value; } else { document.getElementById('custom_claim_hidden').name=''; }"
+          >
+          <input type="hidden" id="custom_claim_hidden" name="" value="">
+        </div>
+
+        <div class="card-actions justify-end">
+          <button type="submit" class="btn btn-primary">Confirm Admin Claim</button>
+        </div>
+      </form>
+      {{ else }}
+      <div class="alert alert-warning mb-4">
+        <span>No group or role claims found in your token. Make sure your OIDC provider is configured to include group claims in the token.</span>
+      </div>
+      <form method="POST" action="/admin/bootstrap/select-claim">
+        <div class="form-control mb-4">
+          <label class="label" for="admin_group_claim">
+            <span class="label-text">Enter the admin group claim value</span>
+          </label>
+          <input
+            type="text"
+            id="admin_group_claim"
+            name="admin_group_claim"
+            class="input input-bordered"
+            required
+            placeholder="instance_admin"
+            value="instance_admin"
+          >
+        </div>
+        <div class="card-actions justify-end">
+          <button type="submit" class="btn btn-primary">Confirm Admin Claim</button>
+        </div>
+      </form>
+      {{ end }}
+    </div>
+  </div>
+</div>
+{{ end }}
+
+{{ define "scripts" }}{{ end }}
