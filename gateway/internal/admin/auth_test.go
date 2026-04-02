@@ -221,6 +221,7 @@ func TestAdminCallbackHandler_MissingCookie_Returns400(t *testing.T) {
 	srv, _ := setupAdminOIDCServer(t)
 	provider := auth.NewProvider(context.Background(), srv.URL)
 	a := newTestAdminAuth(t, provider)
+	a.configReader = &fakeServerConfigReader{issuer: srv.URL, clientID: "test-client-id", clientSecret: "test-client-secret"}
 
 	req := httptest.NewRequest("GET", "/admin/auth/callback?code=abc&state=xyz", nil)
 	rr := httptest.NewRecorder()
@@ -236,6 +237,7 @@ func TestAdminCallbackHandler_StateMismatch_Returns400(t *testing.T) {
 	srv, _ := setupAdminOIDCServer(t)
 	provider := auth.NewProvider(context.Background(), srv.URL)
 	a := newTestAdminAuth(t, provider)
+	a.configReader = &fakeServerConfigReader{issuer: srv.URL, clientID: "test-client-id", clientSecret: "test-client-secret"}
 
 	// Create a valid cookie with state="expected"
 	sc := oidcStateCookie{
@@ -261,6 +263,7 @@ func TestAdminCallbackHandler_ExpiredCookie_Returns400(t *testing.T) {
 	srv, _ := setupAdminOIDCServer(t)
 	provider := auth.NewProvider(context.Background(), srv.URL)
 	a := newTestAdminAuth(t, provider)
+	a.configReader = &fakeServerConfigReader{issuer: srv.URL, clientID: "test-client-id", clientSecret: "test-client-secret"}
 
 	sc := oidcStateCookie{
 		State:    "mystate",
@@ -321,6 +324,7 @@ func TestAdminCallbackHandler_TokenExchangeFailure_Redirects(t *testing.T) {
 
 	provider := auth.NewProvider(context.Background(), srv.URL)
 	a := newTestAdminAuth(t, provider)
+	a.configReader = &fakeServerConfigReader{issuer: srv.URL, clientID: "test-client-id", clientSecret: "test-client-secret"}
 
 	sc := oidcStateCookie{
 		State:    "mystate",

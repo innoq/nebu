@@ -1,0 +1,19 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]: Nebu Admin
+    - 'generic "System status: connecting" [ref=e4]': Connecting…
+  - generic [ref=e6]:
+    - navigation "Admin navigation" [ref=e7]:
+      - list [ref=e8]:
+        - listitem [ref=e9]:
+          - link "Dashboard" [ref=e10] [cursor=pointer]:
+            - /url: /admin/dashboard
+        - listitem [ref=e11]:
+          - link "Logout" [ref=e12] [cursor=pointer]:
+            - /url: /admin/auth/logout
+    - main [ref=e13]:
+      - generic [ref=e17]:
+        - heading "Nebu Admin" [level=1] [ref=e18]
+        - paragraph [ref=e19]: Sign in to access the administration panel.
+        - link "Login with SSO" [ref=e21] [cursor=pointer]:
+          - /url: /admin/login/start

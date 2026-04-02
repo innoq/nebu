@@ -7,7 +7,7 @@ DOCKER_ELIXIR = docker run --rm -v $(PWD):/workspace -w /workspace elixir:1.19-a
 DOCKER_BUF    = docker run --rm -v $(PWD):/workspace -w /workspace bufbuild/buf
 DOCKER_NODE   = docker run --rm -v $(PWD):/workspace -w /workspace node:22-alpine
 
-.PHONY: build-gateway build-core build-admin-css download-fonts dev setup test-unit-go test-unit-elixir test-integration proto gen-api
+.PHONY: build-gateway build-core build-admin-css download-fonts dev setup test-unit-go test-unit-elixir test-integration test-e2e proto gen-api
 
 ## download-fonts: Download Inter + JetBrains Mono WOFF2 fonts (run once; commit results)
 download-fonts:
@@ -85,6 +85,17 @@ test-integration:
 		golang:1.26-alpine \
 		sh -c "apk add -q --no-cache gcc musl-dev && cd gateway && go test -v -tags integration ./test/integration/..."; \
 	EXIT=$$?; docker compose down; exit $$EXIT
+
+## test-e2e: Run Playwright E2E tests against a running stack (make dev must be up)
+## Requires: 127.0.0.1 dex in /etc/hosts for OIDC redirect flows
+## Reset DB to bootstrap state first:
+##   docker compose exec postgres psql -U nebu -d nebu -c \
+##     "DELETE FROM server_config WHERE key IN ('bootstrap_completed','oidc_issuer','oidc_client_id','oidc_client_secret','instance_name');"
+test-e2e:
+	cd e2e && \
+	npm install --silent && \
+	npx playwright install chromium --with-deps --quiet && \
+	npx playwright test
 
 ## proto: Generate gRPC stubs from .proto definitions (via buf + protoc)
 ## Step 1: buf generates Go stubs using remote plugins

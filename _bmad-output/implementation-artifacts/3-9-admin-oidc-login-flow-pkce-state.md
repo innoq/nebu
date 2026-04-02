@@ -1,6 +1,6 @@
 # Story 3.9: Admin OIDC Login Flow (PKCE + State)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -361,7 +361,19 @@ No debug issues encountered. All tests passed on first run.
 - `gateway/internal/admin/auth_test.go` — MODIFIED: updated `newTestAdminAuth` and `TestSignAndVerifyCookie` to pass `nil, nil` for new `NewAdminAuth` parameters
 - `gateway/cmd/gateway/main.go` — MODIFIED: reordered init (bootstrapDB + tmplHandler before adminAuth), updated `NewAdminAuth` call, registered `/admin/login`, `/admin/login/start`, `/admin/callback` routes
 
+### Review Findings
+
+- [x] [Review][Patch] P1 MAJOR: Build broken — `fakeServerConfigReader` missing `CompleteBootstrap` method; `callback_test.go` SameSite assertion Strict→Lax; all callback tests missing `configReader` injection; `TestLoginStartHandler_MissingOIDCConfig` expected 503 but code returns 302 redirect; `TestBootstrapWizard_StepHandler_BackNavigation` broken by hidden carry-fields; `TestFinalizeHandler_Success` redirect target updated [login_test.go, callback_test.go, auth_test.go, bootstrap_api_test.go, bootstrap_wizard_test.go]
+- [x] [Review][Patch] P2 MAJOR: `CompleteBootstrap` not idempotent — plain INSERT fails on retry with unique_violation; changed to `ON CONFLICT (key) DO NOTHING` + RowsAffected check [auth.go:76-90]
+- [x] [Review][Patch] P3 MAJOR: `mode=bootstrap` replay after bootstrap complete enables privilege escalation — combined with P2 fix: RowsAffected==0 returns error, blocking grant of instance_admin [auth.go:76-90]
+- [x] [Review][Patch] P4 MINOR: Double `LoadOIDCConfig` call in CallbackHandler — second call silently swallowed errors; used first call's clientSecret directly [auth.go:335]
+- [x] [Review][Patch] P5 MINOR: CallbackHandler missing nil guard on `configReader` — added nil check matching LoginStartHandler pattern [auth.go:302]
+- [x] [Review][Defer] D1: `extractFirstRoleClaim` takes only first array element — order-dependent privilege. Pre-existing OIDC pattern.
+- [x] [Review][Defer] D2: Catch-all `/admin/` silently swallows DB errors. Operational observability gap.
+- [x] [Review][Defer] D3: `bootstrap-done.html` hardcodes `instance_admin` role name. Acceptable for bootstrap-only page.
+
 ## Change Log
 
 - 2026-04-01: Story 3.9 implemented — Admin OIDC Login Flow (PKCE + State). Added `GET /admin/login` HTML page, `GET /admin/login/start` PKCE redirect with DB-sourced OIDC config, `GET /admin/callback` canonical route. `ServerConfigReader` interface for testability. 7 unit tests. Zero regressions.
 - 2026-04-01: Code review — added `TestLoginStartHandler_CookieSecureTLS` test (AC 5: Secure flag verification over TLS). Fixed Completion Notes count (was "6", now "8"). Total: 8 unit tests.
+- 2026-04-02: Code review (beyond-scope changes) — 5 PATCH fixes applied (2 MAJOR, 3 MINOR), 3 deferred, 11 dismissed. Fixed: build-broken test doubles, CompleteBootstrap idempotency + privilege replay guard, double LoadOIDCConfig, CallbackHandler nil guard. All 11 Go packages pass.

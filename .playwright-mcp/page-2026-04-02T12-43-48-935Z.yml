@@ -1,0 +1,34 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]: Nebu Admin
+  - generic [ref=e4]:
+    - navigation "Admin navigation" [ref=e5]:
+      - list [ref=e6]:
+        - listitem [ref=e7]:
+          - link "Bootstrap Setup" [ref=e8] [cursor=pointer]:
+            - /url: /admin/bootstrap
+    - main [ref=e9]:
+      - generic [ref=e10]:
+        - heading "Bootstrap Setup" [level=1] [ref=e11]
+        - list [ref=e12]:
+          - listitem [ref=e13]: Instance
+          - listitem [ref=e14]: OIDC
+          - listitem [ref=e15]: Keys
+          - listitem [ref=e16]: Admin
+        - generic [ref=e18]:
+          - 'heading "Step 4: First Administrator" [level=2] [ref=e19]'
+          - generic [ref=e20]:
+            - generic [ref=e22]:
+              - paragraph [ref=e23]: OIDC Client Secret saved
+              - paragraph [ref=e24]:
+                - text: "Secret stored:"
+                - code [ref=e25]: neb...ret
+            - generic [ref=e27]:
+              - paragraph [ref=e28]: Almost done!
+              - paragraph [ref=e29]:
+                - text: Complete setup by logging in with your OIDC provider. The first user to log in will be assigned
+                - code [ref=e30]: instance_admin
+                - text: .
+            - generic [ref=e31]:
+              - button "Back" [ref=e32] [cursor=pointer]
+              - button "Complete Setup & Login" [ref=e33] [cursor=pointer]

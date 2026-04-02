@@ -1,0 +1,43 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]: Nebu Admin
+  - generic [ref=e4]:
+    - navigation "Admin navigation" [ref=e5]:
+      - list [ref=e6]:
+        - listitem [ref=e7]:
+          - link "Bootstrap Setup" [ref=e8] [cursor=pointer]:
+            - /url: /admin/bootstrap
+    - main [ref=e9]:
+      - generic [ref=e10]:
+        - heading "Bootstrap Setup" [level=1] [ref=e11]
+        - list [ref=e12]:
+          - listitem [ref=e13]: Instance
+          - listitem [ref=e14]: OIDC
+          - listitem [ref=e15]: Keys
+          - listitem [ref=e16]: Admin
+        - generic [ref=e18]:
+          - 'heading "Step 2: OIDC Configuration" [level=2] [ref=e19]'
+          - generic [ref=e20]:
+            - generic [ref=e21]:
+              - generic [ref=e23]: OIDC Issuer URL
+              - textbox "OIDC Issuer URL" [ref=e24]:
+                - /placeholder: https://auth.example.com/realms/nebu
+                - text: http://dex:5556/dex
+            - generic [ref=e25]:
+              - generic [ref=e27]: OIDC Client ID
+              - textbox "OIDC Client ID" [ref=e28]:
+                - /placeholder: nebu-admin
+                - text: nebu-admin
+            - generic [ref=e29]:
+              - generic [ref=e31]: OIDC Client Secret
+              - textbox "OIDC Client Secret" [ref=e32]:
+                - /placeholder: ••••••••
+                - text: nebu-admin-secret
+            - generic [ref=e33]:
+              - button "Test Connection" [ref=e34] [cursor=pointer]
+              - generic [ref=e40]:
+                - text: ✓ Connected to http://dex:5556/dex
+                - text: ⚠ HTTP issuer — not suitable for production. Use HTTPS in production deployments.
+            - generic [ref=e35]:
+              - button "Back" [ref=e36] [cursor=pointer]
+              - button "Next" [ref=e37] [cursor=pointer]

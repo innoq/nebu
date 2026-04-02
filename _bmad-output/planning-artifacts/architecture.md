@@ -801,6 +801,196 @@ Feature: Message Integrity
 
 ---
 
+### UI E2E Test-Strategie (Playwright)
+
+#### Test-Layer-Split
+
+| Layer | Tool | Wann |
+|---|---|---|
+| Unit | Go `testing`, ExUnit | Einzelne Funktionen, reine Logik, ohne I/O |
+| Integration | Godog + `net/http` | HTTP-API-Verhalten, gRPC-Endpunkte, DB-Zustand |
+| E2E Browser | Playwright | HTML-Seiten, Formulare, Redirect-Chains, OIDC-Flows, JavaScript-Komponenten |
+
+**Entscheidungsregel:** Playwright wenn ein Browser involviert ist. Godog für alles was per `curl` testbar wäre.
+
+**Kein Duplizieren zwischen Layern:** Wenn ein Endpunkt bereits in Godog getestet ist (z.B. POST-Validierung → 422), wird er in Playwright nicht nochmals via `page.request.post()` getestet — es sei denn, er ist Teil eines echten Browser-Workflows.
+
+---
+
+#### Happy Path — Pflicht
+
+Für jede Admin-UI-Seite und jeden Multi-Step-Workflow gilt:
+
+> Bevor eine Story als Done gilt, muss ein Happy-Path-Playwright-Test existieren, der den vollständigen Workflow eines realen Users durchläuft — vom ersten Navigationspunkt bis zur finalen Bestätigung oder dem erwarteten Endzustand.
+
+**Mindeststeps eines Happy-Path-Tests:**
+1. Navigation zur Seite (korrekte URL, korrekter Page-Title)
+2. Alle relevanten Felder befüllen / Aktionen ausführen
+3. Primäraktion ausführen (Submit, Button)
+4. Endzustand prüfen: URL, Heading, Success-Alert
+5. Session/Cookie-Zustand nach Aktion korrekt (z.B. eingeloggt, weitergeleitet)
+
+**Beispiel-Muster (zukünftige User-Management-Seite):**
+```typescript
+test('creates a new user successfully', async ({ page }) => {
+  await page.goto('/admin/users/new');
+  await expect(page).toHaveTitle(/New User/);
+
+  await page.getByRole('textbox', { name: 'Email' }).fill('bob@example.com');
+  await page.getByRole('combobox', { name: 'Role' }).selectOption('user');
+  await page.getByRole('button', { name: 'Create User' }).click();
+
+  await expect(page).toHaveURL(/\/admin\/users/);
+  await expect(page.locator('.alert-success')).toContainText('User created');
+});
+```
+
+---
+
+#### Bad Paths — Pflicht-Kategorien nach Business-Logik
+
+Nicht jeder denkbare Fehlerfall braucht einen Playwright-Test. Diese fünf Kategorien sind Pflicht:
+
+**1. Authentifizierung & Autorisierung**
+- Unauthenticated access auf geschützte Route → Redirect zu `/admin/login`
+- Session abgelaufen (Expired Cookie) → Redirect zu `/admin/login`
+- Eingeloggter User ohne ausreichende Rolle → 403-Seite mit korrektem Inhalt
+- Gilt für jede neue geschützte Route
+
+**2. Server-seitige Formular-Validierung**
+Nur wenn die Serverantwort im Browser sichtbar ist (Alert, Fehlermeldung im HTML):
+- Pflichtfeld leer → Fehler-Alert sichtbar, Seite bleibt auf gleichem Step
+- Inhalt verletzt Business-Regel (zu kurz, falsches Format, Duplikat) → konkreter Fehlertext
+- Kein Playwright-Test nötig für: reines HTML5-Browser-Validation (`required`/`pattern`) ohne Serverinteraktion
+
+**3. State-Transitions (Workflow-Grenzen)**
+- Aktion in falschem Systemzustand → UI zeigt Fehler oder blockiert
+- Beispiel: Bootstrap-Wizard aufrufen nach abgeschlossenem Bootstrap → Redirect zu Login
+- Beispiel: Compliance-Antrag, den eigene Person nicht genehmigen kann → Approve-Button disabled oder 403
+- Beispiel: Dashboard ohne laufenden Core → Degraded-State-Indikator statt leerem Widget
+
+**4. Retry-Sicherheit**
+- Wenn ein Workflow abgebrochen werden kann (Browser-Back, Netzwerkfehler) und wiederholt wird, darf der zweite Versuch nicht mit einem Serverfehler enden
+- Beispiel: Bootstrap finalisieren → OIDC-Login scheitert → Wizard nochmal → kein 500
+- Deckt Bugs durch nicht-idempotente Server-Operationen auf (INSERT ohne ON CONFLICT)
+
+**5. Leerer / Fehlender Datenstand**
+- Liste mit null Einträgen → Empty-State-Text oder -Icon sichtbar (kein leeres Layout)
+- Fehlende Konfiguration → Hinweis auf nächsten Schritt statt leerem Feld
+
+---
+
+#### Nicht als Playwright-Test schreiben
+
+Diese Dinge gehören in Unit- oder Integration-Tests, nicht in Playwright:
+- HTTP-Status-Codes direkt prüfen (höchstens als Smoke-Check via `page.request.get()`)
+- JSON-Response-Struktur von API-Endpunkten
+- DB-Zustand nach Aktionen (gehört in Godog-Steps mit direktem DB-Access)
+- Reine Browser-Validierung (HTML5 `required`, `pattern` Attribute ohne Serverinteraktion)
+
+---
+
+#### DB-Isolation
+
+Jeder Test, der DB-Zustand schreibt oder von einem bestimmten Zustand abhängt, muss isoliert sein.
+
+**Standard-Muster:**
+```typescript
+import { execSync } from 'child_process';
+import * as path from 'path';
+
+const PROJECT_ROOT = path.resolve(__dirname, '../..');
+
+function resetToBootstrapState(): void {
+  const now = Date.now();
+  execSync(
+    [
+      'docker compose exec -T postgres psql -U nebu -d nebu',
+      `-c "TRUNCATE TABLE server_config"`,
+      `-c "TRUNCATE TABLE bootstrap_draft"`,
+      `-c "INSERT INTO server_config (key, value, set_at) VALUES ('bootstrap_active', 'true', ${now})"`,
+    ].join(' '),
+    { cwd: PROJECT_ROOT, stdio: 'pipe' }
+  );
+}
+
+test.beforeEach(() => resetToBootstrapState());
+test.afterEach(() => resetToBootstrapState());
+```
+
+**Prinzip:** `beforeEach` setzt den Ausgangszustand. `afterEach` stellt ihn wieder her. Kein Test darf einen anderen Test in einen undefinierten Zustand hinterlassen.
+
+DB-Hilfsfunktionen für alle Feature-Bereiche in `e2e/support/db-helpers.ts` zentralisieren.
+
+---
+
+#### OIDC-Flows in Playwright
+
+Tests die den vollständigen Authorization-Code-Flow durchlaufen (Redirect → Dex → Callback):
+
+**Voraussetzung:** `127.0.0.1 dex` in `/etc/hosts` (Dex-Port 5556 ist auf dem Host exponiert).
+
+**Skip-Pattern — immer am Testanfang:**
+```typescript
+const dexDiscovery = await request
+  .get('http://dex:5556/dex/.well-known/openid-configuration')
+  .catch(() => null);
+test.skip(
+  !dexDiscovery?.ok(),
+  'Dex unreachable — add "127.0.0.1 dex" to /etc/hosts: echo "127.0.0.1 dex" | sudo tee -a /etc/hosts'
+);
+```
+
+**Dex Login Form (Standard-Selektoren für Dex v2.41+):**
+```typescript
+await page.waitForURL(/dex.*\/auth/, { timeout: 15_000 });
+await page.locator('input[name="login"]').fill('kai@example.com');
+await page.locator('input[name="password"]').fill('changeme');
+await page.locator('button[type="submit"]').click();
+```
+
+**Test-Credentials (aus `dev/dex/config.yaml`):**
+
+| User | E-Mail | Passwort | Rolle |
+|---|---|---|---|
+| Kai | `kai@example.com` | `changeme` | `instance_admin` |
+| Compliance | `compliance@example.com` | `changeme` | `compliance_officer` |
+| Alex | `alex@example.com` | `changeme` | `user` (kein Admin-Zugriff) |
+
+---
+
+#### Datei-Organisation
+
+```
+e2e/
+  tests/
+    bootstrap.spec.ts              ← Step-Validierungen (kein OIDC)
+    bootstrap-happy-path.spec.ts   ← Vollständiger Wizard + OIDC-Login
+    login.spec.ts                  ← Login-Seite, Session-Guard, Logout
+    dashboard.spec.ts              ← Dashboard SSR + SSE-Metrics-Widget
+    users.spec.ts                  ← User CRUD (Epic 4+)
+    rooms.spec.ts                  ← Room Management (Epic 4+)
+    compliance.spec.ts             ← Four-Eyes Flow (Epic 5+)
+  support/
+    db-helpers.ts                  ← resetToBootstrapState(), seedUser(), seedRoom(), etc.
+    auth-helpers.ts                ← forgeSessionCookie() für Tests ohne OIDC-Flow
+  playwright.config.ts
+```
+
+Jede neue Admin-UI-Seite bekommt eine eigene `*.spec.ts`-Datei. Support-Funktionen werden nie inline im Test definiert — immer in `support/`.
+
+---
+
+#### Enforcement
+
+Ergänzung zu den Enforcement-Regeln in diesem Dokument:
+
+> 13. **Für jede neue Admin-UI-Seite:** Die Story ist erst Done wenn ein Happy-Path-Playwright-Test existiert UND mindestens die Pflicht-Bad-Paths aus den Kategorien "Authentifizierung" und "Formular-Validierung" abgedeckt sind.
+> 14. **DB-Reset ist Pflicht** für alle Tests die DB-Zustand schreiben — via `beforeEach`/`afterEach` mit `docker compose exec psql`. Kein Test darf im Rückstand einen anderen Test beeinflussen.
+> 15. **OIDC-Tests immer mit Skip-Guard** — niemals ohne `test.skip(!dexDiscovery?.ok(), ...)` am Testanfang.
+
+---
+
 ### gRPC / Proto Patterns
 
 - Jede Operation: eigener `{Operation}Request` + `{Operation}Response` Message-Typ
@@ -830,6 +1020,9 @@ Feature: Message Integrity
 10. **PII-Verschlüsselung ausschließlich via X25519 (Encryption Key)** — nie via Ed25519 (Signing Key)
 11. **Admin API Implementation muss `ServerInterface` aus `api_gen.go` erfüllen** — kein freestyle routing
 12. **Secrets nie als Env-Var direkt** — immer via `NEBU_*_FILE` auf gemountete Secret-Datei
+13. **Für jede neue Admin-UI-Seite:** Story ist erst Done wenn ein Playwright-Happy-Path-Test existiert UND die Pflicht-Bad-Paths "Authentifizierung" + "Formular-Validierung" abgedeckt sind — Details siehe [UI E2E Test-Strategie](#ui-e2e-test-strategie-playwright)
+14. **DB-Reset ist Pflicht** für alle Playwright-Tests die DB-Zustand schreiben — via `beforeEach`/`afterEach` mit `docker compose exec psql`
+15. **OIDC-Playwright-Tests immer mit Skip-Guard** — `test.skip(!dexDiscovery?.ok(), 'Dex unreachable...')` am Testanfang
 
 **Anti-Patterns (verboten):**
 ```go

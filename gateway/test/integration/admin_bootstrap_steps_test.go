@@ -3,10 +3,14 @@
 package integration_test
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,6 +21,26 @@ import (
 	"github.com/cucumber/godog"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
+
+// encryptForStorage mirrors gateway/internal/admin/crypto.go encryptAES256GCM.
+// key is derived from secret via SHA-256; output is hex-encoded nonce||ciphertext.
+func encryptForStorage(secret []byte, plaintext string) (string, error) {
+	keyHash := sha256.Sum256(secret)
+	block, err := aes.NewCipher(keyHash[:])
+	if err != nil {
+		return "", err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", err
+	}
+	ciphertext := gcm.Seal(nonce, nonce, []byte(plaintext), nil)
+	return hex.EncodeToString(ciphertext), nil
+}
 
 // lastAdminSessionCookie holds the most recently forged admin session cookie value.
 var lastAdminSessionCookie string
@@ -123,13 +147,17 @@ func iSeedBootstrapConfigDirectly() error {
 	}
 	defer db.Close()
 
+	encSecret, err := encryptForStorage([]byte(internalSecret), "nebu-admin-secret")
+	if err != nil {
+		return fmt.Errorf("encrypt oidc_client_secret: %w", err)
+	}
+
 	now := time.Now().UnixMilli()
 	rows := []struct{ key, value string }{
 		{"instance_name", "test-instance"},
 		{"oidc_issuer", "http://dex:5556/dex"},
 		{"oidc_client_id", "nebu-admin"},
-		// Unencrypted secret — tests do not exercise CallbackHandler, only SessionGuard
-		{"oidc_client_secret", "nebu-admin-secret"},
+		{"oidc_client_secret", encSecret},
 		{"bootstrap_completed", "true"},
 	}
 	for _, r := range rows {

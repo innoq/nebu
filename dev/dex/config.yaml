@@ -28,7 +28,7 @@ staticClients:
     name: "Nebu Admin UI"
     secret: nebu-admin-secret
     redirectURIs:
-      - "http://localhost:8080/admin/callback"
+      - "http://localhost:8008/admin/callback"
 
 staticPasswords:
   - email: "kai@example.com"

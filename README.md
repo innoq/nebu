@@ -997,128 +997,90 @@ nebu/
 
 ---
 
-## Docker Setup
+## Lokal starten
 
-### Entwicklung (lokal)
+**Voraussetzungen:** Docker Desktop, `make`, Git. Keine lokale Go- oder Elixir-Installation nötig — alle Builds laufen in Containern.
+
+### 1. Setup (einmalig)
 
 ```bash
-git clone https://github.com/your-org/nebu
+git clone <repo-url>
 cd nebu
-./certs/generate-dev-certs.sh
-docker compose up
+make setup
 ```
 
-```yaml
-# docker-compose.yml
-services:
-  gateway:
-    build:
-      context: ./gateway
-      target: gateway
-    ports:
-      - "8008:8008"
-      - "8448:8448"
-    environment:
-      CORE_GRPC_ADDR: core:9000
-      DB_URL: postgres://nebu:secret@postgres:5432/nebu
-      TLS_CERT: /certs/gateway.crt
-      TLS_KEY:  /certs/gateway.key
-      TLS_CA:   /certs/ca.crt
-      OIDC_ISSUER: ${OIDC_ISSUER:-}
-    volumes:
-      - ./certs:/certs:ro
-    depends_on: [core, postgres]
+`make setup` erzeugt `.secrets/internal_secret` und gibt die Dev-Zugangsdaten aus:
 
-  media:
-    build:
-      context: ./media
-      target: media
-    ports:
-      - "8009:8009"
-    environment:
-      CORE_GRPC_ADDR: core:9000
-      DB_URL: postgres://nebu:secret@postgres:5432/nebu
-      MEDIA_PATH: /var/nebu/media
-      TLS_CERT: /certs/media.crt
-      TLS_KEY:  /certs/media.key
-      TLS_CA:   /certs/ca.crt
-    volumes:
-      - ./certs:/certs:ro
-      - media_data:/var/nebu/media
-    depends_on: [core, postgres]
-
-  core:
-    build:
-      context: ./core
-      target: core
-    environment:
-      RELEASE_COOKIE: ${RELEASE_COOKIE:-devcookie}
-      NEBU_DB_URL: postgres://nebu:secret@postgres:5432/nebu
-      NEBU_INTERNAL_SECRET_FILE: /run/secrets/internal_secret
-    volumes:
-      - ./certs:/certs:ro
-    depends_on: [postgres]
-
-  keycloak:
-    image: quay.io/keycloak/keycloak:24-alpine
-    command: start-dev
-    ports:
-      - "8080:8080"
-    environment:
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin
-      KC_DB: dev-mem
-    # Im Dev-Betrieb: Realm + Client manuell anlegen oder via Import
-
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: nebu
-      POSTGRES_USER: nebu
-      POSTGRES_PASSWORD: secret
-    command: >
-      postgres
-        -c ssl=on
-        -c ssl_cert_file=/var/lib/postgresql/certs/postgres.crt
-        -c ssl_key_file=/var/lib/postgresql/certs/postgres.key
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./certs:/var/lib/postgresql/certs:ro
-
-volumes:
-  postgres_data:
-  media_data:
+```
+Dev credentials (Dex local users):
+  kai@example.com        / changeme  (instance_admin)
+  compliance@example.com / changeme  (compliance_officer)
+  alex@example.com       / changeme  (user)
 ```
 
-### Multi-Stage Dockerfiles
+### 2. Stack starten
 
-```dockerfile
-# gateway/Dockerfile  (identisch für media/)
-FROM golang:1.26-alpine AS builder
-WORKDIR /app
-COPY . .
-RUN go build -o gateway ./cmd/gateway
-
-FROM alpine:3.19 AS gateway
-RUN apk add --no-cache ca-certificates
-COPY --from=builder /app/gateway /usr/local/bin/
-EXPOSE 8008 8448
-ENTRYPOINT ["gateway"]
+```bash
+make dev
 ```
 
-```dockerfile
-# core/Dockerfile
-FROM elixir:1.19-alpine AS builder
-RUN apk add --no-cache git
-WORKDIR /app
-COPY . .
-RUN rebar3 release
+Startet alle Dienste via Docker Compose:
 
-FROM alpine:3.19 AS core
-RUN apk add --no-cache libstdc++ ncurses openssl
-COPY --from=builder /app/_build/prod/rel/core /opt/core
-EXPOSE 9000 4369
-ENTRYPOINT ["/opt/core/bin/core", "foreground"]
+| Dienst | URL | Beschreibung |
+|--------|-----|--------------|
+| Admin UI + Matrix API | http://localhost:8008 | Gateway (Haupt-Endpunkt) |
+| Health / Metrics | http://localhost:8080 | Prometheus `/metrics`, `/health` |
+| Elixir Core | :9000 (gRPC intern) | Nachrichten-Logik |
+| Dex (OIDC) | http://localhost:5556 | Dev-OIDC-Provider |
+| PostgreSQL | localhost:5432 | Datenbank (User: `nebu`, PW: `nebu_dev_password`) |
+
+### 3. Bootstrap Wizard
+
+Beim ersten Start öffnet http://localhost:8008/admin automatisch den Bootstrap-Wizard.
+
+> **Einmalig für den OIDC-Login nötig:** `dex` muss lokal auflösbar sein, damit der Browser den OIDC-Redirect verfolgen kann:
+> ```bash
+> sudo sh -c 'echo "127.0.0.1 dex" >> /etc/hosts'
+> ```
+
+Wizard-Eingaben für den Dev-Stack:
+
+| Schritt | Feld | Wert |
+|---------|------|------|
+| 1 – Instance Name | Instance Name | beliebig, z. B. `nebu-dev` |
+| 2 – OIDC | Issuer URL | `http://dex:5556/dex` |
+| 2 – OIDC | Client ID | `nebu-admin` |
+| 2 – OIDC | Client Secret | `nebu-admin-secret` |
+| 3 – Keys | — | „Generate Keys" klicken |
+| 4 – Admin | — | „Complete Setup & Login" klicken → Dex-Login |
+
+Nach „Complete Setup & Login" wird direkt zu Dex weitergeleitet. Dort mit einem der Dev-User einloggen (z. B. `kai@example.com` / `changeme`). Der erste Login landet auf dem Admin-Dashboard.
+
+### Dev-Benutzer (Dex)
+
+| E-Mail | Passwort | Rolle |
+|--------|----------|-------|
+| `kai@example.com` | `changeme` | `instance_admin` |
+| `compliance@example.com` | `changeme` | `compliance_officer` |
+| `alex@example.com` | `changeme` | `user` |
+
+Nur `instance_admin`-User können sich am Admin UI anmelden.
+
+### Nützliche Befehle
+
+```bash
+make dev             # Stack starten
+make test-unit-go    # Go Unit-Tests
+make test-unit-elixir # Elixir Unit-Tests
+make test-integration # Godog-Integrationstests (Stack muss laufen)
+make test-e2e        # Playwright E2E-Tests (Stack muss laufen, dex in /etc/hosts)
+make build-gateway   # Gateway-Image neu bauen (docker compose up --build bevorzugen)
+```
+
+```bash
+# DB zurücksetzen für erneuten Bootstrap-Durchlauf:
+docker compose exec postgres psql -U nebu -d nebu -c \
+  "DELETE FROM server_config WHERE key IN ('bootstrap_completed','oidc_issuer','oidc_client_id','oidc_client_secret','instance_name');"
 ```
 
 ---

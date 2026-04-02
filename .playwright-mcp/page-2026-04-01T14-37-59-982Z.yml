@@ -1,0 +1,32 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]: Nebu Admin
+    - 'generic "System status: connecting" [ref=e4]': Connecting…
+  - generic [ref=e6]:
+    - navigation "Admin navigation" [ref=e7]:
+      - list [ref=e8]:
+        - listitem [ref=e9]:
+          - link "Bootstrap Setup" [ref=e10] [cursor=pointer]:
+            - /url: /admin/bootstrap
+        - listitem [ref=e11]:
+          - link "Dashboard" [ref=e12] [cursor=pointer]:
+            - /url: /admin/dashboard
+        - listitem [ref=e13]:
+          - link "Logout" [ref=e14] [cursor=pointer]:
+            - /url: /admin/auth/logout
+    - main [ref=e15]:
+      - generic [ref=e16]:
+        - heading "Bootstrap Setup" [level=1] [ref=e17]
+        - list [ref=e18]:
+          - listitem [ref=e19]: Instance
+          - listitem [ref=e20]: OIDC
+          - listitem [ref=e21]: Keys
+          - listitem [ref=e22]: Admin
+        - generic [ref=e24]:
+          - 'heading "Step 1: Instance Name" [level=2] [ref=e25]'
+          - generic [ref=e26]:
+            - generic [ref=e27]:
+              - generic [ref=e29]: Instance Name
+              - textbox "Instance Name" [ref=e30]:
+                - /placeholder: my-nebu-instance
+            - button "Next" [ref=e32] [cursor=pointer]

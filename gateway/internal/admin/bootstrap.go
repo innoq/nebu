@@ -113,6 +113,12 @@ func (h *BootstrapHandler) Handler(w http.ResponseWriter, r *http.Request) {
 	h.tmpl.render(w, "bootstrap", data)
 }
 
+// DoneHandler handles GET /admin/bootstrap/done.
+// Shown after a successful bootstrap login — session is already set by CallbackHandler.
+func (h *BootstrapHandler) DoneHandler(w http.ResponseWriter, r *http.Request) {
+	h.tmpl.render(w, "bootstrap-done", PageData{ActiveNav: "dashboard"})
+}
+
 // instanceNameRe validates instance name: 3–64 alphanumeric + hyphens.
 var instanceNameRe = regexp.MustCompile(`^[a-zA-Z0-9-]{3,64}$`)
 
@@ -133,6 +139,7 @@ func (h *BootstrapHandler) StepHandler(w http.ResponseWriter, r *http.Request) {
 		OIDCIssuer:   r.FormValue("oidc_issuer"),
 		OIDCClientID: r.FormValue("oidc_client_id"),
 		Errors:       make(map[string]string),
+		Warnings:     make(map[string]string),
 	}
 
 	// Back navigation: if go_back is set, re-render the target step without validation.
@@ -176,8 +183,10 @@ func (h *BootstrapHandler) StepHandler(w http.ResponseWriter, r *http.Request) {
 			data.Errors["oidc_issuer"] = "OIDC Issuer URL is required."
 		} else {
 			parsed, err := url.ParseRequestURI(data.OIDCIssuer)
-			if err != nil || parsed.Scheme != "https" {
-				data.Errors["oidc_issuer"] = "OIDC Issuer must be a valid HTTPS URL."
+			if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") {
+				data.Errors["oidc_issuer"] = "OIDC Issuer must be a valid URL (https:// or http://)."
+			} else if parsed.Scheme == "http" {
+				data.Warnings["oidc_issuer"] = "HTTP issuer — not suitable for production. Use HTTPS in production deployments."
 			}
 		}
 		if r.FormValue("oidc_client_id") == "" {
@@ -272,8 +281,8 @@ func (h *BootstrapHandler) FinalizeHandler(w http.ResponseWriter, r *http.Reques
 		errs["oidc_issuer"] = "OIDC Issuer URL is required."
 	} else {
 		parsed, err := url.ParseRequestURI(oidcIssuer)
-		if err != nil || parsed.Scheme != "https" {
-			errs["oidc_issuer"] = "OIDC Issuer must be a valid HTTPS URL."
+		if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") {
+			errs["oidc_issuer"] = "OIDC Issuer must be a valid URL (https:// or http://)."
 		}
 	}
 	if oidcClientID == "" {
@@ -318,14 +327,17 @@ func (h *BootstrapHandler) FinalizeHandler(w http.ResponseWriter, r *http.Reques
 		slog.Warn("failed to clear bootstrap draft after successful finalization", "err", err)
 	}
 
-	// Redirect 303 to /admin/login
-	http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
+	// Redirect directly to OIDC login with bootstrap mode — the callback will
+	// grant instance_admin to the first user and write bootstrap_completed.
+	http.Redirect(w, r, "/admin/login/start?mode=bootstrap", http.StatusSeeOther)
 }
 
 // testOIDCResponse is the JSON response for POST /admin/bootstrap/test-oidc.
 type testOIDCResponse struct {
-	OK    bool   `json:"ok"`
-	Error string `json:"error,omitempty"`
+	OK      bool   `json:"ok"`
+	Error   string `json:"error,omitempty"`
+	Warning string `json:"warning,omitempty"`
+	Issuer  string `json:"issuer,omitempty"`
 }
 
 // TestOIDCHandler handles POST /admin/bootstrap/test-oidc.
@@ -343,11 +355,15 @@ func (h *BootstrapHandler) TestOIDCHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Validate HTTPS URL
+	// Validate URL (HTTP allowed with a warning — HTTPS required in production)
 	parsed, err := url.ParseRequestURI(issuer)
-	if err != nil || parsed.Scheme != "https" {
-		_ = json.NewEncoder(w).Encode(testOIDCResponse{OK: false, Error: "invalid HTTPS URL"})
+	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") {
+		_ = json.NewEncoder(w).Encode(testOIDCResponse{OK: false, Error: "invalid URL — must be http:// or https://"})
 		return
+	}
+	var httpWarning string
+	if parsed.Scheme == "http" {
+		httpWarning = "HTTP issuer — not suitable for production. Use HTTPS in production deployments."
 	}
 
 	// Build discovery endpoint URL
@@ -368,7 +384,7 @@ func (h *BootstrapHandler) TestOIDCHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	_ = json.NewEncoder(w).Encode(testOIDCResponse{OK: true})
+	_ = json.NewEncoder(w).Encode(testOIDCResponse{OK: true, Warning: httpWarning, Issuer: issuer})
 }
 
 // generateKeysResponse is the JSON response for POST /admin/bootstrap/generate-keys.
@@ -468,17 +484,20 @@ func (p *postgresBootstrapPersister) SaveBootstrapConfig(ctx context.Context, in
 	}
 
 	nowMs := time.Now().UnixMilli()
+	// Note: bootstrap_completed is NOT set here — it is written by CallbackHandler
+	// after the first successful admin login (mode=bootstrap), ensuring the admin
+	// identity is confirmed before the instance is considered fully bootstrapped.
 	rows := []struct{ key, value string }{
 		{"instance_name", instanceName},
 		{"oidc_issuer", oidcIssuer},
 		{"oidc_client_id", oidcClientID},
 		{"oidc_client_secret", encryptedSecret},
-		{"bootstrap_completed", "true"},
 	}
 
 	for _, row := range rows {
 		if _, err := tx.ExecContext(ctx,
-			"INSERT INTO server_config (key, value, set_at) VALUES ($1, $2, $3)",
+			`INSERT INTO server_config (key, value, set_at) VALUES ($1, $2, $3)
+             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, set_at = EXCLUDED.set_at`,
 			row.key, row.value, nowMs,
 		); err != nil {
 			_ = tx.Rollback()

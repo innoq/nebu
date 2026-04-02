@@ -16,7 +16,12 @@
       "Bash(make build-admin-css:*)",
       "Bash(git add:*)",
       "Bash(go vet:*)",
-      "Bash(make build-gateway:*)"
+      "Bash(make build-gateway:*)",
+      "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_click",
+      "mcp__playwright__browser_snapshot",
+      "mcp__playwright__browser_fill_form",
+      "mcp__playwright__browser_type"
     ]
   }
 }

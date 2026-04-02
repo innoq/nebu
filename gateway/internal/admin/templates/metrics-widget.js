@@ -4,8 +4,8 @@ function updateTopbar(status) {
   const el = document.getElementById('topbar-status');
   if (!el) return;
   const dot = el.querySelector('[aria-hidden="true"]');
+  const label = document.getElementById('topbar-label');
 
-  // Remove all state classes
   el.classList.remove('text-success', 'text-warning', 'text-error');
   if (dot) dot.classList.remove('bg-success', 'bg-warning', 'bg-error');
 
@@ -13,10 +13,12 @@ function updateTopbar(status) {
     el.classList.add('text-success');
     if (dot) dot.classList.add('bg-success');
     el.setAttribute('aria-label', 'System status: OK');
+    if (label) label.textContent = 'OK';
   } else if (status === 'error') {
     el.classList.add('text-error');
     if (dot) dot.classList.add('bg-error');
     el.setAttribute('aria-label', 'System status: Core unreachable');
+    if (label) label.textContent = 'Core unreachable';
   }
 }
 

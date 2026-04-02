@@ -1,0 +1,25 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]: Nebu Admin
+  - generic [ref=e4]:
+    - navigation "Admin navigation" [ref=e5]:
+      - list [ref=e6]:
+        - listitem [ref=e7]:
+          - link "Bootstrap Setup" [ref=e8] [cursor=pointer]:
+            - /url: /admin/bootstrap
+    - main [ref=e9]:
+      - generic [ref=e10]:
+        - heading "Bootstrap Setup" [level=1] [ref=e11]
+        - list [ref=e12]:
+          - listitem [ref=e13]: Instance
+          - listitem [ref=e14]: OIDC
+          - listitem [ref=e15]: Keys
+          - listitem [ref=e16]: Admin
+        - generic [ref=e18]:
+          - 'heading "Step 1: Instance Name" [level=2] [ref=e19]'
+          - generic [ref=e20]:
+            - generic [ref=e21]:
+              - generic [ref=e23]: Instance Name
+              - textbox "Instance Name" [ref=e24]:
+                - /placeholder: my-nebu-instance
+            - button "Next" [ref=e26] [cursor=pointer]

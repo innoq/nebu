@@ -1,0 +1,40 @@
+{{ template "base" . }}
+{{ define "title" }}Setup Complete — Nebu Admin{{ end }}
+{{ define "content" }}
+<div class="max-w-lg mx-auto">
+  <div class="card bg-base-200 shadow-md">
+    <div class="card-body items-center text-center gap-4">
+
+      <div class="text-success" aria-hidden="true">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-16 h-16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      </div>
+
+      <h1 class="text-2xl font-bold">Nebu is ready</h1>
+
+      <p class="text-base-content/70">
+        Your instance has been configured and you are now logged in as
+        <span class="font-semibold text-base-content">instance_admin</span>.
+      </p>
+
+      <div class="alert alert-success w-full text-left">
+        <div>
+          <p class="font-semibold">What happens next?</p>
+          <ul class="list-disc list-inside mt-1 text-sm space-y-1">
+            <li>The Admin Dashboard shows you the system status at a glance.</li>
+            <li>Bootstrap mode is now permanently disabled.</li>
+            <li>Additional admins can be granted access via the OIDC provider.</li>
+          </ul>
+        </div>
+      </div>
+
+      <a href="/admin/dashboard" class="btn btn-primary btn-wide">
+        Go to Dashboard
+      </a>
+
+    </div>
+  </div>
+</div>
+{{ end }}
+{{ define "scripts" }}{{ end }}

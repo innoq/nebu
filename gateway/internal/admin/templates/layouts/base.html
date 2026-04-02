@@ -11,7 +11,8 @@
   <!-- Topbar -->
   <header class="h-12 bg-base-300 flex items-center justify-between px-4 shrink-0">
     <span class="font-semibold text-base-content">Nebu Admin</span>
-    <!-- C3: TopbarStatusIndicator — server-side status (Story 3.13); falls back to "Connecting..." on non-dashboard pages -->
+    <!-- C3: TopbarStatusIndicator — hidden during bootstrap, server-side status on dashboard, "Connecting..." elsewhere -->
+    {{ if not .BootstrapMode }}
     {{ if .TopbarStatus }}
     <span id="topbar-status" aria-live="polite" aria-label="System status: {{ .TopbarLabel }}"
           class="flex items-center gap-1 text-sm
@@ -23,7 +24,7 @@
                    {{ else if eq .TopbarStatus "warning" }}bg-warning
                    {{ else }}bg-error{{ end }}"
             aria-hidden="true"></span>
-      {{ .TopbarLabel }}
+      <span id="topbar-label">{{ .TopbarLabel }}</span>
     </span>
     {{ else }}
     <span id="topbar-status" aria-live="polite" aria-label="System status: connecting"
@@ -31,6 +32,7 @@
       <span class="w-2 h-2 rounded-full bg-warning inline-block" aria-hidden="true"></span>
       Connecting&hellip;
     </span>
+    {{ end }}
     {{ end }}
   </header>
 
@@ -53,6 +55,7 @@
           </a>
         </li>
         {{ end }}
+        {{ if not .BootstrapMode }}
         <li>
           <a href="/admin/dashboard"
              data-navkey="dashboard"
@@ -64,7 +67,7 @@
           </a>
         </li>
         <li>
-          <a href="/admin/auth/logout"
+          <a href="/admin/logout"
              data-navkey="logout"
              {{ if eq .ActiveNav "logout" }}aria-current="page"{{ end }}
              class="flex items-center gap-2 px-3 py-3 rounded text-sm
@@ -73,6 +76,7 @@
             Logout
           </a>
         </li>
+        {{ end }}
       </ul>
     </nav>
 

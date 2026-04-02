@@ -1,0 +1,39 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]: Nebu Admin
+  - generic [ref=e4]:
+    - navigation "Admin navigation" [ref=e5]:
+      - list [ref=e6]:
+        - listitem [ref=e7]:
+          - link "Bootstrap Setup" [ref=e8] [cursor=pointer]:
+            - /url: /admin/bootstrap
+    - main [ref=e9]:
+      - generic [ref=e10]:
+        - heading "Bootstrap Setup" [level=1] [ref=e11]
+        - list [ref=e12]:
+          - listitem [ref=e13]: Instance
+          - listitem [ref=e14]: OIDC
+          - listitem [ref=e15]: Keys
+          - listitem [ref=e16]: Admin
+        - generic [ref=e18]:
+          - 'heading "Step 3: Key Generation" [level=2] [ref=e19]'
+          - generic [ref=e20]:
+            - generic [ref=e22]:
+              - paragraph [ref=e23]: Cryptographic Key Pairs
+              - paragraph [ref=e24]: "Nebu will generate two key pairs for your instance:"
+              - list [ref=e25]:
+                - listitem [ref=e26]:
+                  - strong [ref=e27]: Ed25519
+                  - text: — signing key pair for event signatures and identity verification
+                - listitem [ref=e28]:
+                  - strong [ref=e29]: X25519
+                  - text: — encryption key pair for end-to-end encrypted message content
+              - paragraph [ref=e30]: Keys are generated server-side and stored securely. The public Ed25519 fingerprint will be shown for verification.
+            - generic [ref=e31]:
+              - button "Generate Keys" [ref=e32] [cursor=pointer]
+              - generic [ref=e38]:
+                - text: "✓ Keys generated. Ed25519 public fingerprint:"
+                - code [ref=e39]: f0d4b4859ea34ad6
+            - generic [ref=e33]:
+              - button "Back" [ref=e34] [cursor=pointer]
+              - button "Next" [ref=e35] [cursor=pointer]

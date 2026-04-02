@@ -41,7 +41,7 @@ type DashboardPageData struct {
 // LoginPageData holds data for the Admin login page.
 type LoginPageData struct {
 	PageData        // embed for BootstrapMode + ActiveNav
-	Error string    // optional error message (e.g. "auth_failed", "config_missing")
+	Error    string // optional error message (e.g. "auth_failed", "config_missing")
 }
 
 // BootstrapPageData holds data for the Bootstrap Wizard page.
@@ -57,4 +57,6 @@ type BootstrapPageData struct {
 	MaskedSecret string
 	// Errors carries per-field or global error messages for re-render
 	Errors map[string]string
+	// Warnings carries per-field non-blocking warnings (e.g. HTTP issuer in dev)
+	Warnings map[string]string
 }

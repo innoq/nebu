@@ -1,0 +1,48 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]: Nebu Admin
+    - 'generic "System status: Core unreachable" [ref=e4]':
+      - generic [ref=e6]: Core unreachable
+  - generic [ref=e7]:
+    - navigation "Admin navigation" [ref=e8]:
+      - list [ref=e9]:
+        - listitem [ref=e10]:
+          - link "Dashboard" [ref=e11] [cursor=pointer]:
+            - /url: /admin/dashboard
+        - listitem [ref=e12]:
+          - link "Logout" [ref=e13] [cursor=pointer]:
+            - /url: /admin/logout
+    - main [ref=e14]:
+      - generic [ref=e15]:
+        - heading "Dashboard" [level=1] [ref=e16]
+        - region "System status" [ref=e17]:
+          - heading "System Status" [level=2] [ref=e18]
+          - generic [ref=e19]:
+            - status [ref=e20]:
+              - generic [ref=e21]:
+                - heading "Gateway" [level=3] [ref=e24]
+                - paragraph [ref=e25]: OK
+            - status [ref=e26]:
+              - generic [ref=e27]:
+                - heading "Core (gRPC)" [level=3] [ref=e30]
+                - paragraph [ref=e31]: OK
+            - status [ref=e32]:
+              - generic [ref=e33]:
+                - heading "Database" [level=3] [ref=e36]
+                - paragraph [ref=e37]: OK
+        - region "Server information" [ref=e38]:
+          - heading "Server Info" [level=2] [ref=e39]
+          - generic [ref=e42]:
+            - generic [ref=e43]:
+              - term [ref=e44]: Instance Name
+              - definition [ref=e45]: localhost
+            - generic [ref=e46]:
+              - term [ref=e47]: Uptime
+              - definition [ref=e48]: <1m
+            - generic [ref=e49]:
+              - term [ref=e50]: Go Version
+              - definition [ref=e51]: go1.26.1
+        - region "Live metrics" [ref=e52]:
+          - heading "Live Metrics" [level=2] [ref=e53]
+          - generic "Live metrics" [ref=e54]:
+            - alert [ref=e56]: Core unreachable

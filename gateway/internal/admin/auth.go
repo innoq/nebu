@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -26,6 +27,7 @@ var ErrOIDCConfigMissing = errors.New("OIDC configuration missing in server_conf
 // ServerConfigReader reads OIDC config from server_config.
 type ServerConfigReader interface {
 	LoadOIDCConfig(ctx context.Context) (issuer, clientID, clientSecret string, err error)
+	CompleteBootstrap(ctx context.Context) error
 }
 
 // postgresServerConfigReader wraps *sql.DB to implement ServerConfigReader.
@@ -70,6 +72,27 @@ func (r *postgresServerConfigReader) LoadOIDCConfig(ctx context.Context) (issuer
 	return issuer, clientID, plain, nil
 }
 
+// CompleteBootstrap writes bootstrap_completed = true to server_config.
+// Returns an error if bootstrap was already completed (0 rows affected) — this
+// prevents privilege escalation via mode=bootstrap replay after initial setup.
+func (r *postgresServerConfigReader) CompleteBootstrap(ctx context.Context) error {
+	result, err := r.db.ExecContext(ctx,
+		`INSERT INTO server_config (key, value, set_at) VALUES ($1, $2, $3)
+		 ON CONFLICT (key) DO NOTHING`,
+		"bootstrap_completed", "true", time.Now().UnixMilli())
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return errors.New("bootstrap already completed")
+	}
+	return nil
+}
+
 // AdminAuth handles PKCE-protected OIDC Authorization Code flow for the Admin UI.
 type AdminAuth struct {
 	provider     *auth.Provider
@@ -101,7 +124,8 @@ func NewAdminAuth(provider *auth.Provider, clientID, clientSecret, claimName str
 type oidcStateCookie struct {
 	State    string `json:"state"`
 	Verifier string `json:"verifier"`
-	Exp      int64  `json:"exp"` // Unix timestamp (seconds)
+	Exp      int64  `json:"exp"`  // Unix timestamp (seconds)
+	Mode     string `json:"mode"` // "bootstrap" during initial setup, empty otherwise
 }
 
 type adminSessionCookie struct {
@@ -166,14 +190,14 @@ func (a *AdminAuth) LoginPageHandler(w http.ResponseWriter, r *http.Request) {
 // Reads OIDC config from DB, generates PKCE verifier + state, sets signed cookie, redirects to OIDC provider.
 func (a *AdminAuth) LoginStartHandler(w http.ResponseWriter, r *http.Request) {
 	if a.configReader == nil {
-		http.Error(w, "OIDC configuration not found in server config. Please complete the Bootstrap Wizard first.", http.StatusServiceUnavailable)
+		http.Error(w, "OIDC configuration not found in server config. Please complete the Bootstrap Wizard first: /admin/bootstrap", http.StatusServiceUnavailable)
 		return
 	}
 
 	issuer, clientID, clientSecret, err := a.configReader.LoadOIDCConfig(r.Context())
 	if err != nil {
 		if errors.Is(err, ErrOIDCConfigMissing) {
-			http.Error(w, "OIDC configuration not found in server config. Please complete the Bootstrap Wizard first.", http.StatusServiceUnavailable)
+			http.Redirect(w, r, "/admin/bootstrap", http.StatusFound)
 			return
 		}
 		http.Error(w, "Failed to load OIDC configuration: "+err.Error(), http.StatusServiceUnavailable)
@@ -196,7 +220,7 @@ func (a *AdminAuth) LoginStartHandler(w http.ResponseWriter, r *http.Request) {
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
 		RedirectURL:  scheme + "://" + r.Host + "/admin/callback",
-		Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
+		Scopes:       []string{oidc.ScopeOpenID, "profile", "email", "groups"},
 		Endpoint:     provider.Endpoint(),
 	}
 
@@ -209,10 +233,13 @@ func (a *AdminAuth) LoginStartHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	state := hex.EncodeToString(stateBytes)
 
+	mode := r.URL.Query().Get("mode") // "bootstrap" during initial setup
+
 	sc := oidcStateCookie{
 		State:    state,
 		Verifier: verifier,
 		Exp:      time.Now().Add(10 * time.Minute).Unix(),
+		Mode:     mode,
 	}
 	payload, err := json.Marshal(sc)
 	if err != nil {
@@ -282,6 +309,11 @@ func (a *AdminAuth) LoginHandler(w http.ResponseWriter, r *http.Request) {
 // CallbackHandler handles GET /admin/callback (and legacy GET /admin/auth/callback).
 // Validates state cookie, exchanges code for tokens, checks role, creates an admin session cookie.
 func (a *AdminAuth) CallbackHandler(w http.ResponseWriter, r *http.Request) {
+	if a.configReader == nil {
+		http.Error(w, "OIDC configuration not available", http.StatusServiceUnavailable)
+		return
+	}
+
 	queryState := r.URL.Query().Get("state")
 	code := r.URL.Query().Get("code")
 
@@ -313,14 +345,39 @@ func (a *AdminAuth) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if a.provider.Inner() == nil {
-		http.Error(w, "OIDC provider unavailable", http.StatusServiceUnavailable)
+	// Load OIDC config from DB (set by bootstrap wizard — env-var config may be absent).
+	issuer, clientID, clientSecret, err := a.configReader.LoadOIDCConfig(r.Context())
+	if err != nil {
+		slog.Error("callback: failed to load OIDC config", "err", err)
+		http.Redirect(w, r, "/admin/login?error=auth_failed", http.StatusFound)
+		return
+	}
+	ctx := oidc.ClientContext(r.Context(), http.DefaultClient)
+	provider, err := oidc.NewProvider(ctx, issuer)
+	if err != nil {
+		slog.Error("callback: OIDC provider discovery failed", "err", err)
+		http.Redirect(w, r, "/admin/login?error=auth_failed", http.StatusFound)
 		return
 	}
 
-	oauth2Config := a.buildOAuth2Config(r)
+	scheme := "https"
+	if r.TLS == nil {
+		scheme = "http"
+	}
+	// Scopes must match the original auth request so that Dex includes the groups claim
+	// in the token exchange response. The Go oauth2 library sends the scope parameter
+	// on exchange; omitting "groups" here causes Dex to strip it from the returned tokens.
+	oauth2Config := &oauth2.Config{
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		RedirectURL:  scheme + "://" + r.Host + "/admin/callback",
+		Scopes:       []string{oidc.ScopeOpenID, "profile", "email", "groups"},
+		Endpoint:     provider.Endpoint(),
+	}
+
 	token, err := oauth2Config.Exchange(r.Context(), code, oauth2.VerifierOption(sc.Verifier))
 	if err != nil {
+		slog.Error("callback: token exchange failed", "err", err)
 		http.Redirect(w, r, "/admin/login?error=auth_failed", http.StatusFound)
 		return
 	}
@@ -331,8 +388,9 @@ func (a *AdminAuth) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	idToken, err := a.provider.Inner().Verifier(&oidc.Config{ClientID: a.clientID}).Verify(r.Context(), rawIDToken)
+	idToken, err := provider.Verifier(&oidc.Config{ClientID: clientID}).Verify(r.Context(), rawIDToken)
 	if err != nil {
+		slog.Error("callback: token verification failed", "err", err)
 		http.Redirect(w, r, "/admin/login?error=auth_failed", http.StatusFound)
 		return
 	}
@@ -348,10 +406,38 @@ func (a *AdminAuth) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid token: missing sub claim", http.StatusBadRequest)
 		return
 	}
-	rawRole, _ := claims[a.claimName].(string)
-	systemRole := auth.MapSystemRole(rawRole)
+	// The role claim may be a string or a []interface{} (e.g. Dex "groups" array).
+	// Try string first; fall back to first matching element of an array.
+	// Dex v2.41+ returns the groups claim via the UserInfo endpoint, not in the ID token.
+	// Fetch UserInfo to supplement ID token claims with the role claim if absent.
+	// Dex v2.41 did not include the groups claim in the ID token exchange response.
+	// From v2.45+ groups are in the ID token. Keep the UserInfo fallback for robustness.
+	if _, ok := claims[a.claimName]; !ok {
+		uiCtx := oidc.ClientContext(r.Context(), http.DefaultClient)
+		if userInfo, uiErr := provider.UserInfo(uiCtx, oauth2.StaticTokenSource(token)); uiErr == nil {
+			var uiClaims map[string]interface{}
+			if uiErr = userInfo.Claims(&uiClaims); uiErr == nil {
+				if v, ok := uiClaims[a.claimName]; ok {
+					claims[a.claimName] = v
+				}
+			}
+		} else {
+			slog.Warn("callback: userinfo fetch failed", "err", uiErr)
+		}
+	}
 
-	if systemRole != "instance_admin" {
+	systemRole := auth.MapSystemRole(extractFirstRoleClaim(claims[a.claimName]))
+
+	if sc.Mode == "bootstrap" {
+		// Bootstrap login: the first admin is granted instance_admin regardless of OIDC groups.
+		// CompleteBootstrap writes bootstrap_completed = true, ending bootstrap mode.
+		systemRole = "instance_admin"
+		if err := a.configReader.CompleteBootstrap(r.Context()); err != nil {
+			slog.Error("callback: failed to complete bootstrap", "err", err)
+			http.Redirect(w, r, "/admin/login?error=auth_failed", http.StatusFound)
+			return
+		}
+	} else if systemRole != "instance_admin" {
 		http.Error(w, "Access denied: instance_admin role required.", http.StatusForbidden)
 		return
 	}
@@ -368,6 +454,10 @@ func (a *AdminAuth) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// SameSite=Lax (not Strict): the OIDC callback is initiated cross-site (from Dex).
+	// Chrome treats the entire redirect chain as cross-site, so SameSite=Strict would
+	// prevent the session cookie from being sent on the immediate post-callback redirect.
+	// Lax still protects against CSRF for all non-GET requests.
 	http.SetCookie(w, &http.Cookie{
 		Name:     "admin_session",
 		Value:    a.signCookie(sessPayload),
@@ -375,7 +465,7 @@ func (a *AdminAuth) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   28800,
 		HttpOnly: true,
 		Secure:   r.TLS != nil,
-		SameSite: http.SameSiteStrictMode,
+		SameSite: http.SameSiteLaxMode,
 	})
 
 	// Delete the OIDC state cookie (covers both /admin/auth and /admin paths)
@@ -389,7 +479,30 @@ func (a *AdminAuth) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 	})
 
+	if sc.Mode == "bootstrap" {
+		http.Redirect(w, r, "/admin/bootstrap/done", http.StatusSeeOther)
+		return
+	}
 	http.Redirect(w, r, "/admin/dashboard", http.StatusSeeOther)
+}
+
+// extractFirstRoleClaim returns the first meaningful string from an OIDC claim value.
+// Handles both plain string claims and []interface{} array claims (e.g. Dex "groups").
+func extractFirstRoleClaim(raw interface{}) string {
+	if raw == nil {
+		return ""
+	}
+	if s, ok := raw.(string); ok {
+		return s
+	}
+	if arr, ok := raw.([]interface{}); ok {
+		for _, v := range arr {
+			if s, ok := v.(string); ok && s != "" {
+				return s
+			}
+		}
+	}
+	return ""
 }
 
 // LogoutHandler handles GET /admin/logout.

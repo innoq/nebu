@@ -71,7 +71,7 @@ services:
       start_period: 30s
 
   dex:
-    image: dexidp/dex:v2.41.1
+    image: dexidp/dex:v2.45.1
     command: ["dex", "serve", "/etc/dex/config.yaml"]
     volumes:
       - ./dev/dex/config.yaml:/etc/dex/config.yaml:ro

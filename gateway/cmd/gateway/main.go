@@ -180,9 +180,23 @@ func main() {
 
 	mux.Handle("POST /admin/bootstrap/test-oidc", guard(http.HandlerFunc(bootstrapHandler.TestOIDCHandler)))
 	mux.Handle("POST /admin/bootstrap/generate-keys", guard(http.HandlerFunc(bootstrapHandler.GenerateKeysHandler)))
+	// Bootstrap-done page — behind sessionGuard (user just logged in via bootstrap flow)
+	mux.Handle("GET /admin/bootstrap/done", sessionGuard(http.HandlerFunc(bootstrapHandler.DoneHandler)))
 
-	// Catch-all 404 for unmatched /admin/* paths (Go 1.22+ mux: most specific route wins)
+	// Catch-all for unmatched /admin/* paths — redirect to bootstrap wizard if not yet set up,
+	// otherwise show 404 (Go 1.22+ mux: most specific route wins, so this only fires for unknown paths).
 	mux.HandleFunc("GET /admin/", func(w http.ResponseWriter, r *http.Request) {
+		active, err := checker.IsBootstrapActive(r.Context())
+		if err == nil && active {
+			http.Redirect(w, r, "/admin/bootstrap", http.StatusFound)
+			return
+		}
+		// Bootstrap complete and path is exactly /admin or /admin/ — send to dashboard.
+		// SessionGuard on /admin/dashboard will redirect to /admin/login if not authenticated.
+		if r.URL.Path == "/admin" || r.URL.Path == "/admin/" {
+			http.Redirect(w, r, "/admin/dashboard", http.StatusFound)
+			return
+		}
 		admin.Error404(w, r, tmplHandler)
 	})
 

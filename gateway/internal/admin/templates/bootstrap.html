@@ -20,6 +20,9 @@
       <h2 class="card-title">Step 1: Instance Name</h2>
       <form method="POST" action="/admin/bootstrap">
         <input type="hidden" name="step" value="1">
+        <!-- Carry accumulated OIDC state through back navigation -->
+        <input type="hidden" name="oidc_issuer" value="{{ .OIDCIssuer }}">
+        <input type="hidden" name="oidc_client_id" value="{{ .OIDCClientID }}">
 
         <div class="form-control mb-4">
           <label class="label" for="instance_name">
@@ -31,9 +34,6 @@
             name="instance_name"
             class="input input-bordered"
             required
-            minlength="3"
-            maxlength="64"
-            pattern="[a-zA-Z0-9-]+"
             placeholder="my-nebu-instance"
             value="{{ .InstanceName }}"
           >
@@ -62,7 +62,7 @@
             <span class="label-text">OIDC Issuer URL</span>
           </label>
           <input
-            type="url"
+            type="text"
             id="oidc_issuer"
             name="oidc_issuer"
             class="input input-bordered"
@@ -73,6 +73,11 @@
           {{ if .Errors }}{{ if index .Errors "oidc_issuer" }}
           <div class="alert alert-error mt-2">
             <span>{{ index .Errors "oidc_issuer" }}</span>
+          </div>
+          {{ end }}{{ end }}
+          {{ if .Warnings }}{{ if index .Warnings "oidc_issuer" }}
+          <div class="alert alert-warning mt-2">
+            <span>⚠ {{ index .Warnings "oidc_issuer" }}</span>
           </div>
           {{ end }}{{ end }}
         </div>
@@ -124,7 +129,7 @@
         </div>
 
         <div class="card-actions justify-between">
-          <button type="submit" name="go_back" value="1" class="btn btn-ghost">Back</button>
+          <button type="submit" name="go_back" formnovalidate value="1" class="btn btn-outline">Back</button>
           <button type="submit" class="btn btn-primary">Next</button>
         </div>
       </form>
@@ -159,8 +164,9 @@
         </div>
 
         <div class="card-actions justify-between">
-          <button type="submit" name="go_back" value="2" class="btn btn-ghost">Back</button>
-          <button type="submit" class="btn btn-primary">Next</button>
+          <button type="submit" name="go_back" formnovalidate value="2" class="btn btn-outline">Back</button>
+          <button type="submit" id="step3-next-btn" class="btn btn-primary" disabled
+                  title="Generate keys first">Next</button>
         </div>
       </form>
       {{ end }}
@@ -194,13 +200,13 @@
         <div class="alert alert-success mb-4">
           <div>
             <p class="font-semibold mb-1">Almost done!</p>
-            <p>Complete setup by logging in with your OIDC provider. The first user to log in will be assigned <code class="font-mono bg-base-300 px-1 rounded">instance_admin</code>.</p>
+            <p>Complete setup by logging in with your OIDC provider. The first user to log in will be assigned <code class="font-mono text-white px-1 rounded">instance_admin</code>.</p>
           </div>
         </div>
 
         <div class="card-actions justify-between">
-          <button type="submit" name="go_back" value="3" class="btn btn-ghost">Back</button>
-          <button type="submit" class="btn btn-primary">Complete Setup</button>
+          <button type="submit" name="go_back" formnovalidate value="3" class="btn btn-outline">Back</button>
+          <button type="submit" class="btn btn-primary">Complete Setup &amp; Login</button>
         </div>
       </form>
       {{ end }}
@@ -231,12 +237,20 @@
       var result = document.getElementById('oidc-test-result');
       result.innerHTML = '';
       try {
-        var form = btn.closest('form');
-        var data = new FormData(form);
-        var resp = await fetch('/admin/bootstrap/test-oidc', {method: 'POST', body: data});
+        var params = new URLSearchParams();
+        params.set('oidc_issuer', document.getElementById('oidc_issuer').value);
+        params.set('oidc_client_id', document.getElementById('oidc_client_id').value);
+        var resp = await fetch('/admin/bootstrap/test-oidc', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+          body: params.toString()
+        });
         var json = await resp.json();
         if (json.ok) {
-          result.innerHTML = '<div class="alert alert-success"><span>&#10003; Connected to ' + esc(json.issuer || data.get('oidc_issuer')) + '</span></div>';
+          var msg = '&#10003; Connected to ' + esc(json.issuer || data.get('oidc_issuer'));
+          var cls = 'alert-success';
+          if (json.warning) { msg += '<br><small>⚠ ' + esc(json.warning) + '</small>'; cls = 'alert-warning'; }
+          result.innerHTML = '<div class="alert ' + cls + '"><span>' + msg + '</span></div>';
         } else {
           result.innerHTML = '<div class="alert alert-error"><span>&#10007; ' + esc(json.error || 'Unknown error') + '</span></div>';
         }
@@ -264,6 +278,8 @@
         var json = await resp.json();
         if (json.ok) {
           result.innerHTML = '<div class="alert alert-success"><span>&#10003; Keys generated. Ed25519 public fingerprint: <code class="font-mono">' + esc(json.ed25519_public_fingerprint) + '</code></span></div>';
+          var nextBtn = document.getElementById('step3-next-btn');
+          if (nextBtn) { nextBtn.disabled = false; nextBtn.removeAttribute('title'); }
         } else {
           result.innerHTML = '<div class="alert alert-error"><span>&#10007; ' + esc(json.error || 'Key generation failed') + '</span></div>';
         }

@@ -1,0 +1,13 @@
+- generic [ref=e1]:
+  - img [ref=e4]
+  - generic [ref=e6]:
+    - heading "Log in to Your Account" [level=2] [ref=e7]
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - generic [ref=e10]: Email Address
+        - textbox "email address" [active] [ref=e11]
+      - generic [ref=e12]:
+        - generic [ref=e13]: Password
+        - textbox "Password" [ref=e14]:
+          - /placeholder: password
+      - button "Login" [ref=e15] [cursor=pointer]

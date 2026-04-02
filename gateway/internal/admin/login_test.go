@@ -16,10 +16,15 @@ type fakeServerConfigReader struct {
 	clientID     string
 	clientSecret string
 	err          error
+	bootstrapErr error
 }
 
 func (f *fakeServerConfigReader) LoadOIDCConfig(_ context.Context) (string, string, string, error) {
 	return f.issuer, f.clientID, f.clientSecret, f.err
+}
+
+func (f *fakeServerConfigReader) CompleteBootstrap(_ context.Context) error {
+	return f.bootstrapErr
 }
 
 // newTestAdminAuthWithReader creates an AdminAuth with a fake ServerConfigReader and optional TemplateHandler.
@@ -132,7 +137,7 @@ func TestLoginStartHandler_SetsStateAndRedirects(t *testing.T) {
 	}
 }
 
-// TestLoginStartHandler_MissingOIDCConfig verifies 503 when OIDC config is missing from DB.
+// TestLoginStartHandler_MissingOIDCConfig verifies redirect to bootstrap when OIDC config is missing.
 func TestLoginStartHandler_MissingOIDCConfig(t *testing.T) {
 	reader := &fakeServerConfigReader{
 		err: ErrOIDCConfigMissing,
@@ -144,12 +149,12 @@ func TestLoginStartHandler_MissingOIDCConfig(t *testing.T) {
 	rr := httptest.NewRecorder()
 	a.LoginStartHandler(rr, req)
 
-	if rr.Code != http.StatusServiceUnavailable {
-		t.Errorf("expected 503, got %d", rr.Code)
+	if rr.Code != http.StatusFound {
+		t.Errorf("expected 302, got %d", rr.Code)
 	}
-	body := rr.Body.String()
-	if !strings.Contains(body, "OIDC configuration") {
-		t.Errorf("expected OIDC config error message in body, got: %s", body)
+	location := rr.Header().Get("Location")
+	if location != "/admin/bootstrap" {
+		t.Errorf("expected Location=/admin/bootstrap, got %q", location)
 	}
 }
 

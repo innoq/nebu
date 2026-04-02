@@ -1,0 +1,25 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]: Nebu Admin
+    - 'generic "System status: connecting" [ref=e4]': Connecting…
+  - generic [ref=e6]:
+    - navigation "Admin navigation" [ref=e7]:
+      - list [ref=e8]:
+        - listitem [ref=e9]:
+          - link "Dashboard" [ref=e10] [cursor=pointer]:
+            - /url: /admin/dashboard
+        - listitem [ref=e11]:
+          - link "Logout" [ref=e12] [cursor=pointer]:
+            - /url: /admin/logout
+    - main [ref=e13]:
+      - generic [ref=e16]:
+        - heading "Nebu is ready" [level=1] [ref=e18]
+        - paragraph [ref=e19]: Your instance has been configured and you are now logged in as instance_admin.
+        - generic [ref=e21]:
+          - paragraph [ref=e22]: What happens next?
+          - list [ref=e23]:
+            - listitem [ref=e24]: The Admin Dashboard shows you the system status at a glance.
+            - listitem [ref=e25]: Bootstrap mode is now permanently disabled.
+            - listitem [ref=e26]: Additional admins can be granted access via the OIDC provider.
+        - link "Go to Dashboard" [ref=e27] [cursor=pointer]:
+          - /url: /admin/dashboard

@@ -86,6 +86,7 @@ func TestCallbackHandler_StateMismatch_Returns400(t *testing.T) {
 	srv, _ := setupAdminOIDCServer(t)
 	provider := auth.NewProvider(context.Background(), srv.URL)
 	a := newTestAdminAuth(t, provider)
+	a.configReader = &fakeServerConfigReader{issuer: srv.URL, clientID: "test-client-id", clientSecret: "test-client-secret"}
 
 	cookieValue := buildValidStateCookie(t, a, "expected")
 
@@ -106,6 +107,7 @@ func TestCallbackHandler_RoleCheckFails_Returns403(t *testing.T) {
 	srv, _ := setupAdminOIDCServerWithRole(t, "user")
 	provider := auth.NewProvider(context.Background(), srv.URL)
 	a := newTestAdminAuth(t, provider)
+	a.configReader = &fakeServerConfigReader{issuer: srv.URL, clientID: "test-client-id", clientSecret: "test-client-secret"}
 
 	cookieValue := buildValidStateCookie(t, a, "mystate")
 
@@ -130,6 +132,7 @@ func TestCallbackHandler_ValidFlow_SetsSessionCookieAndRedirects(t *testing.T) {
 	srv, _ := setupAdminOIDCServer(t) // returns instance_admin role
 	provider := auth.NewProvider(context.Background(), srv.URL)
 	a := newTestAdminAuth(t, provider)
+	a.configReader = &fakeServerConfigReader{issuer: srv.URL, clientID: "test-client-id", clientSecret: "test-client-secret"}
 
 	cookieValue := buildValidStateCookie(t, a, "mystate")
 
@@ -165,8 +168,8 @@ func TestCallbackHandler_ValidFlow_SetsSessionCookieAndRedirects(t *testing.T) {
 	if !sessionCookie.HttpOnly {
 		t.Error("expected admin_session to be HttpOnly")
 	}
-	if sessionCookie.SameSite != http.SameSiteStrictMode {
-		t.Errorf("expected SameSite=Strict, got %v", sessionCookie.SameSite)
+	if sessionCookie.SameSite != http.SameSiteLaxMode {
+		t.Errorf("expected SameSite=Lax, got %v", sessionCookie.SameSite)
 	}
 	if sessionCookie.MaxAge != 28800 {
 		t.Errorf("expected MaxAge=28800, got %d", sessionCookie.MaxAge)
@@ -189,6 +192,7 @@ func TestCallbackHandler_ValidFlow_SessionCookieSecureTLS(t *testing.T) {
 	srv, _ := setupAdminOIDCServer(t)
 	provider := auth.NewProvider(context.Background(), srv.URL)
 	a := newTestAdminAuth(t, provider)
+	a.configReader = &fakeServerConfigReader{issuer: srv.URL, clientID: "test-client-id", clientSecret: "test-client-secret"}
 
 	cookieValue := buildValidStateCookie(t, a, "mystate")
 
