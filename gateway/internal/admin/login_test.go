@@ -27,6 +27,14 @@ func (f *fakeServerConfigReader) CompleteBootstrap(_ context.Context) error {
 	return f.bootstrapErr
 }
 
+func (f *fakeServerConfigReader) LoadAdminGroupClaim(_ context.Context) (string, error) {
+	return "instance_admin", nil
+}
+
+func (f *fakeServerConfigReader) SaveAdminGroupClaim(_ context.Context, _ string) error {
+	return nil
+}
+
 // newTestAdminAuthWithReader creates an AdminAuth with a fake ServerConfigReader and optional TemplateHandler.
 func newTestAdminAuthWithReader(t *testing.T, reader ServerConfigReader, tmpl *TemplateHandler) *AdminAuth {
 	t.Helper()

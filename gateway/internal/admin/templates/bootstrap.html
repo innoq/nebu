@@ -8,8 +8,7 @@
   <ul class="steps steps-horizontal w-full mb-8">
     <li class="step {{ if ge .Step 1 }}step-primary{{ end }}">Instance</li>
     <li class="step {{ if ge .Step 2 }}step-primary{{ end }}">OIDC</li>
-    <li class="step {{ if ge .Step 3 }}step-primary{{ end }}">Keys</li>
-    <li class="step {{ if ge .Step 4 }}step-primary{{ end }}">Admin</li>
+    <li class="step">Connect</li>
   </ul>
 
   <div class="card bg-base-200 shadow-md">
@@ -51,7 +50,7 @@
       {{ end }}
 
       {{ if eq .Step 2 }}
-      <!-- Step 2: OIDC Configuration -->
+      <!-- Step 2: OIDC Configuration + Connect with OIDC -->
       <h2 class="card-title">Step 2: OIDC Configuration</h2>
       <form method="POST" action="/admin/bootstrap">
         <input type="hidden" name="step" value="2">
@@ -121,92 +120,13 @@
           {{ end }}{{ end }}
         </div>
 
-        <div class="mb-4">
-          <button type="button" id="test-oidc-btn" class="btn btn-outline btn-sm">
-            Test Connection
-          </button>
-          <div id="oidc-test-result" class="mt-2" aria-live="assertive"></div>
+        <div class="alert alert-info mb-4">
+          <span class="text-sm">Clicking <strong>Connect with OIDC</strong> will redirect you to your OIDC provider to verify the configuration and discover your admin group claim.</span>
         </div>
 
         <div class="card-actions justify-between">
           <button type="submit" name="go_back" formnovalidate value="1" class="btn btn-outline">Back</button>
-          <button type="submit" class="btn btn-primary">Next</button>
-        </div>
-      </form>
-      {{ end }}
-
-      {{ if eq .Step 3 }}
-      <!-- Step 3: Key Generation -->
-      <h2 class="card-title">Step 3: Key Generation</h2>
-      <form method="POST" action="/admin/bootstrap">
-        <input type="hidden" name="step" value="3">
-        <input type="hidden" name="instance_name" value="{{ .InstanceName }}">
-        <input type="hidden" name="oidc_issuer" value="{{ .OIDCIssuer }}">
-        <input type="hidden" name="oidc_client_id" value="{{ .OIDCClientID }}">
-
-        <div class="alert alert-info mb-4">
-          <div>
-            <p class="font-semibold mb-1">Cryptographic Key Pairs</p>
-            <p>Nebu will generate two key pairs for your instance:</p>
-            <ul class="list-disc list-inside mt-2 text-sm">
-              <li><strong>Ed25519</strong> — signing key pair for event signatures and identity verification</li>
-              <li><strong>X25519</strong> — encryption key pair for end-to-end encrypted message content</li>
-            </ul>
-            <p class="mt-2 text-sm">Keys are generated server-side and stored securely. The public Ed25519 fingerprint will be shown for verification.</p>
-          </div>
-        </div>
-
-        <div class="mb-4">
-          <button type="button" id="generate-keys-btn" class="btn btn-outline btn-sm">
-            Generate Keys
-          </button>
-          <div id="keys-result" class="mt-2" aria-live="assertive"></div>
-        </div>
-
-        <div class="card-actions justify-between">
-          <button type="submit" name="go_back" formnovalidate value="2" class="btn btn-outline">Back</button>
-          <button type="submit" id="step3-next-btn" class="btn btn-primary" disabled
-                  title="Generate keys first">Next</button>
-        </div>
-      </form>
-      {{ end }}
-
-      {{ if eq .Step 4 }}
-      <!-- Step 4: First Admin -->
-      <h2 class="card-title">Step 4: First Administrator</h2>
-      <form method="POST" action="/admin/bootstrap">
-        <input type="hidden" name="step" value="4">
-        <input type="hidden" name="instance_name" value="{{ .InstanceName }}">
-        <input type="hidden" name="oidc_issuer" value="{{ .OIDCIssuer }}">
-        <input type="hidden" name="oidc_client_id" value="{{ .OIDCClientID }}">
-
-        {{if .Errors}}
-        <div role="alert" aria-live="polite" class="alert alert-error mb-4">
-          <ul>
-            {{range .Errors}}<li>{{.}}</li>{{end}}
-          </ul>
-        </div>
-        {{end}}
-
-        {{if .MaskedSecret}}
-        <div class="alert alert-info mb-4">
-          <div>
-            <p class="font-semibold mb-1">OIDC Client Secret saved</p>
-            <p class="text-sm">Secret stored: <code class="font-mono bg-base-300 px-1 rounded">{{ .MaskedSecret }}</code></p>
-          </div>
-        </div>
-        {{end}}
-
-        <div class="alert alert-success mb-4">
-          <div>
-            <p class="font-semibold mb-1">Almost done!</p>
-            <p>Complete setup by logging in with your OIDC provider. The first user to log in will be assigned <code class="font-mono text-white px-1 rounded">instance_admin</code>.</p>
-          </div>
-        </div>
-
-        <div class="card-actions justify-between">
-          <button type="submit" name="go_back" formnovalidate value="3" class="btn btn-outline">Back</button>
-          <button type="submit" class="btn btn-primary">Complete Setup &amp; Login</button>
+          <button type="submit" class="btn btn-primary">Connect with OIDC</button>
         </div>
       </form>
       {{ end }}
@@ -216,81 +136,4 @@
 </div>
 {{ end }}
 
-{{ define "scripts" }}
-<script>
-(function() {
-  // Escape HTML to prevent XSS when inserting server response text
-  function esc(s) {
-    var d = document.createElement('div');
-    d.appendChild(document.createTextNode(s));
-    return d.innerHTML;
-  }
-
-  // Test OIDC Connection (Step 2)
-  var testBtn = document.getElementById('test-oidc-btn');
-  if (testBtn) {
-    testBtn.addEventListener('click', async function(e) {
-      e.preventDefault();
-      var btn = this;
-      btn.disabled = true;
-      btn.classList.add('loading', 'loading-spinner');
-      var result = document.getElementById('oidc-test-result');
-      result.innerHTML = '';
-      try {
-        var params = new URLSearchParams();
-        params.set('oidc_issuer', document.getElementById('oidc_issuer').value);
-        params.set('oidc_client_id', document.getElementById('oidc_client_id').value);
-        var resp = await fetch('/admin/bootstrap/test-oidc', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-          body: params.toString()
-        });
-        var json = await resp.json();
-        if (json.ok) {
-          var msg = '&#10003; Connected to ' + esc(json.issuer || data.get('oidc_issuer'));
-          var cls = 'alert-success';
-          if (json.warning) { msg += '<br><small>⚠ ' + esc(json.warning) + '</small>'; cls = 'alert-warning'; }
-          result.innerHTML = '<div class="alert ' + cls + '"><span>' + msg + '</span></div>';
-        } else {
-          result.innerHTML = '<div class="alert alert-error"><span>&#10007; ' + esc(json.error || 'Unknown error') + '</span></div>';
-        }
-      } catch (err) {
-        result.innerHTML = '<div class="alert alert-error"><span>&#10007; Network error</span></div>';
-      } finally {
-        btn.disabled = false;
-        btn.classList.remove('loading', 'loading-spinner');
-      }
-    });
-  }
-
-  // Generate Keys (Step 3)
-  var genBtn = document.getElementById('generate-keys-btn');
-  if (genBtn) {
-    genBtn.addEventListener('click', async function(e) {
-      e.preventDefault();
-      var btn = this;
-      btn.disabled = true;
-      btn.classList.add('loading', 'loading-spinner');
-      var result = document.getElementById('keys-result');
-      result.innerHTML = '';
-      try {
-        var resp = await fetch('/admin/bootstrap/generate-keys', {method: 'POST'});
-        var json = await resp.json();
-        if (json.ok) {
-          result.innerHTML = '<div class="alert alert-success"><span>&#10003; Keys generated. Ed25519 public fingerprint: <code class="font-mono">' + esc(json.ed25519_public_fingerprint) + '</code></span></div>';
-          var nextBtn = document.getElementById('step3-next-btn');
-          if (nextBtn) { nextBtn.disabled = false; nextBtn.removeAttribute('title'); }
-        } else {
-          result.innerHTML = '<div class="alert alert-error"><span>&#10007; ' + esc(json.error || 'Key generation failed') + '</span></div>';
-        }
-      } catch (err) {
-        result.innerHTML = '<div class="alert alert-error"><span>&#10007; Network error</span></div>';
-      } finally {
-        btn.disabled = false;
-        btn.classList.remove('loading', 'loading-spinner');
-      }
-    });
-  }
-})();
-</script>
-{{ end }}
+{{ define "scripts" }}{{ end }}

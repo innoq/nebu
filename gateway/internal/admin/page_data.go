@@ -45,7 +45,7 @@ type LoginPageData struct {
 }
 
 // BootstrapPageData holds data for the Bootstrap Wizard page.
-// Step is 1–4. All field values carry accumulated state across steps.
+// Step is 1–2 (OIDC connect replaces steps 3+4). All field values carry accumulated state.
 type BootstrapPageData struct {
 	PageData     // embed for BootstrapMode + ActiveNav
 	Step         int
@@ -59,4 +59,19 @@ type BootstrapPageData struct {
 	Errors map[string]string
 	// Warnings carries per-field non-blocking warnings (e.g. HTTP issuer in dev)
 	Warnings map[string]string
+}
+
+// DiscoveredClaim is a single claim key+values pair extracted from an OIDC token
+// for display on the claim selection page.
+type DiscoveredClaim struct {
+	Key    string
+	Values []string
+}
+
+// ClaimSelectionPageData holds data for the Bootstrap claim-selection page (post-OIDC callback).
+type ClaimSelectionPageData struct {
+	PageData // embed for BootstrapMode + ActiveNav
+	Claims   []DiscoveredClaim
+	Email    string
+	Error    string
 }

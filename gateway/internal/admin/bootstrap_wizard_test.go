@@ -49,8 +49,8 @@ func TestBootstrapWizard_Step2_Fields(t *testing.T) {
 	}
 }
 
-// TestBootstrapWizard_Step3_GenerateKeysBtn verifies template with Step:3 contains generate-keys-btn.
-func TestBootstrapWizard_Step3_GenerateKeysBtn(t *testing.T) {
+// TestBootstrapWizard_Step2_ConnectButton verifies template with Step:2 contains "Connect with OIDC" button.
+func TestBootstrapWizard_Step2_ConnectButton(t *testing.T) {
 	tmpl, err := NewTemplateHandler()
 	if err != nil {
 		t.Fatalf("NewTemplateHandler: %v", err)
@@ -59,39 +59,14 @@ func TestBootstrapWizard_Step3_GenerateKeysBtn(t *testing.T) {
 	w := httptest.NewRecorder()
 	data := BootstrapPageData{
 		PageData:     PageData{BootstrapMode: true, ActiveNav: "bootstrap"},
-		Step:         3,
+		Step:         2,
 		InstanceName: "my-instance",
-		OIDCIssuer:   "https://auth.example.com",
-		OIDCClientID: "nebu-admin",
 	}
 	tmpl.render(w, "bootstrap", data)
 
 	body := w.Body.String()
-	if !strings.Contains(body, `id="generate-keys-btn"`) {
-		t.Error("step 3 should contain id=generate-keys-btn")
-	}
-}
-
-// TestBootstrapWizard_Step4_InstructionText verifies template with Step:4 contains instance_admin instruction.
-func TestBootstrapWizard_Step4_InstructionText(t *testing.T) {
-	tmpl, err := NewTemplateHandler()
-	if err != nil {
-		t.Fatalf("NewTemplateHandler: %v", err)
-	}
-
-	w := httptest.NewRecorder()
-	data := BootstrapPageData{
-		PageData:     PageData{BootstrapMode: true, ActiveNav: "bootstrap"},
-		Step:         4,
-		InstanceName: "my-instance",
-		OIDCIssuer:   "https://auth.example.com",
-		OIDCClientID: "nebu-admin",
-	}
-	tmpl.render(w, "bootstrap", data)
-
-	body := w.Body.String()
-	if !strings.Contains(body, "instance_admin") {
-		t.Error("step 4 should contain instruction text about instance_admin")
+	if !strings.Contains(body, "Connect with OIDC") {
+		t.Error("step 2 should contain 'Connect with OIDC' button")
 	}
 }
 

@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 )
 
 type fakeBootstrapChecker struct {
@@ -27,16 +26,13 @@ func newTestBootstrapHandler(t *testing.T, checker BootstrapStatusChecker) *Boot
 	if err != nil {
 		t.Fatalf("NewTemplateHandler: %v", err)
 	}
-	// Use fake implementations for tests that don't need real DB persistence
-	h := &BootstrapHandler{
+	return &BootstrapHandler{
 		checker:    checker,
 		tmpl:       tmpl,
 		persister:  &fakeBootstrapPersister{},
 		draftStore: &fakeBootstrapDraftStore{},
 		secret:     []byte("test-secret"),
-		httpClient: &http.Client{Timeout: 5 * time.Second},
 	}
-	return h
 }
 
 // TestBootstrapHandler_Active verifies that an active bootstrap renders step 1 HTML.

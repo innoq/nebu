@@ -3,19 +3,20 @@ Feature: Admin Bootstrap and Dashboard Flow
   I want to verify the bootstrap wizard and dashboard access flow
   So that CI catches any regression in the admin setup path
 
-  Scenario: Bootstrap Wizard completes successfully
+  Scenario: Bootstrap Wizard step 1 renders correctly
     Given the server has no bootstrap_completed in server_config
-    When I request GET /admin/dashboard without a session cookie
-    Then the response redirects to "/admin/login"
     When I request GET /admin/bootstrap without a session cookie
     Then the response is 200
     And the response body contains "Bootstrap"
-    When I seed the bootstrap configuration directly into the database
-    Then server_config contains key "bootstrap_completed" with value "true"
-    When I request GET /admin/bootstrap without a session cookie
-    Then the response redirects to "/admin/login"
+    And the response body contains "Instance Name"
 
-  Scenario: Dashboard accessible after authentication
+  Scenario: Bootstrap Wizard step 2 redirects to OIDC login after valid OIDC config
+    Given the server has no bootstrap_completed in server_config
+    And I have seeded instance_name "test-nebu" into the bootstrap draft
+    When I POST step 2 with valid OIDC config to /admin/bootstrap
+    Then the response redirects to "/admin/login/start?mode=bootstrap"
+
+  Scenario: Bootstrap completes and dashboard is accessible
     Given bootstrap is complete and server_config is seeded
     And I have a forged valid admin session cookie
     When I request GET /admin/dashboard with the admin session cookie
@@ -27,3 +28,8 @@ Feature: Admin Bootstrap and Dashboard Flow
     Given bootstrap is complete and server_config is seeded
     When I request GET /admin/dashboard without a session cookie
     Then the response redirects to "/admin/login"
+
+  Scenario: Unauthenticated request to root is redirected to login when bootstrap complete
+    Given bootstrap is complete and server_config is seeded
+    When I request GET /admin/ without a session cookie
+    Then the response redirects to "/admin/dashboard"

@@ -24,10 +24,15 @@ import (
 // ErrOIDCConfigMissing is returned when required OIDC configuration is absent from server_config.
 var ErrOIDCConfigMissing = errors.New("OIDC configuration missing in server_config")
 
-// ServerConfigReader reads OIDC config from server_config.
+// ServerConfigReader reads and writes config from/to server_config.
 type ServerConfigReader interface {
 	LoadOIDCConfig(ctx context.Context) (issuer, clientID, clientSecret string, err error)
 	CompleteBootstrap(ctx context.Context) error
+	// LoadAdminGroupClaim returns the configured admin group claim value (e.g. "instance_admin").
+	// Returns the default "instance_admin" if not set.
+	LoadAdminGroupClaim(ctx context.Context) (string, error)
+	// SaveAdminGroupClaim persists the admin group claim value to server_config.
+	SaveAdminGroupClaim(ctx context.Context, claimValue string) error
 }
 
 // postgresServerConfigReader wraps *sql.DB to implement ServerConfigReader.
@@ -72,6 +77,30 @@ func (r *postgresServerConfigReader) LoadOIDCConfig(ctx context.Context) (issuer
 	return issuer, clientID, plain, nil
 }
 
+// LoadAdminGroupClaim returns the configured admin group claim value from server_config.
+// Falls back to "instance_admin" if the key is not set.
+func (r *postgresServerConfigReader) LoadAdminGroupClaim(ctx context.Context) (string, error) {
+	var value string
+	err := r.db.QueryRowContext(ctx,
+		"SELECT value FROM server_config WHERE key = 'admin_group_claim'").Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "instance_admin", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return value, nil
+}
+
+// SaveAdminGroupClaim persists the admin group claim value to server_config.
+func (r *postgresServerConfigReader) SaveAdminGroupClaim(ctx context.Context, claimValue string) error {
+	_, err := r.db.ExecContext(ctx,
+		`INSERT INTO server_config (key, value, set_at) VALUES ('admin_group_claim', $1, $2)
+		 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, set_at = EXCLUDED.set_at`,
+		claimValue, time.Now().UnixMilli())
+	return err
+}
+
 // CompleteBootstrap writes bootstrap_completed = true to server_config.
 // Returns an error if bootstrap was already completed (0 rows affected) — this
 // prevents privilege escalation via mode=bootstrap replay after initial setup.
@@ -95,29 +124,37 @@ func (r *postgresServerConfigReader) CompleteBootstrap(ctx context.Context) erro
 
 // AdminAuth handles PKCE-protected OIDC Authorization Code flow for the Admin UI.
 type AdminAuth struct {
-	provider     *auth.Provider
-	clientID     string
-	clientSecret string
-	claimName    string // from cfg.OIDCClaimRole
-	secret       []byte // HMAC key — same internalSecret as PSK
-	configReader ServerConfigReader
-	tmpl         *TemplateHandler
+	provider           *auth.Provider
+	clientID           string
+	clientSecret       string
+	claimName          string // from cfg.OIDCClaimRole (legacy env-var fallback)
+	secret             []byte // HMAC key — same internalSecret as PSK
+	configReader       ServerConfigReader
+	tmpl               *TemplateHandler
+	draftStore         BootstrapDraftStore // for bootstrap claim-selection flow
+	bootstrapPersister BootstrapPersister  // for saving bootstrap config during claim selection
 }
 
 // NewAdminAuth creates an AdminAuth instance.
 func NewAdminAuth(provider *auth.Provider, clientID, clientSecret, claimName string, secret []byte, db *sql.DB, tmpl *TemplateHandler) *AdminAuth {
 	var reader ServerConfigReader
+	var draft BootstrapDraftStore
+	var persister BootstrapPersister
 	if db != nil {
 		reader = &postgresServerConfigReader{db: db, secret: secret}
+		draft = &postgresBootstrapDraftStore{db: db}
+		persister = &postgresBootstrapPersister{db: db}
 	}
 	return &AdminAuth{
-		provider:     provider,
-		clientID:     clientID,
-		clientSecret: clientSecret,
-		claimName:    claimName,
-		secret:       secret,
-		configReader: reader,
-		tmpl:         tmpl,
+		provider:           provider,
+		clientID:           clientID,
+		clientSecret:       clientSecret,
+		claimName:          claimName,
+		secret:             secret,
+		configReader:       reader,
+		tmpl:               tmpl,
+		draftStore:         draft,
+		bootstrapPersister: persister,
 	}
 }
 
@@ -426,26 +463,58 @@ func (a *AdminAuth) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	systemRole := auth.MapSystemRole(extractFirstRoleClaim(claims[a.claimName]))
+	// Delete the OIDC state cookie before branching.
+	http.SetCookie(w, &http.Cookie{
+		Name:     "admin_oidc_state",
+		Value:    "",
+		Path:     "/admin",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteLaxMode,
+	})
 
 	if sc.Mode == "bootstrap" {
-		// Bootstrap login: the first admin is granted instance_admin regardless of OIDC groups.
-		// CompleteBootstrap writes bootstrap_completed = true, ending bootstrap mode.
-		systemRole = "instance_admin"
-		if err := a.configReader.CompleteBootstrap(r.Context()); err != nil {
-			slog.Error("callback: failed to complete bootstrap", "err", err)
-			http.Redirect(w, r, "/admin/login?error=auth_failed", http.StatusFound)
-			return
+		// Bootstrap flow: store sub+email in draft, then show claim-selection page.
+		// The ClaimSelectionHandler will complete bootstrap and create the session.
+		if a.draftStore != nil {
+			for _, kv := range []struct{ k, v string }{
+				{"bootstrap_sub", sub},
+				{"bootstrap_email", email},
+			} {
+				if err := a.draftStore.SaveDraft(r.Context(), kv.k, kv.v); err != nil {
+					slog.Error("callback: failed to save bootstrap identity draft", "key", kv.k, "err", err)
+					http.Redirect(w, r, "/admin/login?error=auth_failed", http.StatusFound)
+					return
+				}
+			}
 		}
-	} else if systemRole != "instance_admin" {
-		http.Error(w, "Access denied: instance_admin role required.", http.StatusForbidden)
+		// Render claim selection page with all string/array claims from the token.
+		data := ClaimSelectionPageData{
+			PageData: PageData{BootstrapMode: true, ActiveNav: "bootstrap"},
+			Claims:   extractDiscoveredClaims(claims),
+			Email:    email,
+		}
+		a.tmpl.render(w, "bootstrap-claims", data)
+		return
+	}
+
+	// Non-bootstrap login: check admin group claim from server_config.
+	adminGroupClaim := "instance_admin" // default fallback
+	if a.configReader != nil {
+		if loaded, err := a.configReader.LoadAdminGroupClaim(r.Context()); err == nil {
+			adminGroupClaim = loaded
+		}
+	}
+	if !auth.MatchesAdminGroupClaim(claims, adminGroupClaim) {
+		http.Error(w, "Access denied: admin group claim not present in token.", http.StatusForbidden)
 		return
 	}
 
 	sess := adminSessionCookie{
 		Sub:   sub,
 		Email: email,
-		Role:  systemRole,
+		Role:  "instance_admin",
 		Exp:   time.Now().Add(8 * time.Hour).Unix(),
 	}
 	sessPayload, err := json.Marshal(sess)
@@ -468,41 +537,119 @@ func (a *AdminAuth) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 	})
 
-	// Delete the OIDC state cookie (covers both /admin/auth and /admin paths)
+	http.Redirect(w, r, "/admin/dashboard", http.StatusSeeOther)
+}
+
+// extractDiscoveredClaims converts a raw claims map into a slice of DiscoveredClaim
+// for display on the claim selection page. Only string and string-array values are included.
+func extractDiscoveredClaims(claims map[string]interface{}) []DiscoveredClaim {
+	result := make([]DiscoveredClaim, 0, len(claims))
+	for k, v := range claims {
+		switch val := v.(type) {
+		case string:
+			if val != "" {
+				result = append(result, DiscoveredClaim{Key: k, Values: []string{val}})
+			}
+		case []interface{}:
+			var values []string
+			for _, item := range val {
+				if s, ok := item.(string); ok && s != "" {
+					values = append(values, s)
+				}
+			}
+			if len(values) > 0 {
+				result = append(result, DiscoveredClaim{Key: k, Values: values})
+			}
+		}
+	}
+	return result
+}
+
+// ClaimSelectionHandler handles POST /admin/bootstrap/select-claim.
+// Saves the selected admin group claim, completes bootstrap, creates the admin session, and redirects to dashboard.
+func (a *AdminAuth) ClaimSelectionHandler(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
+	selectedClaim := r.FormValue("admin_group_claim")
+	if selectedClaim == "" {
+		selectedClaim = "instance_admin"
+	}
+
+	if a.draftStore == nil || a.configReader == nil || a.bootstrapPersister == nil {
+		http.Error(w, "bootstrap not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Load sub + email stored by CallbackHandler during bootstrap OIDC flow.
+	sub, subOK, err := a.draftStore.LoadDraft(r.Context(), "bootstrap_sub")
+	if err != nil || !subOK || sub == "" {
+		slog.Error("claim selection: missing bootstrap_sub in draft", "err", err)
+		http.Redirect(w, r, "/admin/login?error=auth_failed", http.StatusFound)
+		return
+	}
+	email, _, _ := a.draftStore.LoadDraft(r.Context(), "bootstrap_email")
+
+	// Save admin_group_claim to server_config.
+	if err := a.configReader.SaveAdminGroupClaim(r.Context(), selectedClaim); err != nil {
+		slog.Error("claim selection: failed to save admin_group_claim", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	// Load OIDC config from draft and persist to server_config.
+	instanceName, _, _ := a.draftStore.LoadDraft(r.Context(), "instance_name")
+	oidcIssuer, _, _ := a.draftStore.LoadDraft(r.Context(), "oidc_issuer")
+	oidcClientID, _, _ := a.draftStore.LoadDraft(r.Context(), "oidc_client_id")
+	encryptedSecret, secretFound, err := a.draftStore.LoadDraft(r.Context(), "oidc_client_secret")
+	if err != nil || !secretFound {
+		slog.Error("claim selection: missing oidc_client_secret in draft", "err", err)
+		http.Error(w, "internal error: bootstrap draft incomplete — please restart the wizard", http.StatusInternalServerError)
+		return
+	}
+	if err := a.bootstrapPersister.SaveBootstrapConfig(r.Context(), instanceName, oidcIssuer, oidcClientID, encryptedSecret); err != nil {
+		slog.Error("claim selection: failed to save bootstrap config", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	// CompleteBootstrap: writes bootstrap_completed = true, ending bootstrap mode.
+	if err := a.configReader.CompleteBootstrap(r.Context()); err != nil {
+		slog.Error("claim selection: failed to complete bootstrap", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	// Create admin session cookie — operator is now authenticated.
+	sess := adminSessionCookie{
+		Sub:   sub,
+		Email: email,
+		Role:  "instance_admin",
+		Exp:   time.Now().Add(8 * time.Hour).Unix(),
+	}
+	sessPayload, err := json.Marshal(sess)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
 	http.SetCookie(w, &http.Cookie{
-		Name:     "admin_oidc_state",
-		Value:    "",
+		Name:     "admin_session",
+		Value:    a.signCookie(sessPayload),
 		Path:     "/admin",
-		MaxAge:   -1,
+		MaxAge:   28800,
 		HttpOnly: true,
 		Secure:   r.TLS != nil,
 		SameSite: http.SameSiteLaxMode,
 	})
 
-	if sc.Mode == "bootstrap" {
-		http.Redirect(w, r, "/admin/bootstrap/done", http.StatusSeeOther)
-		return
+	// Clear bootstrap draft (non-fatal on failure).
+	if err := a.draftStore.ClearDraft(r.Context()); err != nil {
+		slog.Warn("claim selection: failed to clear bootstrap draft", "err", err)
 	}
-	http.Redirect(w, r, "/admin/dashboard", http.StatusSeeOther)
-}
 
-// extractFirstRoleClaim returns the first meaningful string from an OIDC claim value.
-// Handles both plain string claims and []interface{} array claims (e.g. Dex "groups").
-func extractFirstRoleClaim(raw interface{}) string {
-	if raw == nil {
-		return ""
-	}
-	if s, ok := raw.(string); ok {
-		return s
-	}
-	if arr, ok := raw.([]interface{}); ok {
-		for _, v := range arr {
-			if s, ok := v.(string); ok && s != "" {
-				return s
-			}
-		}
-	}
-	return ""
+	http.Redirect(w, r, "/admin/dashboard", http.StatusSeeOther)
 }
 
 // LogoutHandler handles GET /admin/logout.

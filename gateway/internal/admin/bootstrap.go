@@ -2,20 +2,13 @@ package admin
 
 import (
 	"context"
-	"crypto/ecdh"
-	"crypto/ed25519"
-	"crypto/rand"
 	"database/sql"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"regexp"
-	"strings"
 	"time"
 )
 
@@ -84,7 +77,6 @@ type BootstrapHandler struct {
 	persister  BootstrapPersister
 	draftStore BootstrapDraftStore
 	secret     []byte
-	httpClient *http.Client
 }
 
 // NewBootstrapHandler creates a BootstrapHandler with the given status checker, template handler, db, and secret.
@@ -95,9 +87,6 @@ func NewBootstrapHandler(checker BootstrapStatusChecker, tmpl *TemplateHandler, 
 		persister:  &postgresBootstrapPersister{db: db},
 		draftStore: &postgresBootstrapDraftStore{db: db},
 		secret:     secret,
-		httpClient: &http.Client{
-			Timeout: 5 * time.Second,
-		},
 	}
 }
 
@@ -111,12 +100,6 @@ func (h *BootstrapHandler) Handler(w http.ResponseWriter, r *http.Request) {
 		Step: 1,
 	}
 	h.tmpl.render(w, "bootstrap", data)
-}
-
-// DoneHandler handles GET /admin/bootstrap/done.
-// Shown after a successful bootstrap login — session is already set by CallbackHandler.
-func (h *BootstrapHandler) DoneHandler(w http.ResponseWriter, r *http.Request) {
-	h.tmpl.render(w, "bootstrap-done", PageData{ActiveNav: "dashboard"})
 }
 
 // instanceNameRe validates instance name: 3–64 alphanumeric + hyphens.
@@ -202,7 +185,7 @@ func (h *BootstrapHandler) StepHandler(w http.ResponseWriter, r *http.Request) {
 			h.tmpl.render(w, "bootstrap", data)
 			return
 		}
-		// Encrypt the OIDC client secret before storing in DB
+		// Encrypt the OIDC client secret before storing in DB draft
 		encryptedSecret, err := encryptAES256GCM(h.secret, clientSecret)
 		if err != nil {
 			slog.Error("failed to encrypt draft secret", "err", err)
@@ -221,197 +204,12 @@ func (h *BootstrapHandler) StepHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		data.Step = 3
-
-	case 3:
-		// No form validation for step 3 (keys generated via async fetch).
-		// Load the encrypted secret from draft and show masked version in step 4.
-		if encVal, found, err := h.draftStore.LoadDraft(r.Context(), "oidc_client_secret"); err == nil && found {
-			if plain, err := decryptAES256GCM(h.secret, encVal); err == nil {
-				data.MaskedSecret = maskSecret(plain)
-			}
-		}
-		data.Step = 4
-
-	case 4:
-		// Final submit — delegate to FinalizeHandler
-		h.FinalizeHandler(w, r)
+		// Redirect to OIDC login — the callback will show claim selection.
+		http.Redirect(w, r, "/admin/login/start?mode=bootstrap", http.StatusSeeOther)
 		return
 	}
 
 	h.tmpl.render(w, "bootstrap", data)
-}
-
-// FinalizeHandler validates and persists the bootstrap configuration (step 4 final submit).
-func (h *BootstrapHandler) FinalizeHandler(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
-		return
-	}
-
-	// Read accumulated data from form (instance_name, oidc_issuer, oidc_client_id carried via hidden fields)
-	instanceName := r.FormValue("instance_name")
-	oidcIssuer := r.FormValue("oidc_issuer")
-	oidcClientID := r.FormValue("oidc_client_id")
-
-	// Load the encrypted secret from the draft store (NOT from the form)
-	encryptedSecret, found, err := h.draftStore.LoadDraft(r.Context(), "oidc_client_secret")
-	if err != nil {
-		slog.Error("failed to load draft secret", "err", err)
-		data := BootstrapPageData{
-			PageData:     PageData{BootstrapMode: true, ActiveNav: "bootstrap"},
-			Step:         4,
-			InstanceName: instanceName,
-			OIDCIssuer:   oidcIssuer,
-			OIDCClientID: oidcClientID,
-			Errors:       map[string]string{"global": "An internal error occurred. Please try again."},
-		}
-		w.WriteHeader(http.StatusInternalServerError)
-		h.tmpl.render(w, "bootstrap", data)
-		return
-	}
-
-	errs := make(map[string]string)
-
-	// Validate all fields
-	if !instanceNameRe.MatchString(instanceName) {
-		errs["instance_name"] = "Instance name must be 3–64 characters, alphanumeric and hyphens only."
-	}
-	if oidcIssuer == "" {
-		errs["oidc_issuer"] = "OIDC Issuer URL is required."
-	} else {
-		parsed, err := url.ParseRequestURI(oidcIssuer)
-		if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") {
-			errs["oidc_issuer"] = "OIDC Issuer must be a valid URL (https:// or http://)."
-		}
-	}
-	if oidcClientID == "" {
-		errs["oidc_client_id"] = "OIDC Client ID is required."
-	}
-	if !found || encryptedSecret == "" {
-		errs["global"] = "Session data missing — please restart the wizard from step 2."
-	}
-
-	if len(errs) > 0 {
-		data := BootstrapPageData{
-			PageData:     PageData{BootstrapMode: true, ActiveNav: "bootstrap"},
-			Step:         4,
-			InstanceName: instanceName,
-			OIDCIssuer:   oidcIssuer,
-			OIDCClientID: oidcClientID,
-			Errors:       errs,
-		}
-		w.WriteHeader(http.StatusUnprocessableEntity)
-		h.tmpl.render(w, "bootstrap", data)
-		return
-	}
-
-	// Persist to server_config (encryptedSecret is already encrypted from step 2)
-	if err := h.persister.SaveBootstrapConfig(r.Context(), instanceName, oidcIssuer, oidcClientID, encryptedSecret); err != nil {
-		slog.Error("failed to save bootstrap config", "err", err)
-		data := BootstrapPageData{
-			PageData:     PageData{BootstrapMode: true, ActiveNav: "bootstrap"},
-			Step:         4,
-			InstanceName: instanceName,
-			OIDCIssuer:   oidcIssuer,
-			OIDCClientID: oidcClientID,
-			Errors:       map[string]string{"global": "Failed to save configuration. Please try again."},
-		}
-		w.WriteHeader(http.StatusInternalServerError)
-		h.tmpl.render(w, "bootstrap", data)
-		return
-	}
-
-	// Clear draft data (non-fatal on failure: bootstrap is complete)
-	if err := h.draftStore.ClearDraft(r.Context()); err != nil {
-		slog.Warn("failed to clear bootstrap draft after successful finalization", "err", err)
-	}
-
-	// Redirect directly to OIDC login with bootstrap mode — the callback will
-	// grant instance_admin to the first user and write bootstrap_completed.
-	http.Redirect(w, r, "/admin/login/start?mode=bootstrap", http.StatusSeeOther)
-}
-
-// testOIDCResponse is the JSON response for POST /admin/bootstrap/test-oidc.
-type testOIDCResponse struct {
-	OK      bool   `json:"ok"`
-	Error   string `json:"error,omitempty"`
-	Warning string `json:"warning,omitempty"`
-	Issuer  string `json:"issuer,omitempty"`
-}
-
-// TestOIDCHandler handles POST /admin/bootstrap/test-oidc.
-func (h *BootstrapHandler) TestOIDCHandler(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-
-	issuer := r.FormValue("oidc_issuer")
-	if issuer == "" {
-		_ = json.NewEncoder(w).Encode(testOIDCResponse{OK: false, Error: "oidc_issuer is required"})
-		return
-	}
-
-	// Validate URL (HTTP allowed with a warning — HTTPS required in production)
-	parsed, err := url.ParseRequestURI(issuer)
-	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") {
-		_ = json.NewEncoder(w).Encode(testOIDCResponse{OK: false, Error: "invalid URL — must be http:// or https://"})
-		return
-	}
-	var httpWarning string
-	if parsed.Scheme == "http" {
-		httpWarning = "HTTP issuer — not suitable for production. Use HTTPS in production deployments."
-	}
-
-	// Build discovery endpoint URL
-	discoveryURL := strings.TrimRight(issuer, "/") + "/.well-known/openid-configuration"
-
-	resp, err := h.httpClient.Get(discoveryURL)
-	if err != nil {
-		_ = json.NewEncoder(w).Encode(testOIDCResponse{OK: false, Error: "discovery request failed: " + err.Error()})
-		return
-	}
-	defer func() {
-		_, _ = io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		_ = json.NewEncoder(w).Encode(testOIDCResponse{OK: false, Error: fmt.Sprintf("discovery returned HTTP %d", resp.StatusCode)})
-		return
-	}
-
-	_ = json.NewEncoder(w).Encode(testOIDCResponse{OK: true, Warning: httpWarning, Issuer: issuer})
-}
-
-// generateKeysResponse is the JSON response for POST /admin/bootstrap/generate-keys.
-type generateKeysResponse struct {
-	OK                       bool   `json:"ok"`
-	Ed25519PublicFingerprint string `json:"ed25519_public_fingerprint"`
-}
-
-// GenerateKeysHandler handles POST /admin/bootstrap/generate-keys.
-func (h *BootstrapHandler) GenerateKeysHandler(w http.ResponseWriter, r *http.Request) {
-	// Generate Ed25519 keypair
-	pub, _, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		http.Error(w, "key generation failed", http.StatusInternalServerError)
-		return
-	}
-	fingerprint := hex.EncodeToString(pub[:8])
-
-	// Generate X25519 keypair (not persisted, not returned — generated for completeness)
-	_, err = ecdh.X25519().GenerateKey(rand.Reader)
-	if err != nil {
-		http.Error(w, "key generation failed", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(generateKeysResponse{OK: true, Ed25519PublicFingerprint: fingerprint})
 }
 
 // PostgresBootstrapChecker checks bootstrap status against PostgreSQL.

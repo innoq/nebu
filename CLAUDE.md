@@ -161,6 +161,22 @@ Use the `playwright` MCP server for all E2E tests that involve HTML pages, forms
 
 **Why:** Godog HTTP-level navigation of Authorization Code flows is complex and brittle. Playwright handles real browser flows correctly.
 
+### ATDD — Feature-File-First for UI Stories
+For any story that involves HTML pages, forms, buttons, or browser navigation: **the Playwright feature file is the first artifact**, written before any implementation code.
+
+**Why:** Writing the happy-path scenario first drives the correct architecture. Discovered in Epic 3 retrospective — Story 3-8 went through 3 code review rounds because an upfront acceptance test would have revealed the restart-resilience requirement. Story 3-15 forged cookies instead of testing real flows because the test was written last.
+
+**How:**
+1. Write `e2e/features/<feature>.spec.ts` (or `gateway/features/<feature>.feature`) before Story implementation starts
+2. The scenario is the "definition of done" for the story
+3. Use real browser flows — no cookie forging, no DB seeding shortcuts in Playwright tests
+4. Playwright tests run against the real running stack (no mocks)
+
+### Test design
+
+Use the /bmad-tea Agent as a supporter to specify and write the tests.
+And the  /bmad-testarch-test-review to review the test 
+
 ### OIDC / Auth Testing Standard
 All Gherkin tests involving OIDC must use Authorization Code + PKCE. ROPC is not supported by Dex v2.41+. Never use `grant_type=password` shortcuts in E2E tests.
 
