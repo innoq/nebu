@@ -1,6 +1,6 @@
 # Story 4.4: Room GenServer: Send Event (Ed25519 Signing + txnId Idempotency)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -457,3 +457,22 @@ Added `handle_info({:new_event, _event}, state)` catch-all to suppress unexpecte
 ### Change Log
 
 - 2026-04-03: Implemented Story 4-4 — Room GenServer send_event with Ed25519 signing and txnId idempotency. Created events table migration (000010), added ETS NebuTxnDedup, server signing keypair, send_event/5 API, insert_event/1 DB function, signature app dependency, and 4 unit tests. All 21 room_manager tests pass, full umbrella green.
+
+### Review Findings
+
+- [x] [Review][Patch] MAJOR: Signing payload includes `event_id` — sign `event_map` not `event_with_id` [core/apps/room_manager/lib/nebu/room/server.ex:handle_call send_event Step 4]
+- [x] [Review][Patch] MAJOR: ETS `:NebuTxnDedup` creation in `Application.start/2` has no guard — crashes if table already exists [core/apps/room_manager/lib/nebu/room/application.ex]
+- [x] [Review][Patch] MINOR: `Jason.encode!` in `insert_event/1` raises on non-serializable content instead of returning `{:error, reason}` [core/apps/room_manager/lib/nebu/room/db.ex:insert_event]
+- [x] [Review][Patch] MINOR: `CanonicalJson.encode!/1` doctest copy-paste bug — example shows both values as `2` instead of `1,2` [core/apps/signature/lib/nebu/canonical_json.ex]
+- [x] [Review][Patch] MINOR: Test `on_exit` calls `:ets.delete_all_objects(:NebuTxnDedup)` without checking if table exists [core/apps/room_manager/test/nebu_room_test.exs:on_exit]
+- [x] [Review][Patch] MINOR: AC #3 gap — no test asserts that no broadcast is sent on DB failure [core/apps/room_manager/test/nebu_room_test.exs:DB failure test]
+- [x] [Review][Defer] Private key stored in `:persistent_term` without access control — acknowledged MVP limitation; Phase 2 must persist key to DB/disk [core/apps/room_manager/lib/nebu/room/application.ex] — deferred, pre-existing
+- [x] [Review][Defer] `:pg.start_link/0` uses default scope (global atom) — could collide with other umbrella apps; should use named scope [core/apps/room_manager/lib/nebu/room/application.ex] — deferred, pre-existing
+- [x] [Review][Defer] `:pg.get_local_members/1` is node-local only — remote cluster subscribers silently skipped; Story 4-8 will address [core/apps/room_manager/lib/nebu/room/server.ex] — deferred, pre-existing
+- [x] [Review][Defer] ETS `:NebuTxnDedup` grows unbounded — acknowledged TODO in code, TTL pruning deferred to Story 4-X [core/apps/room_manager/lib/nebu/room/server.ex] — deferred, pre-existing
+- [x] [Review][Defer] `events` table missing index on `sender` and `event_type` — out of scope for this story [gateway/migrations/000010_events.up.sql] — deferred, pre-existing
+- [x] [Review][Defer] `Jason.OrderedObject` is internal Jason struct — pre-existing pattern from Story 4-3 [core/apps/signature/lib/nebu/canonical_json.ex] — deferred, pre-existing
+- [x] [Review][Defer] `CanonicalJson.normalize/1` treats Keyword lists as plain lists — low-likelihood edge case [core/apps/signature/lib/nebu/canonical_json.ex] — deferred, pre-existing
+- [x] [Review][Defer] Self-send in `:pg` broadcast (GenServer joins its own group) — intentional no-op, documented in code, Story 4-8 adds real subscriber [core/apps/room_manager/lib/nebu/room/server.ex] — deferred, pre-existing
+- [x] [Review][Defer] `insert_room/1` ON CONFLICT returns node-clock timestamp not DB row timestamp — pre-existing from Story 4-2 [core/apps/room_manager/lib/nebu/room/db.ex] — deferred, pre-existing
+- [x] [Review][Defer] Determinism test verifies `Nebu.EventId.generate/1` in isolation rather than two end-to-end `send_event` calls — current approach valid given server-side timestamp [core/apps/room_manager/test/nebu_room_test.exs] — deferred, pre-existing

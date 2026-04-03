@@ -153,21 +153,29 @@ defmodule Nebu.Room.DB do
   """
   @spec insert_event(map()) :: :ok | {:error, term()}
   def insert_event(event) do
-    case Ecto.Adapters.SQL.query(
-           Nebu.Repo,
-           @sql_insert_event,
-           [
-             event["event_id"],
-             event["room_id"],
-             event["sender"],
-             event["type"],
-             Jason.encode!(event["content"]),
-             event["origin_server_ts"],
-             if(event["signatures"], do: Jason.encode!(event["signatures"]), else: nil)
-           ]
-         ) do
-      {:ok, _} -> :ok
-      {:error, reason} -> {:error, reason}
+    with {:ok, content_json} <- Jason.encode(event["content"]),
+         {:ok, sigs_json} <- encode_nullable(event["signatures"]) do
+      case Ecto.Adapters.SQL.query(
+             Nebu.Repo,
+             @sql_insert_event,
+             [
+               event["event_id"],
+               event["room_id"],
+               event["sender"],
+               event["type"],
+               content_json,
+               event["origin_server_ts"],
+               sigs_json
+             ]
+           ) do
+        {:ok, _} -> :ok
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
+
+  # Encodes a value to JSON string, or passes nil through unchanged.
+  # Used for optional JSONB columns like `signatures`.
+  defp encode_nullable(nil), do: {:ok, nil}
+  defp encode_nullable(value), do: Jason.encode(value)
 end

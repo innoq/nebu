@@ -1,5 +1,18 @@
 # Deferred Work
 
+## Deferred from: code review of story-4-4 (2026-04-03)
+
+- Private key stored in `:persistent_term` without access control — acknowledged MVP limitation; Phase 2 must persist key to DB/disk to survive restarts.
+- `:pg.start_link/0` uses default scope (global atom) — could collide with other umbrella apps; should use named scope when pg is used system-wide.
+- `:pg.get_local_members/1` is node-local only — remote cluster subscribers silently skipped; Story 4-8 will address with full gRPC EventBus.
+- ETS `:NebuTxnDedup` grows unbounded — acknowledged TODO; TTL pruning strategy needed in Story 4-X.
+- `events` table missing index on `sender` and `event_type` — add when query patterns require it.
+- `Jason.OrderedObject` is internal Jason struct — acceptable for now; monitor Jason major version upgrades.
+- `CanonicalJson.normalize/1` treats Keyword lists as plain lists — document constraint or add clause when Keyword-list content is possible.
+- Self-send in `:pg` broadcast (GenServer joins own group) — intentional no-op pattern; Story 4-8 replaces with real subscriber.
+- `insert_room/1` ON CONFLICT returns node-clock timestamp not DB row timestamp — pre-existing from Story 4-2; fix with RETURNING clause.
+- Determinism test verifies EventId in isolation, not two end-to-end calls — valid approach given server-side timestamp; acceptable as-is.
+
 ## Deferred from: code review of story-4-3 (2026-04-03)
 
 - Architecture expects separate `canonical_json.ex` module alongside `event_id.ex` — currently integrated as private function `canonical_json/1` in `Nebu.EventId`. Acceptable until Story 4-4+ needs direct access; extract then.

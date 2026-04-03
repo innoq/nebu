@@ -22,7 +22,7 @@ defmodule Nebu.CanonicalJson do
       ~S({"a":1,"b":2})
 
       iex> Nebu.CanonicalJson.encode!(%{b: 2, a: 1})
-      ~S({"a":2,"b":2})
+      ~S({"a":1,"b":2})
 
   """
   @spec encode!(map() | list() | term()) :: binary()

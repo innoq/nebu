@@ -103,7 +103,9 @@ defmodule Nebu.RoomTest do
       end
 
       # Clean up any ETS idempotency entries left by the test
-      :ets.delete_all_objects(:NebuTxnDedup)
+      if :ets.whereis(:NebuTxnDedup) != :undefined do
+        :ets.delete_all_objects(:NebuTxnDedup)
+      end
     end)
 
     :ok
@@ -421,6 +423,26 @@ defmodule Nebu.RoomTest do
 
       # AC #3: ETS must NOT contain the txn key after a failed DB write
       assert :ets.lookup(:NebuTxnDedup, {room_id, user_id, txn_id}) == []
+    end
+
+    test "DB failure: no :new_event broadcast is sent (AC #3)" do
+      Application.put_env(:room_manager, :db_module, FailingWriteDB)
+      room_id = unique_room_id("send-event-no-bcast")
+      {:ok, _pid} = start_and_track(room_id)
+
+      # Subscribe to this room's :pg group to detect any accidental broadcasts
+      :pg.join("room:#{room_id}", self())
+
+      Nebu.Room.Server.send_event(
+        room_id,
+        "@alice:nebu.local",
+        "m.room.message",
+        %{"msgtype" => "m.text", "body" => "Will fail"},
+        "txn-nobcast-001"
+      )
+
+      # AC #3: no broadcast must have been delivered on DB failure
+      refute_receive {:new_event, _}, 100
     end
   end
 end

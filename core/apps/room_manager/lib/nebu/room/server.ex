@@ -197,10 +197,12 @@ defmodule Nebu.Room.Server do
 
         # Step 4 — Sign the canonical event JSON with server Ed25519 key.
         # Key is generated once at Application boot and stored in persistent_term.
-        # Sign the map WITHOUT "signatures" field (generate/1 also strips it — consistent).
-        # Use Nebu.CanonicalJson.encode!/1 for deterministic JSON (Architecture Rule #8).
+        # Sign event_map (WITHOUT event_id and signatures) — Matrix convention:
+        # event_id is the content hash, so signing must cover the same payload
+        # that was hashed (without event_id). Verifiers rebuild the signed bytes
+        # from the event fields, excluding event_id/signatures/unsigned.
         {_pub, priv} = :persistent_term.get(:nebu_signing_key)
-        event_json = Nebu.CanonicalJson.encode!(event_with_id)
+        event_json = Nebu.CanonicalJson.encode!(event_map)
         signature = :crypto.sign(:eddsa, :none, event_json, [priv, :ed25519])
         sig_b64 = Base.encode64(signature)
         signed_event = Map.put(event_with_id, "signatures", %{"nebu" => sig_b64})

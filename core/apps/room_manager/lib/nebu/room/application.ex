@@ -9,7 +9,11 @@ defmodule Nebu.Room.Application do
     # Room GenServer crashes/restarts. Type :set, :public so GenServers can
     # read and write without going through the owner process.
     # AC #2: must be created BEFORE any Room GenServer starts.
-    :ets.new(:NebuTxnDedup, [:named_table, :set, :public])
+    # Guard prevents ArgumentError if the Application is restarted in the same VM
+    # (e.g. hot-code reload or test framework restart).
+    if :ets.whereis(:NebuTxnDedup) == :undefined do
+      :ets.new(:NebuTxnDedup, [:named_table, :set, :public])
+    end
 
     # Start the :pg scope for room process group broadcast (ADR-005).
     # :pg is an OTP built-in (OTP 23+) — no external dependency.
