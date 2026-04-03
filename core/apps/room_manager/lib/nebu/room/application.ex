@@ -5,7 +5,10 @@ defmodule Nebu.Room.Application do
   @impl true
   def start(_type, _args) do
     children = [
-      # Placeholder — Room GenServer processes added in Epic 4
+      {Horde.Registry,
+       [name: Nebu.Room.Registry, keys: :unique, members: :auto]},
+      {Horde.DynamicSupervisor,
+       [name: Nebu.Room.HordeSupervisor, strategy: :one_for_one, members: :auto]}
     ]
 
     opts = [strategy: :one_for_one, name: Nebu.Room.Supervisor]

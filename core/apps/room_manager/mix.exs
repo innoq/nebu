@@ -23,6 +23,8 @@ defmodule Nebu.Room.MixProject do
   end
 
   defp deps do
-    []
+    [
+      {:horde, "~> 0.9"}
+    ]
   end
 end

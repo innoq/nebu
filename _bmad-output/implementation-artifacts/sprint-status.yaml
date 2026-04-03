@@ -35,7 +35,11 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-20
-last_updated: 2026-04-02
+last_updated: 2026-04-03
+# story 4-1 done (code review passed, 0 MAJOR + 1 MINOR fixed): 2026-04-03
+# story 4-1 review: 2026-04-03
+# story 4-1 in-progress: 2026-04-02
+# story 4-1 created: epic-4 → in-progress, 4-1 → ready-for-dev: 2026-04-02
 # story 3-9 done (code review passed, 2 MAJOR + 3 MINOR fixes applied): 2026-04-02
 # story 3-15 done (code review passed, 1 MINOR fix applied): 2026-04-01
 # story 3-15 review: 2026-04-01
@@ -332,8 +336,8 @@ development_status:
   # ─────────────────────────────────────────────────────────────────────────
   # Epic 4: End-Users Can Chat in Rooms Using Any Standard Matrix Client
   # ─────────────────────────────────────────────────────────────────────────
-  epic-4: backlog
-  4-1-horde-registry-dynamicsupervisor-setup: backlog
+  epic-4: in-progress
+  4-1-horde-registry-dynamicsupervisor-setup: done
   4-2-room-genserver-lifecycle-create-join-leave: backlog
   4-3-ed25519-unit-tests-nebu-eventid-content-hash-module: backlog
   4-4-room-genserver-send-event-ed25519-signing-txnid-idempotency: backlog
