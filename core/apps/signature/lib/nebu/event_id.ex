@@ -66,28 +66,8 @@ defmodule Nebu.EventId do
     generate(event) == event_id
   end
 
-  # Converts the map to canonical JSON: string keys sorted alphabetically, no whitespace.
-  # Uses Jason.OrderedObject to guarantee key ordering in the JSON output,
-  # because Erlang maps do not preserve insertion order for maps with >32 keys.
+  # Delegates to Nebu.CanonicalJson — the single canonical JSON implementation
+  # in the system (Architecture Rule #8).
   @spec canonical_json(map()) :: binary()
-  defp canonical_json(map) do
-    map
-    |> normalize_keys()
-    |> Jason.encode!()
-  end
-
-  # Recursively converts all map keys to strings and sorts them alphabetically.
-  # Returns a Jason.OrderedObject to preserve sort order during JSON encoding,
-  # since Map.new/1 does not guarantee iteration order for large maps (>32 keys).
-  defp normalize_keys(map) when is_map(map) do
-    values =
-      map
-      |> Enum.map(fn {k, v} -> {to_string(k), normalize_keys(v)} end)
-      |> Enum.sort_by(fn {k, _} -> k end)
-
-    %Jason.OrderedObject{values: values}
-  end
-
-  defp normalize_keys(list) when is_list(list), do: Enum.map(list, &normalize_keys/1)
-  defp normalize_keys(value), do: value
+  defp canonical_json(map), do: Nebu.CanonicalJson.encode!(map)
 end

@@ -25,7 +25,8 @@ defmodule Nebu.Room.MixProject do
   defp deps do
     [
       {:horde, "~> 0.9"},
-      {:nebu_db, in_umbrella: true}
+      {:nebu_db, in_umbrella: true},
+      {:signature, in_umbrella: true}
     ]
   end
 end

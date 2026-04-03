@@ -135,4 +135,39 @@ defmodule Nebu.Room.DB do
         {:error, reason}
     end
   end
+
+  @sql_insert_event """
+  INSERT INTO events (event_id, room_id, sender, event_type, content, origin_server_ts, signatures)
+  VALUES ($1, $2, $3, $4, $5, $6, $7)
+  """
+
+  @doc """
+  Inserts a signed event into the `events` append-only table.
+
+  Expects the event map to have string keys: `"event_id"`, `"room_id"`, `"sender"`,
+  `"type"`, `"content"`, `"origin_server_ts"`, and optionally `"signatures"`.
+
+  JSONB columns (`content`, `signatures`) are JSON-encoded before passing to Postgrex.
+
+  Returns `:ok` on success or `{:error, reason}` on DB failure.
+  """
+  @spec insert_event(map()) :: :ok | {:error, term()}
+  def insert_event(event) do
+    case Ecto.Adapters.SQL.query(
+           Nebu.Repo,
+           @sql_insert_event,
+           [
+             event["event_id"],
+             event["room_id"],
+             event["sender"],
+             event["type"],
+             Jason.encode!(event["content"]),
+             event["origin_server_ts"],
+             if(event["signatures"], do: Jason.encode!(event["signatures"]), else: nil)
+           ]
+         ) do
+      {:ok, _} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
 end

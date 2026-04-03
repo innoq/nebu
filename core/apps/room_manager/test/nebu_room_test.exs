@@ -62,6 +62,12 @@ defmodule Nebu.RoomTest do
           {:error, :not_member}
       end
     end
+
+    # Inserts a signed event into the fake ETS-backed events store.
+    def insert_event(event) do
+      :ets.insert(:fake_room_db, {{:event, event["event_id"]}, event})
+      :ok
+    end
   end
 
   # Fake DB that always returns a DB error on writes — for testing fail-safe behavior
@@ -70,6 +76,7 @@ defmodule Nebu.RoomTest do
     def insert_room(_room_id), do: {:ok, System.system_time(:millisecond)}
     def insert_member(_room_id, _user_id), do: {:error, :db_connection_lost}
     def delete_member(_room_id, _user_id), do: {:error, :db_connection_lost}
+    def insert_event(_event), do: {:error, :db_connection_lost}
   end
 
   # ─── Setup ──────────────────────────────────────────────────────────────────
@@ -83,12 +90,20 @@ defmodule Nebu.RoomTest do
     :ets.new(:fake_room_db, [:named_table, :set, :public])
     Application.put_env(:room_manager, :db_module, FakeDB)
 
+    # :NebuTxnDedup is a named table created at Application boot (Nebu.Room.Application).
+    # It CANNOT be deleted and recreated between tests. Clear all entries between tests
+    # to prevent idempotency state from leaking across test cases.
+    :ets.delete_all_objects(:NebuTxnDedup)
+
     on_exit(fn ->
       Application.delete_env(:room_manager, :db_module)
 
       if :ets.whereis(:fake_room_db) != :undefined do
         :ets.delete(:fake_room_db)
       end
+
+      # Clean up any ETS idempotency entries left by the test
+      :ets.delete_all_objects(:NebuTxnDedup)
     end)
 
     :ok
@@ -295,6 +310,117 @@ defmodule Nebu.RoomTest do
       # Member must be present after restart (recovered from FakeDB)
       state_after = Nebu.Room.Server.get_state(room_id)
       assert MapSet.member?(state_after.members, "@alice:nebu.local")
+    end
+  end
+
+  # ─── Story 4-4: send_event Tests ─────────────────────────────────────────────
+
+  describe "Nebu.Room.Server.send_event/5" do
+    test "happy path: returns {:ok, event_id} with event_id starting with '$'" do
+      room_id = unique_room_id("send-event-happy")
+      {:ok, _pid} = start_and_track(room_id)
+
+      result =
+        Nebu.Room.Server.send_event(
+          room_id,
+          "@alice:nebu.local",
+          "m.room.message",
+          %{"msgtype" => "m.text", "body" => "Hello"},
+          "txn-001"
+        )
+
+      assert {:ok, event_id} = result
+      assert String.starts_with?(event_id, "$")
+    end
+
+    test "determinism: Nebu.EventId.generate/1 on the same event map yields the same event_id" do
+      room_id = unique_room_id("send-event-determinism")
+      {:ok, _pid} = start_and_track(room_id)
+
+      content = %{"msgtype" => "m.text", "body" => "Deterministic"}
+
+      {:ok, event_id} =
+        Nebu.Room.Server.send_event(
+          room_id,
+          "@alice:nebu.local",
+          "m.room.message",
+          content,
+          "txn-det-001"
+        )
+
+      # Retrieve the persisted event from the FakeDB ETS store to get the exact
+      # event map (including the timestamp chosen by the GenServer).
+      [{_, stored_event}] = :ets.lookup(:fake_room_db, {:event, event_id})
+
+      # Re-generate the event_id from the stored event (stripping signatures/event_id
+      # as Nebu.EventId.generate/1 does) and verify it matches — proving determinism.
+      event_for_hash = Map.drop(stored_event, ["signatures", "event_id"])
+      recomputed_id = Nebu.EventId.generate(event_for_hash)
+
+      assert event_id == recomputed_id
+    end
+
+    test "idempotency: duplicate txn_id returns the same event_id without re-processing" do
+      room_id = unique_room_id("send-event-idempotent")
+      {:ok, _pid} = start_and_track(room_id)
+
+      user_id = "@alice:nebu.local"
+      txn_id = "txn-idem-001"
+      content = %{"msgtype" => "m.text", "body" => "Idempotent message"}
+
+      # First call — processes and persists the event
+      {:ok, event_id_1} =
+        Nebu.Room.Server.send_event(room_id, user_id, "m.room.message", content, txn_id)
+
+      # Second call with the same txn_id — must return same event_id immediately
+      {:ok, event_id_2} =
+        Nebu.Room.Server.send_event(room_id, user_id, "m.room.message", content, txn_id)
+
+      assert event_id_1 == event_id_2
+    end
+
+    test "idempotency: same txn_id is per {room_id, user_id, txn_id} — different room is a new event" do
+      room_id_a = unique_room_id("send-event-idem-room-a")
+      room_id_b = unique_room_id("send-event-idem-room-b")
+      {:ok, _pid_a} = start_and_track(room_id_a)
+      {:ok, _pid_b} = start_and_track(room_id_b)
+
+      user_id = "@alice:nebu.local"
+      txn_id = "txn-shared-001"
+      content = %{"msgtype" => "m.text", "body" => "Same txn_id, different room"}
+
+      {:ok, event_id_a} =
+        Nebu.Room.Server.send_event(room_id_a, user_id, "m.room.message", content, txn_id)
+
+      {:ok, event_id_b} =
+        Nebu.Room.Server.send_event(room_id_b, user_id, "m.room.message", content, txn_id)
+
+      # Different rooms produce different event_ids (room_id is part of content hash)
+      refute event_id_a == event_id_b
+    end
+
+    test "DB failure: returns {:error, reason} and ETS NebuTxnDedup is NOT updated" do
+      Application.put_env(:room_manager, :db_module, FailingWriteDB)
+      room_id = unique_room_id("send-event-db-fail")
+      {:ok, _pid} = start_and_track(room_id)
+
+      user_id = "@alice:nebu.local"
+      txn_id = "txn-fail-001"
+
+      result =
+        Nebu.Room.Server.send_event(
+          room_id,
+          user_id,
+          "m.room.message",
+          %{"msgtype" => "m.text", "body" => "Will fail"},
+          txn_id
+        )
+
+      # Must return error
+      assert {:error, _reason} = result
+
+      # AC #3: ETS must NOT contain the txn key after a failed DB write
+      assert :ets.lookup(:NebuTxnDedup, {room_id, user_id, txn_id}) == []
     end
   end
 end
