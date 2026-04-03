@@ -24,7 +24,8 @@ defmodule Nebu.Room.MixProject do
 
   defp deps do
     [
-      {:horde, "~> 0.9"}
+      {:horde, "~> 0.9"},
+      {:nebu_db, in_umbrella: true}
     ]
   end
 end
