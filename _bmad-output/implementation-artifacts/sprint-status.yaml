@@ -36,6 +36,10 @@
 
 generated: 2026-03-20
 last_updated: 2026-04-03
+# story 4-3 review-fix (MAJOR: Map.new sort order, 2 MINOR): 2026-04-03
+# story 4-3 review: 2026-04-03
+# story 4-3 in-progress: 2026-04-03
+# story 4-3 created: 4-3 → ready-for-dev: 2026-04-03
 # story 4-2 done (code review passed, 1 MAJOR + 2 MINOR fixed): 2026-04-03
 # story 4-2 review: 2026-04-03
 # story 4-2 in-progress: 2026-04-03
@@ -343,7 +347,7 @@ development_status:
   epic-4: in-progress
   4-1-horde-registry-dynamicsupervisor-setup: done
   4-2-room-genserver-lifecycle-create-join-leave: done
-  4-3-ed25519-unit-tests-nebu-eventid-content-hash-module: backlog
+  4-3-ed25519-unit-tests-nebu-eventid-content-hash-module: in-progress
   4-4-room-genserver-send-event-ed25519-signing-txnid-idempotency: backlog
   4-5-session-manager-ets-session-store: backlog
   4-6-session-manager-postgresql-since-token-invalidation: backlog
