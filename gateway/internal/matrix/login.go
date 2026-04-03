@@ -127,7 +127,7 @@ func (h *LoginHandler) PostLogin(w http.ResponseWriter, r *http.Request) {
 	sub, _ := allClaims["sub"].(string)
 	preferredUsername, _ := allClaims["preferred_username"].(string)
 	email, _ := allClaims["email"].(string)
-	rawRole, _ := allClaims[h.roleClaimName].(string)
+	rawRole := auth.ExtractRoleClaim(allClaims, h.roleClaimName)
 	systemRole := auth.MapSystemRole(rawRole)
 
 	userID := coregrpc.FormatUserID(sub, h.serverName)

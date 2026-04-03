@@ -138,8 +138,53 @@ ADRs are tracked in `docs/architecture/adr/`:
 
 ## BMAD Workflow
 
-This project uses BMAD agents for structured development. Architecture is complete.
-Next step: `bmad-create-epics-and-stories` to break the architecture into implementable stories.
+This project uses BMAD agents for structured development. The pipeline is:
+
+```
+bmad-create-story  →  bmad-testarch-atdd  →  bmad-dev-story  →  bmad-testarch-test-review  →  bmad-code-review
+     (SM)                  (TEA)               (Dev)                    (TEA)                    (Review)
+```
+
+### Gate 1 — Story Creation (`/bmad-create-story`)
+
+**Owner: Bob (SM)**
+
+After the story file is created and before it moves to `ready-for-dev`:
+
+1. Story file must contain the **"Acceptance Tests"** section (see Testing Conventions below)
+2. Run **`/bmad-testarch-atdd`** to generate failing acceptance tests from the story's acceptance criteria
+3. The generated failing tests are committed alongside the story — implementation starts against them
+
+**When to skip atdd:** Pure infrastructure stories with no observable behavior (e.g., Dockerfile changes, migration-only). All other stories require it.
+
+### Gate 2 — Implementation (`/bmad-dev-story`)
+
+**Owner: Amelia (Dev)**
+
+The Red-Green-Refactor cycle:
+
+1. Failing tests from Gate 1 are already present — do not write new implementation code before running them
+2. Implement until all acceptance tests pass (no new code without a failing test)
+3. For complex test scenarios or edge cases: invoke **`/bmad-tea`** as a test design partner
+4. Run `make test-unit-go` + `make test-unit-elixir` before marking story as `review`
+
+### Gate 3 — Code Review (`/bmad-code-review`)
+
+**Owner: Code Review Agent**
+
+Before marking a story `done`, the code reviewer MUST invoke **`/bmad-testarch-test-review`** and include its findings in the review report.
+
+The test review checks:
+- Every Acceptance Criterion has at least one test
+- No hard waits, no hidden assertions, tests are deterministic
+- GenServer state stories have a crash/restart test
+- No cookie forging or DB-seeding shortcuts in E2E tests
+
+**MAJOR finding if:** Any acceptance criterion has zero test coverage.
+
+### Epic Completion — Traceability
+
+At the end of each epic, run **`/bmad-testarch-trace`** to generate the requirements-to-tests traceability matrix. Gate: ≥80% P0+P1 coverage before epic is marked `done`.
 
 ## MCP Tools & Testing Conventions
 
@@ -161,21 +206,77 @@ Use the `playwright` MCP server for all E2E tests that involve HTML pages, forms
 
 **Why:** Godog HTTP-level navigation of Authorization Code flows is complex and brittle. Playwright handles real browser flows correctly.
 
-### ATDD — Feature-File-First for UI Stories
-For any story that involves HTML pages, forms, buttons, or browser navigation: **the Playwright feature file is the first artifact**, written before any implementation code.
+### TDD/ATDD — Tests First, Always
 
-**Why:** Writing the happy-path scenario first drives the correct architecture. Discovered in Epic 3 retrospective — Story 3-8 went through 3 code review rounds because an upfront acceptance test would have revealed the restart-resilience requirement. Story 3-15 forged cookies instead of testing real flows because the test was written last.
+**The Nebu TDD Standard: write the failing test before writing implementation code. This applies to ALL story types, not just UI.**
 
-**How:**
-1. Write `e2e/features/<feature>.spec.ts` (or `gateway/features/<feature>.feature`) before Story implementation starts
-2. The scenario is the "definition of done" for the story
-3. Use real browser flows — no cookie forging, no DB seeding shortcuts in Playwright tests
-4. Playwright tests run against the real running stack (no mocks)
+**Why:** Story 3-8 (sync.Map → 3 review rounds) and recurring MAJOR findings in Epic 4 code reviews show that tests written after the fact do not catch architectural mistakes early enough. A failing test written first forces the correct design.
 
-### Test design
+#### For Elixir GenServer / ETS / Horde Stories:
 
-Use the /bmad-tea Agent as a supporter to specify and write the tests.
-And the  /bmad-testarch-test-review to review the test 
+Write **ExUnit tests first** (failing), then implement:
+
+1. **Happy-path test**: `send_event/5` returns `{:ok, event_id}` — write before the function exists
+2. **Crash/restart test**: `Process.exit(pid, :kill)` → state recovered via Horde — write before Horde supervision exists
+3. **Persistenz-Strategie** (mandatory for any story with GenServer state):
+   - Describe how this state survives a restart
+   - Option A: ETS (volatile, recovered via Horde migration) — add crash test
+   - Option B: PostgreSQL (persistent, read on start) — add read-on-start test
+   - Option C: Stateless — no restart test needed
+
+#### For Matrix API Endpoint Stories:
+
+Write **Godog scenario first** (failing), then implement:
+
+1. Write `gateway/features/<feature>.feature` with happy path + one error case
+2. The handler returns `501 Not Implemented` initially
+3. Implement handler until Godog scenario is green
+4. Add edge case unit tests (Go httptest)
+
+#### For Admin UI Stories (HTML/browser):
+
+Write **Playwright feature file first** (failing), then implement:
+
+1. Write `e2e/features/<feature>.spec.ts` before any HTML/Go template code
+2. Use real browser flows — no cookie forging, no DB seeding shortcuts
+3. Playwright tests run against the real running stack (no mocks)
+
+**Epic 3 retrospective:** Story 3-8 went through 3 code review rounds because an upfront acceptance test would have revealed the restart-resilience requirement. Story 3-15 forged cookies instead of testing real flows because the test was written last.
+
+### Story Acceptance Test Requirement
+
+Every story document MUST contain an **"Acceptance Tests"** section (written by the story creator, before implementation):
+
+```
+## Acceptance Tests
+
+### Tests written FIRST (before implementation code):
+
+1. [Test name] — [ExUnit/Godog/Playwright]
+   - Given: [starting state]
+   - When: [action]
+   - Then: [expected outcome]
+
+2. [Crash/Restart test — required for all GenServer state stories]
+   - Given: [service running with state]
+   - When: [Process.exit(:kill) / service restart]
+   - Then: [state recovered / correctly migrated]
+```
+
+**Code Review gate:** Does every Acceptance Criterion have at least one test? If not, the story is not done.
+
+### TEA Skills — Quick Reference
+
+| When | Skill | Who | Mandatory |
+|---|---|---|---|
+| After story created, before dev starts | `/bmad-testarch-atdd` | SM/Dev | **Yes** |
+| During implementation, for complex tests | `/bmad-tea` | Dev | On demand |
+| During code review | `/bmad-testarch-test-review` | Reviewer | **Yes** |
+| End of epic | `/bmad-testarch-trace` | SM | **Yes** |
+| When test strategy needed for a new epic | `/bmad-testarch-test-design` | SM/Arch | On demand |
+| When NFRs need validation | `/bmad-testarch-nfr` | Dev/Arch | On demand |
+
+See **BMAD Workflow** section above for the full gate sequence.
 
 ### OIDC / Auth Testing Standard
 All Gherkin tests involving OIDC must use Authorization Code + PKCE. ROPC is not supported by Dex v2.41+. Never use `grant_type=password` shortcuts in E2E tests.

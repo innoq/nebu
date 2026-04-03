@@ -296,11 +296,13 @@ defmodule Nebu.RoomTest do
       state_before = Nebu.Room.Server.get_state(room_id)
       assert MapSet.member?(state_before.members, "@alice:nebu.local")
 
-      # Stop the GenServer process
-      GenServer.stop(pid, :normal, 5_000)
+      # Crash the GenServer process (simulates unexpected crash, not graceful stop).
+      # Uses :kill (not :normal) to test that Horde's supervisor restarts the process
+      # and that init/1 correctly reloads state from the DB on restart.
+      Process.exit(pid, :kill)
 
-      # Wait briefly for cleanup
-      Process.sleep(50)
+      # Wait for Horde supervisor to detect the crash and restart the process
+      Process.sleep(150)
 
       # Restart the room — init/1 should reload from FakeDB
       {:ok, new_pid} = Nebu.Room.RoomSupervisor.start_room(room_id)

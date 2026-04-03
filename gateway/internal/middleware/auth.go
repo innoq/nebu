@@ -23,24 +23,6 @@ const (
 	ContextKeyTokenExpiry       contextKey = "token_expiry"
 )
 
-// extractRoleClaim reads a role claim by name from JWT claims.
-// Handles both string and []interface{} (e.g. Dex groups claim) by returning the first element.
-func extractRoleClaim(claims map[string]interface{}, claimName string) string {
-	v, ok := claims[claimName]
-	if !ok {
-		return ""
-	}
-	if s, ok := v.(string); ok {
-		return s
-	}
-	if arr, ok := v.([]interface{}); ok && len(arr) > 0 {
-		if s, ok := arr[0].(string); ok {
-			return s
-		}
-	}
-	return ""
-}
-
 type matrixError struct {
 	ErrCode string `json:"errcode"`
 	Err     string `json:"error"`
@@ -100,7 +82,7 @@ func JWTMiddleware(provider *auth.Provider, clientID string, claimName string, s
 			sub, _ := allClaims["sub"].(string)
 			preferredUsername, _ := allClaims["preferred_username"].(string)
 			email, _ := allClaims["email"].(string)
-			rawRole := extractRoleClaim(allClaims, claimName)
+			rawRole := auth.ExtractRoleClaim(allClaims, claimName)
 			systemRole := auth.MapSystemRole(rawRole)
 
 			ctx := r.Context()
