@@ -10,6 +10,8 @@ defmodule Core.CoreService.Service do
   rpc :ValidateToken, Core.ValidateTokenRequest, Core.ValidateTokenResponse
   rpc :GetPendingEvents, Core.GetPendingEventsRequest, Core.GetPendingEventsResponse
   rpc :EventBus, Core.EventBusRequest, stream(Core.Event)
+  rpc :GetMetrics, Core.GetMetricsRequest, Core.GetMetricsResponse
+  rpc :GetRoomState, Core.GetRoomStateRequest, Core.GetRoomStateResponse
 end
 
 defmodule Core.CoreService.Stub do

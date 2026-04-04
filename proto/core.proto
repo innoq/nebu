@@ -22,6 +22,9 @@ service CoreService {
 
   // GetMetrics — Admin Dashboard live metrics (Epic 3 skeleton; full implementation Epic 4)
   rpc GetMetrics(GetMetricsRequest)         returns (GetMetricsResponse);
+
+  // GetRoomState — unary: Go queries current room members + metadata
+  rpc GetRoomState(GetRoomStateRequest)     returns (GetRoomStateResponse);
 }
 
 // Shared event type used across multiple RPCs
@@ -138,4 +141,14 @@ message GetMetricsResponse {
   float  msg_per_sec      = 1;  // messages per second (rolling 60s window)
   int32  active_sessions  = 2;  // currently active user sessions
   int32  room_count       = 3;  // total number of active rooms
+}
+
+// GetRoomState — unary: Go queries current room members + metadata
+message GetRoomStateRequest {
+  string room_id = 1;
+}
+message GetRoomStateResponse {
+  repeated string members           = 1;
+  string          power_levels_json = 2;  // JSON string — full power levels in Story 4-13
+  string          room_name         = 3;  // empty for now — full room metadata in Story 4-9
 }

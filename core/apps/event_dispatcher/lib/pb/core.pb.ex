@@ -243,3 +243,27 @@ defmodule Core.GetMetricsResponse do
   field :active_sessions, 2, type: :int32, json_name: "activeSessions"
   field :room_count, 3, type: :int32, json_name: "roomCount"
 end
+
+defmodule Core.GetRoomStateRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.GetRoomStateRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :room_id, 1, type: :string, json_name: "roomId"
+end
+
+defmodule Core.GetRoomStateResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.GetRoomStateResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :members, 1, repeated: true, type: :string
+  field :power_levels_json, 2, type: :string, json_name: "powerLevelsJson"
+  field :room_name, 3, type: :string, json_name: "roomName"
+end

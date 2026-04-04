@@ -1170,6 +1170,111 @@ func (x *GetMetricsResponse) GetRoomCount() int32 {
 	return 0
 }
 
+// GetRoomState — unary: Go queries current room members + metadata
+type GetRoomStateRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RoomId        string                 `protobuf:"bytes,1,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetRoomStateRequest) Reset() {
+	*x = GetRoomStateRequest{}
+	mi := &file_core_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetRoomStateRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetRoomStateRequest) ProtoMessage() {}
+
+func (x *GetRoomStateRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetRoomStateRequest.ProtoReflect.Descriptor instead.
+func (*GetRoomStateRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *GetRoomStateRequest) GetRoomId() string {
+	if x != nil {
+		return x.RoomId
+	}
+	return ""
+}
+
+type GetRoomStateResponse struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Members         []string               `protobuf:"bytes,1,rep,name=members,proto3" json:"members,omitempty"`
+	PowerLevelsJson string                 `protobuf:"bytes,2,opt,name=power_levels_json,json=powerLevelsJson,proto3" json:"power_levels_json,omitempty"` // JSON string — full power levels in Story 4-13
+	RoomName        string                 `protobuf:"bytes,3,opt,name=room_name,json=roomName,proto3" json:"room_name,omitempty"`                        // empty for now — full room metadata in Story 4-9
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *GetRoomStateResponse) Reset() {
+	*x = GetRoomStateResponse{}
+	mi := &file_core_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetRoomStateResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetRoomStateResponse) ProtoMessage() {}
+
+func (x *GetRoomStateResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetRoomStateResponse.ProtoReflect.Descriptor instead.
+func (*GetRoomStateResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *GetRoomStateResponse) GetMembers() []string {
+	if x != nil {
+		return x.Members
+	}
+	return nil
+}
+
+func (x *GetRoomStateResponse) GetPowerLevelsJson() string {
+	if x != nil {
+		return x.PowerLevelsJson
+	}
+	return ""
+}
+
+func (x *GetRoomStateResponse) GetRoomName() string {
+	if x != nil {
+		return x.RoomName
+	}
+	return ""
+}
+
 var File_core_proto protoreflect.FileDescriptor
 
 const file_core_proto_rawDesc = "" +
@@ -1265,7 +1370,13 @@ const file_core_proto_rawDesc = "" +
 	"\vmsg_per_sec\x18\x01 \x01(\x02R\tmsgPerSec\x12'\n" +
 	"\x0factive_sessions\x18\x02 \x01(\x05R\x0eactiveSessions\x12\x1d\n" +
 	"\n" +
-	"room_count\x18\x03 \x01(\x05R\troomCount2\x9d\x05\n" +
+	"room_count\x18\x03 \x01(\x05R\troomCount\".\n" +
+	"\x13GetRoomStateRequest\x12\x17\n" +
+	"\aroom_id\x18\x01 \x01(\tR\x06roomId\"y\n" +
+	"\x14GetRoomStateResponse\x12\x18\n" +
+	"\amembers\x18\x01 \x03(\tR\amembers\x12*\n" +
+	"\x11power_levels_json\x18\x02 \x01(\tR\x0fpowerLevelsJson\x12\x1b\n" +
+	"\troom_name\x18\x03 \x01(\tR\broomName2\xe4\x05\n" +
 	"\vCoreService\x12<\n" +
 	"\tSendEvent\x12\x16.core.SendEventRequest\x1a\x17.core.SendEventResponse\x12?\n" +
 	"\n" +
@@ -1278,7 +1389,8 @@ const file_core_proto_rawDesc = "" +
 	"\x10GetPendingEvents\x12\x1d.core.GetPendingEventsRequest\x1a\x1e.core.GetPendingEventsResponse\x120\n" +
 	"\bEventBus\x12\x15.core.EventBusRequest\x1a\v.core.Event0\x01\x12?\n" +
 	"\n" +
-	"GetMetrics\x12\x17.core.GetMetricsRequest\x1a\x18.core.GetMetricsResponseB'Z%github.com/nebu/nebu/internal/grpc/pbb\x06proto3"
+	"GetMetrics\x12\x17.core.GetMetricsRequest\x1a\x18.core.GetMetricsResponse\x12E\n" +
+	"\fGetRoomState\x12\x19.core.GetRoomStateRequest\x1a\x1a.core.GetRoomStateResponseB'Z%github.com/nebu/nebu/internal/grpc/pbb\x06proto3"
 
 var (
 	file_core_proto_rawDescOnce sync.Once
@@ -1292,7 +1404,7 @@ func file_core_proto_rawDescGZIP() []byte {
 	return file_core_proto_rawDescData
 }
 
-var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_core_proto_goTypes = []any{
 	(*Event)(nil),                    // 0: core.Event
 	(*SendEventRequest)(nil),         // 1: core.SendEventRequest
@@ -1314,6 +1426,8 @@ var file_core_proto_goTypes = []any{
 	(*EventBusRequest)(nil),          // 17: core.EventBusRequest
 	(*GetMetricsRequest)(nil),        // 18: core.GetMetricsRequest
 	(*GetMetricsResponse)(nil),       // 19: core.GetMetricsResponse
+	(*GetRoomStateRequest)(nil),      // 20: core.GetRoomStateRequest
+	(*GetRoomStateResponse)(nil),     // 21: core.GetRoomStateResponse
 }
 var file_core_proto_depIdxs = []int32{
 	0,  // 0: core.GetMessagesResponse.events:type_name -> core.Event
@@ -1328,18 +1442,20 @@ var file_core_proto_depIdxs = []int32{
 	15, // 9: core.CoreService.GetPendingEvents:input_type -> core.GetPendingEventsRequest
 	17, // 10: core.CoreService.EventBus:input_type -> core.EventBusRequest
 	18, // 11: core.CoreService.GetMetrics:input_type -> core.GetMetricsRequest
-	2,  // 12: core.CoreService.SendEvent:output_type -> core.SendEventResponse
-	4,  // 13: core.CoreService.CreateRoom:output_type -> core.CreateRoomResponse
-	6,  // 14: core.CoreService.JoinRoom:output_type -> core.JoinRoomResponse
-	8,  // 15: core.CoreService.GetMessages:output_type -> core.GetMessagesResponse
-	10, // 16: core.CoreService.SetPresence:output_type -> core.SetPresenceResponse
-	12, // 17: core.CoreService.SetTyping:output_type -> core.SetTypingResponse
-	14, // 18: core.CoreService.ValidateToken:output_type -> core.ValidateTokenResponse
-	16, // 19: core.CoreService.GetPendingEvents:output_type -> core.GetPendingEventsResponse
-	0,  // 20: core.CoreService.EventBus:output_type -> core.Event
-	19, // 21: core.CoreService.GetMetrics:output_type -> core.GetMetricsResponse
-	12, // [12:22] is the sub-list for method output_type
-	2,  // [2:12] is the sub-list for method input_type
+	20, // 12: core.CoreService.GetRoomState:input_type -> core.GetRoomStateRequest
+	2,  // 13: core.CoreService.SendEvent:output_type -> core.SendEventResponse
+	4,  // 14: core.CoreService.CreateRoom:output_type -> core.CreateRoomResponse
+	6,  // 15: core.CoreService.JoinRoom:output_type -> core.JoinRoomResponse
+	8,  // 16: core.CoreService.GetMessages:output_type -> core.GetMessagesResponse
+	10, // 17: core.CoreService.SetPresence:output_type -> core.SetPresenceResponse
+	12, // 18: core.CoreService.SetTyping:output_type -> core.SetTypingResponse
+	14, // 19: core.CoreService.ValidateToken:output_type -> core.ValidateTokenResponse
+	16, // 20: core.CoreService.GetPendingEvents:output_type -> core.GetPendingEventsResponse
+	0,  // 21: core.CoreService.EventBus:output_type -> core.Event
+	19, // 22: core.CoreService.GetMetrics:output_type -> core.GetMetricsResponse
+	21, // 23: core.CoreService.GetRoomState:output_type -> core.GetRoomStateResponse
+	13, // [13:24] is the sub-list for method output_type
+	2,  // [2:13] is the sub-list for method input_type
 	2,  // [2:2] is the sub-list for extension type_name
 	2,  // [2:2] is the sub-list for extension extendee
 	0,  // [0:2] is the sub-list for field type_name
@@ -1360,7 +1476,7 @@ func file_core_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_core_proto_rawDesc), len(file_core_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   20,
+			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

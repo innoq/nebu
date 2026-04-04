@@ -29,6 +29,7 @@ const (
 	CoreService_GetPendingEvents_FullMethodName = "/core.CoreService/GetPendingEvents"
 	CoreService_EventBus_FullMethodName         = "/core.CoreService/EventBus"
 	CoreService_GetMetrics_FullMethodName       = "/core.CoreService/GetMetrics"
+	CoreService_GetRoomState_FullMethodName     = "/core.CoreService/GetRoomState"
 )
 
 // CoreServiceClient is the client API for CoreService service.
@@ -51,6 +52,8 @@ type CoreServiceClient interface {
 	EventBus(ctx context.Context, in *EventBusRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Event], error)
 	// GetMetrics — Admin Dashboard live metrics (Epic 3 skeleton; full implementation Epic 4)
 	GetMetrics(ctx context.Context, in *GetMetricsRequest, opts ...grpc.CallOption) (*GetMetricsResponse, error)
+	// GetRoomState — unary: Go queries current room members + metadata
+	GetRoomState(ctx context.Context, in *GetRoomStateRequest, opts ...grpc.CallOption) (*GetRoomStateResponse, error)
 }
 
 type coreServiceClient struct {
@@ -170,6 +173,16 @@ func (c *coreServiceClient) GetMetrics(ctx context.Context, in *GetMetricsReques
 	return out, nil
 }
 
+func (c *coreServiceClient) GetRoomState(ctx context.Context, in *GetRoomStateRequest, opts ...grpc.CallOption) (*GetRoomStateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetRoomStateResponse)
+	err := c.cc.Invoke(ctx, CoreService_GetRoomState_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CoreServiceServer is the server API for CoreService service.
 // All implementations must embed UnimplementedCoreServiceServer
 // for forward compatibility.
@@ -190,6 +203,8 @@ type CoreServiceServer interface {
 	EventBus(*EventBusRequest, grpc.ServerStreamingServer[Event]) error
 	// GetMetrics — Admin Dashboard live metrics (Epic 3 skeleton; full implementation Epic 4)
 	GetMetrics(context.Context, *GetMetricsRequest) (*GetMetricsResponse, error)
+	// GetRoomState — unary: Go queries current room members + metadata
+	GetRoomState(context.Context, *GetRoomStateRequest) (*GetRoomStateResponse, error)
 	mustEmbedUnimplementedCoreServiceServer()
 }
 
@@ -229,6 +244,9 @@ func (UnimplementedCoreServiceServer) EventBus(*EventBusRequest, grpc.ServerStre
 }
 func (UnimplementedCoreServiceServer) GetMetrics(context.Context, *GetMetricsRequest) (*GetMetricsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetMetrics not implemented")
+}
+func (UnimplementedCoreServiceServer) GetRoomState(context.Context, *GetRoomStateRequest) (*GetRoomStateResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetRoomState not implemented")
 }
 func (UnimplementedCoreServiceServer) mustEmbedUnimplementedCoreServiceServer() {}
 func (UnimplementedCoreServiceServer) testEmbeddedByValue()                     {}
@@ -424,6 +442,24 @@ func _CoreService_GetMetrics_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_GetRoomState_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetRoomStateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).GetRoomState(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_GetRoomState_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).GetRoomState(ctx, req.(*GetRoomStateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CoreService_ServiceDesc is the grpc.ServiceDesc for CoreService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -466,6 +502,10 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetMetrics",
 			Handler:    _CoreService_GetMetrics_Handler,
+		},
+		{
+			MethodName: "GetRoomState",
+			Handler:    _CoreService_GetRoomState_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

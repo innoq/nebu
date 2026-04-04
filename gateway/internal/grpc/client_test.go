@@ -146,9 +146,11 @@ func TestStubsReturnNil(t *testing.T) {
 		{
 			name: "EventBus",
 			call: func() error {
-				stream, err := c.EventBus(ctx, &pb.EventBusRequest{})
-				if err != nil || stream != nil {
-					return fmt.Errorf("want nil,nil; got %v,%v", stream, err)
+				// EventBus is now wired to the real gRPC client (Story 4-8),
+				// so it returns a connection error when no server is running.
+				_, err := c.EventBus(ctx, &pb.EventBusRequest{})
+				if err == nil {
+					return fmt.Errorf("want connection error; got nil")
 				}
 				return nil
 			},

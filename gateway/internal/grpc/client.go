@@ -103,12 +103,28 @@ func (c *Client) GetPendingEvents(ctx context.Context, req *pb.GetPendingEventsR
 	return nil, nil
 }
 
-// EventBus stub — implemented in Epic 4.
+// EventBus opens a server-streaming EventBus connection to the Elixir core.
+// The returned stream delivers real-time room events until the context is cancelled.
 func (c *Client) EventBus(ctx context.Context, req *pb.EventBusRequest) (grpclib.ServerStreamingClient[pb.Event], error) {
-	return nil, nil
+	return c.core.EventBus(ctx, req)
 }
 
 // GetMetrics stub — implemented in Epic 4.
 func (c *Client) GetMetrics(ctx context.Context, req *pb.GetMetricsRequest) (*pb.GetMetricsResponse, error) {
 	return nil, nil
+}
+
+// GetRoomState queries the Elixir core for current room state (members, metadata).
+// Returns NOT_FOUND status if the room GenServer is not running.
+func (c *Client) GetRoomState(ctx context.Context, req *pb.GetRoomStateRequest) (*pb.GetRoomStateResponse, error) {
+	return c.core.GetRoomState(ctx, req)
+}
+
+// NewClientWithCore constructs a Client using a pre-built CoreServiceClient.
+// This is used in tests to inject a mock without a real gRPC connection.
+func NewClientWithCore(core pb.CoreServiceClient) *Client {
+	return &Client{
+		conn: nil,
+		core: core,
+	}
 }

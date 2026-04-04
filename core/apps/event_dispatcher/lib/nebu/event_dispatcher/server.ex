@@ -3,6 +3,12 @@ defmodule Nebu.EventDispatcher.Server do
 
   require Logger
 
+  # ─── Configurable room registry module for testability ─────────────────────
+  # Override via Application.put_env(:event_dispatcher, :room_registry_module, FakeModule) in tests.
+  defp room_registry_module do
+    Application.get_env(:event_dispatcher, :room_registry_module, Nebu.Room.Server)
+  end
+
   def send_event(_request, _stream) do
     %Core.SendEventResponse{}
   end
@@ -68,9 +74,153 @@ defmodule Nebu.EventDispatcher.Server do
     %Core.GetPendingEventsResponse{}
   end
 
-  def event_bus(_request, stream) do
-    # Placeholder — Epic 4 Story 4.8 implements full streaming EventBus logic
-    Logger.warning("event_bus stub called — not yet implemented")
-    {:ok, stream}
+  def get_metrics(_request, _stream) do
+    %Core.GetMetricsResponse{}
+  end
+
+  # ─── AC #2: EventBus server-streaming handler ───────────────────────────────
+  #
+  # Blocking receive loop that keeps the gRPC stream open and forwards events
+  # from :pg process groups to the Go gateway.
+  #
+  # Lifecycle:
+  #   1. Trap exits so we get {:EXIT, _, _} on abnormal termination
+  #   2. Join the "event_bus:gateways" :pg group to track active connections
+  #   3. Subscribe to all currently-active room :pg groups
+  #   4. Block in receive loop, forwarding {:new_event, event_map} to stream
+  #   5. On {:EXIT, ...}: leave all :pg groups and terminate cleanly
+  #
+  # :pg automatically removes dead processes from groups — the explicit leave
+  # on trap is belt-and-suspenders cleanup and enables monitoring via the group.
+
+  def event_bus(request, stream) do
+    Logger.info("EventBus stream opened", node_id: request.node_id)
+
+    # Trap exits so the receive loop gets {:EXIT, _, _} on process kill/stream close.
+    # This enables clean :pg membership removal even on abnormal termination.
+    Process.flag(:trap_exit, true)
+
+    # Join the "event_bus:gateways" group to mark this stream as active.
+    :pg.join("event_bus:gateways", self())
+
+    # Subscribe to all currently-active rooms.
+    subscribe_to_all_rooms()
+
+    # Block until stream closes or process exits.
+    event_bus_loop(stream)
+  end
+
+  defp event_bus_loop(stream) do
+    receive do
+      {:new_event, event_map} ->
+        event = map_to_proto_event(event_map)
+        do_send_reply(stream, event)
+        event_bus_loop(stream)
+
+      {:EXIT, _pid, _reason} ->
+        # Stream closed by client or process was killed — clean up and exit.
+        :pg.leave("event_bus:gateways", self())
+        leave_all_room_groups()
+        {:ok, stream}
+    end
+  end
+
+  # ─── AC #3: GetRoomState unary handler ──────────────────────────────────────
+  #
+  # Looks up the Room GenServer via the configurable room_registry_module.
+  # In production, room_registry_module == Nebu.Room.Server, whose get_state/1
+  # calls GenServer.call(via(room_id), :get_state).
+  # In tests, room_registry_module is overridden with FakeRoomRegistry.
+
+  def get_room_state(request, _stream) do
+    room_id = request.room_id
+    mod = room_registry_module()
+
+    state =
+      try do
+        mod.get_state(room_id)
+      catch
+        :exit, {:noproc, _} ->
+          raise GRPC.RPCError,
+            status: GRPC.Status.not_found(),
+            message: "room not found: #{room_id}"
+      end
+
+    %Core.GetRoomStateResponse{
+      members: MapSet.to_list(state.members),
+      power_levels_json: "{}",
+      room_name: ""
+    }
+  end
+
+  # ─── Private helpers ─────────────────────────────────────────────────────────
+
+  # Subscribe this process to all active room :pg groups.
+  # Rooms that are started after this call will not be subscribed automatically.
+  # For MVP, subscribing at stream-open is sufficient.
+  defp subscribe_to_all_rooms do
+    # Horde.Registry.select/2 returns [{key, pid, value}] triples.
+    # We select only the keys (room_id strings).
+    room_ids =
+      try do
+        Horde.Registry.select(Nebu.Room.Registry, [{{:"$1", :"$2", :"$3"}, [], [:"$1"]}])
+      rescue
+        _ -> []
+      catch
+        _, _ -> []
+      end
+
+    Enum.each(room_ids, fn room_id ->
+      :pg.join("room:#{room_id}", self())
+    end)
+  end
+
+  # Explicitly leave all room:* groups this process has joined.
+  # :pg cleans up dead processes automatically, but this provides immediate
+  # cleanup when the process exits cleanly via trap_exit.
+  defp leave_all_room_groups do
+    all_groups =
+      try do
+        :pg.which_groups()
+      rescue
+        _ -> []
+      catch
+        _, _ -> []
+      end
+
+    for group <- all_groups,
+        is_binary(group),
+        String.starts_with?(group, "room:") do
+      :pg.leave(group, self())
+    end
+  end
+
+  # Convert a signed event map (string keys) to a %Core.Event{} protobuf struct.
+  defp map_to_proto_event(event_map) do
+    content_json = Jason.encode!(Map.get(event_map, "content", %{}))
+
+    %Core.Event{
+      event_id: Map.get(event_map, "event_id", ""),
+      room_id: Map.get(event_map, "room_id", ""),
+      sender_id: Map.get(event_map, "sender", ""),
+      event_type: Map.get(event_map, "type", ""),
+      content: content_json,
+      origin_ts: Map.get(event_map, "origin_server_ts", 0),
+      server_ts: System.system_time(:millisecond)
+    }
+  end
+
+  # Send a reply on the stream.
+  # In test mode, the stream may have a :grpc_reply_interceptor key set to a
+  # test PID. When present, we forward the reply directly to that PID instead
+  # of calling the real GRPC.Server.send_reply/2 (which requires a live gRPC
+  # connection not available in unit tests).
+  defp do_send_reply(%{grpc_reply_interceptor: interceptor_pid} = _stream, event)
+       when is_pid(interceptor_pid) do
+    send(interceptor_pid, {:grpc_reply, event})
+  end
+
+  defp do_send_reply(stream, event) do
+    GRPC.Server.send_reply(stream, event)
   end
 end
