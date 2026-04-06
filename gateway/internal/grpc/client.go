@@ -68,9 +68,9 @@ func (c *Client) SendEvent(ctx context.Context, req *pb.SendEventRequest) (*pb.S
 	return nil, nil
 }
 
-// CreateRoom stub — implemented in Epic 4.
+// CreateRoom calls the Elixir core to start a new Room GenServer.
 func (c *Client) CreateRoom(ctx context.Context, req *pb.CreateRoomRequest) (*pb.CreateRoomResponse, error) {
-	return nil, nil
+	return c.core.CreateRoom(ctx, req)
 }
 
 // JoinRoom stub — implemented in Epic 4.

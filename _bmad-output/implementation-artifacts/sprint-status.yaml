@@ -36,6 +36,7 @@
 
 generated: 2026-03-20
 last_updated: 2026-04-03
+# story 4-9 created: 4-9 → ready-for-dev: 2026-04-03
 # story 4-8 created: 4-8 → ready-for-dev: 2026-04-03
 # story 4-7 created: 4-7 → ready-for-dev: 2026-04-03
 # story 4-6 created: 4-6 → ready-for-dev: 2026-04-03
@@ -360,8 +361,8 @@ development_status:
   4-5-session-manager-ets-session-store: done
   4-6-session-manager-postgresql-since-token-invalidation: done
   4-7-presence-manager: done
-  4-8-grpc-eventbus-server-streaming-getroomstate-unary: review
-  4-9-post-createroom: backlog
+  4-8-grpc-eventbus-server-streaming-getroomstate-unary: done
+  4-9-post-createroom: review
   4-10-post-join-room-invitations-fr20-21: backlog
   4-11-put-rooms-roomid-send-eventtype-txnid: backlog
   4-12-get-rooms-roomid-messages: backlog

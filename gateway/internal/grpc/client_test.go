@@ -74,9 +74,11 @@ func TestStubsReturnNil(t *testing.T) {
 		{
 			name: "CreateRoom",
 			call: func() error {
-				resp, err := c.CreateRoom(ctx, &pb.CreateRoomRequest{})
-				if err != nil || resp != nil {
-					return fmt.Errorf("want nil,nil; got %v,%v", resp, err)
+				// CreateRoom is wired to the real gRPC client (Story 4-9),
+				// so it returns a connection error when no server is running.
+				_, err := c.CreateRoom(ctx, &pb.CreateRoomRequest{})
+				if err == nil {
+					return fmt.Errorf("want connection error; got nil")
 				}
 				return nil
 			},

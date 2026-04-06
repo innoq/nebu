@@ -225,6 +225,13 @@ func main() {
 	jwtMiddleware := middleware.JWTMiddleware(oidcProvider, cfg.OIDCClientID, cfg.OIDCClaimRole, tokenStore)
 	mux.Handle("POST /_matrix/client/v3/logout", jwtMiddleware(http.HandlerFunc(logoutHandler.PostLogout)))
 
+	createRoomHandler := matrix.NewCreateRoomHandler(matrix.CreateRoomConfig{
+		CoreClient: coreClient,
+		ServerName: serverName,
+	})
+	mux.Handle("POST /_matrix/client/v3/createRoom",
+		jwtMiddleware(http.HandlerFunc(createRoomHandler.PostCreateRoom)))
+
 	slog.Info("HTTP server starting", "addr", ":8008")
 	if err := http.ListenAndServe(":8008", mux); err != nil {
 		slog.Error("HTTP server failed", "err", err)

@@ -13,8 +13,26 @@ defmodule Nebu.EventDispatcher.Server do
     %Core.SendEventResponse{}
   end
 
-  def create_room(_request, _stream) do
-    %Core.CreateRoomResponse{}
+  def create_room(request, _stream) do
+    room_id = generate_room_id()
+    creator_id = request.creator_id
+
+    case Nebu.Room.RoomSupervisor.start_room(room_id) do
+      {:ok, _pid} ->
+        :ok = Nebu.Room.Server.join(room_id, creator_id)
+        %Core.CreateRoomResponse{room_id: room_id}
+
+      {:error, reason} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.internal(),
+          message: "Failed to start room: #{inspect(reason)}"
+    end
+  end
+
+  defp generate_room_id do
+    server_name = Application.get_env(:event_dispatcher, :server_name, "nebu.local")
+    opaque = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+    "!#{opaque}:#{server_name}"
   end
 
   def join_room(_request, _stream) do
