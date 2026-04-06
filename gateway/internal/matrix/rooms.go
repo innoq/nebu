@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	coregrpc "github.com/nebu/nebu/internal/grpc"
 	pb "github.com/nebu/nebu/internal/grpc/pb"
@@ -268,4 +269,99 @@ func (h *InviteUserHandler) PostInviteUser(w http.ResponseWriter, r *http.Reques
 
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte("{}\n"))
+}
+
+// ─── SendEventHandler ─────────────────────────────────────────────────────────
+
+// SendEventCoreClient is a consumer-defined interface for the SendEvent gRPC call.
+// Keep it minimal — only what this handler needs (Go interface convention, ADR-009).
+type SendEventCoreClient interface {
+	SendEvent(ctx context.Context, req *pb.SendEventRequest) (*pb.SendEventResponse, error)
+}
+
+// sendEventResponse is the JSON response for a successful event send.
+type sendEventResponse struct {
+	EventID string `json:"event_id"`
+}
+
+// SendEventHandler handles PUT /_matrix/client/v3/rooms/{roomId}/send/{eventType}/{txnId}.
+type SendEventHandler struct {
+	coreClient SendEventCoreClient
+	serverName string
+}
+
+// SendEventConfig holds dependencies for NewSendEventHandler.
+type SendEventConfig struct {
+	CoreClient SendEventCoreClient
+	ServerName string
+}
+
+// NewSendEventHandler constructs a SendEventHandler from the provided config.
+func NewSendEventHandler(cfg SendEventConfig) *SendEventHandler {
+	return &SendEventHandler{
+		coreClient: cfg.CoreClient,
+		serverName: cfg.ServerName,
+	}
+}
+
+// PutSendEvent handles PUT /_matrix/client/v3/rooms/{roomId}/send/{eventType}/{txnId}.
+//
+// Flow:
+//  1. Extract roomId, eventType, txnId from URL path via Go 1.22+ r.PathValue.
+//  2. Extract sub + systemRole from JWT context (set by JWTMiddleware).
+//  3. Decode JSON body → content map; 400 M_BAD_JSON on failure.
+//  4. Build gRPC request: JSON-encode content bytes, use time.Now().UnixMilli() as origin_ts.
+//  5. Call Core.SendEvent — map gRPC errors to Matrix error codes.
+//  6. Return 200 {"event_id": resp.EventId} on success.
+func (h *SendEventHandler) PutSendEvent(w http.ResponseWriter, r *http.Request) {
+	roomID := r.PathValue("roomId")
+	eventType := r.PathValue("eventType")
+	txnID := r.PathValue("txnId")
+
+	sub, _ := r.Context().Value(middleware.ContextKeySub).(string)
+	systemRole, _ := r.Context().Value(middleware.ContextKeySystemRole).(string)
+	userID := coregrpc.FormatUserID(sub, h.serverName)
+	grpcCtx := coregrpc.WithUserMetadata(r.Context(), userID, systemRole)
+
+	var content map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&content); err != nil {
+		writeMatrixError(w, http.StatusBadRequest, "M_BAD_JSON", "Request body is not valid JSON")
+		return
+	}
+
+	contentBytes, err := json.Marshal(content)
+	if err != nil {
+		writeMatrixError(w, http.StatusBadRequest, "M_BAD_JSON", "Cannot encode event content")
+		return
+	}
+
+	resp, err := h.coreClient.SendEvent(grpcCtx, &pb.SendEventRequest{
+		RoomId:    roomID,
+		SenderId:  userID,
+		EventType: eventType,
+		TxnId:     txnID,
+		Content:   contentBytes,
+		OriginTs:  time.Now().UnixMilli(),
+	})
+	if err != nil {
+		st, _ := status.FromError(err)
+		switch st.Code() {
+		case codes.NotFound:
+			writeMatrixError(w, http.StatusNotFound, "M_NOT_FOUND", "Room not found")
+		case codes.PermissionDenied:
+			writeMatrixError(w, http.StatusForbidden, "M_FORBIDDEN", "You are not allowed to send events to this room")
+		case codes.ResourceExhausted:
+			writeMatrixError(w, http.StatusTooManyRequests, "M_LIMIT_EXCEEDED", "Rate limit exceeded")
+		default:
+			writeMatrixError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
+		}
+		return
+	}
+	if resp == nil {
+		writeMatrixError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(sendEventResponse{EventID: resp.EventId})
 }

@@ -250,6 +250,13 @@ func main() {
 	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/invite",
 		jwtMiddleware(http.HandlerFunc(inviteHandler.PostInviteUser)))
 
+	sendEventHandler := matrix.NewSendEventHandler(matrix.SendEventConfig{
+		CoreClient: coreClient,
+		ServerName: serverName,
+	})
+	mux.Handle("PUT /_matrix/client/v3/rooms/{roomId}/send/{eventType}/{txnId}",
+		jwtMiddleware(http.HandlerFunc(sendEventHandler.PutSendEvent)))
+
 	slog.Info("HTTP server starting", "addr", ":8008")
 	if err := http.ListenAndServe(":8008", mux); err != nil {
 		slog.Error("HTTP server failed", "err", err)

@@ -888,3 +888,375 @@ func TestPostInviteUser_Unauthenticated(t *testing.T) {
 		t.Errorf("expected errcode M_MISSING_TOKEN, got %s", errResp.ErrCode)
 	}
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Story 4-11: PUT /_matrix/client/v3/rooms/{roomId}/send/{eventType}/{txnId}
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// These tests are written FIRST (ATDD gate), before implementation exists.
+// ALL tests below this line are expected to FAIL until Story 4-11 is implemented.
+//
+// Test strategy:
+//   - mockSendEventCoreClient implements SendEventCoreClient (consumer-defined
+//     interface, Go convention) — defined here alongside the tests.
+//   - The handler requires path values {roomId}, {eventType}, {txnId}, so all
+//     requests pass through a real http.ServeMux to populate r.PathValue(...).
+//   - JWTMiddleware wraps the handler chain for auth tests.
+//   - gRPC error cases use status.Error(codes.NotFound, …) / codes.PermissionDenied
+//     to trigger the M_NOT_FOUND / M_FORBIDDEN code paths.
+//   - Idempotency test: mock always returns the same event_id; calling twice
+//     must yield 200 with the same event_id both times (no error on second call).
+
+// ─── Mock gRPC core client ────────────────────────────────────────────────────
+
+type mockSendEventCoreClient struct {
+	resp        *pb.SendEventResponse
+	err         error
+	capturedReq *pb.SendEventRequest
+}
+
+func (m *mockSendEventCoreClient) SendEvent(_ context.Context, req *pb.SendEventRequest) (*pb.SendEventResponse, error) {
+	m.capturedReq = req
+	return m.resp, m.err
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+// buildSendEventHandler returns a SendEventHandler wired with the given mock.
+func buildSendEventHandler(mock *mockSendEventCoreClient) *SendEventHandler {
+	return NewSendEventHandler(SendEventConfig{
+		CoreClient: mock,
+		ServerName: "test.local",
+	})
+}
+
+// buildAuthedSendEventHandler wraps SendEventHandler.PutSendEvent in JWTMiddleware
+// and serves it through a ServeMux so r.PathValue("roomId"), r.PathValue("eventType"),
+// and r.PathValue("txnId") are all populated by the Go 1.22+ mux router.
+func buildAuthedSendEventHandler(t *testing.T, mock *mockSendEventCoreClient) (http.Handler, func() string) {
+	t.Helper()
+
+	oidcSrv, privateKey := setupOIDCServer(t)
+	t.Cleanup(oidcSrv.Close)
+
+	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
+
+	handler := buildSendEventHandler(mock)
+	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil)(
+		http.HandlerFunc(handler.PutSendEvent),
+	)
+
+	// Wrap in a real ServeMux — required for r.PathValue to work with multi-segment params.
+	mux := http.NewServeMux()
+	mux.Handle("PUT /_matrix/client/v3/rooms/{roomId}/send/{eventType}/{txnId}", authedHandler)
+
+	makeToken := func() string {
+		return signJWT(t, oidcSrv.URL, privateKey, time.Now().Add(time.Hour), nil)
+	}
+
+	return mux, makeToken
+}
+
+// ─── Test 20: Happy path — authenticated user sends an event → 200 with event_id
+//
+// AC #4, #5 — PUT with valid JWT + mock returns SendEventResponse → 200 {"event_id": "$abc123"}.
+// Also asserts gRPC request fields: room_id, event_type, txn_id, sender_id.
+
+func TestPutSendEvent_HappyPath(t *testing.T) {
+	mock := &mockSendEventCoreClient{
+		resp: &pb.SendEventResponse{EventId: "$abc123"},
+	}
+
+	mux, makeToken := buildAuthedSendEventHandler(t, mock)
+
+	body := `{"msgtype":"m.text","body":"hello"}`
+	req := httptest.NewRequest(http.MethodPut,
+		"/_matrix/client/v3/rooms/!room1:test.local/send/m.room.message/txn1",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	ct := w.Header().Get("Content-Type")
+	if ct != "application/json" {
+		t.Errorf("expected Content-Type application/json, got %s", ct)
+	}
+
+	var resp struct {
+		EventID string `json:"event_id"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response body: %v", err)
+	}
+	if resp.EventID != "$abc123" {
+		t.Errorf("expected event_id $abc123, got %s", resp.EventID)
+	}
+
+	// Assert gRPC request fields are correctly populated from the URL path + JWT.
+	if mock.capturedReq == nil {
+		t.Fatal("expected gRPC SendEvent to be called, but capturedReq is nil")
+	}
+	if mock.capturedReq.RoomId != "!room1:test.local" {
+		t.Errorf("expected RoomId !room1:test.local, got %s", mock.capturedReq.RoomId)
+	}
+	if mock.capturedReq.EventType != "m.room.message" {
+		t.Errorf("expected EventType m.room.message, got %s", mock.capturedReq.EventType)
+	}
+	if mock.capturedReq.TxnId != "txn1" {
+		t.Errorf("expected TxnId txn1, got %s", mock.capturedReq.TxnId)
+	}
+	expectedSenderID := "@test-sub-123:test.local"
+	if mock.capturedReq.SenderId != expectedSenderID {
+		t.Errorf("expected SenderId %q, got %q", expectedSenderID, mock.capturedReq.SenderId)
+	}
+
+	// MINOR-5: OriginTs must be a non-zero Unix millisecond timestamp.
+	if mock.capturedReq.OriginTs <= 0 {
+		t.Errorf("expected non-zero OriginTs, got %d", mock.capturedReq.OriginTs)
+	}
+
+	// MINOR-6: Content must be non-empty (handler must forward the JSON body bytes).
+	if len(mock.capturedReq.Content) == 0 {
+		t.Error("expected non-empty Content bytes in gRPC request, got empty")
+	}
+}
+
+// ─── Test 21: Unauthenticated request → 401 M_MISSING_TOKEN ──────────────────
+//
+// AC #1 — JWTMiddleware must reject requests with no Authorization header.
+
+func TestPutSendEvent_Unauthenticated(t *testing.T) {
+	mock := &mockSendEventCoreClient{
+		resp: &pb.SendEventResponse{EventId: "$abc123"},
+	}
+
+	mux, _ := buildAuthedSendEventHandler(t, mock)
+
+	req := httptest.NewRequest(http.MethodPut,
+		"/_matrix/client/v3/rooms/!room1:test.local/send/m.room.message/txn1",
+		strings.NewReader(`{"msgtype":"m.text","body":"hello"}`))
+	req.Header.Set("Content-Type", "application/json")
+	// Deliberately omit Authorization header
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var errResp matrixError
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+	if errResp.ErrCode != "M_MISSING_TOKEN" {
+		t.Errorf("expected errcode M_MISSING_TOKEN, got %s", errResp.ErrCode)
+	}
+}
+
+// ─── Test 22: Malformed JSON body → 400 M_BAD_JSON ───────────────────────────
+//
+// AC #3 — handler must decode the JSON request body; malformed JSON → 400 M_BAD_JSON.
+
+func TestPutSendEvent_BadJSON(t *testing.T) {
+	mock := &mockSendEventCoreClient{
+		resp: &pb.SendEventResponse{EventId: "$abc123"},
+	}
+
+	mux, makeToken := buildAuthedSendEventHandler(t, mock)
+
+	req := httptest.NewRequest(http.MethodPut,
+		"/_matrix/client/v3/rooms/!room1:test.local/send/m.room.message/txn1",
+		strings.NewReader(`{not valid json`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var errResp matrixError
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+	if errResp.ErrCode != "M_BAD_JSON" {
+		t.Errorf("expected errcode M_BAD_JSON, got %s", errResp.ErrCode)
+	}
+}
+
+// ─── Test 23: Room not found (gRPC NOT_FOUND) → 404 M_NOT_FOUND ──────────────
+//
+// AC #7 — gRPC status NotFound must map to 404 M_NOT_FOUND.
+
+func TestPutSendEvent_RoomNotFound(t *testing.T) {
+	mock := &mockSendEventCoreClient{
+		err: status.Error(codes.NotFound, "room does not exist"),
+	}
+
+	mux, makeToken := buildAuthedSendEventHandler(t, mock)
+
+	req := httptest.NewRequest(http.MethodPut,
+		"/_matrix/client/v3/rooms/!nonexistent:test.local/send/m.room.message/txn1",
+		strings.NewReader(`{"msgtype":"m.text","body":"hello"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var errResp matrixError
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+	if errResp.ErrCode != "M_NOT_FOUND" {
+		t.Errorf("expected errcode M_NOT_FOUND, got %s", errResp.ErrCode)
+	}
+}
+
+// ─── Test 24: Not a room member (gRPC PERMISSION_DENIED) → 403 M_FORBIDDEN ───
+//
+// AC #6 — gRPC status PermissionDenied must map to 403 M_FORBIDDEN.
+
+func TestPutSendEvent_NotMember(t *testing.T) {
+	mock := &mockSendEventCoreClient{
+		err: status.Error(codes.PermissionDenied, "user is not a member of this room"),
+	}
+
+	mux, makeToken := buildAuthedSendEventHandler(t, mock)
+
+	req := httptest.NewRequest(http.MethodPut,
+		"/_matrix/client/v3/rooms/!private:test.local/send/m.room.message/txn1",
+		strings.NewReader(`{"msgtype":"m.text","body":"hello"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var errResp matrixError
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+	if errResp.ErrCode != "M_FORBIDDEN" {
+		t.Errorf("expected errcode M_FORBIDDEN, got %s", errResp.ErrCode)
+	}
+}
+
+// ─── Test 25 (MAJOR-1): Rate limited (gRPC RESOURCE_EXHAUSTED) → 429 M_LIMIT_EXCEEDED
+//
+// AC #8 — gRPC status ResourceExhausted must map to 429 M_LIMIT_EXCEEDED.
+// Matrix Client-Server API spec §11.6: servers MUST return 429 when rate-limiting.
+
+func TestPutSendEvent_RateLimited(t *testing.T) {
+	mock := &mockSendEventCoreClient{
+		err: status.Error(codes.ResourceExhausted, "rate limit exceeded"),
+	}
+
+	mux, makeToken := buildAuthedSendEventHandler(t, mock)
+
+	req := httptest.NewRequest(http.MethodPut,
+		"/_matrix/client/v3/rooms/!room1:test.local/send/m.room.message/txn1",
+		strings.NewReader(`{"msgtype":"m.text","body":"hello"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var errResp matrixError
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+	if errResp.ErrCode != "M_LIMIT_EXCEEDED" {
+		t.Errorf("expected errcode M_LIMIT_EXCEEDED, got %s", errResp.ErrCode)
+	}
+}
+
+// ─── Test 26: Idempotent txn_id — same event_id returned on duplicate call ───
+//
+// AC #9 — duplicate txn_id (same user + room) returns 200 with the same event_id.
+// The mock always returns the same SendEventResponse; both calls must succeed with
+// identical event_id values and no error on the second call.
+
+func TestPutSendEvent_Idempotency(t *testing.T) {
+	mock := &mockSendEventCoreClient{
+		resp: &pb.SendEventResponse{EventId: "$abc123"},
+	}
+
+	mux, makeToken := buildAuthedSendEventHandler(t, mock)
+
+	makeReq := func() *http.Request {
+		r := httptest.NewRequest(http.MethodPut,
+			"/_matrix/client/v3/rooms/!room1:test.local/send/m.room.message/txn1",
+			strings.NewReader(`{"msgtype":"m.text","body":"hello"}`))
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("Authorization", "Bearer "+makeToken())
+		return r
+	}
+
+	// First call.
+	w1 := httptest.NewRecorder()
+	mux.ServeHTTP(w1, makeReq())
+
+	if w1.Code != http.StatusOK {
+		t.Fatalf("first call: expected 200, got %d; body: %s", w1.Code, w1.Body.String())
+	}
+	var resp1 struct {
+		EventID string `json:"event_id"`
+	}
+	if err := json.NewDecoder(w1.Body).Decode(&resp1); err != nil {
+		t.Fatalf("first call: failed to decode response body: %v", err)
+	}
+
+	// Second call with the same txn_id.
+	w2 := httptest.NewRecorder()
+	mux.ServeHTTP(w2, makeReq())
+
+	if w2.Code != http.StatusOK {
+		t.Fatalf("second call: expected 200, got %d; body: %s", w2.Code, w2.Body.String())
+	}
+	var resp2 struct {
+		EventID string `json:"event_id"`
+	}
+	if err := json.NewDecoder(w2.Body).Decode(&resp2); err != nil {
+		t.Fatalf("second call: failed to decode response body: %v", err)
+	}
+
+	// Both calls must return the same event_id.
+	if resp1.EventID != resp2.EventID {
+		t.Errorf("idempotency violation: first call returned %q, second call returned %q",
+			resp1.EventID, resp2.EventID)
+	}
+	if resp1.EventID != "$abc123" {
+		t.Errorf("expected event_id $abc123, got %s", resp1.EventID)
+	}
+
+	// MAJOR-2: Assert that the txn_id was forwarded correctly in the gRPC request.
+	if mock.capturedReq == nil {
+		t.Fatal("expected gRPC SendEvent to be called, but capturedReq is nil")
+	}
+	if mock.capturedReq.TxnId != "txn1" {
+		t.Errorf("expected TxnId %q forwarded to Core, got %q", "txn1", mock.capturedReq.TxnId)
+	}
+}

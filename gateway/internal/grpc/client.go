@@ -63,9 +63,9 @@ func (c *Client) State() connectivity.State {
 	return c.conn.GetState()
 }
 
-// SendEvent stub — implemented in Epic 4.
+// SendEvent calls the Elixir core to process and persist a room event.
 func (c *Client) SendEvent(ctx context.Context, req *pb.SendEventRequest) (*pb.SendEventResponse, error) {
-	return nil, nil
+	return c.core.SendEvent(ctx, req)
 }
 
 // CreateRoom calls the Elixir core to start a new Room GenServer.

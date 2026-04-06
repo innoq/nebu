@@ -64,9 +64,11 @@ func TestStubsReturnNil(t *testing.T) {
 		{
 			name: "SendEvent",
 			call: func() error {
-				resp, err := c.SendEvent(ctx, &pb.SendEventRequest{})
-				if err != nil || resp != nil {
-					return fmt.Errorf("want nil,nil; got %v,%v", resp, err)
+				// SendEvent is wired to the real gRPC client (Story 4-11),
+				// so it returns a connection error when no server is running.
+				_, err := c.SendEvent(ctx, &pb.SendEventRequest{})
+				if err == nil {
+					return fmt.Errorf("want connection error; got nil")
 				}
 				return nil
 			},

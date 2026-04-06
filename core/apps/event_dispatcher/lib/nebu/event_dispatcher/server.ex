@@ -15,8 +15,47 @@ defmodule Nebu.EventDispatcher.Server do
     Application.get_env(:event_dispatcher, :invite_db_module, Nebu.Room.InviteDB)
   end
 
-  def send_event(_request, _stream) do
-    %Core.SendEventResponse{}
+  def send_event(request, _stream) do
+    room_id = request.room_id
+    sender_id = request.sender_id
+    event_type = request.event_type
+    txn_id = request.txn_id
+
+    # Decode content bytes from protobuf (bytes field → binary → decode to map).
+    content =
+      case Jason.decode(request.content) do
+        {:ok, map} -> map
+        {:error, _} -> %{}
+      end
+
+    # Verify the room exists (Room GenServer must be running).
+    case Nebu.Room.RoomSupervisor.lookup_room(room_id) do
+      {:error, :not_found} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "room not found: #{room_id}"
+
+      {:ok, _pid} ->
+        # Membership check: sender must be a room member before sending.
+        state = room_registry_module().get_state(room_id)
+
+        unless MapSet.member?(state.members, sender_id) do
+          raise GRPC.RPCError,
+            status: GRPC.Status.permission_denied(),
+            message: "#{sender_id} is not a member of #{room_id}"
+        end
+
+        # Delegate to Room.Server — handles idempotency, signing, persistence, broadcast.
+        case Nebu.Room.Server.send_event(room_id, sender_id, event_type, content, txn_id) do
+          {:ok, event_id} ->
+            %Core.SendEventResponse{event_id: event_id}
+
+          {:error, reason} ->
+            raise GRPC.RPCError,
+              status: GRPC.Status.internal(),
+              message: "send_event failed: #{inspect(reason)}"
+        end
+    end
   end
 
   def create_room(request, _stream) do
