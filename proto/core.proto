@@ -28,6 +28,9 @@ service CoreService {
 
   // InviteUser — invite a user to a room
   rpc InviteUser(InviteUserRequest)         returns (InviteUserResponse);
+
+  // SetPowerLevels — update room power levels (caller must have change_state power)
+  rpc SetPowerLevels(SetPowerLevelsRequest) returns (SetPowerLevelsResponse);
 }
 
 // Shared event type used across multiple RPCs
@@ -163,3 +166,10 @@ message GetRoomStateResponse {
   string          power_levels_json = 2;  // JSON string — full power levels in Story 4-13
   string          room_name         = 3;  // empty for now — full room metadata in Story 4-9
 }
+
+// SetPowerLevels — update room power levels (caller must have change_state power)
+message SetPowerLevelsRequest {
+  string room_id           = 1;
+  string power_levels_json = 2;  // JSON string of full power_levels map
+}
+message SetPowerLevelsResponse {}

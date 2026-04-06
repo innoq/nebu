@@ -39,7 +39,12 @@ defmodule Nebu.EventDispatcher.CreateRoomTest do
         [{_, created_at_ms}] ->
           members =
             :ets.match(:create_room_test_db, {{:member, room_id, :"$1"}, :active})
-          {:ok, Enum.map(members, fn [uid] -> uid end), created_at_ms}
+          pl_json =
+            case :ets.lookup(:create_room_test_db, {:power_levels, room_id}) do
+              [{_, json}] -> json
+              [] -> "{}"
+            end
+          {:ok, Enum.map(members, fn [uid] -> uid end), created_at_ms, pl_json}
       end
     end
 
@@ -61,6 +66,11 @@ defmodule Nebu.EventDispatcher.CreateRoomTest do
 
     def insert_event(event) do
       :ets.insert(:create_room_test_db, {{:event, event["event_id"]}, event})
+      :ok
+    end
+
+    def set_power_levels(room_id, power_levels_json) do
+      :ets.insert(:create_room_test_db, {{:power_levels, room_id}, power_levels_json})
       :ok
     end
   end
@@ -287,6 +297,60 @@ defmodule Nebu.EventDispatcher.CreateRoomTest do
 
       assert String.ends_with?(response.room_id, ":custom.example.org"),
              "expected room_id to end with :custom.example.org, got #{response.room_id}"
+    end
+  end
+
+  # ─── MAJOR-4 (AT#7 Story 4-13): creator gets power level 100 at room creation ─
+  #
+  # AC #2 (Story 4-13) — After create_room/2, the creator must have power level 100
+  # in state.power_levels["users"]. Default Matrix power levels must also be present.
+  #
+  # Given: create_room/2 called with creator_id: "@bob:test.local"
+  # When: Nebu.Room.Server.get_state(room_id) called on the newly created room
+  # Then: state.power_levels["users"]["@bob:test.local"] == 100 and all default
+  #       power level keys are present in state.power_levels
+
+  describe "Server.create_room/2 — creator power level 100" do
+    test "creator has power level 100 in state.power_levels after create_room" do
+      creator_id = "@bob:test.local"
+
+      request = %Core.CreateRoomRequest{
+        creator_id: creator_id,
+        name: "Power Level Test Room"
+      }
+
+      response = Server.create_room(request, build_stream())
+      start_and_track_room(response.room_id)
+
+      state = Nebu.Room.Server.get_state(response.room_id)
+
+      assert is_map(state.power_levels),
+             "expected power_levels to be a map, got: #{inspect(state.power_levels)}"
+
+      creator_level = get_in(state.power_levels, ["users", creator_id])
+
+      assert creator_level == 100,
+             "expected creator #{creator_id} to have power level 100, got: #{inspect(creator_level)}"
+    end
+
+    test "all default power level keys are present after create_room" do
+      request = %Core.CreateRoomRequest{
+        creator_id: "@alice:test.local",
+        name: "Default Keys Test Room"
+      }
+
+      response = Server.create_room(request, build_stream())
+      start_and_track_room(response.room_id)
+
+      state = Nebu.Room.Server.get_state(response.room_id)
+      pl = state.power_levels
+
+      required_keys = ["ban", "kick", "invite", "redact", "state_default", "events_default", "users_default", "users", "events"]
+
+      for key <- required_keys do
+        assert Map.has_key?(pl, key),
+               "expected power_levels to contain key #{key}, got: #{inspect(pl)}"
+      end
     end
   end
 end

@@ -1,6 +1,6 @@
 defmodule Nebu.Room.Server do
   @moduledoc """
-  Room GenServer — lifecycle + send-event implementation for Stories 4-2 and 4-4.
+  Room GenServer — lifecycle + send-event + power-level enforcement (Stories 4-2, 4-4, 4-13).
 
   Manages room membership state with PostgreSQL persistence.
   Rooms can be created, users can join and leave, and the current member
@@ -9,11 +9,17 @@ defmodule Nebu.Room.Server do
   Story 4-4 adds `send_event/5`: processes, signs (Ed25519), and persists send-event
   requests with full txnId idempotency via ETS `NebuTxnDedup`.
 
+  Story 4-13 adds power level support:
+  - `power_levels` map is loaded from DB on init (string keys throughout).
+  - `send_event/5` enforces `events_default` threshold before processing.
+  - `set_power_levels/3` validates caller has `change_state` power before persisting.
+  - `default_power_levels/0` is a public function for use by EventDispatcher.
+
   State structure:
     %{
       room_id:      String.t(),
       members:      MapSet.t(String.t()),
-      power_levels: map(),          # empty — filled in Story 4-13
+      power_levels: map(),          # string-key map — see Nebu.Room.PowerLevels
       created_at:   DateTime.t()
     }
 
@@ -50,6 +56,27 @@ defmodule Nebu.Room.Server do
   """
   @spec leave(String.t(), String.t()) :: :ok | {:error, term()}
   def leave(room_id, user_id), do: GenServer.call(via(room_id), {:leave, user_id})
+
+  @doc """
+  Returns the default Matrix power levels map.
+
+  Public so that EventDispatcher.Server and tests can build creator-boosted maps
+  without duplicating the defaults. String keys throughout (architecture rule).
+  """
+  @spec default_power_levels() :: map()
+  def default_power_levels, do: Nebu.Room.PowerLevels.default_levels()
+
+  @doc """
+  Updates the power levels for `room_id`.
+
+  The `caller_id` must have `change_state` power (level >= `state_default`).
+  Returns `:ok` on success, `{:error, :forbidden}` if the caller lacks power,
+  or `{:error, reason}` on DB failure (state unchanged on DB error).
+  """
+  @spec set_power_levels(String.t(), String.t(), map()) :: :ok | {:error, term()}
+  def set_power_levels(room_id, caller_id, new_levels) do
+    GenServer.call(via(room_id), {:set_power_levels, new_levels, caller_id})
+  end
 
   @doc """
   Processes a send-event request for the given `room_id`.
@@ -108,10 +135,11 @@ defmodule Nebu.Room.Server do
     :pg.join("room:#{room_id}", self())
 
     case db_module().load_members(room_id) do
-      {:ok, user_ids, created_at_ms} ->
+      {:ok, user_ids, created_at_ms, power_levels_json} ->
         members = MapSet.new(user_ids)
         created_at = DateTime.from_unix!(created_at_ms, :millisecond)
-        {:ok, %{room_id: room_id, members: members, power_levels: %{}, created_at: created_at}}
+        power_levels = parse_power_levels(power_levels_json)
+        {:ok, %{room_id: room_id, members: members, power_levels: power_levels, created_at: created_at}}
 
       {:error, :not_found} ->
         case db_module().insert_room(room_id) do
@@ -173,8 +201,35 @@ defmodule Nebu.Room.Server do
   end
 
   @impl GenServer
+  def handle_call({:set_power_levels, new_levels, caller_id}, _from, state) do
+    # Allow the call when power_levels is empty (bootstrapping — new room, first assignment).
+    # After initial power levels are set, the normal change_state check applies.
+    allowed =
+      state.power_levels == %{} or
+        Nebu.Room.PowerLevels.can?(state.power_levels, caller_id, :change_state)
+
+    if allowed do
+      case db_module().set_power_levels(state.room_id, Jason.encode!(new_levels)) do
+        :ok ->
+          {:reply, :ok, %{state | power_levels: new_levels}}
+
+        {:error, reason} ->
+          {:reply, {:error, reason}, state}
+      end
+    else
+      {:reply, {:error, :forbidden}, state}
+    end
+  end
+
+  @impl GenServer
   def handle_call({:send_event, user_id, event_type, content, txn_id}, _from, state) do
     room_id = state.room_id
+
+    # Step 0 — Power level check: reject before idempotency lookup.
+    # An unauthorized user must not receive an event_id — not even a cached one.
+    unless Nebu.Room.PowerLevels.can?(state.power_levels, user_id, :send_event) do
+      {:reply, {:error, :forbidden}, state}
+    else
 
     # Step 1 — Idempotency check: return existing event_id immediately if found.
     case :ets.lookup(:NebuTxnDedup, {room_id, user_id, txn_id}) do
@@ -227,6 +282,7 @@ defmodule Nebu.Room.Server do
             {:reply, {:error, reason}, state}
         end
     end
+    end
   end
 
   # Handle incoming :new_event broadcasts from :pg group members (including self).
@@ -240,4 +296,16 @@ defmodule Nebu.Room.Server do
   # ─── Private ───────────────────────────────────────────────────────────────
 
   defp via(room_id), do: {:via, Horde.Registry, {Nebu.Room.Registry, room_id}}
+
+  # Parses power_levels_json from DB into an Elixir map with string keys.
+  # Returns the defaults map when json is empty ("{}") or blank.
+  defp parse_power_levels(json) when is_binary(json) do
+    case Jason.decode(json) do
+      {:ok, map} when map == %{} -> %{}
+      {:ok, map} -> map
+      {:error, _} -> %{}
+    end
+  end
+
+  defp parse_power_levels(_), do: %{}
 end

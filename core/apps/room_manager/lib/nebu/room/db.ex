@@ -12,7 +12,7 @@ defmodule Nebu.Room.DB do
   """
 
   @sql_check_room_exists """
-  SELECT room_id, created_at FROM rooms WHERE room_id = $1
+  SELECT room_id, created_at, power_levels_json FROM rooms WHERE room_id = $1
   """
 
   @sql_insert_room """
@@ -40,23 +40,25 @@ defmodule Nebu.Room.DB do
   @doc """
   Loads all active members for the given `room_id`.
 
-  Returns `{:ok, [user_id], created_at_ms}` (possibly empty list) if the room exists.
+  Returns `{:ok, [user_id], created_at_ms, power_levels_json}` (possibly empty list) if the room exists.
   Returns `{:error, :not_found}` if the room does not exist in the `rooms` table.
   Returns `{:error, reason}` on DB error.
   """
-  @spec load_members(String.t()) :: {:ok, [String.t()], integer()} | {:error, :not_found | term()}
+  @spec load_members(String.t()) ::
+          {:ok, [String.t()], integer(), String.t()} | {:error, :not_found | term()}
   def load_members(room_id) do
-    # First check if room exists at all (also fetches created_at)
+    # First check if room exists at all (also fetches created_at and power_levels_json)
     case Ecto.Adapters.SQL.query(Nebu.Repo, @sql_check_room_exists, [room_id]) do
       {:ok, %{rows: []}} ->
         {:error, :not_found}
 
-      {:ok, %{rows: [[_, created_at_ms]]}} ->
+      {:ok, %{rows: [[_, created_at_ms, power_levels_json]]}} ->
         # Room exists — load members
         case Ecto.Adapters.SQL.query(Nebu.Repo, @sql_load_members, [room_id]) do
           {:ok, %{rows: rows}} ->
             user_ids = Enum.map(rows, fn [uid] -> uid end)
-            {:ok, user_ids, created_at_ms}
+            pl_json = power_levels_json || "{}"
+            {:ok, user_ids, created_at_ms, pl_json}
 
           {:error, reason} ->
             {:error, reason}
@@ -133,6 +135,23 @@ defmodule Nebu.Room.DB do
 
       {:error, reason} ->
         {:error, reason}
+    end
+  end
+
+  @sql_set_power_levels """
+  UPDATE rooms SET power_levels_json = $2 WHERE room_id = $1
+  """
+
+  @doc """
+  Persists the `power_levels_json` string for the given `room_id`.
+
+  Returns `:ok` on success or `{:error, reason}` on DB failure.
+  """
+  @spec set_power_levels(String.t(), String.t()) :: :ok | {:error, term()}
+  def set_power_levels(room_id, power_levels_json) do
+    case Ecto.Adapters.SQL.query(Nebu.Repo, @sql_set_power_levels, [room_id, power_levels_json]) do
+      {:ok, _} -> :ok
+      {:error, reason} -> {:error, reason}
     end
   end
 

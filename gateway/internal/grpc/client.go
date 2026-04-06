@@ -125,6 +125,12 @@ func (c *Client) GetRoomState(ctx context.Context, req *pb.GetRoomStateRequest) 
 	return c.core.GetRoomState(ctx, req)
 }
 
+// SetPowerLevels updates the power levels for a room in the Elixir core.
+// Returns PERMISSION_DENIED if the caller lacks change_state power, NOT_FOUND if the room is missing.
+func (c *Client) SetPowerLevels(ctx context.Context, req *pb.SetPowerLevelsRequest) (*pb.SetPowerLevelsResponse, error) {
+	return c.core.SetPowerLevels(ctx, req)
+}
+
 // NewClientWithCore constructs a Client using a pre-built CoreServiceClient.
 // This is used in tests to inject a mock without a real gRPC connection.
 func NewClientWithCore(core pb.CoreServiceClient) *Client {

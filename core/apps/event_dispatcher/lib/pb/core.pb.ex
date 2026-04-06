@@ -289,3 +289,24 @@ defmodule Core.GetRoomStateResponse do
   field :power_levels_json, 2, type: :string, json_name: "powerLevelsJson"
   field :room_name, 3, type: :string, json_name: "roomName"
 end
+
+defmodule Core.SetPowerLevelsRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.SetPowerLevelsRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :room_id, 1, type: :string, json_name: "roomId"
+  field :power_levels_json, 2, type: :string, json_name: "powerLevelsJson"
+end
+
+defmodule Core.SetPowerLevelsResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.SetPowerLevelsResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+end

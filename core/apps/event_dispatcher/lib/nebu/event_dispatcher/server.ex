@@ -56,6 +56,11 @@ defmodule Nebu.EventDispatcher.Server do
           {:ok, event_id} ->
             %Core.SendEventResponse{event_id: event_id}
 
+          {:error, :forbidden} ->
+            raise GRPC.RPCError,
+              status: GRPC.Status.permission_denied(),
+              message: "#{sender_id} lacks power level to send events in #{room_id}"
+
           {:error, reason} ->
             raise GRPC.RPCError,
               status: GRPC.Status.internal(),
@@ -71,6 +76,11 @@ defmodule Nebu.EventDispatcher.Server do
     case Nebu.Room.RoomSupervisor.start_room(room_id) do
       {:ok, _pid} ->
         :ok = Nebu.Room.Server.join(room_id, creator_id)
+
+        default_pl = Nebu.Room.Server.default_power_levels()
+        creator_pl = put_in(default_pl, ["users", creator_id], 100)
+        :ok = Nebu.Room.Server.set_power_levels(room_id, creator_id, creator_pl)
+
         %Core.CreateRoomResponse{room_id: room_id}
 
       {:error, reason} ->
@@ -132,6 +142,12 @@ defmodule Nebu.EventDispatcher.Server do
           raise GRPC.RPCError,
             status: GRPC.Status.permission_denied(),
             message: "you are not a member of this room"
+        end
+
+        unless Nebu.Room.PowerLevels.can?(state.power_levels, inviter, :invite) do
+          raise GRPC.RPCError,
+            status: GRPC.Status.permission_denied(),
+            message: "insufficient power level for invite"
         end
 
         case db_module_invite().insert_invitation(room_id, inviter, invitee) do
@@ -202,6 +218,54 @@ defmodule Nebu.EventDispatcher.Server do
       origin_ts: Map.get(event, "origin_server_ts", 0),
       server_ts: System.system_time(:millisecond)
     }
+  end
+
+  def set_power_levels(request, stream) do
+    room_id = request.room_id
+    power_levels_json = request.power_levels_json
+
+    # Extract caller identity from gRPC metadata (set by Go JWTMiddleware).
+    {user_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
+
+    # Validate caller identity.
+    if is_nil(user_id) or user_id == "" do
+      raise GRPC.RPCError,
+        status: GRPC.Status.unauthenticated(),
+        message: "missing x-user-id metadata"
+    end
+
+    # Room existence check — Room GenServer must be running.
+    case Nebu.Room.RoomSupervisor.lookup_room(room_id) do
+      {:error, :not_found} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "room not found: #{room_id}"
+
+      {:ok, _pid} ->
+        new_levels =
+          case Jason.decode(power_levels_json) do
+            {:ok, map} -> map
+            {:error, _} ->
+              raise GRPC.RPCError,
+                status: GRPC.Status.invalid_argument(),
+                message: "invalid power_levels_json"
+          end
+
+        case Nebu.Room.Server.set_power_levels(room_id, user_id, new_levels) do
+          :ok ->
+            %Core.SetPowerLevelsResponse{}
+
+          {:error, :forbidden} ->
+            raise GRPC.RPCError,
+              status: GRPC.Status.permission_denied(),
+              message: "#{user_id} lacks state_default power level"
+
+          {:error, reason} ->
+            raise GRPC.RPCError,
+              status: GRPC.Status.internal(),
+              message: "set_power_levels failed: #{inspect(reason)}"
+        end
+    end
   end
 
   def set_presence(_request, _stream) do
@@ -327,7 +391,7 @@ defmodule Nebu.EventDispatcher.Server do
 
     %Core.GetRoomStateResponse{
       members: MapSet.to_list(state.members),
-      power_levels_json: "{}",
+      power_levels_json: Jason.encode!(state.power_levels),
       room_name: ""
     }
   end

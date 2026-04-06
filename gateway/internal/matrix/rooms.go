@@ -271,6 +271,96 @@ func (h *InviteUserHandler) PostInviteUser(w http.ResponseWriter, r *http.Reques
 	_, _ = w.Write([]byte("{}\n"))
 }
 
+// ─── SetRoomStateHandler ──────────────────────────────────────────────────────
+
+// SetRoomStateCoreClient is a consumer-defined interface for the SetPowerLevels gRPC call.
+// Keep it minimal — only what this handler needs (Go interface convention, ADR-009).
+type SetRoomStateCoreClient interface {
+	SetPowerLevels(ctx context.Context, req *pb.SetPowerLevelsRequest) (*pb.SetPowerLevelsResponse, error)
+}
+
+// setRoomStateResponse is the JSON response for a successful state event.
+type setRoomStateResponse struct {
+	EventID string `json:"event_id"`
+}
+
+// SetRoomStateHandler handles PUT /_matrix/client/v3/rooms/{roomId}/state/{eventType}/{stateKey}.
+type SetRoomStateHandler struct {
+	coreClient SetRoomStateCoreClient
+	serverName string
+}
+
+// SetRoomStateConfig holds dependencies for NewSetRoomStateHandler.
+type SetRoomStateConfig struct {
+	CoreClient SetRoomStateCoreClient
+	ServerName string
+}
+
+// NewSetRoomStateHandler constructs a SetRoomStateHandler from the provided config.
+func NewSetRoomStateHandler(cfg SetRoomStateConfig) *SetRoomStateHandler {
+	return &SetRoomStateHandler{
+		coreClient: cfg.CoreClient,
+		serverName: cfg.ServerName,
+	}
+}
+
+// PutSetRoomState handles PUT /_matrix/client/v3/rooms/{roomId}/state/{eventType}/{stateKey}.
+//
+// Flow:
+//  1. Extract roomId, eventType, stateKey from URL path via Go 1.22+ r.PathValue.
+//  2. Extract sub + systemRole from JWT context (set by JWTMiddleware).
+//  3. Decode JSON body; return 400 M_BAD_JSON on failure.
+//  4. For m.room.power_levels: JSON-encode the body and call gRPC CoreService.SetPowerLevels.
+//  5. Map gRPC errors: PERMISSION_DENIED → 403 M_FORBIDDEN, NOT_FOUND → 404 M_NOT_FOUND.
+//  6. Return 200 {"event_id": ""} on success — state events don't generate event_ids in MVP.
+func (h *SetRoomStateHandler) PutSetRoomState(w http.ResponseWriter, r *http.Request) {
+	roomID := r.PathValue("roomId")
+	eventType := r.PathValue("eventType")
+
+	sub, _ := r.Context().Value(middleware.ContextKeySub).(string)
+	systemRole, _ := r.Context().Value(middleware.ContextKeySystemRole).(string)
+	userID := coregrpc.FormatUserID(sub, h.serverName)
+	grpcCtx := coregrpc.WithUserMetadata(r.Context(), userID, systemRole)
+
+	var body map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeMatrixError(w, http.StatusBadRequest, "M_BAD_JSON", "Request body is not valid JSON")
+		return
+	}
+
+	if eventType == "m.room.power_levels" {
+		powerLevelsJSON, err := json.Marshal(body)
+		if err != nil {
+			writeMatrixError(w, http.StatusBadRequest, "M_BAD_JSON", "Cannot encode power_levels content")
+			return
+		}
+
+		_, err = h.coreClient.SetPowerLevels(grpcCtx, &pb.SetPowerLevelsRequest{
+			RoomId:          roomID,
+			PowerLevelsJson: string(powerLevelsJSON),
+		})
+		if err != nil {
+			st, _ := status.FromError(err)
+			switch st.Code() {
+			case codes.PermissionDenied:
+				writeMatrixError(w, http.StatusForbidden, "M_FORBIDDEN", "You do not have permission to set power levels")
+			case codes.NotFound:
+				writeMatrixError(w, http.StatusNotFound, "M_NOT_FOUND", "Room not found")
+			default:
+				writeMatrixError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
+			}
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(setRoomStateResponse{EventID: ""})
+		return
+	}
+
+	// For other state event types, return 501 Not Implemented (MVP scope).
+	writeMatrixError(w, http.StatusNotImplemented, "M_UNRECOGNIZED", "Unsupported state event type")
+}
+
 // ─── SendEventHandler ─────────────────────────────────────────────────────────
 
 // SendEventCoreClient is a consumer-defined interface for the SendEvent gRPC call.

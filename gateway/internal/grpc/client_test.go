@@ -175,6 +175,18 @@ func TestStubsReturnNil(t *testing.T) {
 				return nil
 			},
 		},
+		{
+			name: "SetPowerLevels",
+			call: func() error {
+				// SetPowerLevels is wired to the real gRPC client (Story 4-13),
+				// so it returns a connection error when no server is running.
+				_, err := c.SetPowerLevels(ctx, &pb.SetPowerLevelsRequest{})
+				if err == nil {
+					return fmt.Errorf("want connection error; got nil")
+				}
+				return nil
+			},
+		},
 	}
 
 	for _, tt := range tests {

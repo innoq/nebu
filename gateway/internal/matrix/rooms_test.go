@@ -1260,3 +1260,209 @@ func TestPutSendEvent_Idempotency(t *testing.T) {
 		t.Errorf("expected TxnId %q forwarded to Core, got %q", "txn1", mock.capturedReq.TxnId)
 	}
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Story 4-13: PUT /_matrix/client/v3/rooms/{roomId}/state/{eventType}/{stateKey}
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// Tests for SetRoomStateHandler.PutSetRoomState.
+// Test strategy:
+//   - mockSetRoomStateCoreClient implements SetRoomStateCoreClient.
+//   - Happy path: valid JWT + mock returns SetPowerLevelsResponse → 200 {"event_id": ""}.
+//   - Forbidden: gRPC PermissionDenied → 403 M_FORBIDDEN.
+//   - Unauthenticated: no Authorization header → 401 M_MISSING_TOKEN.
+//   - Room not found: gRPC NotFound → 404 M_NOT_FOUND.
+
+// ─── Mock gRPC core client ────────────────────────────────────────────────────
+
+type mockSetRoomStateCoreClient struct {
+	resp        *pb.SetPowerLevelsResponse
+	err         error
+	capturedReq *pb.SetPowerLevelsRequest
+}
+
+func (m *mockSetRoomStateCoreClient) SetPowerLevels(_ context.Context, req *pb.SetPowerLevelsRequest) (*pb.SetPowerLevelsResponse, error) {
+	m.capturedReq = req
+	return m.resp, m.err
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+// buildAuthedSetRoomStateHandler wraps SetRoomStateHandler.PutSetRoomState in JWTMiddleware
+// and serves it through a ServeMux so r.PathValue("roomId"), r.PathValue("eventType"),
+// and r.PathValue("stateKey") are populated by the Go 1.22+ mux router.
+func buildAuthedSetRoomStateHandler(t *testing.T, mock *mockSetRoomStateCoreClient) (http.Handler, func() string) {
+	t.Helper()
+
+	oidcSrv, privateKey := setupOIDCServer(t)
+	t.Cleanup(oidcSrv.Close)
+
+	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
+
+	handler := NewSetRoomStateHandler(SetRoomStateConfig{
+		CoreClient: mock,
+		ServerName: "test.local",
+	})
+	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil)(
+		http.HandlerFunc(handler.PutSetRoomState),
+	)
+
+	mux := http.NewServeMux()
+	// Register both: with stateKey (e.g. m.room.member/user_id) and without (e.g. m.room.power_levels).
+	mux.Handle("PUT /_matrix/client/v3/rooms/{roomId}/state/{eventType}/{stateKey}", authedHandler)
+	mux.Handle("PUT /_matrix/client/v3/rooms/{roomId}/state/{eventType}", authedHandler)
+
+	makeToken := func() string {
+		return signJWT(t, oidcSrv.URL, privateKey, time.Now().Add(time.Hour), nil)
+	}
+
+	return mux, makeToken
+}
+
+// ─── TestPutSetRoomState_HappyPath → 200 ────────────────────────────────────
+//
+// AT #9 — PUT with valid JWT + mock returns SetPowerLevelsResponse → 200 {"event_id": ""}.
+
+func TestPutSetRoomState_HappyPath(t *testing.T) {
+	mock := &mockSetRoomStateCoreClient{
+		resp: &pb.SetPowerLevelsResponse{},
+	}
+
+	mux, makeToken := buildAuthedSetRoomStateHandler(t, mock)
+
+	body := `{"ban":50,"invite":0,"kick":50,"events_default":0,"state_default":50,"users_default":0}`
+	req := httptest.NewRequest(http.MethodPut,
+		"/_matrix/client/v3/rooms/!room1:test.local/state/m.room.power_levels",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		EventID string `json:"event_id"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response body: %v", err)
+	}
+
+	// State events return an empty event_id in MVP.
+	if resp.EventID != "" {
+		t.Errorf("expected empty event_id for state event, got %q", resp.EventID)
+	}
+
+	// Assert gRPC request carried the correct room_id.
+	if mock.capturedReq == nil {
+		t.Fatal("expected gRPC SetPowerLevels to be called, but capturedReq is nil")
+	}
+	if mock.capturedReq.RoomId != "!room1:test.local" {
+		t.Errorf("expected RoomId !room1:test.local, got %s", mock.capturedReq.RoomId)
+	}
+}
+
+// ─── TestPutSetRoomState_Forbidden → 403 ────────────────────────────────────
+//
+// AT #10 — gRPC PermissionDenied → 403 M_FORBIDDEN.
+
+func TestPutSetRoomState_Forbidden(t *testing.T) {
+	mock := &mockSetRoomStateCoreClient{
+		err: status.Error(codes.PermissionDenied, "insufficient power level"),
+	}
+
+	mux, makeToken := buildAuthedSetRoomStateHandler(t, mock)
+
+	body := `{"ban":50}`
+	req := httptest.NewRequest(http.MethodPut,
+		"/_matrix/client/v3/rooms/!room1:test.local/state/m.room.power_levels",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var errResp matrixError
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+	if errResp.ErrCode != "M_FORBIDDEN" {
+		t.Errorf("expected errcode M_FORBIDDEN, got %s", errResp.ErrCode)
+	}
+}
+
+// ─── TestPutSetRoomState_Unauthenticated → 401 ───────────────────────────────
+//
+// AT #11 — no Authorization header → 401 M_MISSING_TOKEN.
+
+func TestPutSetRoomState_Unauthenticated(t *testing.T) {
+	mock := &mockSetRoomStateCoreClient{
+		resp: &pb.SetPowerLevelsResponse{},
+	}
+
+	mux, _ := buildAuthedSetRoomStateHandler(t, mock)
+
+	body := `{"ban":50}`
+	req := httptest.NewRequest(http.MethodPut,
+		"/_matrix/client/v3/rooms/!room1:test.local/state/m.room.power_levels",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	// Deliberately omit Authorization header
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var errResp matrixError
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+	if errResp.ErrCode != "M_MISSING_TOKEN" {
+		t.Errorf("expected errcode M_MISSING_TOKEN, got %s", errResp.ErrCode)
+	}
+}
+
+// ─── TestPutSetRoomState_RoomNotFound → 404 ──────────────────────────────────
+//
+// gRPC NotFound → 404 M_NOT_FOUND.
+
+func TestPutSetRoomState_RoomNotFound(t *testing.T) {
+	mock := &mockSetRoomStateCoreClient{
+		err: status.Error(codes.NotFound, "room not found"),
+	}
+
+	mux, makeToken := buildAuthedSetRoomStateHandler(t, mock)
+
+	body := `{"ban":50}`
+	req := httptest.NewRequest(http.MethodPut,
+		"/_matrix/client/v3/rooms/!nonexistent:test.local/state/m.room.power_levels",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var errResp matrixError
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+	if errResp.ErrCode != "M_NOT_FOUND" {
+		t.Errorf("expected errcode M_NOT_FOUND, got %s", errResp.ErrCode)
+	}
+}

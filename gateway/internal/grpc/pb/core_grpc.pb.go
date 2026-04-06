@@ -31,6 +31,7 @@ const (
 	CoreService_GetMetrics_FullMethodName       = "/core.CoreService/GetMetrics"
 	CoreService_GetRoomState_FullMethodName     = "/core.CoreService/GetRoomState"
 	CoreService_InviteUser_FullMethodName       = "/core.CoreService/InviteUser"
+	CoreService_SetPowerLevels_FullMethodName   = "/core.CoreService/SetPowerLevels"
 )
 
 // CoreServiceClient is the client API for CoreService service.
@@ -57,6 +58,8 @@ type CoreServiceClient interface {
 	GetRoomState(ctx context.Context, in *GetRoomStateRequest, opts ...grpc.CallOption) (*GetRoomStateResponse, error)
 	// InviteUser — invite a user to a room
 	InviteUser(ctx context.Context, in *InviteUserRequest, opts ...grpc.CallOption) (*InviteUserResponse, error)
+	// SetPowerLevels — update room power levels (caller must have change_state power)
+	SetPowerLevels(ctx context.Context, in *SetPowerLevelsRequest, opts ...grpc.CallOption) (*SetPowerLevelsResponse, error)
 }
 
 type coreServiceClient struct {
@@ -196,6 +199,16 @@ func (c *coreServiceClient) InviteUser(ctx context.Context, in *InviteUserReques
 	return out, nil
 }
 
+func (c *coreServiceClient) SetPowerLevels(ctx context.Context, in *SetPowerLevelsRequest, opts ...grpc.CallOption) (*SetPowerLevelsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetPowerLevelsResponse)
+	err := c.cc.Invoke(ctx, CoreService_SetPowerLevels_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CoreServiceServer is the server API for CoreService service.
 // All implementations must embed UnimplementedCoreServiceServer
 // for forward compatibility.
@@ -220,6 +233,8 @@ type CoreServiceServer interface {
 	GetRoomState(context.Context, *GetRoomStateRequest) (*GetRoomStateResponse, error)
 	// InviteUser — invite a user to a room
 	InviteUser(context.Context, *InviteUserRequest) (*InviteUserResponse, error)
+	// SetPowerLevels — update room power levels (caller must have change_state power)
+	SetPowerLevels(context.Context, *SetPowerLevelsRequest) (*SetPowerLevelsResponse, error)
 	mustEmbedUnimplementedCoreServiceServer()
 }
 
@@ -265,6 +280,9 @@ func (UnimplementedCoreServiceServer) GetRoomState(context.Context, *GetRoomStat
 }
 func (UnimplementedCoreServiceServer) InviteUser(context.Context, *InviteUserRequest) (*InviteUserResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method InviteUser not implemented")
+}
+func (UnimplementedCoreServiceServer) SetPowerLevels(context.Context, *SetPowerLevelsRequest) (*SetPowerLevelsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetPowerLevels not implemented")
 }
 func (UnimplementedCoreServiceServer) mustEmbedUnimplementedCoreServiceServer() {}
 func (UnimplementedCoreServiceServer) testEmbeddedByValue()                     {}
@@ -496,6 +514,24 @@ func _CoreService_InviteUser_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_SetPowerLevels_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetPowerLevelsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).SetPowerLevels(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_SetPowerLevels_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).SetPowerLevels(ctx, req.(*SetPowerLevelsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CoreService_ServiceDesc is the grpc.ServiceDesc for CoreService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -546,6 +582,10 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "InviteUser",
 			Handler:    _CoreService_InviteUser_Handler,
+		},
+		{
+			MethodName: "SetPowerLevels",
+			Handler:    _CoreService_SetPowerLevels_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

@@ -40,7 +40,13 @@ defmodule Nebu.EventDispatcher.JoinRoomTest do
           members =
             :ets.match(:join_room_test_db, {{:member, room_id, :"$1"}, :active})
 
-          {:ok, Enum.map(members, fn [uid] -> uid end), created_at_ms}
+          pl_json =
+            case :ets.lookup(:join_room_test_db, {:power_levels, room_id}) do
+              [{_, json}] -> json
+              [] -> "{}"
+            end
+
+          {:ok, Enum.map(members, fn [uid] -> uid end), created_at_ms, pl_json}
       end
     end
 
@@ -62,6 +68,11 @@ defmodule Nebu.EventDispatcher.JoinRoomTest do
 
     def insert_event(event) do
       :ets.insert(:join_room_test_db, {{:event, event["event_id"]}, event})
+      :ok
+    end
+
+    def set_power_levels(room_id, power_levels_json) do
+      :ets.insert(:join_room_test_db, {{:power_levels, room_id}, power_levels_json})
       :ok
     end
   end
@@ -389,6 +400,99 @@ defmodule Nebu.EventDispatcher.JoinRoomTest do
 
       assert error.status == GRPC.Status.not_found(),
              "expected status not_found (#{GRPC.Status.not_found()}), got: #{error.status}"
+    end
+  end
+
+  # ─── MAJOR-1: invite_user — insufficient power level for invite ───────────────
+  #
+  # AC #6 (Story 4-13) — invite_user/2 checks power levels after membership check.
+  # When the room has `invite` threshold set to 50 but the inviter has power level 0,
+  # the handler must raise GRPC.RPCError with permission_denied status.
+  #
+  # Given: Room GenServer with power_levels where "invite" threshold is 50;
+  #        @alice:test.local is a member at default power 0
+  # When: Server.invite_user/2 called with alice as inviter
+  # Then: raises GRPC.RPCError with status: GRPC.Status.permission_denied()
+
+  describe "Server.invite_user/2 — power level check for invite" do
+    test "raises GRPC.RPCError permission_denied when inviter lacks invite power level" do
+      room_id = "!invite_pl_check:test.local"
+      alice = "@alice:test.local"
+      bob = "@bob:test.local"
+
+      # Start room and add alice as member.
+      {:ok, _pid} = Nebu.Room.RoomSupervisor.start_room(room_id)
+      start_and_track_room(room_id)
+      :ok = Nebu.Room.Server.join(room_id, alice)
+
+      # Set power levels so invite threshold is 50 (alice has default power 0).
+      # The bootstrapping path allows set_power_levels when power_levels is %{}.
+      elevated_pl = %{
+        "ban" => 50,
+        "kick" => 50,
+        "invite" => 50,
+        "redact" => 50,
+        "state_default" => 50,
+        "events_default" => 0,
+        "users_default" => 0,
+        "users" => %{"@admin:test.local" => 100},
+        "events" => %{}
+      }
+
+      :ok = Nebu.Room.Server.set_power_levels(room_id, alice, elevated_pl)
+
+      request = %Core.InviteUserRequest{
+        room_id: room_id,
+        inviter_id: alice,
+        invitee_id: bob
+      }
+
+      error =
+        try do
+          Server.invite_user(request, build_stream())
+          flunk("expected GRPC.RPCError to be raised, but no exception was raised")
+        rescue
+          e in GRPC.RPCError -> e
+        end
+
+      assert error.status == GRPC.Status.permission_denied(),
+             "expected status permission_denied (#{GRPC.Status.permission_denied()}), got: #{error.status}"
+    end
+
+    test "invite_user succeeds when inviter has sufficient invite power level" do
+      room_id = "!invite_pl_allow:test.local"
+      admin = "@admin:test.local"
+      bob = "@bob:test.local"
+
+      # Start room and add admin as member.
+      {:ok, _pid} = Nebu.Room.RoomSupervisor.start_room(room_id)
+      start_and_track_room(room_id)
+      :ok = Nebu.Room.Server.join(room_id, admin)
+
+      # Set power levels so invite threshold is 50 and admin has power 100.
+      elevated_pl = %{
+        "ban" => 50,
+        "kick" => 50,
+        "invite" => 50,
+        "redact" => 50,
+        "state_default" => 50,
+        "events_default" => 0,
+        "users_default" => 0,
+        "users" => %{admin => 100},
+        "events" => %{}
+      }
+
+      :ok = Nebu.Room.Server.set_power_levels(room_id, admin, elevated_pl)
+
+      request = %Core.InviteUserRequest{
+        room_id: room_id,
+        inviter_id: admin,
+        invitee_id: bob
+      }
+
+      # Admin (power 100) can invite even when threshold is 50.
+      response = Server.invite_user(request, build_stream())
+      assert %Core.InviteUserResponse{} = response
     end
   end
 end

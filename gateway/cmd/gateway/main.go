@@ -264,6 +264,16 @@ func main() {
 	mux.Handle("GET /_matrix/client/v3/rooms/{roomId}/messages",
 		jwtMiddleware(http.HandlerFunc(messagesHandler.GetMessages)))
 
+	setRoomStateHandler := matrix.NewSetRoomStateHandler(matrix.SetRoomStateConfig{
+		CoreClient: coreClient,
+		ServerName: serverName,
+	})
+	// Register both: with stateKey (e.g. m.room.member/@user:srv) and without (e.g. m.room.power_levels).
+	mux.Handle("PUT /_matrix/client/v3/rooms/{roomId}/state/{eventType}/{stateKey}",
+		jwtMiddleware(http.HandlerFunc(setRoomStateHandler.PutSetRoomState)))
+	mux.Handle("PUT /_matrix/client/v3/rooms/{roomId}/state/{eventType}",
+		jwtMiddleware(http.HandlerFunc(setRoomStateHandler.PutSetRoomState)))
+
 	slog.Info("HTTP server starting", "addr", ":8008")
 	if err := http.ListenAndServe(":8008", mux); err != nil {
 		slog.Error("HTTP server failed", "err", err)

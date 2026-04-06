@@ -26,7 +26,13 @@ defmodule Nebu.RoomTest do
           members =
             :ets.match(:fake_room_db, {{:member, room_id, :"$1"}, :active})
 
-          {:ok, Enum.map(members, fn [uid] -> uid end), created_at_ms}
+          pl_json =
+            case :ets.lookup(:fake_room_db, {:power_levels, room_id}) do
+              [{_, json}] -> json
+              [] -> "{}"
+            end
+
+          {:ok, Enum.map(members, fn [uid] -> uid end), created_at_ms, pl_json}
       end
     end
 
@@ -68,6 +74,12 @@ defmodule Nebu.RoomTest do
       :ets.insert(:fake_room_db, {{:event, event["event_id"]}, event})
       :ok
     end
+
+    @doc "Persists power levels JSON for a room."
+    def set_power_levels(room_id, power_levels_json) do
+      :ets.insert(:fake_room_db, {{:power_levels, room_id}, power_levels_json})
+      :ok
+    end
   end
 
   # Fake DB that always returns a DB error on writes — for testing fail-safe behavior
@@ -77,6 +89,7 @@ defmodule Nebu.RoomTest do
     def insert_member(_room_id, _user_id), do: {:error, :db_connection_lost}
     def delete_member(_room_id, _user_id), do: {:error, :db_connection_lost}
     def insert_event(_event), do: {:error, :db_connection_lost}
+    def set_power_levels(_room_id, _json), do: {:error, :db_connection_lost}
   end
 
   # ─── Setup ──────────────────────────────────────────────────────────────────

@@ -1372,6 +1372,95 @@ func (x *GetRoomStateResponse) GetRoomName() string {
 	return ""
 }
 
+// SetPowerLevels — update room power levels (caller must have change_state power)
+type SetPowerLevelsRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	RoomId          string                 `protobuf:"bytes,1,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
+	PowerLevelsJson string                 `protobuf:"bytes,2,opt,name=power_levels_json,json=powerLevelsJson,proto3" json:"power_levels_json,omitempty"` // JSON string of full power_levels map
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *SetPowerLevelsRequest) Reset() {
+	*x = SetPowerLevelsRequest{}
+	mi := &file_core_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetPowerLevelsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetPowerLevelsRequest) ProtoMessage() {}
+
+func (x *SetPowerLevelsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetPowerLevelsRequest.ProtoReflect.Descriptor instead.
+func (*SetPowerLevelsRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *SetPowerLevelsRequest) GetRoomId() string {
+	if x != nil {
+		return x.RoomId
+	}
+	return ""
+}
+
+func (x *SetPowerLevelsRequest) GetPowerLevelsJson() string {
+	if x != nil {
+		return x.PowerLevelsJson
+	}
+	return ""
+}
+
+type SetPowerLevelsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetPowerLevelsResponse) Reset() {
+	*x = SetPowerLevelsResponse{}
+	mi := &file_core_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetPowerLevelsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetPowerLevelsResponse) ProtoMessage() {}
+
+func (x *SetPowerLevelsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetPowerLevelsResponse.ProtoReflect.Descriptor instead.
+func (*SetPowerLevelsResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{25}
+}
+
 var File_core_proto protoreflect.FileDescriptor
 
 const file_core_proto_rawDesc = "" +
@@ -1480,7 +1569,11 @@ const file_core_proto_rawDesc = "" +
 	"\x14GetRoomStateResponse\x12\x18\n" +
 	"\amembers\x18\x01 \x03(\tR\amembers\x12*\n" +
 	"\x11power_levels_json\x18\x02 \x01(\tR\x0fpowerLevelsJson\x12\x1b\n" +
-	"\troom_name\x18\x03 \x01(\tR\broomName2\xa5\x06\n" +
+	"\troom_name\x18\x03 \x01(\tR\broomName\"\\\n" +
+	"\x15SetPowerLevelsRequest\x12\x17\n" +
+	"\aroom_id\x18\x01 \x01(\tR\x06roomId\x12*\n" +
+	"\x11power_levels_json\x18\x02 \x01(\tR\x0fpowerLevelsJson\"\x18\n" +
+	"\x16SetPowerLevelsResponse2\xf2\x06\n" +
 	"\vCoreService\x12<\n" +
 	"\tSendEvent\x12\x16.core.SendEventRequest\x1a\x17.core.SendEventResponse\x12?\n" +
 	"\n" +
@@ -1496,7 +1589,8 @@ const file_core_proto_rawDesc = "" +
 	"GetMetrics\x12\x17.core.GetMetricsRequest\x1a\x18.core.GetMetricsResponse\x12E\n" +
 	"\fGetRoomState\x12\x19.core.GetRoomStateRequest\x1a\x1a.core.GetRoomStateResponse\x12?\n" +
 	"\n" +
-	"InviteUser\x12\x17.core.InviteUserRequest\x1a\x18.core.InviteUserResponseB'Z%github.com/nebu/nebu/internal/grpc/pbb\x06proto3"
+	"InviteUser\x12\x17.core.InviteUserRequest\x1a\x18.core.InviteUserResponse\x12K\n" +
+	"\x0eSetPowerLevels\x12\x1b.core.SetPowerLevelsRequest\x1a\x1c.core.SetPowerLevelsResponseB'Z%github.com/nebu/nebu/internal/grpc/pbb\x06proto3"
 
 var (
 	file_core_proto_rawDescOnce sync.Once
@@ -1510,7 +1604,7 @@ func file_core_proto_rawDescGZIP() []byte {
 	return file_core_proto_rawDescData
 }
 
-var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
+var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
 var file_core_proto_goTypes = []any{
 	(*Event)(nil),                    // 0: core.Event
 	(*SendEventRequest)(nil),         // 1: core.SendEventRequest
@@ -1536,6 +1630,8 @@ var file_core_proto_goTypes = []any{
 	(*InviteUserResponse)(nil),       // 21: core.InviteUserResponse
 	(*GetRoomStateRequest)(nil),      // 22: core.GetRoomStateRequest
 	(*GetRoomStateResponse)(nil),     // 23: core.GetRoomStateResponse
+	(*SetPowerLevelsRequest)(nil),    // 24: core.SetPowerLevelsRequest
+	(*SetPowerLevelsResponse)(nil),   // 25: core.SetPowerLevelsResponse
 }
 var file_core_proto_depIdxs = []int32{
 	0,  // 0: core.GetMessagesResponse.events:type_name -> core.Event
@@ -1552,20 +1648,22 @@ var file_core_proto_depIdxs = []int32{
 	18, // 11: core.CoreService.GetMetrics:input_type -> core.GetMetricsRequest
 	22, // 12: core.CoreService.GetRoomState:input_type -> core.GetRoomStateRequest
 	20, // 13: core.CoreService.InviteUser:input_type -> core.InviteUserRequest
-	2,  // 14: core.CoreService.SendEvent:output_type -> core.SendEventResponse
-	4,  // 15: core.CoreService.CreateRoom:output_type -> core.CreateRoomResponse
-	6,  // 16: core.CoreService.JoinRoom:output_type -> core.JoinRoomResponse
-	8,  // 17: core.CoreService.GetMessages:output_type -> core.GetMessagesResponse
-	10, // 18: core.CoreService.SetPresence:output_type -> core.SetPresenceResponse
-	12, // 19: core.CoreService.SetTyping:output_type -> core.SetTypingResponse
-	14, // 20: core.CoreService.ValidateToken:output_type -> core.ValidateTokenResponse
-	16, // 21: core.CoreService.GetPendingEvents:output_type -> core.GetPendingEventsResponse
-	0,  // 22: core.CoreService.EventBus:output_type -> core.Event
-	19, // 23: core.CoreService.GetMetrics:output_type -> core.GetMetricsResponse
-	23, // 24: core.CoreService.GetRoomState:output_type -> core.GetRoomStateResponse
-	21, // 25: core.CoreService.InviteUser:output_type -> core.InviteUserResponse
-	14, // [14:26] is the sub-list for method output_type
-	2,  // [2:14] is the sub-list for method input_type
+	24, // 14: core.CoreService.SetPowerLevels:input_type -> core.SetPowerLevelsRequest
+	2,  // 15: core.CoreService.SendEvent:output_type -> core.SendEventResponse
+	4,  // 16: core.CoreService.CreateRoom:output_type -> core.CreateRoomResponse
+	6,  // 17: core.CoreService.JoinRoom:output_type -> core.JoinRoomResponse
+	8,  // 18: core.CoreService.GetMessages:output_type -> core.GetMessagesResponse
+	10, // 19: core.CoreService.SetPresence:output_type -> core.SetPresenceResponse
+	12, // 20: core.CoreService.SetTyping:output_type -> core.SetTypingResponse
+	14, // 21: core.CoreService.ValidateToken:output_type -> core.ValidateTokenResponse
+	16, // 22: core.CoreService.GetPendingEvents:output_type -> core.GetPendingEventsResponse
+	0,  // 23: core.CoreService.EventBus:output_type -> core.Event
+	19, // 24: core.CoreService.GetMetrics:output_type -> core.GetMetricsResponse
+	23, // 25: core.CoreService.GetRoomState:output_type -> core.GetRoomStateResponse
+	21, // 26: core.CoreService.InviteUser:output_type -> core.InviteUserResponse
+	25, // 27: core.CoreService.SetPowerLevels:output_type -> core.SetPowerLevelsResponse
+	15, // [15:28] is the sub-list for method output_type
+	2,  // [2:15] is the sub-list for method input_type
 	2,  // [2:2] is the sub-list for extension type_name
 	2,  // [2:2] is the sub-list for extension extendee
 	0,  // [0:2] is the sub-list for field type_name
@@ -1586,7 +1684,7 @@ func file_core_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_core_proto_rawDesc), len(file_core_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   24,
+			NumMessages:   26,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
