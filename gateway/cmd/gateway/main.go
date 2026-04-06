@@ -232,6 +232,24 @@ func main() {
 	mux.Handle("POST /_matrix/client/v3/createRoom",
 		jwtMiddleware(http.HandlerFunc(createRoomHandler.PostCreateRoom)))
 
+	joinRoomHandler := matrix.NewJoinRoomHandler(matrix.JoinRoomConfig{
+		CoreClient: coreClient,
+		ServerName: serverName,
+	})
+	// FR20: Join by room ID or alias directly
+	mux.Handle("POST /_matrix/client/v3/join/{roomIdOrAlias}",
+		jwtMiddleware(http.HandlerFunc(joinRoomHandler.PostJoinRoom)))
+	// Accept invitation via /rooms/{roomId}/join
+	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/join",
+		jwtMiddleware(http.HandlerFunc(joinRoomHandler.PostJoinRoomById)))
+
+	inviteHandler := matrix.NewInviteUserHandler(matrix.InviteUserConfig{
+		CoreClient: coreClient,
+		ServerName: serverName,
+	})
+	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/invite",
+		jwtMiddleware(http.HandlerFunc(inviteHandler.PostInviteUser)))
+
 	slog.Info("HTTP server starting", "addr", ":8008")
 	if err := http.ListenAndServe(":8008", mux); err != nil {
 		slog.Error("HTTP server failed", "err", err)

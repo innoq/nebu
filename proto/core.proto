@@ -25,6 +25,9 @@ service CoreService {
 
   // GetRoomState — unary: Go queries current room members + metadata
   rpc GetRoomState(GetRoomStateRequest)     returns (GetRoomStateResponse);
+
+  // InviteUser — invite a user to a room
+  rpc InviteUser(InviteUserRequest)         returns (InviteUserResponse);
 }
 
 // Shared event type used across multiple RPCs
@@ -142,6 +145,14 @@ message GetMetricsResponse {
   int32  active_sessions  = 2;  // currently active user sessions
   int32  room_count       = 3;  // total number of active rooms
 }
+
+// InviteUser
+message InviteUserRequest {
+  string room_id    = 1;
+  string inviter_id = 2;  // caller (must be room member)
+  string invitee_id = 3;  // user to invite
+}
+message InviteUserResponse {}
 
 // GetRoomState — unary: Go queries current room members + metadata
 message GetRoomStateRequest {

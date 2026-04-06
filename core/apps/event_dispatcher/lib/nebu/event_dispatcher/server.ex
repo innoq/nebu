@@ -9,6 +9,12 @@ defmodule Nebu.EventDispatcher.Server do
     Application.get_env(:event_dispatcher, :room_registry_module, Nebu.Room.Server)
   end
 
+  # ─── Configurable invite DB module for testability ──────────────────────────
+  # Override via Application.put_env(:event_dispatcher, :invite_db_module, FakeInviteDB) in tests.
+  defp db_module_invite do
+    Application.get_env(:event_dispatcher, :invite_db_module, Nebu.Room.InviteDB)
+  end
+
   def send_event(_request, _stream) do
     %Core.SendEventResponse{}
   end
@@ -35,8 +41,64 @@ defmodule Nebu.EventDispatcher.Server do
     "!#{opaque}:#{server_name}"
   end
 
-  def join_room(_request, _stream) do
-    %Core.JoinRoomResponse{}
+  def join_room(request, _stream) do
+    room_id = request.room_id_or_alias
+    user_id = request.user_id
+
+    case Nebu.Room.RoomSupervisor.lookup_room(room_id) do
+      {:error, :not_found} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "room not found: #{room_id}"
+
+      {:ok, _pid} ->
+        case Nebu.Room.Server.join(room_id, user_id) do
+          :ok ->
+            %Core.JoinRoomResponse{room_id: room_id}
+
+          {:error, :already_member} ->
+            # Matrix spec: idempotent — joining an already-joined room is success.
+            %Core.JoinRoomResponse{room_id: room_id}
+
+          {:error, reason} ->
+            raise GRPC.RPCError,
+              status: GRPC.Status.internal(),
+              message: "join failed: #{inspect(reason)}"
+        end
+    end
+  end
+
+  def invite_user(request, _stream) do
+    room_id = request.room_id
+    inviter = request.inviter_id
+    invitee = request.invitee_id
+
+    # Verify the room exists and inviter is a member.
+    case Nebu.Room.RoomSupervisor.lookup_room(room_id) do
+      {:error, :not_found} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "room not found: #{room_id}"
+
+      {:ok, _pid} ->
+        state = Nebu.Room.Server.get_state(room_id)
+
+        unless MapSet.member?(state.members, inviter) do
+          raise GRPC.RPCError,
+            status: GRPC.Status.permission_denied(),
+            message: "you are not a member of this room"
+        end
+
+        case db_module_invite().insert_invitation(room_id, inviter, invitee) do
+          :ok ->
+            %Core.InviteUserResponse{}
+
+          {:error, reason} ->
+            raise GRPC.RPCError,
+              status: GRPC.Status.internal(),
+              message: "invite failed: #{inspect(reason)}"
+        end
+    end
   end
 
   def get_messages(_request, _stream) do

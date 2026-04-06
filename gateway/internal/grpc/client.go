@@ -73,9 +73,14 @@ func (c *Client) CreateRoom(ctx context.Context, req *pb.CreateRoomRequest) (*pb
 	return c.core.CreateRoom(ctx, req)
 }
 
-// JoinRoom stub — implemented in Epic 4.
+// JoinRoom calls the Elixir core to join a room or accept an invitation.
 func (c *Client) JoinRoom(ctx context.Context, req *pb.JoinRoomRequest) (*pb.JoinRoomResponse, error) {
-	return nil, nil
+	return c.core.JoinRoom(ctx, req)
+}
+
+// InviteUser calls the Elixir core to invite a user to a room.
+func (c *Client) InviteUser(ctx context.Context, req *pb.InviteUserRequest) (*pb.InviteUserResponse, error) {
+	return c.core.InviteUser(ctx, req)
 }
 
 // GetMessages stub — implemented in Epic 4.

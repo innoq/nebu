@@ -103,3 +103,169 @@ func (h *CreateRoomHandler) PostCreateRoom(w http.ResponseWriter, r *http.Reques
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(CreateRoomResponse{RoomID: resp.RoomId})
 }
+
+// ─── JoinRoomHandler ──────────────────────────────────────────────────────────
+
+// JoinRoomCoreClient is a consumer-defined interface for the JoinRoom gRPC call.
+// Keep it minimal — only what this handler needs (Go interface convention, ADR-009).
+type JoinRoomCoreClient interface {
+	JoinRoom(ctx context.Context, req *pb.JoinRoomRequest) (*pb.JoinRoomResponse, error)
+}
+
+// JoinRoomResponse is the JSON response for a successful room join.
+type JoinRoomResponse struct {
+	RoomID string `json:"room_id"`
+}
+
+// JoinRoomHandler handles POST /_matrix/client/v3/join/{roomIdOrAlias}
+// and POST /_matrix/client/v3/rooms/{roomId}/join.
+type JoinRoomHandler struct {
+	coreClient JoinRoomCoreClient
+	serverName string
+}
+
+// JoinRoomConfig holds dependencies for NewJoinRoomHandler.
+type JoinRoomConfig struct {
+	CoreClient JoinRoomCoreClient
+	ServerName string
+}
+
+// NewJoinRoomHandler constructs a JoinRoomHandler from the provided config.
+func NewJoinRoomHandler(cfg JoinRoomConfig) *JoinRoomHandler {
+	return &JoinRoomHandler{
+		coreClient: cfg.CoreClient,
+		serverName: cfg.ServerName,
+	}
+}
+
+// postJoinRoomWithID is the shared implementation for both join endpoints.
+// roomIDOrAlias is extracted from the URL path by the caller.
+func (h *JoinRoomHandler) postJoinRoomWithID(w http.ResponseWriter, r *http.Request, roomIDOrAlias string) {
+	sub, _ := r.Context().Value(middleware.ContextKeySub).(string)
+	systemRole, _ := r.Context().Value(middleware.ContextKeySystemRole).(string)
+	userID := coregrpc.FormatUserID(sub, h.serverName)
+	grpcCtx := coregrpc.WithUserMetadata(r.Context(), userID, systemRole)
+
+	resp, err := h.coreClient.JoinRoom(grpcCtx, &pb.JoinRoomRequest{
+		UserId:        userID,
+		RoomIdOrAlias: roomIDOrAlias,
+	})
+	if err != nil {
+		st, _ := status.FromError(err)
+		switch st.Code() {
+		case codes.AlreadyExists:
+			// Matrix spec: idempotent join — already a member is success.
+			// We need the room_id; use the path value as fallback.
+			roomID := roomIDOrAlias
+			if resp != nil && resp.RoomId != "" {
+				roomID = resp.RoomId
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(JoinRoomResponse{RoomID: roomID})
+		case codes.NotFound:
+			writeMatrixError(w, http.StatusNotFound, "M_NOT_FOUND", "Room not found")
+		case codes.PermissionDenied:
+			writeMatrixError(w, http.StatusForbidden, "M_FORBIDDEN", "Not allowed to join this room")
+		default:
+			writeMatrixError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
+		}
+		return
+	}
+	if resp == nil {
+		writeMatrixError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(JoinRoomResponse{RoomID: resp.RoomId})
+}
+
+// PostJoinRoom handles POST /_matrix/client/v3/join/{roomIdOrAlias}.
+// Extracts roomIdOrAlias from the URL path via Go 1.22+ mux PathValue.
+func (h *JoinRoomHandler) PostJoinRoom(w http.ResponseWriter, r *http.Request) {
+	roomIDOrAlias := r.PathValue("roomIdOrAlias")
+	h.postJoinRoomWithID(w, r, roomIDOrAlias)
+}
+
+// PostJoinRoomById handles POST /_matrix/client/v3/rooms/{roomId}/join
+// (accept invitation via room ID — same gRPC call, different URL shape).
+func (h *JoinRoomHandler) PostJoinRoomById(w http.ResponseWriter, r *http.Request) {
+	roomID := r.PathValue("roomId")
+	h.postJoinRoomWithID(w, r, roomID)
+}
+
+// ─── InviteUserHandler ────────────────────────────────────────────────────────
+
+// InviteUserCoreClient is a consumer-defined interface for the InviteUser gRPC call.
+type InviteUserCoreClient interface {
+	InviteUser(ctx context.Context, req *pb.InviteUserRequest) (*pb.InviteUserResponse, error)
+}
+
+// inviteUserBody is the JSON body for POST /_matrix/client/v3/rooms/{roomId}/invite.
+type inviteUserBody struct {
+	UserID string `json:"user_id"`
+}
+
+// InviteUserHandler handles POST /_matrix/client/v3/rooms/{roomId}/invite.
+type InviteUserHandler struct {
+	coreClient InviteUserCoreClient
+	serverName string
+}
+
+// InviteUserConfig holds dependencies for NewInviteUserHandler.
+type InviteUserConfig struct {
+	CoreClient InviteUserCoreClient
+	ServerName string
+}
+
+// NewInviteUserHandler constructs an InviteUserHandler from the provided config.
+func NewInviteUserHandler(cfg InviteUserConfig) *InviteUserHandler {
+	return &InviteUserHandler{
+		coreClient: cfg.CoreClient,
+		serverName: cfg.ServerName,
+	}
+}
+
+// PostInviteUser handles POST /_matrix/client/v3/rooms/{roomId}/invite.
+//
+// Flow:
+//  1. Extract roomId from URL path via Go 1.22+ mux PathValue.
+//  2. Decode JSON body — 400 M_BAD_JSON on malformed input.
+//  3. Build caller userID from JWT context.
+//  4. Call Core.InviteUser — map gRPC errors to Matrix error codes.
+//  5. Return 200 {} on success.
+func (h *InviteUserHandler) PostInviteUser(w http.ResponseWriter, r *http.Request) {
+	roomID := r.PathValue("roomId")
+
+	var body inviteUserBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeMatrixError(w, http.StatusBadRequest, "M_BAD_JSON", "Request body is not valid JSON")
+		return
+	}
+
+	sub, _ := r.Context().Value(middleware.ContextKeySub).(string)
+	systemRole, _ := r.Context().Value(middleware.ContextKeySystemRole).(string)
+	callerUserID := coregrpc.FormatUserID(sub, h.serverName)
+	grpcCtx := coregrpc.WithUserMetadata(r.Context(), callerUserID, systemRole)
+
+	_, err := h.coreClient.InviteUser(grpcCtx, &pb.InviteUserRequest{
+		RoomId:    roomID,
+		InviterId: callerUserID,
+		InviteeId: body.UserID,
+	})
+	if err != nil {
+		st, _ := status.FromError(err)
+		switch st.Code() {
+		case codes.PermissionDenied:
+			writeMatrixError(w, http.StatusForbidden, "M_FORBIDDEN", "You do not have permission to invite users")
+		case codes.NotFound:
+			writeMatrixError(w, http.StatusNotFound, "M_NOT_FOUND", "Room not found")
+		default:
+			writeMatrixError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte("{}\n"))
+}

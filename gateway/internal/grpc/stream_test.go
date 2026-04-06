@@ -90,6 +90,9 @@ func (m *mockCoreClient) GetPendingEvents(_ context.Context, _ *pb.GetPendingEve
 func (m *mockCoreClient) GetMetrics(_ context.Context, _ *pb.GetMetricsRequest, _ ...grpc.CallOption) (*pb.GetMetricsResponse, error) {
 	return nil, nil
 }
+func (m *mockCoreClient) InviteUser(_ context.Context, _ *pb.InviteUserRequest, _ ...grpc.CallOption) (*pb.InviteUserResponse, error) {
+	return nil, nil
+}
 
 // ─── Mock server-streaming client ────────────────────────────────────────────
 

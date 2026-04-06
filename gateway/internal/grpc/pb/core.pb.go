@@ -1170,6 +1170,103 @@ func (x *GetMetricsResponse) GetRoomCount() int32 {
 	return 0
 }
 
+// InviteUser
+type InviteUserRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RoomId        string                 `protobuf:"bytes,1,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
+	InviterId     string                 `protobuf:"bytes,2,opt,name=inviter_id,json=inviterId,proto3" json:"inviter_id,omitempty"` // caller (must be room member)
+	InviteeId     string                 `protobuf:"bytes,3,opt,name=invitee_id,json=inviteeId,proto3" json:"invitee_id,omitempty"` // user to invite
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InviteUserRequest) Reset() {
+	*x = InviteUserRequest{}
+	mi := &file_core_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InviteUserRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InviteUserRequest) ProtoMessage() {}
+
+func (x *InviteUserRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InviteUserRequest.ProtoReflect.Descriptor instead.
+func (*InviteUserRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *InviteUserRequest) GetRoomId() string {
+	if x != nil {
+		return x.RoomId
+	}
+	return ""
+}
+
+func (x *InviteUserRequest) GetInviterId() string {
+	if x != nil {
+		return x.InviterId
+	}
+	return ""
+}
+
+func (x *InviteUserRequest) GetInviteeId() string {
+	if x != nil {
+		return x.InviteeId
+	}
+	return ""
+}
+
+type InviteUserResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InviteUserResponse) Reset() {
+	*x = InviteUserResponse{}
+	mi := &file_core_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InviteUserResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InviteUserResponse) ProtoMessage() {}
+
+func (x *InviteUserResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InviteUserResponse.ProtoReflect.Descriptor instead.
+func (*InviteUserResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{21}
+}
+
 // GetRoomState — unary: Go queries current room members + metadata
 type GetRoomStateRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1180,7 +1277,7 @@ type GetRoomStateRequest struct {
 
 func (x *GetRoomStateRequest) Reset() {
 	*x = GetRoomStateRequest{}
-	mi := &file_core_proto_msgTypes[20]
+	mi := &file_core_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1192,7 +1289,7 @@ func (x *GetRoomStateRequest) String() string {
 func (*GetRoomStateRequest) ProtoMessage() {}
 
 func (x *GetRoomStateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[20]
+	mi := &file_core_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1205,7 +1302,7 @@ func (x *GetRoomStateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRoomStateRequest.ProtoReflect.Descriptor instead.
 func (*GetRoomStateRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{20}
+	return file_core_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *GetRoomStateRequest) GetRoomId() string {
@@ -1226,7 +1323,7 @@ type GetRoomStateResponse struct {
 
 func (x *GetRoomStateResponse) Reset() {
 	*x = GetRoomStateResponse{}
-	mi := &file_core_proto_msgTypes[21]
+	mi := &file_core_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1238,7 +1335,7 @@ func (x *GetRoomStateResponse) String() string {
 func (*GetRoomStateResponse) ProtoMessage() {}
 
 func (x *GetRoomStateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[21]
+	mi := &file_core_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1251,7 +1348,7 @@ func (x *GetRoomStateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRoomStateResponse.ProtoReflect.Descriptor instead.
 func (*GetRoomStateResponse) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{21}
+	return file_core_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *GetRoomStateResponse) GetMembers() []string {
@@ -1370,13 +1467,20 @@ const file_core_proto_rawDesc = "" +
 	"\vmsg_per_sec\x18\x01 \x01(\x02R\tmsgPerSec\x12'\n" +
 	"\x0factive_sessions\x18\x02 \x01(\x05R\x0eactiveSessions\x12\x1d\n" +
 	"\n" +
-	"room_count\x18\x03 \x01(\x05R\troomCount\".\n" +
+	"room_count\x18\x03 \x01(\x05R\troomCount\"j\n" +
+	"\x11InviteUserRequest\x12\x17\n" +
+	"\aroom_id\x18\x01 \x01(\tR\x06roomId\x12\x1d\n" +
+	"\n" +
+	"inviter_id\x18\x02 \x01(\tR\tinviterId\x12\x1d\n" +
+	"\n" +
+	"invitee_id\x18\x03 \x01(\tR\tinviteeId\"\x14\n" +
+	"\x12InviteUserResponse\".\n" +
 	"\x13GetRoomStateRequest\x12\x17\n" +
 	"\aroom_id\x18\x01 \x01(\tR\x06roomId\"y\n" +
 	"\x14GetRoomStateResponse\x12\x18\n" +
 	"\amembers\x18\x01 \x03(\tR\amembers\x12*\n" +
 	"\x11power_levels_json\x18\x02 \x01(\tR\x0fpowerLevelsJson\x12\x1b\n" +
-	"\troom_name\x18\x03 \x01(\tR\broomName2\xe4\x05\n" +
+	"\troom_name\x18\x03 \x01(\tR\broomName2\xa5\x06\n" +
 	"\vCoreService\x12<\n" +
 	"\tSendEvent\x12\x16.core.SendEventRequest\x1a\x17.core.SendEventResponse\x12?\n" +
 	"\n" +
@@ -1390,7 +1494,9 @@ const file_core_proto_rawDesc = "" +
 	"\bEventBus\x12\x15.core.EventBusRequest\x1a\v.core.Event0\x01\x12?\n" +
 	"\n" +
 	"GetMetrics\x12\x17.core.GetMetricsRequest\x1a\x18.core.GetMetricsResponse\x12E\n" +
-	"\fGetRoomState\x12\x19.core.GetRoomStateRequest\x1a\x1a.core.GetRoomStateResponseB'Z%github.com/nebu/nebu/internal/grpc/pbb\x06proto3"
+	"\fGetRoomState\x12\x19.core.GetRoomStateRequest\x1a\x1a.core.GetRoomStateResponse\x12?\n" +
+	"\n" +
+	"InviteUser\x12\x17.core.InviteUserRequest\x1a\x18.core.InviteUserResponseB'Z%github.com/nebu/nebu/internal/grpc/pbb\x06proto3"
 
 var (
 	file_core_proto_rawDescOnce sync.Once
@@ -1404,7 +1510,7 @@ func file_core_proto_rawDescGZIP() []byte {
 	return file_core_proto_rawDescData
 }
 
-var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
+var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
 var file_core_proto_goTypes = []any{
 	(*Event)(nil),                    // 0: core.Event
 	(*SendEventRequest)(nil),         // 1: core.SendEventRequest
@@ -1426,8 +1532,10 @@ var file_core_proto_goTypes = []any{
 	(*EventBusRequest)(nil),          // 17: core.EventBusRequest
 	(*GetMetricsRequest)(nil),        // 18: core.GetMetricsRequest
 	(*GetMetricsResponse)(nil),       // 19: core.GetMetricsResponse
-	(*GetRoomStateRequest)(nil),      // 20: core.GetRoomStateRequest
-	(*GetRoomStateResponse)(nil),     // 21: core.GetRoomStateResponse
+	(*InviteUserRequest)(nil),        // 20: core.InviteUserRequest
+	(*InviteUserResponse)(nil),       // 21: core.InviteUserResponse
+	(*GetRoomStateRequest)(nil),      // 22: core.GetRoomStateRequest
+	(*GetRoomStateResponse)(nil),     // 23: core.GetRoomStateResponse
 }
 var file_core_proto_depIdxs = []int32{
 	0,  // 0: core.GetMessagesResponse.events:type_name -> core.Event
@@ -1442,20 +1550,22 @@ var file_core_proto_depIdxs = []int32{
 	15, // 9: core.CoreService.GetPendingEvents:input_type -> core.GetPendingEventsRequest
 	17, // 10: core.CoreService.EventBus:input_type -> core.EventBusRequest
 	18, // 11: core.CoreService.GetMetrics:input_type -> core.GetMetricsRequest
-	20, // 12: core.CoreService.GetRoomState:input_type -> core.GetRoomStateRequest
-	2,  // 13: core.CoreService.SendEvent:output_type -> core.SendEventResponse
-	4,  // 14: core.CoreService.CreateRoom:output_type -> core.CreateRoomResponse
-	6,  // 15: core.CoreService.JoinRoom:output_type -> core.JoinRoomResponse
-	8,  // 16: core.CoreService.GetMessages:output_type -> core.GetMessagesResponse
-	10, // 17: core.CoreService.SetPresence:output_type -> core.SetPresenceResponse
-	12, // 18: core.CoreService.SetTyping:output_type -> core.SetTypingResponse
-	14, // 19: core.CoreService.ValidateToken:output_type -> core.ValidateTokenResponse
-	16, // 20: core.CoreService.GetPendingEvents:output_type -> core.GetPendingEventsResponse
-	0,  // 21: core.CoreService.EventBus:output_type -> core.Event
-	19, // 22: core.CoreService.GetMetrics:output_type -> core.GetMetricsResponse
-	21, // 23: core.CoreService.GetRoomState:output_type -> core.GetRoomStateResponse
-	13, // [13:24] is the sub-list for method output_type
-	2,  // [2:13] is the sub-list for method input_type
+	22, // 12: core.CoreService.GetRoomState:input_type -> core.GetRoomStateRequest
+	20, // 13: core.CoreService.InviteUser:input_type -> core.InviteUserRequest
+	2,  // 14: core.CoreService.SendEvent:output_type -> core.SendEventResponse
+	4,  // 15: core.CoreService.CreateRoom:output_type -> core.CreateRoomResponse
+	6,  // 16: core.CoreService.JoinRoom:output_type -> core.JoinRoomResponse
+	8,  // 17: core.CoreService.GetMessages:output_type -> core.GetMessagesResponse
+	10, // 18: core.CoreService.SetPresence:output_type -> core.SetPresenceResponse
+	12, // 19: core.CoreService.SetTyping:output_type -> core.SetTypingResponse
+	14, // 20: core.CoreService.ValidateToken:output_type -> core.ValidateTokenResponse
+	16, // 21: core.CoreService.GetPendingEvents:output_type -> core.GetPendingEventsResponse
+	0,  // 22: core.CoreService.EventBus:output_type -> core.Event
+	19, // 23: core.CoreService.GetMetrics:output_type -> core.GetMetricsResponse
+	23, // 24: core.CoreService.GetRoomState:output_type -> core.GetRoomStateResponse
+	21, // 25: core.CoreService.InviteUser:output_type -> core.InviteUserResponse
+	14, // [14:26] is the sub-list for method output_type
+	2,  // [2:14] is the sub-list for method input_type
 	2,  // [2:2] is the sub-list for extension type_name
 	2,  // [2:2] is the sub-list for extension extendee
 	0,  // [0:2] is the sub-list for field type_name
@@ -1476,7 +1586,7 @@ func file_core_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_core_proto_rawDesc), len(file_core_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   22,
+			NumMessages:   24,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

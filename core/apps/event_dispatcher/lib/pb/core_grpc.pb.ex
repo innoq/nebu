@@ -12,6 +12,7 @@ defmodule Core.CoreService.Service do
   rpc :EventBus, Core.EventBusRequest, stream(Core.Event)
   rpc :GetMetrics, Core.GetMetricsRequest, Core.GetMetricsResponse
   rpc :GetRoomState, Core.GetRoomStateRequest, Core.GetRoomStateResponse
+  rpc :InviteUser, Core.InviteUserRequest, Core.InviteUserResponse
 end
 
 defmodule Core.CoreService.Stub do

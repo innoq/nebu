@@ -311,3 +311,580 @@ func TestPostCreateRoom_Forbidden(t *testing.T) {
 		t.Errorf("expected errcode M_FORBIDDEN, got %s", errResp.ErrCode)
 	}
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Story 4-10: POST /_matrix/client/v3/join/{roomIdOrAlias} + InviteUser
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// These tests are written FIRST (ATDD gate), before implementation exists.
+// ALL tests below this line are expected to FAIL until Story 4-10 is implemented.
+//
+// Test strategy:
+//   - mockJoinRoomCoreClient implements JoinRoomCoreClient (consumer-defined
+//     interface, Go convention) — defined here alongside the tests.
+//   - mockInviteUserCoreClient implements InviteUserCoreClient.
+//   - r.PathValue("roomIdOrAlias") requires the request to pass through a
+//     *http.ServeMux. Tests use a local mux to exercise path extraction.
+//   - JWTMiddleware wraps the handler chain for auth tests.
+//   - gRPC error cases use status.Error(codes.NotFound, …) / codes.PermissionDenied
+//     to trigger the M_NOT_FOUND / M_FORBIDDEN code paths.
+//   - Already-member (idempotent join): Core returns codes.AlreadyExists, Go
+//     returns 200 with room_id per Matrix spec requirement.
+
+// ─── Mock gRPC core clients ───────────────────────────────────────────────────
+
+type mockJoinRoomCoreClient struct {
+	resp        *pb.JoinRoomResponse
+	err         error
+	capturedReq *pb.JoinRoomRequest
+}
+
+func (m *mockJoinRoomCoreClient) JoinRoom(_ context.Context, req *pb.JoinRoomRequest) (*pb.JoinRoomResponse, error) {
+	m.capturedReq = req
+	return m.resp, m.err
+}
+
+type mockInviteUserCoreClient struct {
+	resp        *pb.InviteUserResponse
+	err         error
+	capturedReq *pb.InviteUserRequest
+}
+
+func (m *mockInviteUserCoreClient) InviteUser(_ context.Context, req *pb.InviteUserRequest) (*pb.InviteUserResponse, error) {
+	m.capturedReq = req
+	return m.resp, m.err
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+// buildJoinRoomHandler returns a JoinRoomHandler wired with the given mock.
+func buildJoinRoomHandler(mock *mockJoinRoomCoreClient) *JoinRoomHandler {
+	return NewJoinRoomHandler(JoinRoomConfig{
+		CoreClient: mock,
+		ServerName: "test.local",
+	})
+}
+
+// buildAuthedJoinRoomHandler wraps JoinRoomHandler.PostJoinRoom in JWTMiddleware
+// and serves it through a ServeMux so r.PathValue("roomIdOrAlias") works.
+func buildAuthedJoinRoomHandler(t *testing.T, mock *mockJoinRoomCoreClient) (http.Handler, func() string) {
+	t.Helper()
+
+	oidcSrv, privateKey := setupOIDCServer(t)
+	t.Cleanup(oidcSrv.Close)
+
+	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
+
+	handler := buildJoinRoomHandler(mock)
+	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil)(
+		http.HandlerFunc(handler.PostJoinRoom),
+	)
+
+	// Wrap in a ServeMux so r.PathValue("roomIdOrAlias") is populated.
+	mux := http.NewServeMux()
+	mux.Handle("POST /{roomIdOrAlias}", authedHandler)
+
+	makeToken := func() string {
+		return signJWT(t, oidcSrv.URL, privateKey, time.Now().Add(time.Hour), nil)
+	}
+
+	return mux, makeToken
+}
+
+// buildAuthedInviteUserHandler wraps InviteUserHandler.PostInviteUser in JWTMiddleware
+// and serves it through a ServeMux so r.PathValue("roomId") works.
+func buildAuthedInviteUserHandler(t *testing.T, mock *mockInviteUserCoreClient) (http.Handler, func() string) {
+	t.Helper()
+
+	oidcSrv, privateKey := setupOIDCServer(t)
+	t.Cleanup(oidcSrv.Close)
+
+	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
+
+	handler := NewInviteUserHandler(InviteUserConfig{
+		CoreClient: mock,
+		ServerName: "test.local",
+	})
+	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil)(
+		http.HandlerFunc(handler.PostInviteUser),
+	)
+
+	mux := http.NewServeMux()
+	mux.Handle("POST /{roomId}/invite", authedHandler)
+
+	makeToken := func() string {
+		return signJWT(t, oidcSrv.URL, privateKey, time.Now().Add(time.Hour), nil)
+	}
+
+	return mux, makeToken
+}
+
+// ─── Test 7: Happy path — authenticated user joins existing room → 200 ────────
+//
+// AC #2 — POST with valid JWT + mock returns JoinRoomResponse → 200 {"room_id": ...}.
+// Also asserts that the gRPC request carries the correct user_id and room_id_or_alias.
+
+func TestPostJoinRoom_HappyPath(t *testing.T) {
+	mock := &mockJoinRoomCoreClient{
+		resp: &pb.JoinRoomResponse{RoomId: "!abc:test.local"},
+	}
+
+	mux, makeToken := buildAuthedJoinRoomHandler(t, mock)
+
+	req := httptest.NewRequest(http.MethodPost, "/!abc:test.local", http.NoBody)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	ct := w.Header().Get("Content-Type")
+	if ct != "application/json" {
+		t.Errorf("expected Content-Type application/json, got %s", ct)
+	}
+
+	var resp struct {
+		RoomID string `json:"room_id"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response body: %v", err)
+	}
+	if resp.RoomID != "!abc:test.local" {
+		t.Errorf("expected room_id !abc:test.local, got %s", resp.RoomID)
+	}
+
+	// Assert gRPC request fields.
+	if mock.capturedReq == nil {
+		t.Fatal("expected gRPC JoinRoom to be called, but capturedReq is nil")
+	}
+	if mock.capturedReq.RoomIdOrAlias != "!abc:test.local" {
+		t.Errorf("expected RoomIdOrAlias %q, got %q", "!abc:test.local", mock.capturedReq.RoomIdOrAlias)
+	}
+	expectedUserID := "@test-sub-123:test.local"
+	if mock.capturedReq.UserId != expectedUserID {
+		t.Errorf("expected UserId %q, got %q", expectedUserID, mock.capturedReq.UserId)
+	}
+}
+
+// ─── Test 8: Unauthenticated request → 401 M_MISSING_TOKEN ───────────────────
+//
+// AC #1 — JWTMiddleware must reject requests missing Authorization header.
+
+func TestPostJoinRoom_Unauthenticated(t *testing.T) {
+	mock := &mockJoinRoomCoreClient{
+		resp: &pb.JoinRoomResponse{RoomId: "!abc:test.local"},
+	}
+
+	mux, _ := buildAuthedJoinRoomHandler(t, mock)
+
+	req := httptest.NewRequest(http.MethodPost, "/!abc:test.local", http.NoBody)
+	// Deliberately omit Authorization header
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var errResp matrixError
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+	if errResp.ErrCode != "M_MISSING_TOKEN" {
+		t.Errorf("expected errcode M_MISSING_TOKEN, got %s", errResp.ErrCode)
+	}
+}
+
+// ─── Test 9: Room not found (gRPC NotFound) → 404 M_NOT_FOUND ────────────────
+//
+// AC #3 — gRPC status NotFound must map to 404 M_NOT_FOUND.
+
+func TestPostJoinRoom_RoomNotFound(t *testing.T) {
+	mock := &mockJoinRoomCoreClient{
+		err: status.Error(codes.NotFound, "room does not exist"),
+	}
+
+	mux, makeToken := buildAuthedJoinRoomHandler(t, mock)
+
+	req := httptest.NewRequest(http.MethodPost, "/!nonexistent:test.local", http.NoBody)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var errResp matrixError
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+	if errResp.ErrCode != "M_NOT_FOUND" {
+		t.Errorf("expected errcode M_NOT_FOUND, got %s", errResp.ErrCode)
+	}
+}
+
+// ─── Test 10: Already a member (idempotent) → 200 with room_id ───────────────
+//
+// AC #7 — Matrix spec requires idempotent join. Core returning AlreadyExists
+// must be treated as success and return 200 {"room_id": ...}.
+
+func TestPostJoinRoom_AlreadyMember(t *testing.T) {
+	mock := &mockJoinRoomCoreClient{
+		resp: &pb.JoinRoomResponse{RoomId: "!abc:test.local"},
+		err:  status.Error(codes.AlreadyExists, "already a member"),
+	}
+
+	mux, makeToken := buildAuthedJoinRoomHandler(t, mock)
+
+	req := httptest.NewRequest(http.MethodPost, "/!abc:test.local", http.NoBody)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 (idempotent), got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		RoomID string `json:"room_id"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response body: %v", err)
+	}
+	if resp.RoomID != "!abc:test.local" {
+		t.Errorf("expected room_id !abc:test.local, got %s", resp.RoomID)
+	}
+}
+
+// ─── Test 11: Generic gRPC error → 500 M_UNKNOWN ─────────────────────────────
+//
+// AC #2 (error path) — any unclassified gRPC error must map to 500 M_UNKNOWN.
+
+func TestPostJoinRoom_CoreError(t *testing.T) {
+	mock := &mockJoinRoomCoreClient{
+		err: fmt.Errorf("core unavailable"),
+	}
+
+	mux, makeToken := buildAuthedJoinRoomHandler(t, mock)
+
+	req := httptest.NewRequest(http.MethodPost, "/!abc:test.local", http.NoBody)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var errResp matrixError
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+	if errResp.ErrCode != "M_UNKNOWN" {
+		t.Errorf("expected errcode M_UNKNOWN, got %s", errResp.ErrCode)
+	}
+}
+
+// ─── Test 12: Invite user → 200 {} ───────────────────────────────────────────
+//
+// AC #6 — POST /rooms/{roomId}/invite with valid JWT + valid body → 200 {}.
+// Asserts the gRPC request carries roomId, inviterId (caller), and inviteeId.
+
+func TestPostInviteUser_HappyPath(t *testing.T) {
+	mock := &mockInviteUserCoreClient{
+		resp: &pb.InviteUserResponse{},
+	}
+
+	mux, makeToken := buildAuthedInviteUserHandler(t, mock)
+
+	body := `{"user_id": "@bob:test.local"}`
+	req := httptest.NewRequest(http.MethodPost, "/!abc:test.local/invite", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	// Body must be an empty JSON object {}.
+	bodyStr := strings.TrimSpace(w.Body.String())
+	if bodyStr != "{}" {
+		t.Errorf("expected body '{}', got %q", bodyStr)
+	}
+
+	// Assert gRPC request fields.
+	if mock.capturedReq == nil {
+		t.Fatal("expected gRPC InviteUser to be called, but capturedReq is nil")
+	}
+	if mock.capturedReq.InviteeId != "@bob:test.local" {
+		t.Errorf("expected InviteeId @bob:test.local, got %s", mock.capturedReq.InviteeId)
+	}
+	expectedCaller := "@test-sub-123:test.local"
+	if mock.capturedReq.InviterId != expectedCaller {
+		t.Errorf("expected InviterId %q, got %q", expectedCaller, mock.capturedReq.InviterId)
+	}
+}
+
+// ─── Test 13: Invite user — bad JSON body → 400 M_BAD_JSON ───────────────────
+//
+// AC #6 — malformed JSON body must return 400 M_BAD_JSON before reaching Core.
+
+func TestPostInviteUser_BadJSON(t *testing.T) {
+	mock := &mockInviteUserCoreClient{
+		resp: &pb.InviteUserResponse{},
+	}
+
+	mux, makeToken := buildAuthedInviteUserHandler(t, mock)
+
+	req := httptest.NewRequest(http.MethodPost, "/!abc:test.local/invite",
+		strings.NewReader(`{not valid json`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var errResp matrixError
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+	if errResp.ErrCode != "M_BAD_JSON" {
+		t.Errorf("expected errcode M_BAD_JSON, got %s", errResp.ErrCode)
+	}
+}
+
+// ─── Test 14 (MAJOR-1): Join room — permission denied → 403 M_FORBIDDEN ──────
+//
+// AC #4 — gRPC PermissionDenied (private room, no invite) must map to 403 M_FORBIDDEN.
+
+func TestPostJoinRoom_Forbidden(t *testing.T) {
+	mock := &mockJoinRoomCoreClient{
+		err: status.Error(codes.PermissionDenied, "private room, no invitation"),
+	}
+
+	mux, makeToken := buildAuthedJoinRoomHandler(t, mock)
+
+	req := httptest.NewRequest(http.MethodPost, "/!private:test.local", http.NoBody)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var errResp matrixError
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+	if errResp.ErrCode != "M_FORBIDDEN" {
+		t.Errorf("expected errcode M_FORBIDDEN, got %s", errResp.ErrCode)
+	}
+}
+
+// ─── MAJOR-2: POST /rooms/{roomId}/join — second join endpoint ────────────────
+//
+// buildAuthedJoinRoomByIdHandler wraps JoinRoomHandler.PostJoinRoomById in
+// JWTMiddleware and serves it through a ServeMux so r.PathValue("roomId") works.
+
+func buildAuthedJoinRoomByIdHandler(t *testing.T, mock *mockJoinRoomCoreClient) (http.Handler, func() string) {
+	t.Helper()
+
+	oidcSrv, privateKey := setupOIDCServer(t)
+	t.Cleanup(oidcSrv.Close)
+
+	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
+
+	handler := buildJoinRoomHandler(mock)
+	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil)(
+		http.HandlerFunc(handler.PostJoinRoomById),
+	)
+
+	mux := http.NewServeMux()
+	mux.Handle("POST /rooms/{roomId}/join", authedHandler)
+
+	makeToken := func() string {
+		return signJWT(t, oidcSrv.URL, privateKey, time.Now().Add(time.Hour), nil)
+	}
+
+	return mux, makeToken
+}
+
+// ─── Test 15 (MAJOR-2a): POST /rooms/{roomId}/join — happy path → 200 ─────────
+//
+// AC #5 — POST with valid JWT + mock returns JoinRoomResponse → 200 {"room_id": ...}.
+
+func TestPostJoinRoomById_HappyPath(t *testing.T) {
+	mock := &mockJoinRoomCoreClient{
+		resp: &pb.JoinRoomResponse{RoomId: "!abc:test.local"},
+	}
+
+	mux, makeToken := buildAuthedJoinRoomByIdHandler(t, mock)
+
+	req := httptest.NewRequest(http.MethodPost, "/rooms/!abc:test.local/join", http.NoBody)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	ct := w.Header().Get("Content-Type")
+	if ct != "application/json" {
+		t.Errorf("expected Content-Type application/json, got %s", ct)
+	}
+
+	var resp struct {
+		RoomID string `json:"room_id"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response body: %v", err)
+	}
+	if resp.RoomID != "!abc:test.local" {
+		t.Errorf("expected room_id !abc:test.local, got %s", resp.RoomID)
+	}
+}
+
+// ─── Test 16 (MAJOR-2b): POST /rooms/{roomId}/join — forbidden → 403 ─────────
+//
+// AC #5 — gRPC PermissionDenied (no invitation) must map to 403 M_FORBIDDEN.
+
+func TestPostJoinRoomById_Forbidden(t *testing.T) {
+	mock := &mockJoinRoomCoreClient{
+		err: status.Error(codes.PermissionDenied, "no invitation"),
+	}
+
+	mux, makeToken := buildAuthedJoinRoomByIdHandler(t, mock)
+
+	req := httptest.NewRequest(http.MethodPost, "/rooms/!private:test.local/join", http.NoBody)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var errResp matrixError
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+	if errResp.ErrCode != "M_FORBIDDEN" {
+		t.Errorf("expected errcode M_FORBIDDEN, got %s", errResp.ErrCode)
+	}
+}
+
+// ─── Test 17 (MAJOR-3a): Invite user — forbidden → 403 M_FORBIDDEN ───────────
+//
+// AC #8 — gRPC PermissionDenied must map to 403 M_FORBIDDEN.
+
+func TestPostInviteUser_Forbidden(t *testing.T) {
+	mock := &mockInviteUserCoreClient{
+		err: status.Error(codes.PermissionDenied, "caller not a room member"),
+	}
+
+	mux, makeToken := buildAuthedInviteUserHandler(t, mock)
+
+	body := `{"user_id": "@bob:test.local"}`
+	req := httptest.NewRequest(http.MethodPost, "/!abc:test.local/invite", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var errResp matrixError
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+	if errResp.ErrCode != "M_FORBIDDEN" {
+		t.Errorf("expected errcode M_FORBIDDEN, got %s", errResp.ErrCode)
+	}
+}
+
+// ─── Test 18 (MAJOR-3b): Invite user — room not found → 404 M_NOT_FOUND ──────
+//
+// AC #9 — gRPC NotFound must map to 404 M_NOT_FOUND.
+
+func TestPostInviteUser_NotFound(t *testing.T) {
+	mock := &mockInviteUserCoreClient{
+		err: status.Error(codes.NotFound, "room does not exist"),
+	}
+
+	mux, makeToken := buildAuthedInviteUserHandler(t, mock)
+
+	body := `{"user_id": "@bob:test.local"}`
+	req := httptest.NewRequest(http.MethodPost, "/!nonexistent:test.local/invite", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var errResp matrixError
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+	if errResp.ErrCode != "M_NOT_FOUND" {
+		t.Errorf("expected errcode M_NOT_FOUND, got %s", errResp.ErrCode)
+	}
+}
+
+// ─── Test 19 (MINOR-2): Invite user — unauthenticated → 401 M_MISSING_TOKEN ──
+//
+// AC #6 — JWTMiddleware must reject requests missing Authorization header.
+
+func TestPostInviteUser_Unauthenticated(t *testing.T) {
+	mock := &mockInviteUserCoreClient{
+		resp: &pb.InviteUserResponse{},
+	}
+
+	mux, _ := buildAuthedInviteUserHandler(t, mock)
+
+	body := `{"user_id": "@bob:test.local"}`
+	req := httptest.NewRequest(http.MethodPost, "/!abc:test.local/invite", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	// Deliberately omit Authorization header
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var errResp matrixError
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+	if errResp.ErrCode != "M_MISSING_TOKEN" {
+		t.Errorf("expected errcode M_MISSING_TOKEN, got %s", errResp.ErrCode)
+	}
+}

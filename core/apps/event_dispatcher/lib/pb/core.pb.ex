@@ -244,6 +244,28 @@ defmodule Core.GetMetricsResponse do
   field :room_count, 3, type: :int32, json_name: "roomCount"
 end
 
+defmodule Core.InviteUserRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.InviteUserRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :room_id, 1, type: :string, json_name: "roomId"
+  field :inviter_id, 2, type: :string, json_name: "inviterId"
+  field :invitee_id, 3, type: :string, json_name: "inviteeId"
+end
+
+defmodule Core.InviteUserResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.InviteUserResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+end
+
 defmodule Core.GetRoomStateRequest do
   @moduledoc false
 
