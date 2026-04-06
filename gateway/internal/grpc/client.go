@@ -83,9 +83,9 @@ func (c *Client) InviteUser(ctx context.Context, req *pb.InviteUserRequest) (*pb
 	return c.core.InviteUser(ctx, req)
 }
 
-// GetMessages stub — implemented in Epic 4.
+// GetMessages fetches paginated room history from Elixir Core.
 func (c *Client) GetMessages(ctx context.Context, req *pb.GetMessagesRequest) (*pb.GetMessagesResponse, error) {
-	return nil, nil
+	return c.core.GetMessages(ctx, req)
 }
 
 // SetPresence stub — implemented in Epic 4.

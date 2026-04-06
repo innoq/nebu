@@ -15,6 +15,12 @@ defmodule Nebu.EventDispatcher.Server do
     Application.get_env(:event_dispatcher, :invite_db_module, Nebu.Room.InviteDB)
   end
 
+  # ─── Configurable messages DB module for testability ─────────────────────────
+  # Override via Application.put_env(:event_dispatcher, :messages_db_module, FakeDB) in tests.
+  defp messages_db_module do
+    Application.get_env(:event_dispatcher, :messages_db_module, Nebu.Room.DB)
+  end
+
   def send_event(request, _stream) do
     room_id = request.room_id
     sender_id = request.sender_id
@@ -140,8 +146,62 @@ defmodule Nebu.EventDispatcher.Server do
     end
   end
 
-  def get_messages(_request, _stream) do
-    %Core.GetMessagesResponse{}
+  def get_messages(request, stream) do
+    room_id = request.room_id
+    from_token = request.from_token
+    limit = max(1, min(request.limit, 100))
+    direction = if request.direction in ["f", "b"], do: request.direction, else: "b"
+
+    # Extract caller identity from gRPC metadata (set by Go JWTMiddleware).
+    {user_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
+
+    # Room existence check — Room GenServer must be running.
+    case Nebu.Room.RoomSupervisor.lookup_room(room_id) do
+      {:error, :not_found} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "room not found: #{room_id}"
+
+      {:ok, _pid} ->
+        # Membership check — caller must be a room member.
+        state = room_registry_module().get_state(room_id)
+
+        unless MapSet.member?(state.members, user_id) do
+          raise GRPC.RPCError,
+            status: GRPC.Status.permission_denied(),
+            message: "#{user_id} is not a member of #{room_id}"
+        end
+
+        # Fetch events from PostgreSQL via the configurable messages_db_module.
+        # fetch_events/4 signature: (room_id, direction, limit, from_token)
+        {:ok, events, next_batch, prev_batch} =
+          messages_db_module().fetch_events(room_id, direction, limit, from_token)
+
+        proto_events = Enum.map(events, &event_map_to_proto/1)
+
+        %Core.GetMessagesResponse{
+          events: proto_events,
+          next_batch: next_batch,
+          prev_batch: prev_batch
+        }
+    end
+  end
+
+  # Convert a DB event map (string keys) to a %Core.Event{} protobuf struct.
+  # The `content` column is JSONB (returned as Elixir map by Postgrex) —
+  # re-encode to JSON bytes for the proto bytes field.
+  defp event_map_to_proto(event) do
+    content_json = Jason.encode!(Map.get(event, "content", %{}))
+
+    %Core.Event{
+      event_id: Map.get(event, "event_id", ""),
+      room_id: Map.get(event, "room_id", ""),
+      sender_id: Map.get(event, "sender", ""),
+      event_type: Map.get(event, "event_type", ""),
+      content: content_json,
+      origin_ts: Map.get(event, "origin_server_ts", 0),
+      server_ts: System.system_time(:millisecond)
+    }
   end
 
   def set_presence(_request, _stream) do

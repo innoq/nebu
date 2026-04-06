@@ -178,4 +178,132 @@ defmodule Nebu.Room.DB do
   # Used for optional JSONB columns like `signatures`.
   defp encode_nullable(nil), do: {:ok, nil}
   defp encode_nullable(value), do: Jason.encode(value)
+
+  @doc """
+  Fetches paginated events from the `events` table for the given room.
+
+  Pagination is keyset-based on `(origin_server_ts, event_id)` — both fields
+  together provide a stable, unique cursor that avoids duplicates across pages.
+
+  Token format: `"v1_" <> Base.url_encode64(ts_str <> ":" <> event_id, padding: false)`
+  Empty token means "start from the beginning" (direction-dependent).
+
+  Direction "b" (backward): newest first (DESC origin_server_ts, DESC event_id).
+  Direction "f" (forward):  oldest first (ASC  origin_server_ts, ASC  event_id).
+
+  Returns `{:ok, events, next_batch, prev_batch}` where:
+  - `events` is a list of maps with string keys matching the `events` table columns
+  - `next_batch` is the cursor for the next page (empty string if no more pages)
+  - `prev_batch` is the cursor for the previous page (the from_token echoed back, or
+    a token for the first event returned)
+  """
+  @spec fetch_events(String.t(), String.t(), integer(), String.t()) ::
+          {:ok, [map()], String.t(), String.t()} | {:error, term()}
+  def fetch_events(room_id, direction, limit, from_token) do
+    {order, compare_op} =
+      if direction == "f" do
+        {"ASC", ">"}
+      else
+        {"DESC", "<"}
+      end
+
+    {where_clause, params} =
+      case decode_token(from_token) do
+        {:ok, cursor_ts, cursor_event_id} ->
+          # Keyset: fetch events strictly before/after the cursor.
+          # direction "b": WHERE (origin_server_ts, event_id) < (cursor_ts, cursor_event_id)
+          # direction "f": WHERE (origin_server_ts, event_id) > (cursor_ts, cursor_event_id)
+          clause = "(origin_server_ts, event_id) #{compare_op} ($2, $3)"
+          {clause, [room_id, cursor_ts, cursor_event_id]}
+
+        :empty ->
+          {"TRUE", [room_id]}
+      end
+
+    param_offset = length(params)
+    limit_param = "$#{param_offset + 1}"
+
+    sql = """
+    SELECT event_id, room_id, sender, event_type, content, origin_server_ts
+    FROM events
+    WHERE room_id = $1 AND #{where_clause}
+    ORDER BY origin_server_ts #{order}, event_id #{order}
+    LIMIT #{limit_param}
+    """
+
+    # Fetch limit+1 to detect whether a next page exists.
+    all_params = params ++ [limit + 1]
+
+    case Ecto.Adapters.SQL.query(Nebu.Repo, sql, all_params) do
+      {:ok, %{columns: cols, rows: rows}} ->
+        all_events =
+          Enum.map(rows, fn row ->
+            cols
+            |> Enum.zip(row)
+            |> Map.new()
+          end)
+
+        {page_events, has_more} =
+          if length(all_events) > limit do
+            {Enum.take(all_events, limit), true}
+          else
+            {all_events, false}
+          end
+
+        next_batch =
+          if has_more do
+            last = List.last(page_events)
+            encode_token(last["origin_server_ts"], last["event_id"])
+          else
+            ""
+          end
+
+        prev_batch =
+          case page_events do
+            [] ->
+              from_token
+
+            events ->
+              # Use the last event in the returned list as the prev_batch cursor.
+              # For dir="b" (newest first), last = oldest; for dir="f" (oldest first),
+              # last = newest. In both cases this is the "boundary" for the next page.
+              last = List.last(events)
+              encode_token(last["origin_server_ts"], last["event_id"])
+          end
+
+        {:ok, page_events, next_batch, prev_batch}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp encode_token(ts, event_id) when is_integer(ts) and is_binary(event_id) do
+    raw = "#{ts}:#{event_id}"
+    "v1_" <> Base.url_encode64(raw, padding: false)
+  end
+
+  defp decode_token(""), do: :empty
+  defp decode_token(nil), do: :empty
+
+  defp decode_token("v1_" <> encoded) do
+    case Base.url_decode64(encoded, padding: false) do
+      {:ok, raw} ->
+        case String.split(raw, ":", parts: 2) do
+          [ts_str, event_id] ->
+            case Integer.parse(ts_str) do
+              {ts, ""} -> {:ok, ts, event_id}
+              _ -> :empty
+            end
+
+          _ ->
+            :empty
+        end
+
+      _ ->
+        :empty
+    end
+  end
+
+  defp decode_token(_), do: :empty
 end

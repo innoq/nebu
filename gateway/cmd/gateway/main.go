@@ -257,6 +257,13 @@ func main() {
 	mux.Handle("PUT /_matrix/client/v3/rooms/{roomId}/send/{eventType}/{txnId}",
 		jwtMiddleware(http.HandlerFunc(sendEventHandler.PutSendEvent)))
 
+	messagesHandler := matrix.NewGetMessagesHandler(matrix.GetMessagesConfig{
+		CoreClient: coreClient,
+		ServerName: serverName,
+	})
+	mux.Handle("GET /_matrix/client/v3/rooms/{roomId}/messages",
+		jwtMiddleware(http.HandlerFunc(messagesHandler.GetMessages)))
+
 	slog.Info("HTTP server starting", "addr", ":8008")
 	if err := http.ListenAndServe(":8008", mux); err != nil {
 		slog.Error("HTTP server failed", "err", err)
