@@ -31,6 +31,9 @@ service CoreService {
 
   // SetPowerLevels — update room power levels (caller must have change_state power)
   rpc SetPowerLevels(SetPowerLevelsRequest) returns (SetPowerLevelsResponse);
+
+  // GetInitialSync — returns full state snapshot for all of a user's joined rooms
+  rpc GetInitialSync(GetInitialSyncRequest) returns (GetInitialSyncResponse);
 }
 
 // Shared event type used across multiple RPCs
@@ -173,3 +176,30 @@ message SetPowerLevelsRequest {
   string power_levels_json = 2;  // JSON string of full power_levels map
 }
 message SetPowerLevelsResponse {}
+
+// GetInitialSync — returns full state snapshot for all of a user's joined rooms
+message GetInitialSyncRequest {
+  string user_id = 1;
+}
+
+message GetInitialSyncResponse {
+  string            since_token = 1;  // opaque token — becomes next_batch in HTTP response
+  repeated SyncRoom rooms       = 2;
+}
+
+// SyncRoomStateEvent represents a state event in a SyncRoom (needs state_key)
+message SyncRoomStateEvent {
+  string type      = 1;  // e.g. "m.room.member", "m.room.power_levels"
+  string state_key = 2;
+  bytes  content   = 3;  // JSON-encoded content
+  string sender    = 4;
+}
+
+// SyncRoom represents one joined room's state in an initial sync
+message SyncRoom {
+  string                      room_id         = 1;
+  repeated SyncRoomStateEvent state_events    = 2;
+  repeated Event              timeline_events = 3;
+  bool                        limited         = 4;  // true if timeline was truncated at 20
+  string                      prev_batch      = 5;  // pagination token for GET /messages
+}

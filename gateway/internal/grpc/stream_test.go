@@ -96,6 +96,9 @@ func (m *mockCoreClient) InviteUser(_ context.Context, _ *pb.InviteUserRequest, 
 func (m *mockCoreClient) SetPowerLevels(_ context.Context, _ *pb.SetPowerLevelsRequest, _ ...grpc.CallOption) (*pb.SetPowerLevelsResponse, error) {
 	return nil, nil
 }
+func (m *mockCoreClient) GetInitialSync(_ context.Context, _ *pb.GetInitialSyncRequest, _ ...grpc.CallOption) (*pb.GetInitialSyncResponse, error) {
+	return nil, nil
+}
 
 // ─── Mock server-streaming client ────────────────────────────────────────────
 

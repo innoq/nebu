@@ -131,6 +131,11 @@ func (c *Client) SetPowerLevels(ctx context.Context, req *pb.SetPowerLevelsReque
 	return c.core.SetPowerLevels(ctx, req)
 }
 
+// GetInitialSync calls the Elixir core to build the initial sync response for a user.
+func (c *Client) GetInitialSync(ctx context.Context, req *pb.GetInitialSyncRequest) (*pb.GetInitialSyncResponse, error) {
+	return c.core.GetInitialSync(ctx, req)
+}
+
 // NewClientWithCore constructs a Client using a pre-built CoreServiceClient.
 // This is used in tests to inject a mock without a real gRPC connection.
 func NewClientWithCore(core pb.CoreServiceClient) *Client {

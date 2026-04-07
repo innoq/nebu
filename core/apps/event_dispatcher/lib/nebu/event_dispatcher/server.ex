@@ -21,6 +21,18 @@ defmodule Nebu.EventDispatcher.Server do
     Application.get_env(:event_dispatcher, :messages_db_module, Nebu.Room.DB)
   end
 
+  # ─── Configurable rooms DB module for testability ─────────────────────────────
+  # Override via Application.put_env(:event_dispatcher, :rooms_db_module, FakeDB) in tests.
+  defp rooms_db_module do
+    Application.get_env(:event_dispatcher, :rooms_db_module, Nebu.Room.DB)
+  end
+
+  # ─── Configurable PgStore module for testability ──────────────────────────────
+  # Override via Application.put_env(:event_dispatcher, :pg_store_module, FakePgStore) in tests.
+  defp pg_store_module do
+    Application.get_env(:event_dispatcher, :pg_store_module, Nebu.Session.PgStore)
+  end
+
   def send_event(request, _stream) do
     room_id = request.room_id
     sender_id = request.sender_id
@@ -394,6 +406,114 @@ defmodule Nebu.EventDispatcher.Server do
       power_levels_json: Jason.encode!(state.power_levels),
       room_name: ""
     }
+  end
+
+  # ─── AC: GetInitialSync — full state snapshot for all joined rooms ───────────
+  #
+  # Flow:
+  #   1. Extract user_id from request (trusted — Go Gateway set it).
+  #   2. Query rooms_db_module for all room IDs where user is an active member.
+  #   3. For each room_id:
+  #      a. Get room state via room_registry_module().get_state/1.
+  #      b. Build state events (m.room.member for each member + m.room.power_levels).
+  #      c. Fetch last ≤20 timeline events from messages_db_module().
+  #      d. Reverse events (DB returns newest-first, Matrix expects oldest-first).
+  #   4. Generate opaque since_token (same format as Story 4-6).
+  #   5. Persist token via pg_store_module().persist_since_token/3.
+  #   6. Return %Core.GetInitialSyncResponse{}.
+
+  def get_initial_sync(request, _stream) do
+    user_id = request.user_id
+
+    room_ids =
+      case rooms_db_module().get_rooms_for_user(user_id) do
+        {:ok, ids} ->
+          ids
+
+        {:error, reason} ->
+          raise GRPC.RPCError,
+            status: GRPC.Status.unavailable(),
+            message: "database unavailable: #{inspect(reason)}"
+      end
+
+    sync_rooms =
+      Enum.flat_map(room_ids, fn room_id ->
+        try do
+          state = room_registry_module().get_state(room_id)
+          state_events = build_state_events(state)
+
+          {:ok, events, _next_batch, prev_batch} =
+            messages_db_module().fetch_events(room_id, "b", 20, "")
+
+          timeline_events =
+            events
+            |> Enum.reverse()
+            |> Enum.map(&event_map_to_proto/1)
+
+          limited = length(events) >= 20
+
+          [
+            %Core.SyncRoom{
+              room_id: room_id,
+              state_events: state_events,
+              timeline_events: timeline_events,
+              limited: limited,
+              prev_batch: prev_batch
+            }
+          ]
+        catch
+          # Room GenServer temporarily unavailable (e.g. crashed between DB query
+          # and get_state call) — skip the room gracefully rather than crashing
+          # the entire sync response.
+          :exit, {:noproc, _} -> []
+        end
+      end)
+
+    # Find the most recent event_id across all rooms for the since_token anchor.
+    last_event_id =
+      Enum.flat_map(sync_rooms, fn room -> room.timeline_events end)
+      |> Enum.max_by(fn ev -> ev.origin_ts end, fn -> nil end)
+      |> case do
+        nil -> nil
+        ev -> ev.event_id
+      end
+
+    since_token =
+      Base.encode64(
+        "#{user_id}:#{last_event_id || ""}:#{System.monotonic_time()}",
+        padding: false
+      )
+
+    :ok = pg_store_module().persist_since_token(user_id, since_token, last_event_id)
+
+    %Core.GetInitialSyncResponse{
+      since_token: since_token,
+      rooms: sync_rooms
+    }
+  end
+
+  # Build state events for a room: one m.room.member per active member + one m.room.power_levels.
+  defp build_state_events(state) do
+    member_events =
+      state.members
+      |> MapSet.to_list()
+      |> Enum.map(fn uid ->
+        %Core.SyncRoomStateEvent{
+          type: "m.room.member",
+          state_key: uid,
+          content: Jason.encode!(%{"membership" => "join", "displayname" => ""}),
+          sender: uid
+        }
+      end)
+
+    pl_event = %Core.SyncRoomStateEvent{
+      type: "m.room.power_levels",
+      state_key: "",
+      content: Jason.encode!(state.power_levels),
+      sender: ""
+    }
+
+    member_events ++ [pl_event]
   end
 
   # ─── Private helpers ─────────────────────────────────────────────────────────

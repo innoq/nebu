@@ -274,6 +274,13 @@ func main() {
 	mux.Handle("PUT /_matrix/client/v3/rooms/{roomId}/state/{eventType}",
 		jwtMiddleware(http.HandlerFunc(setRoomStateHandler.PutSetRoomState)))
 
+	syncHandler := matrix.NewGetSyncHandler(matrix.GetSyncConfig{
+		CoreClient: coreClient,
+		ServerName: serverName,
+	})
+	mux.Handle("GET /_matrix/client/v3/sync",
+		jwtMiddleware(http.HandlerFunc(syncHandler.GetSync)))
+
 	slog.Info("HTTP server starting", "addr", ":8008")
 	if err := http.ListenAndServe(":8008", mux); err != nil {
 		slog.Error("HTTP server failed", "err", err)

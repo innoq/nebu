@@ -310,3 +310,52 @@ defmodule Core.SetPowerLevelsResponse do
     protoc_gen_elixir_version: "0.16.0",
     syntax: :proto3
 end
+
+defmodule Core.GetInitialSyncRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.GetInitialSyncRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :user_id, 1, type: :string, json_name: "userId"
+end
+
+defmodule Core.GetInitialSyncResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.GetInitialSyncResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :since_token, 1, type: :string, json_name: "sinceToken"
+  field :rooms, 2, repeated: true, type: Core.SyncRoom
+end
+
+defmodule Core.SyncRoomStateEvent do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.SyncRoomStateEvent",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :type, 1, type: :string
+  field :state_key, 2, type: :string, json_name: "stateKey"
+  field :content, 3, type: :bytes
+  field :sender, 4, type: :string
+end
+
+defmodule Core.SyncRoom do
+  @moduledoc false
+
+  use Protobuf, full_name: "core.SyncRoom", protoc_gen_elixir_version: "0.16.0", syntax: :proto3
+
+  field :room_id, 1, type: :string, json_name: "roomId"
+  field :state_events, 2, repeated: true, type: Core.SyncRoomStateEvent, json_name: "stateEvents"
+  field :timeline_events, 3, repeated: true, type: Core.Event, json_name: "timelineEvents"
+  field :limited, 4, type: :bool
+  field :prev_batch, 5, type: :string, json_name: "prevBatch"
+end

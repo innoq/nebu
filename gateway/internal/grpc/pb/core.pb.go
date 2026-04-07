@@ -1461,6 +1461,249 @@ func (*SetPowerLevelsResponse) Descriptor() ([]byte, []int) {
 	return file_core_proto_rawDescGZIP(), []int{25}
 }
 
+// GetInitialSync — returns full state snapshot for all of a user's joined rooms
+type GetInitialSyncRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetInitialSyncRequest) Reset() {
+	*x = GetInitialSyncRequest{}
+	mi := &file_core_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetInitialSyncRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetInitialSyncRequest) ProtoMessage() {}
+
+func (x *GetInitialSyncRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetInitialSyncRequest.ProtoReflect.Descriptor instead.
+func (*GetInitialSyncRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *GetInitialSyncRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+type GetInitialSyncResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SinceToken    string                 `protobuf:"bytes,1,opt,name=since_token,json=sinceToken,proto3" json:"since_token,omitempty"` // opaque token — becomes next_batch in HTTP response
+	Rooms         []*SyncRoom            `protobuf:"bytes,2,rep,name=rooms,proto3" json:"rooms,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetInitialSyncResponse) Reset() {
+	*x = GetInitialSyncResponse{}
+	mi := &file_core_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetInitialSyncResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetInitialSyncResponse) ProtoMessage() {}
+
+func (x *GetInitialSyncResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetInitialSyncResponse.ProtoReflect.Descriptor instead.
+func (*GetInitialSyncResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *GetInitialSyncResponse) GetSinceToken() string {
+	if x != nil {
+		return x.SinceToken
+	}
+	return ""
+}
+
+func (x *GetInitialSyncResponse) GetRooms() []*SyncRoom {
+	if x != nil {
+		return x.Rooms
+	}
+	return nil
+}
+
+// SyncRoomStateEvent represents a state event in a SyncRoom (needs state_key)
+type SyncRoomStateEvent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"` // e.g. "m.room.member", "m.room.power_levels"
+	StateKey      string                 `protobuf:"bytes,2,opt,name=state_key,json=stateKey,proto3" json:"state_key,omitempty"`
+	Content       []byte                 `protobuf:"bytes,3,opt,name=content,proto3" json:"content,omitempty"` // JSON-encoded content
+	Sender        string                 `protobuf:"bytes,4,opt,name=sender,proto3" json:"sender,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SyncRoomStateEvent) Reset() {
+	*x = SyncRoomStateEvent{}
+	mi := &file_core_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SyncRoomStateEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SyncRoomStateEvent) ProtoMessage() {}
+
+func (x *SyncRoomStateEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SyncRoomStateEvent.ProtoReflect.Descriptor instead.
+func (*SyncRoomStateEvent) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *SyncRoomStateEvent) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *SyncRoomStateEvent) GetStateKey() string {
+	if x != nil {
+		return x.StateKey
+	}
+	return ""
+}
+
+func (x *SyncRoomStateEvent) GetContent() []byte {
+	if x != nil {
+		return x.Content
+	}
+	return nil
+}
+
+func (x *SyncRoomStateEvent) GetSender() string {
+	if x != nil {
+		return x.Sender
+	}
+	return ""
+}
+
+// SyncRoom represents one joined room's state in an initial sync
+type SyncRoom struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	RoomId         string                 `protobuf:"bytes,1,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
+	StateEvents    []*SyncRoomStateEvent  `protobuf:"bytes,2,rep,name=state_events,json=stateEvents,proto3" json:"state_events,omitempty"`
+	TimelineEvents []*Event               `protobuf:"bytes,3,rep,name=timeline_events,json=timelineEvents,proto3" json:"timeline_events,omitempty"`
+	Limited        bool                   `protobuf:"varint,4,opt,name=limited,proto3" json:"limited,omitempty"`                     // true if timeline was truncated at 20
+	PrevBatch      string                 `protobuf:"bytes,5,opt,name=prev_batch,json=prevBatch,proto3" json:"prev_batch,omitempty"` // pagination token for GET /messages
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *SyncRoom) Reset() {
+	*x = SyncRoom{}
+	mi := &file_core_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SyncRoom) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SyncRoom) ProtoMessage() {}
+
+func (x *SyncRoom) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SyncRoom.ProtoReflect.Descriptor instead.
+func (*SyncRoom) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *SyncRoom) GetRoomId() string {
+	if x != nil {
+		return x.RoomId
+	}
+	return ""
+}
+
+func (x *SyncRoom) GetStateEvents() []*SyncRoomStateEvent {
+	if x != nil {
+		return x.StateEvents
+	}
+	return nil
+}
+
+func (x *SyncRoom) GetTimelineEvents() []*Event {
+	if x != nil {
+		return x.TimelineEvents
+	}
+	return nil
+}
+
+func (x *SyncRoom) GetLimited() bool {
+	if x != nil {
+		return x.Limited
+	}
+	return false
+}
+
+func (x *SyncRoom) GetPrevBatch() string {
+	if x != nil {
+		return x.PrevBatch
+	}
+	return ""
+}
+
 var File_core_proto protoreflect.FileDescriptor
 
 const file_core_proto_rawDesc = "" +
@@ -1573,7 +1816,25 @@ const file_core_proto_rawDesc = "" +
 	"\x15SetPowerLevelsRequest\x12\x17\n" +
 	"\aroom_id\x18\x01 \x01(\tR\x06roomId\x12*\n" +
 	"\x11power_levels_json\x18\x02 \x01(\tR\x0fpowerLevelsJson\"\x18\n" +
-	"\x16SetPowerLevelsResponse2\xf2\x06\n" +
+	"\x16SetPowerLevelsResponse\"0\n" +
+	"\x15GetInitialSyncRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\"_\n" +
+	"\x16GetInitialSyncResponse\x12\x1f\n" +
+	"\vsince_token\x18\x01 \x01(\tR\n" +
+	"sinceToken\x12$\n" +
+	"\x05rooms\x18\x02 \x03(\v2\x0e.core.SyncRoomR\x05rooms\"w\n" +
+	"\x12SyncRoomStateEvent\x12\x12\n" +
+	"\x04type\x18\x01 \x01(\tR\x04type\x12\x1b\n" +
+	"\tstate_key\x18\x02 \x01(\tR\bstateKey\x12\x18\n" +
+	"\acontent\x18\x03 \x01(\fR\acontent\x12\x16\n" +
+	"\x06sender\x18\x04 \x01(\tR\x06sender\"\xcf\x01\n" +
+	"\bSyncRoom\x12\x17\n" +
+	"\aroom_id\x18\x01 \x01(\tR\x06roomId\x12;\n" +
+	"\fstate_events\x18\x02 \x03(\v2\x18.core.SyncRoomStateEventR\vstateEvents\x124\n" +
+	"\x0ftimeline_events\x18\x03 \x03(\v2\v.core.EventR\x0etimelineEvents\x12\x18\n" +
+	"\alimited\x18\x04 \x01(\bR\alimited\x12\x1d\n" +
+	"\n" +
+	"prev_batch\x18\x05 \x01(\tR\tprevBatch2\xbf\a\n" +
 	"\vCoreService\x12<\n" +
 	"\tSendEvent\x12\x16.core.SendEventRequest\x1a\x17.core.SendEventResponse\x12?\n" +
 	"\n" +
@@ -1590,7 +1851,8 @@ const file_core_proto_rawDesc = "" +
 	"\fGetRoomState\x12\x19.core.GetRoomStateRequest\x1a\x1a.core.GetRoomStateResponse\x12?\n" +
 	"\n" +
 	"InviteUser\x12\x17.core.InviteUserRequest\x1a\x18.core.InviteUserResponse\x12K\n" +
-	"\x0eSetPowerLevels\x12\x1b.core.SetPowerLevelsRequest\x1a\x1c.core.SetPowerLevelsResponseB'Z%github.com/nebu/nebu/internal/grpc/pbb\x06proto3"
+	"\x0eSetPowerLevels\x12\x1b.core.SetPowerLevelsRequest\x1a\x1c.core.SetPowerLevelsResponse\x12K\n" +
+	"\x0eGetInitialSync\x12\x1b.core.GetInitialSyncRequest\x1a\x1c.core.GetInitialSyncResponseB'Z%github.com/nebu/nebu/internal/grpc/pbb\x06proto3"
 
 var (
 	file_core_proto_rawDescOnce sync.Once
@@ -1604,7 +1866,7 @@ func file_core_proto_rawDescGZIP() []byte {
 	return file_core_proto_rawDescData
 }
 
-var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
+var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_core_proto_goTypes = []any{
 	(*Event)(nil),                    // 0: core.Event
 	(*SendEventRequest)(nil),         // 1: core.SendEventRequest
@@ -1632,41 +1894,50 @@ var file_core_proto_goTypes = []any{
 	(*GetRoomStateResponse)(nil),     // 23: core.GetRoomStateResponse
 	(*SetPowerLevelsRequest)(nil),    // 24: core.SetPowerLevelsRequest
 	(*SetPowerLevelsResponse)(nil),   // 25: core.SetPowerLevelsResponse
+	(*GetInitialSyncRequest)(nil),    // 26: core.GetInitialSyncRequest
+	(*GetInitialSyncResponse)(nil),   // 27: core.GetInitialSyncResponse
+	(*SyncRoomStateEvent)(nil),       // 28: core.SyncRoomStateEvent
+	(*SyncRoom)(nil),                 // 29: core.SyncRoom
 }
 var file_core_proto_depIdxs = []int32{
 	0,  // 0: core.GetMessagesResponse.events:type_name -> core.Event
 	0,  // 1: core.GetPendingEventsResponse.events:type_name -> core.Event
-	1,  // 2: core.CoreService.SendEvent:input_type -> core.SendEventRequest
-	3,  // 3: core.CoreService.CreateRoom:input_type -> core.CreateRoomRequest
-	5,  // 4: core.CoreService.JoinRoom:input_type -> core.JoinRoomRequest
-	7,  // 5: core.CoreService.GetMessages:input_type -> core.GetMessagesRequest
-	9,  // 6: core.CoreService.SetPresence:input_type -> core.SetPresenceRequest
-	11, // 7: core.CoreService.SetTyping:input_type -> core.SetTypingRequest
-	13, // 8: core.CoreService.ValidateToken:input_type -> core.ValidateTokenRequest
-	15, // 9: core.CoreService.GetPendingEvents:input_type -> core.GetPendingEventsRequest
-	17, // 10: core.CoreService.EventBus:input_type -> core.EventBusRequest
-	18, // 11: core.CoreService.GetMetrics:input_type -> core.GetMetricsRequest
-	22, // 12: core.CoreService.GetRoomState:input_type -> core.GetRoomStateRequest
-	20, // 13: core.CoreService.InviteUser:input_type -> core.InviteUserRequest
-	24, // 14: core.CoreService.SetPowerLevels:input_type -> core.SetPowerLevelsRequest
-	2,  // 15: core.CoreService.SendEvent:output_type -> core.SendEventResponse
-	4,  // 16: core.CoreService.CreateRoom:output_type -> core.CreateRoomResponse
-	6,  // 17: core.CoreService.JoinRoom:output_type -> core.JoinRoomResponse
-	8,  // 18: core.CoreService.GetMessages:output_type -> core.GetMessagesResponse
-	10, // 19: core.CoreService.SetPresence:output_type -> core.SetPresenceResponse
-	12, // 20: core.CoreService.SetTyping:output_type -> core.SetTypingResponse
-	14, // 21: core.CoreService.ValidateToken:output_type -> core.ValidateTokenResponse
-	16, // 22: core.CoreService.GetPendingEvents:output_type -> core.GetPendingEventsResponse
-	0,  // 23: core.CoreService.EventBus:output_type -> core.Event
-	19, // 24: core.CoreService.GetMetrics:output_type -> core.GetMetricsResponse
-	23, // 25: core.CoreService.GetRoomState:output_type -> core.GetRoomStateResponse
-	21, // 26: core.CoreService.InviteUser:output_type -> core.InviteUserResponse
-	25, // 27: core.CoreService.SetPowerLevels:output_type -> core.SetPowerLevelsResponse
-	15, // [15:28] is the sub-list for method output_type
-	2,  // [2:15] is the sub-list for method input_type
-	2,  // [2:2] is the sub-list for extension type_name
-	2,  // [2:2] is the sub-list for extension extendee
-	0,  // [0:2] is the sub-list for field type_name
+	29, // 2: core.GetInitialSyncResponse.rooms:type_name -> core.SyncRoom
+	28, // 3: core.SyncRoom.state_events:type_name -> core.SyncRoomStateEvent
+	0,  // 4: core.SyncRoom.timeline_events:type_name -> core.Event
+	1,  // 5: core.CoreService.SendEvent:input_type -> core.SendEventRequest
+	3,  // 6: core.CoreService.CreateRoom:input_type -> core.CreateRoomRequest
+	5,  // 7: core.CoreService.JoinRoom:input_type -> core.JoinRoomRequest
+	7,  // 8: core.CoreService.GetMessages:input_type -> core.GetMessagesRequest
+	9,  // 9: core.CoreService.SetPresence:input_type -> core.SetPresenceRequest
+	11, // 10: core.CoreService.SetTyping:input_type -> core.SetTypingRequest
+	13, // 11: core.CoreService.ValidateToken:input_type -> core.ValidateTokenRequest
+	15, // 12: core.CoreService.GetPendingEvents:input_type -> core.GetPendingEventsRequest
+	17, // 13: core.CoreService.EventBus:input_type -> core.EventBusRequest
+	18, // 14: core.CoreService.GetMetrics:input_type -> core.GetMetricsRequest
+	22, // 15: core.CoreService.GetRoomState:input_type -> core.GetRoomStateRequest
+	20, // 16: core.CoreService.InviteUser:input_type -> core.InviteUserRequest
+	24, // 17: core.CoreService.SetPowerLevels:input_type -> core.SetPowerLevelsRequest
+	26, // 18: core.CoreService.GetInitialSync:input_type -> core.GetInitialSyncRequest
+	2,  // 19: core.CoreService.SendEvent:output_type -> core.SendEventResponse
+	4,  // 20: core.CoreService.CreateRoom:output_type -> core.CreateRoomResponse
+	6,  // 21: core.CoreService.JoinRoom:output_type -> core.JoinRoomResponse
+	8,  // 22: core.CoreService.GetMessages:output_type -> core.GetMessagesResponse
+	10, // 23: core.CoreService.SetPresence:output_type -> core.SetPresenceResponse
+	12, // 24: core.CoreService.SetTyping:output_type -> core.SetTypingResponse
+	14, // 25: core.CoreService.ValidateToken:output_type -> core.ValidateTokenResponse
+	16, // 26: core.CoreService.GetPendingEvents:output_type -> core.GetPendingEventsResponse
+	0,  // 27: core.CoreService.EventBus:output_type -> core.Event
+	19, // 28: core.CoreService.GetMetrics:output_type -> core.GetMetricsResponse
+	23, // 29: core.CoreService.GetRoomState:output_type -> core.GetRoomStateResponse
+	21, // 30: core.CoreService.InviteUser:output_type -> core.InviteUserResponse
+	25, // 31: core.CoreService.SetPowerLevels:output_type -> core.SetPowerLevelsResponse
+	27, // 32: core.CoreService.GetInitialSync:output_type -> core.GetInitialSyncResponse
+	19, // [19:33] is the sub-list for method output_type
+	5,  // [5:19] is the sub-list for method input_type
+	5,  // [5:5] is the sub-list for extension type_name
+	5,  // [5:5] is the sub-list for extension extendee
+	0,  // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_core_proto_init() }
@@ -1684,7 +1955,7 @@ func file_core_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_core_proto_rawDesc), len(file_core_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   26,
+			NumMessages:   30,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

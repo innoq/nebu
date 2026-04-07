@@ -187,6 +187,18 @@ func TestStubsReturnNil(t *testing.T) {
 				return nil
 			},
 		},
+		{
+			name: "GetInitialSync",
+			call: func() error {
+				// GetInitialSync is wired to the real gRPC client (Story 4-14),
+				// so it returns a connection error when no server is running.
+				_, err := c.GetInitialSync(ctx, &pb.GetInitialSyncRequest{})
+				if err == nil {
+					return fmt.Errorf("want connection error; got nil")
+				}
+				return nil
+			},
+		},
 	}
 
 	for _, tt := range tests {
