@@ -136,6 +136,11 @@ func (c *Client) GetInitialSync(ctx context.Context, req *pb.GetInitialSyncReque
 	return c.core.GetInitialSync(ctx, req)
 }
 
+// GetSyncDelta calls the Elixir core for incremental sync with long-polling (Story 4-15).
+func (c *Client) GetSyncDelta(ctx context.Context, req *pb.GetSyncDeltaRequest) (*pb.GetSyncDeltaResponse, error) {
+	return c.core.GetSyncDelta(ctx, req)
+}
+
 // NewClientWithCore constructs a Client using a pre-built CoreServiceClient.
 // This is used in tests to inject a mock without a real gRPC connection.
 func NewClientWithCore(core pb.CoreServiceClient) *Client {

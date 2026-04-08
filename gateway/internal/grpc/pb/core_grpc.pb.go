@@ -33,6 +33,7 @@ const (
 	CoreService_InviteUser_FullMethodName       = "/core.CoreService/InviteUser"
 	CoreService_SetPowerLevels_FullMethodName   = "/core.CoreService/SetPowerLevels"
 	CoreService_GetInitialSync_FullMethodName   = "/core.CoreService/GetInitialSync"
+	CoreService_GetSyncDelta_FullMethodName     = "/core.CoreService/GetSyncDelta"
 )
 
 // CoreServiceClient is the client API for CoreService service.
@@ -63,6 +64,8 @@ type CoreServiceClient interface {
 	SetPowerLevels(ctx context.Context, in *SetPowerLevelsRequest, opts ...grpc.CallOption) (*SetPowerLevelsResponse, error)
 	// GetInitialSync — returns full state snapshot for all of a user's joined rooms
 	GetInitialSync(ctx context.Context, in *GetInitialSyncRequest, opts ...grpc.CallOption) (*GetInitialSyncResponse, error)
+	// GetSyncDelta — incremental sync with long-polling; returns events after since_token
+	GetSyncDelta(ctx context.Context, in *GetSyncDeltaRequest, opts ...grpc.CallOption) (*GetSyncDeltaResponse, error)
 }
 
 type coreServiceClient struct {
@@ -222,6 +225,16 @@ func (c *coreServiceClient) GetInitialSync(ctx context.Context, in *GetInitialSy
 	return out, nil
 }
 
+func (c *coreServiceClient) GetSyncDelta(ctx context.Context, in *GetSyncDeltaRequest, opts ...grpc.CallOption) (*GetSyncDeltaResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetSyncDeltaResponse)
+	err := c.cc.Invoke(ctx, CoreService_GetSyncDelta_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CoreServiceServer is the server API for CoreService service.
 // All implementations must embed UnimplementedCoreServiceServer
 // for forward compatibility.
@@ -250,6 +263,8 @@ type CoreServiceServer interface {
 	SetPowerLevels(context.Context, *SetPowerLevelsRequest) (*SetPowerLevelsResponse, error)
 	// GetInitialSync — returns full state snapshot for all of a user's joined rooms
 	GetInitialSync(context.Context, *GetInitialSyncRequest) (*GetInitialSyncResponse, error)
+	// GetSyncDelta — incremental sync with long-polling; returns events after since_token
+	GetSyncDelta(context.Context, *GetSyncDeltaRequest) (*GetSyncDeltaResponse, error)
 	mustEmbedUnimplementedCoreServiceServer()
 }
 
@@ -301,6 +316,9 @@ func (UnimplementedCoreServiceServer) SetPowerLevels(context.Context, *SetPowerL
 }
 func (UnimplementedCoreServiceServer) GetInitialSync(context.Context, *GetInitialSyncRequest) (*GetInitialSyncResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetInitialSync not implemented")
+}
+func (UnimplementedCoreServiceServer) GetSyncDelta(context.Context, *GetSyncDeltaRequest) (*GetSyncDeltaResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetSyncDelta not implemented")
 }
 func (UnimplementedCoreServiceServer) mustEmbedUnimplementedCoreServiceServer() {}
 func (UnimplementedCoreServiceServer) testEmbeddedByValue()                     {}
@@ -568,6 +586,24 @@ func _CoreService_GetInitialSync_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_GetSyncDelta_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSyncDeltaRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).GetSyncDelta(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_GetSyncDelta_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).GetSyncDelta(ctx, req.(*GetSyncDeltaRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CoreService_ServiceDesc is the grpc.ServiceDesc for CoreService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -626,6 +662,10 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetInitialSync",
 			Handler:    _CoreService_GetInitialSync_Handler,
+		},
+		{
+			MethodName: "GetSyncDelta",
+			Handler:    _CoreService_GetSyncDelta_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

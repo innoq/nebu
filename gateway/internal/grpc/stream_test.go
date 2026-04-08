@@ -99,6 +99,9 @@ func (m *mockCoreClient) SetPowerLevels(_ context.Context, _ *pb.SetPowerLevelsR
 func (m *mockCoreClient) GetInitialSync(_ context.Context, _ *pb.GetInitialSyncRequest, _ ...grpc.CallOption) (*pb.GetInitialSyncResponse, error) {
 	return nil, nil
 }
+func (m *mockCoreClient) GetSyncDelta(_ context.Context, _ *pb.GetSyncDeltaRequest, _ ...grpc.CallOption) (*pb.GetSyncDeltaResponse, error) {
+	return nil, nil
+}
 
 // ─── Mock server-streaming client ────────────────────────────────────────────
 

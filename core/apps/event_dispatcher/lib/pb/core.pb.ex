@@ -348,6 +348,32 @@ defmodule Core.SyncRoomStateEvent do
   field :sender, 4, type: :string
 end
 
+defmodule Core.GetSyncDeltaRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.GetSyncDeltaRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :user_id, 1, type: :string, json_name: "userId"
+  field :since_token, 2, type: :string, json_name: "sinceToken"
+  field :timeout_ms, 3, type: :int64, json_name: "timeoutMs"
+end
+
+defmodule Core.GetSyncDeltaResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.GetSyncDeltaResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :since_token, 1, type: :string, json_name: "sinceToken"
+  field :rooms, 2, repeated: true, type: Core.SyncRoom
+  field :fallback_to_initial, 3, type: :bool, json_name: "fallbackToInitial"
+end
+
 defmodule Core.SyncRoom do
   @moduledoc false
 

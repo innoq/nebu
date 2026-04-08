@@ -492,6 +492,188 @@ defmodule Nebu.EventDispatcher.Server do
     }
   end
 
+  # ─── AC: GetSyncDelta — incremental sync with long-polling ─────────────────
+  #
+  # Flow (revised to prevent missed-event race):
+  #   1. Extract user_id, since_token, timeout_ms from request.
+  #   2. Clamp timeout_ms to max 30 000 ms.
+  #   3. Look up last_event_id via pg_store_module().get_since_token(user_id).
+  #      - {:error, :not_found} → fallback to get_initial_sync, set fallback_to_initial: true.
+  #   4. Get room IDs: rooms_db_module().get_rooms_for_user(user_id).
+  #   5. Subscribe to :pg groups for all user rooms BEFORE DB check (race prevention).
+  #   6. Check DB for pending events via messages_db_module().fetch_events_since/3.
+  #   7. If pending events → unsubscribe, return delta immediately.
+  #   8. If no pending events AND timeout_ms > 0 → wait in receive loop.
+  #   9. Generate and persist new since_token.
+  #  10. Return %Core.GetSyncDeltaResponse{}.
+
+  def get_sync_delta(request, _stream) do
+    user_id = request.user_id
+    _since_token = request.since_token
+    timeout_ms = request.timeout_ms |> max(0) |> min(30_000)
+
+    # Step 3: Resolve last_event_id from the since_token
+    case pg_store_module().get_since_token(user_id) do
+      {:error, :not_found} ->
+        # Fallback to full initial sync
+        initial_req = %Core.GetInitialSyncRequest{user_id: user_id}
+        initial_resp = get_initial_sync(initial_req, %{http_request_headers: %{}})
+
+        %Core.GetSyncDeltaResponse{
+          since_token: initial_resp.since_token,
+          rooms: initial_resp.rooms,
+          fallback_to_initial: true
+        }
+
+      {:ok, %{last_event_id: last_event_id}} ->
+        # Run the incremental sync in a short-lived Task so the Task's process
+        # joins and leaves :pg groups. When the Task exits, :pg auto-cleans its
+        # membership. This ensures the handler process itself never appears in any
+        # room :pg group after get_sync_delta/2 returns.
+        #
+        # Capture all module-level injectable deps before spawning (they are looked
+        # up at call time via Application.get_env, so the Task re-evaluates them in
+        # its own context automatically — no capture needed).
+        task_timeout = timeout_ms + 10_000
+
+        task = Task.async(fn ->
+          do_incremental_sync(user_id, last_event_id, timeout_ms)
+        end)
+
+        Task.await(task, task_timeout)
+    end
+  end
+
+  # Runs the incremental sync logic in a separate (Task) process so that
+  # :pg group subscriptions are owned by a process that exits when done.
+  # :pg auto-removes dead processes from groups.
+  defp do_incremental_sync(user_id, last_event_id, timeout_ms) do
+    # Step 4: Get user's rooms
+    room_ids =
+      case rooms_db_module().get_rooms_for_user(user_id) do
+        {:ok, ids} -> ids
+        {:error, _} -> []
+      end
+
+    # Step 5: Subscribe to :pg groups BEFORE DB check (race prevention)
+    Enum.each(room_ids, fn room_id ->
+      :pg.join("room:#{room_id}", self())
+    end)
+
+    # Step 6: Check DB for pending events per room.
+    # Pass last_event_id (string) directly — the DB module resolves the ts internally.
+    delta_rooms = fetch_delta_rooms(room_ids, last_event_id)
+
+    result_rooms =
+      if delta_rooms != [] do
+        # Step 7: Events found — leave :pg groups and return immediately
+        Enum.each(room_ids, fn room_id ->
+          :pg.leave("room:#{room_id}", self())
+        end)
+
+        delta_rooms
+      else
+        # Step 8: No events — enter long-poll if timeout_ms > 0
+        wait_result =
+          if timeout_ms > 0 do
+            timer_ref = Process.send_after(self(), :sync_long_poll_timeout, timeout_ms)
+
+            receive do
+              {:new_event, _event_map} ->
+                # Cancel the timer and re-query DB for all pending events
+                Process.cancel_timer(timer_ref)
+                flush_long_poll_timeout()
+                fetch_delta_rooms(room_ids, last_event_id)
+
+              :sync_long_poll_timeout ->
+                []
+            end
+          else
+            []
+          end
+
+        # Unsubscribe from :pg groups before returning (belt-and-suspenders;
+        # :pg auto-removes dead processes, but explicit leave is cleaner)
+        Enum.each(room_ids, fn room_id ->
+          :pg.leave("room:#{room_id}", self())
+        end)
+
+        wait_result
+      end
+
+    {new_since_token, newest_event_id} = generate_delta_token(user_id, result_rooms, last_event_id)
+    :ok = pg_store_module().persist_since_token(user_id, new_since_token, newest_event_id)
+
+    %Core.GetSyncDeltaResponse{
+      since_token: new_since_token,
+      rooms: result_rooms,
+      fallback_to_initial: false
+    }
+  end
+
+  # Fetch events since last_event_id for each room, build SyncRoom protos.
+  # last_event_id is the string event_id — the DB module resolves it to a timestamp.
+  defp fetch_delta_rooms(room_ids, last_event_id) do
+    Enum.flat_map(room_ids, fn room_id ->
+      case messages_db_module().fetch_events_since(room_id, last_event_id, 20) do
+        {:ok, []} ->
+          []
+
+        {:ok, events} ->
+          try do
+            state = room_registry_module().get_state(room_id)
+            state_events = build_state_events(state)
+            timeline_events = Enum.map(events, &event_map_to_proto/1)
+
+            [
+              %Core.SyncRoom{
+                room_id: room_id,
+                state_events: state_events,
+                timeline_events: timeline_events,
+                limited: length(events) >= 20,
+                prev_batch: ""
+              }
+            ]
+          catch
+            :exit, {:noproc, _} -> []
+          end
+
+        {:error, _} ->
+          []
+      end
+    end)
+  end
+
+  # Flush any stale :sync_long_poll_timeout message left in the mailbox
+  # after canceling the timer. This prevents leaking messages into the next
+  # receive block.
+  defp flush_long_poll_timeout do
+    receive do
+      :sync_long_poll_timeout -> :ok
+    after
+      0 -> :ok
+    end
+  end
+
+  # Generate a new since_token and find the newest event_id from the delta rooms.
+  defp generate_delta_token(user_id, rooms, fallback_event_id) do
+    newest_event_id =
+      Enum.flat_map(rooms, fn room -> room.timeline_events end)
+      |> Enum.max_by(fn ev -> ev.origin_ts end, fn -> nil end)
+      |> case do
+        nil -> fallback_event_id
+        ev -> ev.event_id
+      end
+
+    new_token =
+      Base.encode64(
+        "#{user_id}:#{newest_event_id || ""}:#{System.monotonic_time()}",
+        padding: false
+      )
+
+    {new_token, newest_event_id}
+  end
+
   # Build state events for a room: one m.room.member per active member + one m.room.power_levels.
   defp build_state_events(state) do
     member_events =

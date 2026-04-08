@@ -65,6 +65,12 @@ func (m *mockGetSyncCoreClient) GetInitialSync(ctx context.Context, req *pb.GetI
 	return m.resp, m.err
 }
 
+// GetSyncDelta stub — mockGetSyncCoreClient is only used for initial sync tests;
+// incremental sync tests use mockGetSyncDeltaCoreClient instead.
+func (m *mockGetSyncCoreClient) GetSyncDelta(_ context.Context, _ *pb.GetSyncDeltaRequest) (*pb.GetSyncDeltaResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not used in Story 4-14 tests")
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 // buildAuthedSyncHandler wires JWTMiddleware → GetSyncHandler.
@@ -313,38 +319,493 @@ func TestGetSync_Unauthenticated(t *testing.T) {
 	}
 }
 
-// ─── Test 3: Incremental sync (?since=<token>) → 501 Not Implemented ─────────
+// ─── Story 4-15: Incremental sync tests ──────────────────────────────────────
 //
-// AC #7 — when ?since is present, Story 4-15 handles it.
-// For Story 4-14, the handler must return 501 Not Implemented as a placeholder.
+// The tests below replace the Story 4-14 501-stub test for ?since.
+// They are written FIRST (ATDD gate) — all must FAIL until Story 4-15 is
+// implemented and `make proto` has regenerated pb/ with GetSyncDelta types.
 //
-// Given: valid JWT; ?since=s123_456789 query parameter present
-// When:  GET /_matrix/client/v3/sync?since=s123_456789
-// Then:  501 (Story 4-15 placeholder; Core must NOT be called)
+// mockGetSyncDeltaCoreClient — consumer-defined interface for GetSyncDelta.
+// Defined here alongside the tests (Go interface convention, ADR-009).
+// The interface method GetSyncDelta references *pb.GetSyncDeltaRequest and
+// *pb.GetSyncDeltaResponse — these types DO NOT EXIST YET in the generated pb/
+// package. Every test in this file will therefore fail with a compilation error
+// until `make proto` runs after the proto changes from Story 4-15 are applied.
 
-func TestGetSync_IncrementalSync_Stub(t *testing.T) {
-	mock := &mockGetSyncCoreClient{
-		resp: &pb.GetInitialSyncResponse{
-			SinceToken: "should_not_be_reached",
-			Rooms:      []*pb.SyncRoom{},
+type mockGetSyncDeltaCoreClient struct {
+	// For GetInitialSync (initial sync path — unchanged from 4-14)
+	initialResp        *pb.GetInitialSyncResponse
+	initialErr         error
+	capturedInitialReq *pb.GetInitialSyncRequest
+	delayFor           time.Duration
+
+	// For GetSyncDelta (incremental sync path — Story 4-15)
+	deltaResp        *pb.GetSyncDeltaResponse
+	deltaErr         error
+	capturedDeltaReq *pb.GetSyncDeltaRequest
+}
+
+func (m *mockGetSyncDeltaCoreClient) GetInitialSync(ctx context.Context, req *pb.GetInitialSyncRequest) (*pb.GetInitialSyncResponse, error) {
+	m.capturedInitialReq = req
+
+	if m.delayFor > 0 {
+		select {
+		case <-time.After(m.delayFor):
+		case <-ctx.Done():
+			return nil, status.Error(codes.Unavailable, "context deadline exceeded")
+		}
+	}
+
+	return m.initialResp, m.initialErr
+}
+
+func (m *mockGetSyncDeltaCoreClient) GetSyncDelta(ctx context.Context, req *pb.GetSyncDeltaRequest) (*pb.GetSyncDeltaResponse, error) {
+	m.capturedDeltaReq = req
+	return m.deltaResp, m.deltaErr
+}
+
+// buildAuthedSyncDeltaHandler is buildAuthedSyncHandler's counterpart for Story 4-15.
+// It wires JWTMiddleware → GetSyncHandler using a mockGetSyncDeltaCoreClient so that
+// both GetInitialSync and GetSyncDelta can be exercised from the same handler.
+// An optional timeout overrides the default 5s (pass 0 for default).
+func buildAuthedSyncDeltaHandler(t *testing.T, mock *mockGetSyncDeltaCoreClient, opts ...time.Duration) (http.Handler, *httptest.Server, func() string) {
+	t.Helper()
+
+	oidcSrv, privateKey := setupOIDCServer(t)
+	t.Cleanup(oidcSrv.Close)
+
+	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
+
+	cfg := GetSyncConfig{
+		CoreClient: mock,
+		ServerName: "test.local",
+	}
+	if len(opts) > 0 && opts[0] > 0 {
+		cfg.Timeout = opts[0]
+	}
+	handler := NewGetSyncHandler(cfg)
+
+	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil)(
+		http.HandlerFunc(handler.GetSync),
+	)
+
+	makeToken := func() string {
+		return signJWT(t, oidcSrv.URL, privateKey, time.Now().Add(time.Hour), nil)
+	}
+
+	return authed, oidcSrv, makeToken
+}
+
+// ─── Story 4-15 Test 1: Incremental sync — happy path → 200 with delta room ──
+//
+// AC #1, #2, #3 (Story 4-15) — GET /sync?since=<token> calls GetSyncDelta on Core
+// and maps the response (1 room with events) to a Matrix sync response.
+//
+// Given: valid JWT; ?since=s_token_abc; mock Core returns GetSyncDeltaResponse
+//        with 1 room and a new since_token
+// When:  GET /_matrix/client/v3/sync?since=s_token_abc
+// Then:  200; next_batch is non-empty and != "s_token_abc";
+//        rooms.join contains exactly 1 room with state.events and timeline.events
+
+func TestGetSync_IncrementalSync_HappyPath(t *testing.T) {
+	msgContentBytes := []byte(`{"msgtype":"m.text","body":"incremental hello"}`)
+	stateContentBytes := []byte(`{"membership":"join","displayname":""}`)
+
+	mock := &mockGetSyncDeltaCoreClient{
+		deltaResp: &pb.GetSyncDeltaResponse{
+			SinceToken:        "next_batch_delta_xyz",
+			FallbackToInitial: false,
+			Rooms: []*pb.SyncRoom{
+				{
+					RoomId: "!delta_room1:test.local",
+					StateEvents: []*pb.SyncRoomStateEvent{
+						{
+							Type:     "m.room.member",
+							StateKey: "@alice:test.local",
+							Content:  stateContentBytes,
+							Sender:   "@alice:test.local",
+						},
+					},
+					TimelineEvents: []*pb.Event{
+						{
+							EventId:   "$delta_ev1:test.local",
+							RoomId:    "!delta_room1:test.local",
+							SenderId:  "@alice:test.local",
+							EventType: "m.room.message",
+							Content:   msgContentBytes,
+							OriginTs:  1700000001000,
+						},
+					},
+					Limited:   false,
+					PrevBatch: "",
+				},
+			},
 		},
 	}
-	handler, _, makeToken := buildAuthedSyncHandler(t, mock)
 
-	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync?since=s123_456789", nil)
+	handler, _, makeToken := buildAuthedSyncDeltaHandler(t, mock)
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync?since=s_token_abc", nil)
 	req.Header.Set("Authorization", "Bearer "+makeToken())
 
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
-	if w.Code != http.StatusNotImplemented {
-		t.Fatalf("expected 501 for since-param request (Story 4-15 placeholder), got %d; body: %s",
-			w.Code, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for incremental sync, got %d; body: %s", w.Code, w.Body.String())
 	}
 
-	// Core must NOT be called — incremental sync is not implemented in this story
-	if mock.capturedReq != nil {
-		t.Error("expected GetInitialSync to NOT be called when ?since is present (Story 4-15 deferred)")
+	var resp struct {
+		NextBatch string `json:"next_batch"`
+		Rooms     struct {
+			Join   map[string]json.RawMessage `json:"join"`
+			Invite map[string]interface{}     `json:"invite"`
+			Leave  map[string]interface{}     `json:"leave"`
+		} `json:"rooms"`
+		Presence struct {
+			Events []interface{} `json:"events"`
+		} `json:"presence"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response body: %v", err)
+	}
+
+	// next_batch must come from the delta response, not be a re-echo of the since token
+	if resp.NextBatch == "" {
+		t.Error("expected non-empty next_batch in incremental sync response")
+	}
+	if resp.NextBatch == "s_token_abc" {
+		t.Errorf("next_batch must NOT reuse the incoming since token; got %q", resp.NextBatch)
+	}
+	if resp.NextBatch != "next_batch_delta_xyz" {
+		t.Errorf("expected next_batch=next_batch_delta_xyz, got %q", resp.NextBatch)
+	}
+
+	// rooms.join must contain exactly the 1 room from the delta
+	if len(resp.Rooms.Join) != 1 {
+		t.Errorf("expected 1 room in rooms.join, got %d", len(resp.Rooms.Join))
+	}
+	if _, ok := resp.Rooms.Join["!delta_room1:test.local"]; !ok {
+		t.Errorf("expected rooms.join to contain !delta_room1:test.local, got: %v", resp.Rooms.Join)
+	}
+
+	// rooms.invite and rooms.leave must be present (not null)
+	if resp.Rooms.Invite == nil {
+		t.Error("expected rooms.invite to be present (not null)")
+	}
+	if resp.Rooms.Leave == nil {
+		t.Error("expected rooms.leave to be present (not null)")
+	}
+
+	// GetSyncDelta must have been called with the correct since_token
+	if mock.capturedDeltaReq == nil {
+		t.Fatal("expected GetSyncDelta to be called, but capturedDeltaReq is nil")
+	}
+	if mock.capturedDeltaReq.SinceToken != "s_token_abc" {
+		t.Errorf("expected GetSyncDelta called with since_token=s_token_abc, got %q", mock.capturedDeltaReq.SinceToken)
+	}
+
+	// GetInitialSync must NOT have been called for incremental sync
+	if mock.capturedInitialReq != nil {
+		t.Error("expected GetInitialSync to NOT be called for incremental sync (?since present)")
+	}
+}
+
+// ─── Story 4-15 Test 2: Incremental sync — empty delta → 200 with empty rooms ─
+//
+// AC #4 (Story 4-15) — when Core returns no rooms (long-poll timeout fired),
+// the handler returns 200 with empty rooms.join and a valid next_batch.
+//
+// Given: valid JWT; ?since=s_token_abc&timeout=0; mock returns
+//        GetSyncDeltaResponse with empty rooms and a new since_token
+// When:  GET /_matrix/client/v3/sync?since=s_token_abc&timeout=0
+// Then:  200; rooms.join is {}; next_batch is non-empty and != "s_token_abc"
+
+func TestGetSync_IncrementalSync_EmptyDelta(t *testing.T) {
+	mock := &mockGetSyncDeltaCoreClient{
+		deltaResp: &pb.GetSyncDeltaResponse{
+			SinceToken:        "next_batch_empty_delta",
+			FallbackToInitial: false,
+			Rooms:             []*pb.SyncRoom{},
+		},
+	}
+
+	handler, _, makeToken := buildAuthedSyncDeltaHandler(t, mock)
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync?since=s_token_abc&timeout=0", nil)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for empty incremental sync, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		NextBatch string `json:"next_batch"`
+		Rooms     struct {
+			Join   map[string]interface{} `json:"join"`
+			Invite map[string]interface{} `json:"invite"`
+			Leave  map[string]interface{} `json:"leave"`
+		} `json:"rooms"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response body: %v", err)
+	}
+
+	// next_batch must be present and must be a NEW token
+	if resp.NextBatch == "" {
+		t.Error("expected non-empty next_batch even with empty delta")
+	}
+	if resp.NextBatch == "s_token_abc" {
+		t.Errorf("next_batch must NOT reuse the incoming since token; got %q", resp.NextBatch)
+	}
+
+	// rooms.join must be present and empty (not null)
+	if resp.Rooms.Join == nil {
+		t.Error("expected rooms.join to be {} (not null) for empty delta")
+	}
+	if len(resp.Rooms.Join) != 0 {
+		t.Errorf("expected empty rooms.join for empty delta, got %d entries", len(resp.Rooms.Join))
+	}
+
+	// rooms.invite and rooms.leave must be present (not null)
+	if resp.Rooms.Invite == nil {
+		t.Error("expected rooms.invite to be {} (not null)")
+	}
+	if resp.Rooms.Leave == nil {
+		t.Error("expected rooms.leave to be {} (not null)")
+	}
+
+	// timeout=0 must be forwarded to gRPC
+	if mock.capturedDeltaReq == nil {
+		t.Fatal("expected GetSyncDelta to be called")
+	}
+	if mock.capturedDeltaReq.TimeoutMs != 0 {
+		t.Errorf("expected timeout_ms=0 forwarded to Core, got %d", mock.capturedDeltaReq.TimeoutMs)
+	}
+}
+
+// ─── Story 4-15 Test 3: Incremental sync — ?timeout forwarded to gRPC ─────────
+//
+// AC #2 (Story 4-15) — the timeout query parameter (in ms) is forwarded to
+// Core via GetSyncDeltaRequest.timeout_ms.
+//
+// Given: valid JWT; ?since=s_token_abc&timeout=500; mock returns empty delta
+// When:  GET /_matrix/client/v3/sync?since=s_token_abc&timeout=500
+// Then:  200; capturedDeltaReq.timeout_ms == 500
+
+func TestGetSync_IncrementalSync_Timeout(t *testing.T) {
+	mock := &mockGetSyncDeltaCoreClient{
+		deltaResp: &pb.GetSyncDeltaResponse{
+			SinceToken: "next_batch_timeout_test",
+			Rooms:      []*pb.SyncRoom{},
+		},
+	}
+
+	handler, _, makeToken := buildAuthedSyncDeltaHandler(t, mock)
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync?since=s_token_abc&timeout=500", nil)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	if mock.capturedDeltaReq == nil {
+		t.Fatal("expected GetSyncDelta to be called")
+	}
+
+	// timeout=500 must be forwarded verbatim (below the 30000 ms cap)
+	if mock.capturedDeltaReq.TimeoutMs != 500 {
+		t.Errorf("expected timeout_ms=500 forwarded to Core, got %d", mock.capturedDeltaReq.TimeoutMs)
+	}
+}
+
+// ─── Story 4-15 Test 4: Incremental sync — ?timeout clamped to 30000 ──────────
+//
+// AC #7 (Story 4-15) — timeout values above 30 000 ms are clamped to 30 000 ms
+// before being forwarded to Core.
+//
+// Given: valid JWT; ?since=s_token_abc&timeout=120000 (> 30 000 ms cap)
+// When:  GET /_matrix/client/v3/sync?since=s_token_abc&timeout=120000
+// Then:  capturedDeltaReq.timeout_ms == 30000 (clamped)
+
+func TestGetSync_IncrementalSync_TimeoutClamped(t *testing.T) {
+	mock := &mockGetSyncDeltaCoreClient{
+		deltaResp: &pb.GetSyncDeltaResponse{
+			SinceToken: "next_batch_clamped",
+			Rooms:      []*pb.SyncRoom{},
+		},
+	}
+
+	handler, _, makeToken := buildAuthedSyncDeltaHandler(t, mock)
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync?since=s_token_abc&timeout=120000", nil)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	if mock.capturedDeltaReq == nil {
+		t.Fatal("expected GetSyncDelta to be called")
+	}
+
+	// timeout=120000 must be clamped to 30000 (AC #7)
+	const maxTimeoutMs = int64(30000)
+	if mock.capturedDeltaReq.TimeoutMs > maxTimeoutMs {
+		t.Errorf("expected timeout_ms clamped to %d, got %d", maxTimeoutMs, mock.capturedDeltaReq.TimeoutMs)
+	}
+	if mock.capturedDeltaReq.TimeoutMs != maxTimeoutMs {
+		t.Errorf("expected timeout_ms == %d after clamping, got %d", maxTimeoutMs, mock.capturedDeltaReq.TimeoutMs)
+	}
+}
+
+// ─── Story 4-15 Test 5: Incremental sync — Core unavailable → 503 M_UNAVAILABLE ─
+//
+// AC #6 (Story 4-15) — when Core returns gRPC UNAVAILABLE for GetSyncDelta, the
+// handler must return 503 with errcode M_UNAVAILABLE.
+//
+// Given: valid JWT; ?since=s_token_abc; mock Core returns
+//        status.Error(codes.Unavailable, "core is down") for GetSyncDelta
+// When:  GET /_matrix/client/v3/sync?since=s_token_abc
+// Then:  503 with errcode M_UNAVAILABLE
+
+func TestGetSync_IncrementalSync_CoreUnavailable(t *testing.T) {
+	mock := &mockGetSyncDeltaCoreClient{
+		deltaErr: status.Error(codes.Unavailable, "core is down"),
+	}
+
+	handler, _, makeToken := buildAuthedSyncDeltaHandler(t, mock)
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync?since=s_token_abc", nil)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 for incremental sync with Core unavailable, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var errResp matrixError
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+	if errResp.ErrCode != "M_UNAVAILABLE" {
+		t.Errorf("expected errcode M_UNAVAILABLE, got %s", errResp.ErrCode)
+	}
+
+	// GetSyncDelta must have been called (capturedDeltaReq set)
+	if mock.capturedDeltaReq == nil {
+		t.Error("expected GetSyncDelta to be called, but capturedDeltaReq is nil")
+	}
+
+	// GetInitialSync must NOT have been called
+	if mock.capturedInitialReq != nil {
+		t.Error("expected GetInitialSync NOT to be called when Core returned UNAVAILABLE on delta")
+	}
+}
+
+// ─── Story 4-15 Test 6: Incremental sync — FallbackToInitial=true → falls back ─
+//
+// AC #5 (Story 4-15) — when Core sets FallbackToInitial=true in GetSyncDeltaResponse,
+// the handler must call GetInitialSync and return that response to the client.
+//
+// Given: valid JWT; ?since=unknown_token;
+//        mock deltaResp has FallbackToInitial=true and empty rooms;
+//        mock initialResp has 1 room (next_batch: "initial_token",
+//          rooms: {"!room1:server": {...}})
+// When:  GET /_matrix/client/v3/sync?since=unknown_token
+// Then:  200; rooms.join contains the initial room (!room1:test.local);
+//        next_batch == "initial_token" (from initial sync, not delta);
+//        GetInitialSync was actually called (capturedInitialReq is set)
+
+func TestGetSync_IncrementalSync_FallbackToInitial(t *testing.T) {
+	stateContentBytes := []byte(`{"membership":"join","displayname":""}`)
+
+	mock := &mockGetSyncDeltaCoreClient{
+		// Delta response signals fallback — no rooms returned by delta
+		deltaResp: &pb.GetSyncDeltaResponse{
+			SinceToken:        "",
+			FallbackToInitial: true,
+			Rooms:             []*pb.SyncRoom{},
+		},
+		// Initial sync response that the handler must use after fallback
+		initialResp: &pb.GetInitialSyncResponse{
+			SinceToken: "initial_token",
+			Rooms: []*pb.SyncRoom{
+				{
+					RoomId: "!room1:test.local",
+					StateEvents: []*pb.SyncRoomStateEvent{
+						{
+							Type:     "m.room.member",
+							StateKey: "@alice:test.local",
+							Content:  stateContentBytes,
+							Sender:   "@alice:test.local",
+						},
+					},
+					TimelineEvents: []*pb.Event{},
+					Limited:        false,
+					PrevBatch:      "",
+				},
+			},
+		},
+	}
+
+	handler, _, makeToken := buildAuthedSyncDeltaHandler(t, mock)
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync?since=unknown_token", nil)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 after FallbackToInitial, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		NextBatch string `json:"next_batch"`
+		Rooms     struct {
+			Join   map[string]json.RawMessage `json:"join"`
+			Invite map[string]interface{}     `json:"invite"`
+			Leave  map[string]interface{}     `json:"leave"`
+		} `json:"rooms"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response body: %v", err)
+	}
+
+	// next_batch must come from the initial sync response
+	if resp.NextBatch != "initial_token" {
+		t.Errorf("expected next_batch=initial_token (from initial sync fallback), got %q", resp.NextBatch)
+	}
+
+	// rooms.join must contain the initial room
+	if len(resp.Rooms.Join) != 1 {
+		t.Errorf("expected 1 room in rooms.join after fallback, got %d", len(resp.Rooms.Join))
+	}
+	if _, ok := resp.Rooms.Join["!room1:test.local"]; !ok {
+		t.Errorf("expected rooms.join to contain !room1:test.local after fallback, got: %v", resp.Rooms.Join)
+	}
+
+	// GetInitialSync must have been called (the fallback path was taken)
+	if mock.capturedInitialReq == nil {
+		t.Error("expected GetInitialSync to be called when FallbackToInitial=true, but capturedInitialReq is nil")
+	}
+
+	// GetSyncDelta must also have been called (it triggered the fallback)
+	if mock.capturedDeltaReq == nil {
+		t.Error("expected GetSyncDelta to be called before the fallback, but capturedDeltaReq is nil")
 	}
 }
 

@@ -34,6 +34,9 @@ service CoreService {
 
   // GetInitialSync — returns full state snapshot for all of a user's joined rooms
   rpc GetInitialSync(GetInitialSyncRequest) returns (GetInitialSyncResponse);
+
+  // GetSyncDelta — incremental sync with long-polling; returns events after since_token
+  rpc GetSyncDelta(GetSyncDeltaRequest) returns (GetSyncDeltaResponse);
 }
 
 // Shared event type used across multiple RPCs
@@ -193,6 +196,19 @@ message SyncRoomStateEvent {
   string state_key = 2;
   bytes  content   = 3;  // JSON-encoded content
   string sender    = 4;
+}
+
+// GetSyncDelta — incremental sync request with long-polling
+message GetSyncDeltaRequest {
+  string user_id     = 1;
+  string since_token = 2;  // opaque token from previous next_batch
+  int64  timeout_ms  = 3;  // long-poll wait time; 0 = return immediately; max 30000
+}
+
+message GetSyncDeltaResponse {
+  string               since_token         = 1;  // new next_batch token for the client
+  repeated SyncRoom    rooms               = 2;  // only rooms with new events
+  bool                 fallback_to_initial = 3;  // true if since_token was unknown → full sync
 }
 
 // SyncRoom represents one joined room's state in an initial sync

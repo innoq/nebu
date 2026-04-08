@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	coregrpc "github.com/nebu/nebu/internal/grpc"
@@ -13,10 +14,12 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// GetSyncCoreClient is the consumer-defined interface for the GetInitialSync gRPC call.
+// GetSyncCoreClient is the consumer-defined interface for the sync gRPC calls.
+// Extended in Story 4-15 to include GetSyncDelta.
 // Keep it minimal — only what this handler needs (Go interface convention, ADR-009).
 type GetSyncCoreClient interface {
 	GetInitialSync(ctx context.Context, req *pb.GetInitialSyncRequest) (*pb.GetInitialSyncResponse, error)
+	GetSyncDelta(ctx context.Context, req *pb.GetSyncDeltaRequest) (*pb.GetSyncDeltaResponse, error)
 }
 
 // GetSyncHandler handles GET /_matrix/client/v3/sync.
@@ -95,19 +98,22 @@ type syncPresence struct {
 	Events []interface{} `json:"events"`
 }
 
+// maxSyncTimeoutMs is the upper bound for the ?timeout query parameter (Story 4-15).
+const maxSyncTimeoutMs = int64(30_000)
+
 // GetSync handles GET /_matrix/client/v3/sync.
 //
 // Flow:
-//  1. If ?since query param is present → return 501 (Story 4-15 placeholder).
+//  1. If ?since query param is present → delegate to handleIncrementalSync (Story 4-15).
 //  2. Extract user_id from JWT context (set by JWTMiddleware).
 //  3. Apply 5-second context timeout.
 //  4. Call Core.GetInitialSync.
 //  5. Map gRPC errors: UNAVAILABLE → 503 M_UNAVAILABLE, others → 500 M_UNKNOWN.
 //  6. Build Matrix sync response JSON and return 200.
 func (h *GetSyncHandler) GetSync(w http.ResponseWriter, r *http.Request) {
-	// AC #7: ?since present → 501 stub (Story 4-15)
-	if r.URL.Query().Get("since") != "" {
-		writeMatrixError(w, http.StatusNotImplemented, "M_UNRECOGNIZED", "Incremental sync not yet implemented (Story 4-15)")
+	// AC #9 (Story 4-15): ?since present → incremental sync
+	if sinceToken := r.URL.Query().Get("since"); sinceToken != "" {
+		h.handleIncrementalSync(w, r, sinceToken)
 		return
 	}
 
@@ -133,8 +139,122 @@ func (h *GetSyncHandler) GetSync(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build Matrix sync response
+	joinedRooms := buildJoinedRooms(resp.GetRooms())
+
+	syncResp := syncResponse{
+		NextBatch: resp.GetSinceToken(),
+		Rooms: syncRooms{
+			Join:   joinedRooms,
+			Invite: map[string]interface{}{},
+			Leave:  map[string]interface{}{},
+		},
+		Presence: syncPresence{Events: []interface{}{}},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(syncResp)
+}
+
+// handleIncrementalSync handles GET /_matrix/client/v3/sync?since=<token>.
+//
+// Story 4-15 — incremental sync with long-polling.
+// Flow:
+//  1. Parse and clamp ?timeout query param (default 0, max 30000 ms).
+//  2. Extract user_id from JWT context.
+//  3. Call Core.GetSyncDelta with user_id, since_token, timeout_ms.
+//  4. If response.FallbackToInitial → call GetInitialSync and return full response.
+//  5. Map gRPC errors: UNAVAILABLE → 503 M_UNAVAILABLE.
+//  6. Build Matrix sync response JSON and return 200.
+func (h *GetSyncHandler) handleIncrementalSync(w http.ResponseWriter, r *http.Request, sinceToken string) {
+	// 1. Parse and clamp timeout
+	timeoutMs := int64(0)
+	if raw := r.URL.Query().Get("timeout"); raw != "" {
+		if v, err := strconv.ParseInt(raw, 10, 64); err == nil {
+			timeoutMs = v
+		}
+	}
+	if timeoutMs < 0 {
+		timeoutMs = 0
+	}
+	if timeoutMs > maxSyncTimeoutMs {
+		timeoutMs = maxSyncTimeoutMs
+	}
+
+	sub, _ := r.Context().Value(middleware.ContextKeySub).(string)
+	systemRole, _ := r.Context().Value(middleware.ContextKeySystemRole).(string)
+	userID := coregrpc.FormatUserID(sub, h.serverName)
+
+	// AC #11: handler timeout = timeout_ms + 5000 ms grace period
+	handlerTimeout := h.timeout + time.Duration(timeoutMs)*time.Millisecond
+	ctx, cancel := context.WithTimeout(r.Context(), handlerTimeout)
+	defer cancel()
+	grpcCtx := coregrpc.WithUserMetadata(ctx, userID, systemRole)
+
+	deltaResp, err := h.coreClient.GetSyncDelta(grpcCtx, &pb.GetSyncDeltaRequest{
+		UserId:     userID,
+		SinceToken: sinceToken,
+		TimeoutMs:  timeoutMs,
+	})
+	if err != nil {
+		st, _ := status.FromError(err)
+		switch st.Code() {
+		case codes.Unavailable:
+			writeMatrixError(w, http.StatusServiceUnavailable, "M_UNAVAILABLE", "Core is temporarily unavailable")
+		default:
+			writeMatrixError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
+		}
+		return
+	}
+
+	// AC #6 (Story 4-15): FallbackToInitial → delegate to GetInitialSync
+	if deltaResp.GetFallbackToInitial() {
+		initialResp, err := h.coreClient.GetInitialSync(grpcCtx, &pb.GetInitialSyncRequest{UserId: userID})
+		if err != nil {
+			st, _ := status.FromError(err)
+			switch st.Code() {
+			case codes.Unavailable:
+				writeMatrixError(w, http.StatusServiceUnavailable, "M_UNAVAILABLE", "Core is temporarily unavailable")
+			default:
+				writeMatrixError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
+			}
+			return
+		}
+		joinedRooms := buildJoinedRooms(initialResp.GetRooms())
+		syncResp := syncResponse{
+			NextBatch: initialResp.GetSinceToken(),
+			Rooms: syncRooms{
+				Join:   joinedRooms,
+				Invite: map[string]interface{}{},
+				Leave:  map[string]interface{}{},
+			},
+			Presence: syncPresence{Events: []interface{}{}},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(syncResp)
+		return
+	}
+
+	// Build delta sync response
+	joinedRooms := buildJoinedRooms(deltaResp.GetRooms())
+	syncResp := syncResponse{
+		NextBatch: deltaResp.GetSinceToken(),
+		Rooms: syncRooms{
+			Join:   joinedRooms,
+			Invite: map[string]interface{}{},
+			Leave:  map[string]interface{}{},
+		},
+		Presence: syncPresence{Events: []interface{}{}},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(syncResp)
+}
+
+// buildJoinedRooms converts a slice of SyncRoom protos into the Matrix sync
+// rooms.join map format. Reused by both initial sync and incremental sync.
+func buildJoinedRooms(rooms []*pb.SyncRoom) map[string]syncJoinedRoom {
 	joinedRooms := make(map[string]syncJoinedRoom)
-	for _, room := range resp.GetRooms() {
+	for _, room := range rooms {
 		stateEvents := make([]syncStateEvent, 0, len(room.GetStateEvents()))
 		for _, se := range room.GetStateEvents() {
 			stateEvents = append(stateEvents, syncStateEvent{
@@ -166,17 +286,5 @@ func (h *GetSyncHandler) GetSync(w http.ResponseWriter, r *http.Request) {
 			},
 		}
 	}
-
-	syncResp := syncResponse{
-		NextBatch: resp.GetSinceToken(),
-		Rooms: syncRooms{
-			Join:   joinedRooms,
-			Invite: map[string]interface{}{},
-			Leave:  map[string]interface{}{},
-		},
-		Presence: syncPresence{Events: []interface{}{}},
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(syncResp)
+	return joinedRooms
 }

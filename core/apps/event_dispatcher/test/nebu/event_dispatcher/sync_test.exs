@@ -580,4 +580,548 @@ defmodule Nebu.EventDispatcher.SyncTest do
              "expected non-empty since_token in persist_since_token call, got: #{inspect(call_since_token)}"
     end
   end
+
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # Story 4-15: get_sync_delta/2 — Incremental Sync + Long-Polling
+  # ═══════════════════════════════════════════════════════════════════════════════
+  #
+  # These tests are written FIRST (ATDD gate), before implementation exists.
+  # ALL tests below are expected to FAIL until Story 4-15 is implemented.
+  #
+  # Test strategy:
+  #   - All tests call Nebu.EventDispatcher.Server.get_sync_delta/2 directly.
+  #   - SyncDeltaFakePgStore extends SyncTestFakePgStore with get_since_token/1
+  #     returning configurable responses. Uses the same :sync_test_pg_store_calls
+  #     ETS table as the existing fake.
+  #   - SyncDeltaFakeDB extends SyncTestFakeDB with fetch_events_since/3 (new DB
+  #     function required by the incremental sync handler) and get_event_timestamp/1.
+  #   - Long-poll timeout is configured via:
+  #       Application.put_env(:event_dispatcher, :sync_long_poll_timeout_ms, 100)
+  #     so tests complete quickly (100 ms instead of the production 30 000 ms).
+  #   - :pg subscription and cleanup is verified by inspecting :pg.get_members/1.
+  #
+  # NOTE: get_sync_delta/2 does NOT exist yet in Nebu.EventDispatcher.Server.
+  # All tests here must fail with a function_clause or UndefinedFunctionError
+  # until Story 4-15 adds the handler.
+
+  # ─── SyncDeltaFakePgStore ─────────────────────────────────────────────────────
+  #
+  # Extends the existing SyncTestFakePgStore with a configurable get_since_token/1.
+  # Tests inject this module via:
+  #   Application.put_env(:event_dispatcher, :pg_store_module, SyncDeltaFakePgStore)
+  #
+  # The ETS table :sync_test_pg_store_calls is already created in setup/0 above.
+
+  defmodule SyncDeltaFakePgStore do
+    # Configurable response for get_since_token/1.
+    # Set via: :ets.insert(:sync_delta_pg_store_config, {:get_since_token_response, result})
+    # Default: {:error, :not_found}
+    def get_since_token(_user_id) do
+      case :ets.lookup(:sync_delta_pg_store_config, :get_since_token_response) do
+        [{_, response}] -> response
+        [] -> {:error, :not_found}
+      end
+    end
+
+    def persist_since_token(user_id, since_token, last_event_id) do
+      idx = :ets.info(:sync_test_pg_store_calls, :size)
+      :ets.insert(:sync_test_pg_store_calls, {{:call, idx}, {user_id, since_token, last_event_id}})
+      :ok
+    end
+
+    def invalidate_session(_user_id) do
+      :ok
+    end
+
+    def recorded_calls do
+      :ets.match(:sync_test_pg_store_calls, {{:call, :_}, :"$1"})
+      |> Enum.map(fn [call] -> call end)
+    end
+  end
+
+  # ─── SyncDeltaFakeDB ──────────────────────────────────────────────────────────
+  #
+  # Extends SyncTestFakeDB with fetch_events_since/3 and get_event_timestamp/1,
+  # both required by the get_sync_delta/2 handler.
+  #
+  # fetch_events_since/3 — returns events with origin_server_ts > a timestamp.
+  #   Signature: fetch_events_since(room_id, last_event_id, limit) :: {:ok, [event_map]}
+  #   Implementation: looks up last_event_id timestamp, then returns events after it.
+  #
+  # get_event_timestamp/1 — returns origin_server_ts for a given event_id.
+  #   Signature: get_event_timestamp(event_id) :: {:ok, integer()} | {:error, :not_found}
+
+  defmodule SyncDeltaFakeDB do
+    # Delegate existing functions to SyncTestFakeDB.
+    defdelegate load_members(room_id), to: SyncTestFakeDB
+    defdelegate insert_room(room_id), to: SyncTestFakeDB
+    defdelegate insert_member(room_id, user_id), to: SyncTestFakeDB
+    defdelegate delete_member(room_id, user_id), to: SyncTestFakeDB
+    defdelegate insert_event(event), to: SyncTestFakeDB
+    defdelegate get_rooms_for_user(user_id), to: SyncTestFakeDB
+    defdelegate fetch_events(room_id, direction, limit, from_token), to: SyncTestFakeDB
+
+    # ── New: fetch_events_since/3 (Story 4-15) ────────────────────────────────
+    #
+    # Returns events for room_id with origin_server_ts strictly greater than
+    # the origin_server_ts of last_event_id. If last_event_id is nil, returns
+    # all events (same as initial sync). Returns at most `limit` events sorted
+    # by origin_server_ts ascending (chronological order).
+
+    def fetch_events_since(room_id, last_event_id, limit) do
+      cutoff_ts =
+        case last_event_id do
+          nil ->
+            0
+
+          id ->
+            case get_event_timestamp(id) do
+              {:ok, ts} -> ts
+              {:error, :not_found} -> 0
+            end
+        end
+
+      events =
+        :ets.match(:sync_test_db, {{:event, :"$1"}, :"$2"})
+        |> Enum.map(fn [_id, ev] -> ev end)
+        |> Enum.filter(fn ev ->
+          ev["room_id"] == room_id and ev["origin_server_ts"] > cutoff_ts
+        end)
+        |> Enum.sort_by(fn ev -> ev["origin_server_ts"] end, :asc)
+        |> Enum.take(limit)
+
+      {:ok, events}
+    end
+
+    # ── New: get_event_timestamp/1 (Story 4-15) ───────────────────────────────
+    #
+    # Returns {:ok, origin_server_ts} for a given event_id, or
+    # {:error, :not_found} if the event does not exist in FakeDB.
+
+    def get_event_timestamp(event_id) do
+      case :ets.lookup(:sync_test_db, {:event, event_id}) do
+        [{_, event_map}] ->
+          {:ok, event_map["origin_server_ts"]}
+
+        [] ->
+          {:error, :not_found}
+      end
+    end
+  end
+
+  # ─── Story 4-15 AT #1: get_sync_delta — pending events returned immediately ───
+  #
+  # AC #2 (Story 4-15): when events exist with origin_server_ts > last_event_id
+  # timestamp, the handler returns them immediately (no long-poll wait).
+  #
+  # AC #13 (Story 4-15, Elixir tests): GetSyncDelta with pending events → returns
+  # delta immediately.
+  #
+  # Given: @alice:test.local is a member of !delta1:test.local;
+  #        event $ev_old exists at ts 1_700_000_000_000 (= last_event_id);
+  #        event $ev_new exists at ts 1_700_000_001_000 (> last_event_id);
+  #        SyncDeltaFakePgStore.get_since_token returns {:ok, %{since_token: "s_old", last_event_id: "$ev_old"}}
+  # When:  Server.get_sync_delta/2 called with user_id: alice, since_token: "s_old", timeout_ms: 5000
+  # Then:  response is %Core.GetSyncDeltaResponse{};
+  #        response.rooms contains !delta1:test.local with $ev_new in timeline_events;
+  #        response.since_token != "s_old" (freshly generated);
+  #        returns immediately (does not wait for timeout_ms)
+
+  describe "Server.get_sync_delta/2 — pending events returned immediately" do
+    test "returns delta with new events without waiting for timeout" do
+      alice = "@alice:test.local"
+      room_id = "!delta1:test.local"
+
+      # Configure SyncDeltaFakePgStore and SyncDeltaFakeDB
+      :ets.new(:sync_delta_pg_store_config, [:named_table, :public, :set])
+
+      on_exit(fn ->
+        if :ets.info(:sync_delta_pg_store_config) != :undefined do
+          :ets.delete(:sync_delta_pg_store_config)
+        end
+      end)
+
+      Application.put_env(:event_dispatcher, :pg_store_module, SyncDeltaFakePgStore)
+      Application.put_env(:event_dispatcher, :messages_db_module, SyncDeltaFakeDB)
+      Application.put_env(:event_dispatcher, :rooms_db_module, SyncDeltaFakeDB)
+
+      on_exit(fn ->
+        Application.delete_env(:event_dispatcher, :pg_store_module)
+        Application.delete_env(:event_dispatcher, :messages_db_module)
+        Application.delete_env(:event_dispatcher, :rooms_db_module)
+      end)
+
+      :ok = setup_room_with_member(room_id, alice)
+
+      # Seed the "old" event (= last_event_id) and "new" event (= delta)
+      old_event = %{
+        "event_id" => "$ev_old_delta1",
+        "room_id" => room_id,
+        "sender" => alice,
+        "event_type" => "m.room.message",
+        "content" => %{"msgtype" => "m.text", "body" => "old"},
+        "origin_server_ts" => 1_700_000_000_000
+      }
+
+      new_event = %{
+        "event_id" => "$ev_new_delta1",
+        "room_id" => room_id,
+        "sender" => alice,
+        "event_type" => "m.room.message",
+        "content" => %{"msgtype" => "m.text", "body" => "new"},
+        "origin_server_ts" => 1_700_000_001_000
+      }
+
+      SyncDeltaFakeDB.insert_event(old_event)
+      SyncDeltaFakeDB.insert_event(new_event)
+
+      # Configure get_since_token to return old event's position
+      :ets.insert(:sync_delta_pg_store_config, {:get_since_token_response, {:ok, %{since_token: "s_old", last_event_id: "$ev_old_delta1"}}})
+
+      request = %Core.GetSyncDeltaRequest{
+        user_id: alice,
+        since_token: "s_old",
+        timeout_ms: 5000
+      }
+
+      # Time the call: must return well before the 5000 ms timeout
+      start_ms = System.monotonic_time(:millisecond)
+      response = Server.get_sync_delta(request, build_stream())
+      elapsed_ms = System.monotonic_time(:millisecond) - start_ms
+
+      assert %Core.GetSyncDeltaResponse{} = response,
+             "expected GetSyncDeltaResponse struct, got: #{inspect(response)}"
+
+      assert elapsed_ms < 1000,
+             "expected immediate return (< 1 s) when events are pending, took #{elapsed_ms} ms"
+
+      assert is_list(response.rooms),
+             "expected response.rooms to be a list"
+
+      room_ids = Enum.map(response.rooms, & &1.room_id)
+
+      assert room_id in room_ids,
+             "expected #{room_id} in response.rooms, got: #{inspect(room_ids)}"
+
+      delta_room = Enum.find(response.rooms, fn r -> r.room_id == room_id end)
+
+      timeline_event_ids = Enum.map(delta_room.timeline_events, & &1.event_id)
+
+      assert "$ev_new_delta1" in timeline_event_ids,
+             "expected new event $ev_new_delta1 in timeline_events, got: #{inspect(timeline_event_ids)}"
+
+      refute "$ev_old_delta1" in timeline_event_ids,
+             "expected old event $ev_old_delta1 NOT in timeline_events (it is before the since_token)"
+
+      # since_token in response must be a NEW token — not the incoming "s_old"
+      assert response.since_token != "s_old",
+             "response.since_token must be a new token, not the incoming since_token"
+
+      assert is_binary(response.since_token) and response.since_token != "",
+             "expected non-empty since_token in response"
+
+      # fallback_to_initial must be false (token was valid)
+      assert response.fallback_to_initial == false,
+             "expected fallback_to_initial=false when since_token is valid"
+    end
+  end
+
+  # ─── Story 4-15 AT #2: get_sync_delta — no events, timeout fires → empty delta ─
+  #
+  # AC #4 (Story 4-15): when no new events exist and timeout_ms > 0, the handler
+  # waits and returns an empty delta when the timeout fires.
+  #
+  # AC #13 (Story 4-15): GetSyncDelta with no events, timeout 100 ms → returns
+  # empty delta after timeout.
+  #
+  # Given: @alice:test.local is a member of !delta2:test.local;
+  #        no events after last_event_id;
+  #        SyncDeltaFakePgStore.get_since_token returns stored token;
+  #        :sync_long_poll_timeout_ms overridden to 100 ms via Application.put_env
+  # When:  Server.get_sync_delta/2 called with timeout_ms: 100
+  # Then:  after ~100 ms, returns GetSyncDeltaResponse with empty rooms;
+  #        response.since_token is a NEW token (persisted via SyncDeltaFakePgStore);
+  #        response.fallback_to_initial is false
+
+  describe "Server.get_sync_delta/2 — no events, timeout fires" do
+    test "waits for timeout then returns empty delta with new since_token" do
+      alice = "@alice:test.local"
+      room_id = "!delta2:test.local"
+
+      :ets.new(:sync_delta_pg_store_config, [:named_table, :public, :set])
+
+      on_exit(fn ->
+        if :ets.info(:sync_delta_pg_store_config) != :undefined do
+          :ets.delete(:sync_delta_pg_store_config)
+        end
+      end)
+
+      Application.put_env(:event_dispatcher, :pg_store_module, SyncDeltaFakePgStore)
+      Application.put_env(:event_dispatcher, :messages_db_module, SyncDeltaFakeDB)
+      Application.put_env(:event_dispatcher, :rooms_db_module, SyncDeltaFakeDB)
+
+      on_exit(fn ->
+        Application.delete_env(:event_dispatcher, :pg_store_module)
+        Application.delete_env(:event_dispatcher, :messages_db_module)
+        Application.delete_env(:event_dispatcher, :rooms_db_module)
+      end)
+
+      :ok = setup_room_with_member(room_id, alice)
+
+      # Seed only an "old" event — nothing newer than it
+      old_event = %{
+        "event_id" => "$ev_old_delta2",
+        "room_id" => room_id,
+        "sender" => alice,
+        "event_type" => "m.room.message",
+        "content" => %{"msgtype" => "m.text", "body" => "old only"},
+        "origin_server_ts" => 1_700_000_000_000
+      }
+
+      SyncDeltaFakeDB.insert_event(old_event)
+
+      :ets.insert(:sync_delta_pg_store_config, {:get_since_token_response, {:ok, %{since_token: "s_old_2", last_event_id: "$ev_old_delta2"}}})
+
+      request = %Core.GetSyncDeltaRequest{
+        user_id: alice,
+        since_token: "s_old_2",
+        timeout_ms: 100
+      }
+
+      start_ms = System.monotonic_time(:millisecond)
+      response = Server.get_sync_delta(request, build_stream())
+      elapsed_ms = System.monotonic_time(:millisecond) - start_ms
+
+      assert %Core.GetSyncDeltaResponse{} = response,
+             "expected GetSyncDeltaResponse struct, got: #{inspect(response)}"
+
+      # Should have waited approximately timeout_ms (100 ms) before returning
+      assert elapsed_ms >= 90,
+             "expected handler to wait ~100 ms for long-poll, but returned after #{elapsed_ms} ms"
+
+      # Should not wait much longer than timeout_ms
+      assert elapsed_ms < 2000,
+             "handler took too long (#{elapsed_ms} ms); expected near-100 ms timeout"
+
+      assert response.rooms == [],
+             "expected empty rooms in empty delta response, got: #{inspect(response.rooms)}"
+
+      assert is_binary(response.since_token) and response.since_token != "",
+             "expected non-empty since_token in empty delta response"
+
+      assert response.since_token != "s_old_2",
+             "response.since_token must be a NEW token, not the incoming since_token"
+
+      assert response.fallback_to_initial == false,
+             "expected fallback_to_initial=false (token was valid)"
+    end
+  end
+
+  # ─── Story 4-15 AT #3: get_sync_delta — unknown since_token → fallback ─────────
+  #
+  # AC #6 (Story 4-15): when get_since_token returns {:error, :not_found}, the
+  # handler falls back to initial sync and sets fallback_to_initial: true.
+  #
+  # AC #13 (Story 4-15): GetSyncDelta with unknown since_token → falls back to
+  # initial sync.
+  #
+  # Given: SyncDeltaFakePgStore.get_since_token returns {:error, :not_found};
+  #        @alice:test.local is a member of !delta3:test.local with 2 events
+  # When:  Server.get_sync_delta/2 called with since_token: "unknown_token"
+  # Then:  response.fallback_to_initial is true;
+  #        response.rooms contains !delta3:test.local with all its events (full sync);
+  #        response.since_token is non-empty
+
+  describe "Server.get_sync_delta/2 — unknown since_token falls back to initial sync" do
+    test "returns full initial sync response with fallback_to_initial: true" do
+      alice = "@alice:test.local"
+      room_id = "!delta3:test.local"
+
+      :ets.new(:sync_delta_pg_store_config, [:named_table, :public, :set])
+
+      on_exit(fn ->
+        if :ets.info(:sync_delta_pg_store_config) != :undefined do
+          :ets.delete(:sync_delta_pg_store_config)
+        end
+      end)
+
+      Application.put_env(:event_dispatcher, :pg_store_module, SyncDeltaFakePgStore)
+      Application.put_env(:event_dispatcher, :messages_db_module, SyncDeltaFakeDB)
+      Application.put_env(:event_dispatcher, :rooms_db_module, SyncDeltaFakeDB)
+
+      on_exit(fn ->
+        Application.delete_env(:event_dispatcher, :pg_store_module)
+        Application.delete_env(:event_dispatcher, :messages_db_module)
+        Application.delete_env(:event_dispatcher, :rooms_db_module)
+      end)
+
+      :ok = setup_room_with_member(room_id, alice)
+      seed_events(room_id, alice, 2)
+
+      # Note: get_since_token/1 is keyed by user_id, not by token value.
+      # The fallback triggers when no token is stored for this user_id, regardless of the since_token value provided.
+      # get_since_token returns :not_found for the unknown token
+      :ets.insert(:sync_delta_pg_store_config, {:get_since_token_response, {:error, :not_found}})
+
+      request = %Core.GetSyncDeltaRequest{
+        user_id: alice,
+        since_token: "unknown_token",
+        timeout_ms: 0
+      }
+
+      response = Server.get_sync_delta(request, build_stream())
+
+      assert %Core.GetSyncDeltaResponse{} = response,
+             "expected GetSyncDeltaResponse struct, got: #{inspect(response)}"
+
+      assert response.fallback_to_initial == true,
+             "expected fallback_to_initial=true when since_token is unknown, got: #{inspect(response.fallback_to_initial)}"
+
+      room_ids = Enum.map(response.rooms, & &1.room_id)
+
+      assert room_id in room_ids,
+             "expected #{room_id} in fallback response rooms, got: #{inspect(room_ids)}"
+
+      assert is_binary(response.since_token) and response.since_token != "",
+             "expected non-empty since_token in fallback response"
+    end
+  end
+
+  # ─── Story 4-15 AT #4: :pg cleanup after handler exits ────────────────────────
+  #
+  # AC #13 (Story 4-15): :pg cleanup — after get_sync_delta handler exits, the
+  # process is no longer in any room :pg group.
+  #
+  # The handler subscribes to :pg groups for room monitoring BEFORE checking for
+  # pending events (prevents missed-event race). After the handler exits (normally
+  # or via timeout), it must leave the :pg groups so the membership is clean.
+  #
+  # :pg auto-removes dead processes, so we verify membership is gone after a
+  # normal return (which exits the handler process).
+  #
+  # Given: @alice:test.local is a member of !delta4:test.local;
+  #        no new events (forces long-poll path → timeout fires);
+  #        timeout_ms: 100 (short for test speed)
+  # When:  Server.get_sync_delta/2 returns (timeout)
+  # Then:  :pg.get_members("room:!delta4:test.local") is [] (or does not contain
+  #        any dead PIDs)
+
+  describe "Server.get_sync_delta/2 — :pg group membership cleaned up on exit" do
+    test ":pg group contains no dead PIDs after handler returns" do
+      alice = "@alice:test.local"
+      room_id = "!delta4:test.local"
+      pg_group = "room:#{room_id}"
+
+      :ets.new(:sync_delta_pg_store_config, [:named_table, :public, :set])
+
+      on_exit(fn ->
+        if :ets.info(:sync_delta_pg_store_config) != :undefined do
+          :ets.delete(:sync_delta_pg_store_config)
+        end
+      end)
+
+      Application.put_env(:event_dispatcher, :pg_store_module, SyncDeltaFakePgStore)
+      Application.put_env(:event_dispatcher, :messages_db_module, SyncDeltaFakeDB)
+      Application.put_env(:event_dispatcher, :rooms_db_module, SyncDeltaFakeDB)
+
+      on_exit(fn ->
+        Application.delete_env(:event_dispatcher, :pg_store_module)
+        Application.delete_env(:event_dispatcher, :messages_db_module)
+        Application.delete_env(:event_dispatcher, :rooms_db_module)
+      end)
+
+      :ok = setup_room_with_member(room_id, alice)
+
+      # No events seeded — handler will enter long-poll path and timeout
+      :ets.insert(:sync_delta_pg_store_config, {:get_since_token_response, {:ok, %{since_token: "s_pg_test", last_event_id: nil}}})
+
+      request = %Core.GetSyncDeltaRequest{
+        user_id: alice,
+        since_token: "s_pg_test",
+        timeout_ms: 100
+      }
+
+      # The call is synchronous — when it returns, the handler process has exited
+      _response = Server.get_sync_delta(request, build_stream())
+
+      # After the handler returns, no live PIDs should remain in the :pg group.
+      # :pg.get_members/1 returns only live PIDs (auto-cleaned by OTP).
+      members =
+        try do
+          :pg.get_members(:pg, pg_group)
+        rescue
+          _ -> []
+        catch
+          _, _ -> []
+        end
+
+      # Filter to only live PIDs (belt-and-suspenders, :pg should do this automatically)
+      live_members = Enum.filter(members, &Process.alive?/1)
+
+      assert live_members == [],
+             "expected no live PIDs in :pg group #{pg_group} after handler returns, got: #{inspect(live_members)}"
+    end
+  end
+
+  # ─── Story 4-15 AT #10: next_batch is always a new token (nil last_event_id) ──
+  #
+  # AC #10 (Story 4-15): the response since_token must always be a freshly
+  # generated token — never an echo of the incoming since_token — even when the
+  # user has 0 rooms and last_event_id is nil (no events ever stored).
+  #
+  # This ensures a client that calls GET /sync?since=<stale_token> with no rooms
+  # will receive a new, advanceable token so it can make progress.
+  #
+  # Given: user has 0 rooms; SyncDeltaFakePgStore.get_since_token returns
+  #        {:ok, %{since_token: "s_old_token", last_event_id: nil}}
+  # When:  Server.get_sync_delta/2 is called with since_token: "s_old_token",
+  #        timeout_ms: 0
+  # Then:  response.since_token != "s_old_token" (always a new token);
+  #        response.since_token is a non-empty binary
+
+  describe "Server.get_sync_delta/2 — next_batch is always a new token (AT #10)" do
+    test "next_batch differs from since_token even when no events and last_event_id is nil" do
+      alice = "@alice_freshtoken:test.local"
+
+      :ets.new(:sync_delta_pg_store_config, [:named_table, :public, :set])
+
+      on_exit(fn ->
+        if :ets.info(:sync_delta_pg_store_config) != :undefined do
+          :ets.delete(:sync_delta_pg_store_config)
+        end
+      end)
+
+      Application.put_env(:event_dispatcher, :pg_store_module, SyncDeltaFakePgStore)
+      Application.put_env(:event_dispatcher, :messages_db_module, SyncDeltaFakeDB)
+      Application.put_env(:event_dispatcher, :rooms_db_module, SyncDeltaFakeDB)
+
+      on_exit(fn ->
+        Application.delete_env(:event_dispatcher, :pg_store_module)
+        Application.delete_env(:event_dispatcher, :messages_db_module)
+        Application.delete_env(:event_dispatcher, :rooms_db_module)
+      end)
+
+      # User has 0 rooms — no memberships seeded in FakeDB
+      # pg_store returns a valid token but with nil last_event_id (no events ever)
+      :ets.insert(:sync_delta_pg_store_config, {:get_since_token_response, {:ok, %{since_token: "s_old_token", last_event_id: nil}}})
+
+      request = %Core.GetSyncDeltaRequest{
+        user_id: alice,
+        since_token: "s_old_token",
+        timeout_ms: 0
+      }
+
+      response = Server.get_sync_delta(request, build_stream())
+
+      assert %Core.GetSyncDeltaResponse{} = response,
+             "expected GetSyncDeltaResponse struct, got: #{inspect(response)}"
+
+      # The response since_token must always be a NEW token — not an echo of the input
+      assert response.since_token != "s_old_token",
+             "response.since_token must differ from the incoming since_token, got: #{inspect(response.since_token)}"
+
+      assert is_binary(response.since_token) and response.since_token != "",
+             "expected non-empty binary since_token, got: #{inspect(response.since_token)}"
+    end
+  end
 end

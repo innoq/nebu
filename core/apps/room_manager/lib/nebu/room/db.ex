@@ -217,6 +217,72 @@ defmodule Nebu.Room.DB do
   defp encode_nullable(nil), do: {:ok, nil}
   defp encode_nullable(value), do: Jason.encode(value)
 
+  @sql_fetch_events_since """
+  SELECT event_id, room_id, sender, event_type, content, origin_server_ts
+  FROM events
+  WHERE room_id = $1 AND origin_server_ts > $2
+  ORDER BY origin_server_ts ASC
+  LIMIT $3
+  """
+
+  @doc """
+  Returns events in `room_id` with `origin_server_ts` strictly greater than
+  the timestamp of `last_event_id`. Returns up to `limit` events in
+  chronological order (ASC).
+
+  If `last_event_id` is `nil` or `""`, uses `since_ts = 0` (return all events).
+  If `get_event_timestamp/1` returns `{:error, :not_found}`, uses `since_ts = 0`
+  (conservative fallback — treat as full sync).
+
+  Returns `{:ok, [event_map]}` — empty list if no new events.
+  """
+  @spec fetch_events_since(String.t(), String.t() | nil, pos_integer()) ::
+          {:ok, [map()]} | {:error, term()}
+  def fetch_events_since(room_id, last_event_id, limit) do
+    since_ts =
+      cond do
+        is_nil(last_event_id) or last_event_id == "" ->
+          0
+
+        true ->
+          case get_event_timestamp(last_event_id) do
+            {:ok, ts} -> ts
+            {:error, _} -> 0
+          end
+      end
+
+    case Ecto.Adapters.SQL.query(Nebu.Repo, @sql_fetch_events_since, [room_id, since_ts, limit]) do
+      {:ok, %{columns: cols, rows: rows}} ->
+        events =
+          Enum.map(rows, fn row ->
+            cols |> Enum.zip(row) |> Map.new()
+          end)
+
+        {:ok, events}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @sql_get_event_ts "SELECT origin_server_ts FROM events WHERE event_id = $1 LIMIT 1"
+
+  @doc """
+  Returns the `origin_server_ts` for the given `event_id`.
+
+  Returns `{:ok, integer()}` on success.
+  Returns `{:error, :not_found}` if the event does not exist.
+  Returns `{:error, reason}` on DB error.
+  """
+  @spec get_event_timestamp(String.t()) :: {:ok, integer()} | {:error, :not_found | term()}
+  def get_event_timestamp(event_id) do
+    case Ecto.Adapters.SQL.query(Nebu.Repo, @sql_get_event_ts, [event_id]) do
+      {:ok, %{rows: [[ts]]}} -> {:ok, ts}
+      {:ok, %{rows: []}} -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   @doc """
   Fetches paginated events from the `events` table for the given room.
 

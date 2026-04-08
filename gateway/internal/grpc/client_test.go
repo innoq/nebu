@@ -199,6 +199,18 @@ func TestStubsReturnNil(t *testing.T) {
 				return nil
 			},
 		},
+		{
+			name: "GetSyncDelta",
+			call: func() error {
+				// GetSyncDelta is wired to the real gRPC client (Story 4-15),
+				// so it returns a connection error when no server is running.
+				_, err := c.GetSyncDelta(ctx, &pb.GetSyncDeltaRequest{})
+				if err == nil {
+					return fmt.Errorf("want connection error; got nil")
+				}
+				return nil
+			},
+		},
 	}
 
 	for _, tt := range tests {

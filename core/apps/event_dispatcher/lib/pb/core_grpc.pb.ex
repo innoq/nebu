@@ -13,6 +13,9 @@ defmodule Core.CoreService.Service do
   rpc :GetMetrics, Core.GetMetricsRequest, Core.GetMetricsResponse
   rpc :GetRoomState, Core.GetRoomStateRequest, Core.GetRoomStateResponse
   rpc :InviteUser, Core.InviteUserRequest, Core.InviteUserResponse
+  rpc :SetPowerLevels, Core.SetPowerLevelsRequest, Core.SetPowerLevelsResponse
+  rpc :GetInitialSync, Core.GetInitialSyncRequest, Core.GetInitialSyncResponse
+  rpc :GetSyncDelta, Core.GetSyncDeltaRequest, Core.GetSyncDeltaResponse
 end
 
 defmodule Core.CoreService.Stub do

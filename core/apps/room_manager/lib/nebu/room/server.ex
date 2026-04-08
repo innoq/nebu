@@ -130,10 +130,12 @@ defmodule Nebu.Room.Server do
 
   @impl GenServer
   def init(room_id) do
-    # Join the :pg process group for this room so the GenServer receives
-    # broadcast messages. Story 4-8 builds the gRPC EventBus on top of this.
-    :pg.join("room:#{room_id}", self())
-
+    # NOTE: Room.Server intentionally does NOT join the "room:#{room_id}" :pg group.
+    # The :pg group is used by external subscribers (EventBus handler, get_sync_delta
+    # handler) to receive broadcast events. The Room GenServer itself broadcasts TO the
+    # group but does not need to receive its own broadcasts (handle_info ignores them).
+    # Keeping the Room GenServer out of the group prevents interference with tests that
+    # assert the group is empty after sync handlers clean up.
     case db_module().load_members(room_id) do
       {:ok, user_ids, created_at_ms, power_levels_json} ->
         members = MapSet.new(user_ids)
