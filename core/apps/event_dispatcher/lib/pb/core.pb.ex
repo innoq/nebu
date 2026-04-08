@@ -311,6 +311,29 @@ defmodule Core.SetPowerLevelsResponse do
     syntax: :proto3
 end
 
+defmodule Core.SendReceiptRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.SendReceiptRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :room_id, 1, type: :string, json_name: "roomId"
+  field :user_id, 2, type: :string, json_name: "userId"
+  field :receipt_type, 3, type: :string, json_name: "receiptType"
+  field :event_id, 4, type: :string, json_name: "eventId"
+end
+
+defmodule Core.SendReceiptResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.SendReceiptResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+end
+
 defmodule Core.GetInitialSyncRequest do
   @moduledoc false
 

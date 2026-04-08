@@ -134,9 +134,23 @@ func TestStubsReturnNil(t *testing.T) {
 		{
 			name: "SetTyping",
 			call: func() error {
-				resp, err := c.SetTyping(ctx, &pb.SetTypingRequest{})
-				if err != nil || resp != nil {
-					return fmt.Errorf("want nil,nil; got %v,%v", resp, err)
+				// SetTyping is wired to the real gRPC client (Story 4-17),
+				// so it returns a connection error when no server is running.
+				_, err := c.SetTyping(ctx, &pb.SetTypingRequest{})
+				if err == nil {
+					return fmt.Errorf("want connection error; got nil")
+				}
+				return nil
+			},
+		},
+		{
+			name: "SendReceipt",
+			call: func() error {
+				// SendReceipt is wired to the real gRPC client (Story 4-17),
+				// so it returns a connection error when no server is running.
+				_, err := c.SendReceipt(ctx, &pb.SendReceiptRequest{})
+				if err == nil {
+					return fmt.Errorf("want connection error; got nil")
 				}
 				return nil
 			},

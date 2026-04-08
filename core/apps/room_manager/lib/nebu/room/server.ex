@@ -1,6 +1,7 @@
 defmodule Nebu.Room.Server do
   @moduledoc """
-  Room GenServer — lifecycle + send-event + power-level enforcement (Stories 4-2, 4-4, 4-13).
+  Room GenServer — lifecycle + send-event + power-level enforcement + typing indicators
+  (Stories 4-2, 4-4, 4-13, 4-17).
 
   Manages room membership state with PostgreSQL persistence.
   Rooms can be created, users can join and leave, and the current member
@@ -15,12 +16,19 @@ defmodule Nebu.Room.Server do
   - `set_power_levels/3` validates caller has `change_state` power before persisting.
   - `default_power_levels/0` is a public function for use by EventDispatcher.
 
+  Story 4-17 adds ephemeral typing state:
+  - `set_typing/4` manages `typing_users: MapSet` in GenServer state.
+  - Typing state is EPHEMERAL — Persistence Strategy: Option C (Stateless).
+  - Auto-expiry via `Process.send_after/3` → `{:typing_expire, user_id}`.
+  - Broadcasts `{:typing_update, user_id, typing}` via :pg room group.
+
   State structure:
     %{
       room_id:      String.t(),
       members:      MapSet.t(String.t()),
       power_levels: map(),          # string-key map — see Nebu.Room.PowerLevels
-      created_at:   DateTime.t()
+      created_at:   DateTime.t(),
+      typing_users: MapSet.t(String.t())  # ephemeral — resets on restart
     }
 
   DB writes go through the configurable db_module/0 helper (defaults to Nebu.Room.DB).
@@ -76,6 +84,20 @@ defmodule Nebu.Room.Server do
   @spec set_power_levels(String.t(), String.t(), map()) :: :ok | {:error, term()}
   def set_power_levels(room_id, caller_id, new_levels) do
     GenServer.call(via(room_id), {:set_power_levels, new_levels, caller_id})
+  end
+
+  @doc """
+  Sets or clears the typing indicator for `user_id` in `room_id`.
+
+  When `typing: true`, schedules auto-clear after `timeout_ms` via `Process.send_after`.
+  When `typing: false`, clears immediately.
+  Broadcasts `{:typing_update, user_id, typing}` to all :pg room subscribers.
+  State is ephemeral — NOT persisted to DB. No crash/restart recovery needed.
+  (Persistence Strategy: Option C — Stateless)
+  """
+  @spec set_typing(String.t(), String.t(), boolean(), integer()) :: :ok
+  def set_typing(room_id, user_id, typing, timeout_ms) do
+    GenServer.call(via(room_id), {:set_typing, user_id, typing, timeout_ms})
   end
 
   @doc """
@@ -141,7 +163,7 @@ defmodule Nebu.Room.Server do
         members = MapSet.new(user_ids)
         created_at = DateTime.from_unix!(created_at_ms, :millisecond)
         power_levels = parse_power_levels(power_levels_json)
-        {:ok, %{room_id: room_id, members: members, power_levels: power_levels, created_at: created_at}}
+        {:ok, %{room_id: room_id, members: members, power_levels: power_levels, created_at: created_at, typing_users: MapSet.new()}}
 
       {:error, :not_found} ->
         case db_module().insert_room(room_id) do
@@ -153,7 +175,8 @@ defmodule Nebu.Room.Server do
                room_id: room_id,
                members: MapSet.new(),
                power_levels: %{},
-               created_at: created_at
+               created_at: created_at,
+               typing_users: MapSet.new()
              }}
 
           {:error, reason} ->
@@ -287,12 +310,49 @@ defmodule Nebu.Room.Server do
     end
   end
 
+  # ─── handle_call for :set_typing ──────────────────────────────────────────
+
+  @impl GenServer
+  def handle_call({:set_typing, user_id, typing, timeout_ms}, _from, state) do
+    new_typing_users =
+      if typing do
+        # Schedule auto-expire. Fire-and-forget: stale expire messages are
+        # handled gracefully in handle_info({:typing_expire, ...}) below.
+        Process.send_after(self(), {:typing_expire, user_id}, timeout_ms)
+        MapSet.put(state.typing_users, user_id)
+      else
+        MapSet.delete(state.typing_users, user_id)
+      end
+
+    # Broadcast to :pg room group subscribers.
+    members = :pg.get_local_members("room:#{state.room_id}")
+    Enum.each(members, fn pid -> send(pid, {:typing_update, user_id, typing}) end)
+
+    {:reply, :ok, %{state | typing_users: new_typing_users}}
+  end
+
   # Handle incoming :new_event broadcasts from :pg group members (including self).
   # Story 4-4: fire-and-forget — Room GenServer receives its own broadcast.
   # Story 4-8 will add a real subscriber that forwards events to gRPC streams.
   @impl GenServer
   def handle_info({:new_event, _event}, state) do
     {:noreply, state}
+  end
+
+  # Handle :typing_expire — auto-clear a user's typing indicator after timeout.
+  # Only broadcasts if the user is still in the typing set (prevents double-expire
+  # from stale timer messages when typing was already cleared via set_typing=false).
+  @impl GenServer
+  def handle_info({:typing_expire, user_id}, state) do
+    if MapSet.member?(state.typing_users, user_id) do
+      new_typing_users = MapSet.delete(state.typing_users, user_id)
+      members = :pg.get_local_members("room:#{state.room_id}")
+      Enum.each(members, fn pid -> send(pid, {:typing_update, user_id, false}) end)
+      {:noreply, %{state | typing_users: new_typing_users}}
+    else
+      # Stale timer message (user already cleared typing) — no-op.
+      {:noreply, state}
+    end
   end
 
   # ─── Private ───────────────────────────────────────────────────────────────

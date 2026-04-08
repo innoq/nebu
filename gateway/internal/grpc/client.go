@@ -93,9 +93,14 @@ func (c *Client) SetPresence(ctx context.Context, req *pb.SetPresenceRequest) (*
 	return nil, nil
 }
 
-// SetTyping stub — implemented in Epic 4.
+// SetTyping calls the Elixir core to set/clear the typing indicator for a user in a room.
 func (c *Client) SetTyping(ctx context.Context, req *pb.SetTypingRequest) (*pb.SetTypingResponse, error) {
-	return nil, nil
+	return c.core.SetTyping(ctx, req)
+}
+
+// SendReceipt calls the Elixir core to persist a read receipt.
+func (c *Client) SendReceipt(ctx context.Context, req *pb.SendReceiptRequest) (*pb.SendReceiptResponse, error) {
+	return c.core.SendReceipt(ctx, req)
 }
 
 // ValidateToken calls the Elixir core to validate/provision a user.

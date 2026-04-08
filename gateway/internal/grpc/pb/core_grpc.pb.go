@@ -32,6 +32,7 @@ const (
 	CoreService_GetRoomState_FullMethodName     = "/core.CoreService/GetRoomState"
 	CoreService_InviteUser_FullMethodName       = "/core.CoreService/InviteUser"
 	CoreService_SetPowerLevels_FullMethodName   = "/core.CoreService/SetPowerLevels"
+	CoreService_SendReceipt_FullMethodName      = "/core.CoreService/SendReceipt"
 	CoreService_GetInitialSync_FullMethodName   = "/core.CoreService/GetInitialSync"
 	CoreService_GetSyncDelta_FullMethodName     = "/core.CoreService/GetSyncDelta"
 )
@@ -62,6 +63,8 @@ type CoreServiceClient interface {
 	InviteUser(ctx context.Context, in *InviteUserRequest, opts ...grpc.CallOption) (*InviteUserResponse, error)
 	// SetPowerLevels — update room power levels (caller must have change_state power)
 	SetPowerLevels(ctx context.Context, in *SetPowerLevelsRequest, opts ...grpc.CallOption) (*SetPowerLevelsResponse, error)
+	// SendReceipt — persists a read receipt for a user in a room
+	SendReceipt(ctx context.Context, in *SendReceiptRequest, opts ...grpc.CallOption) (*SendReceiptResponse, error)
 	// GetInitialSync — returns full state snapshot for all of a user's joined rooms
 	GetInitialSync(ctx context.Context, in *GetInitialSyncRequest, opts ...grpc.CallOption) (*GetInitialSyncResponse, error)
 	// GetSyncDelta — incremental sync with long-polling; returns events after since_token
@@ -215,6 +218,16 @@ func (c *coreServiceClient) SetPowerLevels(ctx context.Context, in *SetPowerLeve
 	return out, nil
 }
 
+func (c *coreServiceClient) SendReceipt(ctx context.Context, in *SendReceiptRequest, opts ...grpc.CallOption) (*SendReceiptResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SendReceiptResponse)
+	err := c.cc.Invoke(ctx, CoreService_SendReceipt_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *coreServiceClient) GetInitialSync(ctx context.Context, in *GetInitialSyncRequest, opts ...grpc.CallOption) (*GetInitialSyncResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetInitialSyncResponse)
@@ -261,6 +274,8 @@ type CoreServiceServer interface {
 	InviteUser(context.Context, *InviteUserRequest) (*InviteUserResponse, error)
 	// SetPowerLevels — update room power levels (caller must have change_state power)
 	SetPowerLevels(context.Context, *SetPowerLevelsRequest) (*SetPowerLevelsResponse, error)
+	// SendReceipt — persists a read receipt for a user in a room
+	SendReceipt(context.Context, *SendReceiptRequest) (*SendReceiptResponse, error)
 	// GetInitialSync — returns full state snapshot for all of a user's joined rooms
 	GetInitialSync(context.Context, *GetInitialSyncRequest) (*GetInitialSyncResponse, error)
 	// GetSyncDelta — incremental sync with long-polling; returns events after since_token
@@ -313,6 +328,9 @@ func (UnimplementedCoreServiceServer) InviteUser(context.Context, *InviteUserReq
 }
 func (UnimplementedCoreServiceServer) SetPowerLevels(context.Context, *SetPowerLevelsRequest) (*SetPowerLevelsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetPowerLevels not implemented")
+}
+func (UnimplementedCoreServiceServer) SendReceipt(context.Context, *SendReceiptRequest) (*SendReceiptResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SendReceipt not implemented")
 }
 func (UnimplementedCoreServiceServer) GetInitialSync(context.Context, *GetInitialSyncRequest) (*GetInitialSyncResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetInitialSync not implemented")
@@ -568,6 +586,24 @@ func _CoreService_SetPowerLevels_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_SendReceipt_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SendReceiptRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).SendReceipt(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_SendReceipt_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).SendReceipt(ctx, req.(*SendReceiptRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _CoreService_GetInitialSync_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetInitialSyncRequest)
 	if err := dec(in); err != nil {
@@ -658,6 +694,10 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetPowerLevels",
 			Handler:    _CoreService_SetPowerLevels_Handler,
+		},
+		{
+			MethodName: "SendReceipt",
+			Handler:    _CoreService_SendReceipt_Handler,
 		},
 		{
 			MethodName: "GetInitialSync",

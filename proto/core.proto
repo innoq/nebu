@@ -32,6 +32,9 @@ service CoreService {
   // SetPowerLevels — update room power levels (caller must have change_state power)
   rpc SetPowerLevels(SetPowerLevelsRequest) returns (SetPowerLevelsResponse);
 
+  // SendReceipt — persists a read receipt for a user in a room
+  rpc SendReceipt(SendReceiptRequest) returns (SendReceiptResponse);
+
   // GetInitialSync — returns full state snapshot for all of a user's joined rooms
   rpc GetInitialSync(GetInitialSyncRequest) returns (GetInitialSyncResponse);
 
@@ -179,6 +182,15 @@ message SetPowerLevelsRequest {
   string power_levels_json = 2;  // JSON string of full power_levels map
 }
 message SetPowerLevelsResponse {}
+
+// SendReceipt — persists a read receipt for a user in a room
+message SendReceiptRequest {
+  string room_id      = 1;
+  string user_id      = 2;
+  string receipt_type = 3;  // always "m.read" at MVP
+  string event_id     = 4;
+}
+message SendReceiptResponse {}
 
 // GetInitialSync — returns full state snapshot for all of a user's joined rooms
 message GetInitialSyncRequest {

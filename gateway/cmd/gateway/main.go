@@ -320,6 +320,20 @@ func main() {
 	mux.Handle("GET /_matrix/client/v3/sync",
 		jwtMiddleware(http.HandlerFunc(syncHandler.GetSync)))
 
+	typingHandler := matrix.NewTypingHandler(matrix.TypingConfig{
+		CoreClient: coreClient,
+		ServerName: serverName,
+	})
+	mux.Handle("PUT /_matrix/client/v3/rooms/{roomId}/typing/{userId}",
+		jwtMiddleware(http.HandlerFunc(typingHandler.PutTyping)))
+
+	receiptsHandler := matrix.NewReceiptsHandler(matrix.ReceiptsConfig{
+		CoreClient: coreClient,
+		ServerName: serverName,
+	})
+	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/receipt/{receiptType}/{eventId}",
+		jwtMiddleware(http.HandlerFunc(receiptsHandler.PostReceipt)))
+
 	slog.Info("HTTP server starting", "addr", ":8008")
 	if err := http.ListenAndServe(":8008", mux); err != nil {
 		slog.Error("HTTP server failed", "err", err)

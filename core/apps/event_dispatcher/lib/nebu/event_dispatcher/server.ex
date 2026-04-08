@@ -27,6 +27,12 @@ defmodule Nebu.EventDispatcher.Server do
     Application.get_env(:event_dispatcher, :rooms_db_module, Nebu.Room.DB)
   end
 
+  # ─── Configurable receipt DB module for testability ──────────────────────────
+  # Override via Application.put_env(:event_dispatcher, :receipt_db_module, FakeReceiptDB) in tests.
+  defp receipt_db_module do
+    Application.get_env(:event_dispatcher, :receipt_db_module, Nebu.Receipt.DB)
+  end
+
   # ─── Configurable PgStore module for testability ──────────────────────────────
   # Override via Application.put_env(:event_dispatcher, :pg_store_module, FakePgStore) in tests.
   defp pg_store_module do
@@ -284,8 +290,75 @@ defmodule Nebu.EventDispatcher.Server do
     %Core.SetPresenceResponse{}
   end
 
-  def set_typing(_request, _stream) do
-    %Core.SetTypingResponse{}
+  def set_typing(request, _stream) do
+    room_id = request.room_id
+    user_id = request.user_id
+    typing = request.typing
+    timeout_ms = request.timeout_ms |> max(0) |> min(30_000)
+
+    # Room existence check.
+    case Nebu.Room.RoomSupervisor.lookup_room(room_id) do
+      {:error, :not_found} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "room not found: #{room_id}"
+
+      {:ok, _pid} ->
+        state = room_registry_module().get_state(room_id)
+
+        unless MapSet.member?(state.members, user_id) do
+          raise GRPC.RPCError,
+            status: GRPC.Status.permission_denied(),
+            message: "#{user_id} is not a member of #{room_id}"
+        end
+
+        # Delegate typing state management to Room GenServer.
+        :ok = room_registry_module().set_typing(room_id, user_id, typing, timeout_ms)
+
+        %Core.SetTypingResponse{}
+    end
+  end
+
+  def send_receipt(request, stream) do
+    room_id = request.room_id
+    receipt_type = request.receipt_type
+    event_id = request.event_id
+
+    # Extract authenticated user_id from gRPC metadata.
+    {user_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
+
+    if is_nil(user_id) or user_id == "" do
+      raise GRPC.RPCError,
+        status: GRPC.Status.unauthenticated(),
+        message: "missing x-user-id metadata"
+    end
+
+    # Room existence check.
+    case Nebu.Room.RoomSupervisor.lookup_room(room_id) do
+      {:error, :not_found} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "room not found: #{room_id}"
+
+      {:ok, _pid} ->
+        state = room_registry_module().get_state(room_id)
+
+        unless MapSet.member?(state.members, user_id) do
+          raise GRPC.RPCError,
+            status: GRPC.Status.permission_denied(),
+            message: "#{user_id} is not a member of #{room_id}"
+        end
+
+        case receipt_db_module().upsert_receipt(room_id, user_id, receipt_type, event_id) do
+          :ok ->
+            %Core.SendReceiptResponse{}
+
+          {:error, reason} ->
+            raise GRPC.RPCError,
+              status: GRPC.Status.internal(),
+              message: "upsert_receipt failed: #{inspect(reason)}"
+        end
+    end
   end
 
   def validate_token(request, stream) do
