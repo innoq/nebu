@@ -88,9 +88,9 @@ func (c *Client) GetMessages(ctx context.Context, req *pb.GetMessagesRequest) (*
 	return c.core.GetMessages(ctx, req)
 }
 
-// SetPresence stub — implemented in Epic 4.
+// SetPresence calls the Elixir core to set the presence status for a user.
 func (c *Client) SetPresence(ctx context.Context, req *pb.SetPresenceRequest) (*pb.SetPresenceResponse, error) {
-	return nil, nil
+	return c.core.SetPresence(ctx, req)
 }
 
 // SetTyping calls the Elixir core to set/clear the typing indicator for a user in a room.
@@ -101,6 +101,17 @@ func (c *Client) SetTyping(ctx context.Context, req *pb.SetTypingRequest) (*pb.S
 // SendReceipt calls the Elixir core to persist a read receipt.
 func (c *Client) SendReceipt(ctx context.Context, req *pb.SendReceiptRequest) (*pb.SendReceiptResponse, error) {
 	return c.core.SendReceipt(ctx, req)
+}
+
+// GetPresence calls the Elixir core to retrieve presence status for a user.
+// Core always returns a response (unknown users default to "offline") — never returns not_found.
+func (c *Client) GetPresence(ctx context.Context, req *pb.GetPresenceRequest) (*pb.GetPresenceResponse, error) {
+	return c.core.GetPresence(ctx, req)
+}
+
+// UpdateProfile calls the Elixir core to upsert a user's displayname and/or avatar_url.
+func (c *Client) UpdateProfile(ctx context.Context, req *pb.UpdateProfileRequest) (*pb.UpdateProfileResponse, error) {
+	return c.core.UpdateProfile(ctx, req)
 }
 
 // ValidateToken calls the Elixir core to validate/provision a user.

@@ -27,7 +27,8 @@ defmodule Nebu.Event.MixProject do
       {:grpc, "~> 0.8"},
       {:jason, "~> 1.4"},
       {:session_manager, in_umbrella: true},
-      {:room_manager, in_umbrella: true}
+      {:room_manager, in_umbrella: true},
+      {:presence, in_umbrella: true}
     ]
   end
 end

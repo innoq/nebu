@@ -40,6 +40,12 @@ service CoreService {
 
   // GetSyncDelta — incremental sync with long-polling; returns events after since_token
   rpc GetSyncDelta(GetSyncDeltaRequest) returns (GetSyncDeltaResponse);
+
+  // GetPresence — returns presence status for a user (always succeeds; unknown users = offline)
+  rpc GetPresence(GetPresenceRequest) returns (GetPresenceResponse);
+
+  // UpdateProfile — upserts displayname and/or avatar_url for a user
+  rpc UpdateProfile(UpdateProfileRequest) returns (UpdateProfileResponse);
 }
 
 // Shared event type used across multiple RPCs
@@ -231,3 +237,21 @@ message SyncRoom {
   bool                        limited         = 4;  // true if timeline was truncated at 20
   string                      prev_batch      = 5;  // pagination token for GET /messages
 }
+
+// GetPresence — reads from Presence.Manager ETS, never raises not_found (offline default)
+message GetPresenceRequest {
+  string user_id = 1;
+}
+message GetPresenceResponse {
+  string presence        = 1;  // "online" | "offline" | "unavailable"
+  int64  last_active_ago = 2;  // milliseconds since last active (0 if never seen)
+}
+
+// UpdateProfile — upserts displayname and/or avatar_url in the profiles table
+// Fields are optional strings: empty string = do not update that field
+message UpdateProfileRequest {
+  string user_id     = 1;
+  string displayname = 2;  // empty = not updating displayname
+  string avatar_url  = 3;  // empty = not updating avatar_url
+}
+message UpdateProfileResponse {}

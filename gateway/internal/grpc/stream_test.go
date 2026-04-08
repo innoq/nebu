@@ -105,6 +105,12 @@ func (m *mockCoreClient) GetSyncDelta(_ context.Context, _ *pb.GetSyncDeltaReque
 func (m *mockCoreClient) SendReceipt(_ context.Context, _ *pb.SendReceiptRequest, _ ...grpc.CallOption) (*pb.SendReceiptResponse, error) {
 	return nil, nil
 }
+func (m *mockCoreClient) GetPresence(_ context.Context, _ *pb.GetPresenceRequest, _ ...grpc.CallOption) (*pb.GetPresenceResponse, error) {
+	return nil, nil
+}
+func (m *mockCoreClient) UpdateProfile(_ context.Context, _ *pb.UpdateProfileRequest, _ ...grpc.CallOption) (*pb.UpdateProfileResponse, error) {
+	return nil, nil
+}
 
 // ─── Mock server-streaming client ────────────────────────────────────────────
 

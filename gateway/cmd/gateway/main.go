@@ -334,6 +334,27 @@ func main() {
 	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/receipt/{receiptType}/{eventId}",
 		jwtMiddleware(http.HandlerFunc(receiptsHandler.PostReceipt)))
 
+	// Profile DB: reuse the bootstrapDB connection for direct profile reads (GET /profile — no gRPC).
+	profileHandler := matrix.NewProfileHandler(matrix.ProfileConfig{
+		CoreClient: coreClient,
+		ServerName: serverName,
+		DB:         db.NewPostgresProfileDB(bootstrapDB),
+	})
+	// GET is unauthenticated — no jwtMiddleware wrapper (per Matrix spec: profile is public).
+	mux.HandleFunc("GET /_matrix/client/v3/profile/{userId}", profileHandler.GetProfile)
+	// PUT endpoints require JWT auth.
+	mux.Handle("PUT /_matrix/client/v3/profile/{userId}/displayname",
+		jwtMiddleware(http.HandlerFunc(profileHandler.PutDisplayname)))
+	mux.Handle("PUT /_matrix/client/v3/profile/{userId}/avatar_url",
+		jwtMiddleware(http.HandlerFunc(profileHandler.PutAvatarURL)))
+
+	presenceHandler := matrix.NewPresenceHandler(matrix.PresenceConfig{
+		CoreClient: coreClient,
+		ServerName: serverName,
+	})
+	mux.Handle("GET /_matrix/client/v3/presence/{userId}/status",
+		jwtMiddleware(http.HandlerFunc(presenceHandler.GetPresenceStatus)))
+
 	slog.Info("HTTP server starting", "addr", ":8008")
 	if err := http.ListenAndServe(":8008", mux); err != nil {
 		slog.Error("HTTP server failed", "err", err)

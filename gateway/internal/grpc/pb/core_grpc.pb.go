@@ -35,6 +35,8 @@ const (
 	CoreService_SendReceipt_FullMethodName      = "/core.CoreService/SendReceipt"
 	CoreService_GetInitialSync_FullMethodName   = "/core.CoreService/GetInitialSync"
 	CoreService_GetSyncDelta_FullMethodName     = "/core.CoreService/GetSyncDelta"
+	CoreService_GetPresence_FullMethodName      = "/core.CoreService/GetPresence"
+	CoreService_UpdateProfile_FullMethodName    = "/core.CoreService/UpdateProfile"
 )
 
 // CoreServiceClient is the client API for CoreService service.
@@ -69,6 +71,10 @@ type CoreServiceClient interface {
 	GetInitialSync(ctx context.Context, in *GetInitialSyncRequest, opts ...grpc.CallOption) (*GetInitialSyncResponse, error)
 	// GetSyncDelta — incremental sync with long-polling; returns events after since_token
 	GetSyncDelta(ctx context.Context, in *GetSyncDeltaRequest, opts ...grpc.CallOption) (*GetSyncDeltaResponse, error)
+	// GetPresence — returns presence status for a user (always succeeds; unknown users = offline)
+	GetPresence(ctx context.Context, in *GetPresenceRequest, opts ...grpc.CallOption) (*GetPresenceResponse, error)
+	// UpdateProfile — upserts displayname and/or avatar_url for a user
+	UpdateProfile(ctx context.Context, in *UpdateProfileRequest, opts ...grpc.CallOption) (*UpdateProfileResponse, error)
 }
 
 type coreServiceClient struct {
@@ -248,6 +254,26 @@ func (c *coreServiceClient) GetSyncDelta(ctx context.Context, in *GetSyncDeltaRe
 	return out, nil
 }
 
+func (c *coreServiceClient) GetPresence(ctx context.Context, in *GetPresenceRequest, opts ...grpc.CallOption) (*GetPresenceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetPresenceResponse)
+	err := c.cc.Invoke(ctx, CoreService_GetPresence_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) UpdateProfile(ctx context.Context, in *UpdateProfileRequest, opts ...grpc.CallOption) (*UpdateProfileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateProfileResponse)
+	err := c.cc.Invoke(ctx, CoreService_UpdateProfile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CoreServiceServer is the server API for CoreService service.
 // All implementations must embed UnimplementedCoreServiceServer
 // for forward compatibility.
@@ -280,6 +306,10 @@ type CoreServiceServer interface {
 	GetInitialSync(context.Context, *GetInitialSyncRequest) (*GetInitialSyncResponse, error)
 	// GetSyncDelta — incremental sync with long-polling; returns events after since_token
 	GetSyncDelta(context.Context, *GetSyncDeltaRequest) (*GetSyncDeltaResponse, error)
+	// GetPresence — returns presence status for a user (always succeeds; unknown users = offline)
+	GetPresence(context.Context, *GetPresenceRequest) (*GetPresenceResponse, error)
+	// UpdateProfile — upserts displayname and/or avatar_url for a user
+	UpdateProfile(context.Context, *UpdateProfileRequest) (*UpdateProfileResponse, error)
 	mustEmbedUnimplementedCoreServiceServer()
 }
 
@@ -337,6 +367,12 @@ func (UnimplementedCoreServiceServer) GetInitialSync(context.Context, *GetInitia
 }
 func (UnimplementedCoreServiceServer) GetSyncDelta(context.Context, *GetSyncDeltaRequest) (*GetSyncDeltaResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetSyncDelta not implemented")
+}
+func (UnimplementedCoreServiceServer) GetPresence(context.Context, *GetPresenceRequest) (*GetPresenceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetPresence not implemented")
+}
+func (UnimplementedCoreServiceServer) UpdateProfile(context.Context, *UpdateProfileRequest) (*UpdateProfileResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateProfile not implemented")
 }
 func (UnimplementedCoreServiceServer) mustEmbedUnimplementedCoreServiceServer() {}
 func (UnimplementedCoreServiceServer) testEmbeddedByValue()                     {}
@@ -640,6 +676,42 @@ func _CoreService_GetSyncDelta_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_GetPresence_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetPresenceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).GetPresence(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_GetPresence_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).GetPresence(ctx, req.(*GetPresenceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_UpdateProfile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateProfileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).UpdateProfile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_UpdateProfile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).UpdateProfile(ctx, req.(*UpdateProfileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CoreService_ServiceDesc is the grpc.ServiceDesc for CoreService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -706,6 +778,14 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetSyncDelta",
 			Handler:    _CoreService_GetSyncDelta_Handler,
+		},
+		{
+			MethodName: "GetPresence",
+			Handler:    _CoreService_GetPresence_Handler,
+		},
+		{
+			MethodName: "UpdateProfile",
+			Handler:    _CoreService_UpdateProfile_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

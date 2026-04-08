@@ -36,6 +36,7 @@
 
 generated: 2026-03-20
 last_updated: 2026-04-03
+# story 4-18 created: 4-18 → ready-for-dev: 2026-04-03
 # story 4-17 created: 4-17 → ready-for-dev: 2026-04-03
 # story 4-16 created: 4-16 → ready-for-dev: 2026-04-07
 # story 4-15 created: 4-15 → ready-for-dev: 2026-04-07
@@ -380,8 +381,8 @@ development_status:
   4-14-get-sync-initial-sync: done
   4-15-get-sync-incremental-sync-long-polling-since-token: done
   4-16-message-buffer-drain-strategy-linear-mvp: done
-  4-17-typing-indicators-read-receipts: review
-  4-18-profile-presence-api: backlog
+  4-17-typing-indicators-read-receipts: done
+  4-18-profile-presence-api: review
   4-19-media-gateway-upload-aes-256-gcm-size-limit: backlog
   4-20-media-gateway-download-decryption: backlog
   4-21-gherkin-room-create-send-receive-end-to-end: backlog

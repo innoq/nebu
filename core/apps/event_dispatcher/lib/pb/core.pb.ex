@@ -408,3 +408,48 @@ defmodule Core.SyncRoom do
   field :limited, 4, type: :bool
   field :prev_batch, 5, type: :string, json_name: "prevBatch"
 end
+
+defmodule Core.GetPresenceRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.GetPresenceRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :user_id, 1, type: :string, json_name: "userId"
+end
+
+defmodule Core.GetPresenceResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.GetPresenceResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :presence, 1, type: :string
+  field :last_active_ago, 2, type: :int64, json_name: "lastActiveAgo"
+end
+
+defmodule Core.UpdateProfileRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.UpdateProfileRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :user_id, 1, type: :string, json_name: "userId"
+  field :displayname, 2, type: :string
+  field :avatar_url, 3, type: :string, json_name: "avatarUrl"
+end
+
+defmodule Core.UpdateProfileResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.UpdateProfileResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+end

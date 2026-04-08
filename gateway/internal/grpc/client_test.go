@@ -124,9 +124,11 @@ func TestStubsReturnNil(t *testing.T) {
 		{
 			name: "SetPresence",
 			call: func() error {
-				resp, err := c.SetPresence(ctx, &pb.SetPresenceRequest{})
-				if err != nil || resp != nil {
-					return fmt.Errorf("want nil,nil; got %v,%v", resp, err)
+				// SetPresence is now wired to the real gRPC client (Story 4-18),
+				// so it returns a connection error when no server is running.
+				_, err := c.SetPresence(ctx, &pb.SetPresenceRequest{})
+				if err == nil {
+					return fmt.Errorf("want connection error; got nil")
 				}
 				return nil
 			},
@@ -219,6 +221,30 @@ func TestStubsReturnNil(t *testing.T) {
 				// GetSyncDelta is wired to the real gRPC client (Story 4-15),
 				// so it returns a connection error when no server is running.
 				_, err := c.GetSyncDelta(ctx, &pb.GetSyncDeltaRequest{})
+				if err == nil {
+					return fmt.Errorf("want connection error; got nil")
+				}
+				return nil
+			},
+		},
+		{
+			name: "GetPresence",
+			call: func() error {
+				// GetPresence is wired to the real gRPC client (Story 4-18),
+				// so it returns a connection error when no server is running.
+				_, err := c.GetPresence(ctx, &pb.GetPresenceRequest{})
+				if err == nil {
+					return fmt.Errorf("want connection error; got nil")
+				}
+				return nil
+			},
+		},
+		{
+			name: "UpdateProfile",
+			call: func() error {
+				// UpdateProfile is wired to the real gRPC client (Story 4-18),
+				// so it returns a connection error when no server is running.
+				_, err := c.UpdateProfile(ctx, &pb.UpdateProfileRequest{})
 				if err == nil {
 					return fmt.Errorf("want connection error; got nil")
 				}

@@ -1930,6 +1930,201 @@ func (x *SyncRoom) GetPrevBatch() string {
 	return ""
 }
 
+// GetPresence — reads from Presence.Manager ETS, never raises not_found (offline default)
+type GetPresenceRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetPresenceRequest) Reset() {
+	*x = GetPresenceRequest{}
+	mi := &file_core_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetPresenceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetPresenceRequest) ProtoMessage() {}
+
+func (x *GetPresenceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetPresenceRequest.ProtoReflect.Descriptor instead.
+func (*GetPresenceRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *GetPresenceRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+type GetPresenceResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Presence      string                 `protobuf:"bytes,1,opt,name=presence,proto3" json:"presence,omitempty"`                                   // "online" | "offline" | "unavailable"
+	LastActiveAgo int64                  `protobuf:"varint,2,opt,name=last_active_ago,json=lastActiveAgo,proto3" json:"last_active_ago,omitempty"` // milliseconds since last active (0 if never seen)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetPresenceResponse) Reset() {
+	*x = GetPresenceResponse{}
+	mi := &file_core_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetPresenceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetPresenceResponse) ProtoMessage() {}
+
+func (x *GetPresenceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetPresenceResponse.ProtoReflect.Descriptor instead.
+func (*GetPresenceResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *GetPresenceResponse) GetPresence() string {
+	if x != nil {
+		return x.Presence
+	}
+	return ""
+}
+
+func (x *GetPresenceResponse) GetLastActiveAgo() int64 {
+	if x != nil {
+		return x.LastActiveAgo
+	}
+	return 0
+}
+
+// UpdateProfile — upserts displayname and/or avatar_url in the profiles table
+// Fields are optional strings: empty string = do not update that field
+type UpdateProfileRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Displayname   string                 `protobuf:"bytes,2,opt,name=displayname,proto3" json:"displayname,omitempty"`              // empty = not updating displayname
+	AvatarUrl     string                 `protobuf:"bytes,3,opt,name=avatar_url,json=avatarUrl,proto3" json:"avatar_url,omitempty"` // empty = not updating avatar_url
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateProfileRequest) Reset() {
+	*x = UpdateProfileRequest{}
+	mi := &file_core_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateProfileRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateProfileRequest) ProtoMessage() {}
+
+func (x *UpdateProfileRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateProfileRequest.ProtoReflect.Descriptor instead.
+func (*UpdateProfileRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *UpdateProfileRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *UpdateProfileRequest) GetDisplayname() string {
+	if x != nil {
+		return x.Displayname
+	}
+	return ""
+}
+
+func (x *UpdateProfileRequest) GetAvatarUrl() string {
+	if x != nil {
+		return x.AvatarUrl
+	}
+	return ""
+}
+
+type UpdateProfileResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateProfileResponse) Reset() {
+	*x = UpdateProfileResponse{}
+	mi := &file_core_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateProfileResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateProfileResponse) ProtoMessage() {}
+
+func (x *UpdateProfileResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateProfileResponse.ProtoReflect.Descriptor instead.
+func (*UpdateProfileResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{37}
+}
+
 var File_core_proto protoreflect.FileDescriptor
 
 const file_core_proto_rawDesc = "" +
@@ -2077,7 +2272,18 @@ const file_core_proto_rawDesc = "" +
 	"\x0ftimeline_events\x18\x03 \x03(\v2\v.core.EventR\x0etimelineEvents\x12\x18\n" +
 	"\alimited\x18\x04 \x01(\bR\alimited\x12\x1d\n" +
 	"\n" +
-	"prev_batch\x18\x05 \x01(\tR\tprevBatch2\xca\b\n" +
+	"prev_batch\x18\x05 \x01(\tR\tprevBatch\"-\n" +
+	"\x12GetPresenceRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\"Y\n" +
+	"\x13GetPresenceResponse\x12\x1a\n" +
+	"\bpresence\x18\x01 \x01(\tR\bpresence\x12&\n" +
+	"\x0flast_active_ago\x18\x02 \x01(\x03R\rlastActiveAgo\"p\n" +
+	"\x14UpdateProfileRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12 \n" +
+	"\vdisplayname\x18\x02 \x01(\tR\vdisplayname\x12\x1d\n" +
+	"\n" +
+	"avatar_url\x18\x03 \x01(\tR\tavatarUrl\"\x17\n" +
+	"\x15UpdateProfileResponse2\xd8\t\n" +
 	"\vCoreService\x12<\n" +
 	"\tSendEvent\x12\x16.core.SendEventRequest\x1a\x17.core.SendEventResponse\x12?\n" +
 	"\n" +
@@ -2097,7 +2303,9 @@ const file_core_proto_rawDesc = "" +
 	"\x0eSetPowerLevels\x12\x1b.core.SetPowerLevelsRequest\x1a\x1c.core.SetPowerLevelsResponse\x12B\n" +
 	"\vSendReceipt\x12\x18.core.SendReceiptRequest\x1a\x19.core.SendReceiptResponse\x12K\n" +
 	"\x0eGetInitialSync\x12\x1b.core.GetInitialSyncRequest\x1a\x1c.core.GetInitialSyncResponse\x12E\n" +
-	"\fGetSyncDelta\x12\x19.core.GetSyncDeltaRequest\x1a\x1a.core.GetSyncDeltaResponseB'Z%github.com/nebu/nebu/internal/grpc/pbb\x06proto3"
+	"\fGetSyncDelta\x12\x19.core.GetSyncDeltaRequest\x1a\x1a.core.GetSyncDeltaResponse\x12B\n" +
+	"\vGetPresence\x12\x18.core.GetPresenceRequest\x1a\x19.core.GetPresenceResponse\x12H\n" +
+	"\rUpdateProfile\x12\x1a.core.UpdateProfileRequest\x1a\x1b.core.UpdateProfileResponseB'Z%github.com/nebu/nebu/internal/grpc/pbb\x06proto3"
 
 var (
 	file_core_proto_rawDescOnce sync.Once
@@ -2111,7 +2319,7 @@ func file_core_proto_rawDescGZIP() []byte {
 	return file_core_proto_rawDescData
 }
 
-var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 34)
+var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 38)
 var file_core_proto_goTypes = []any{
 	(*Event)(nil),                    // 0: core.Event
 	(*SendEventRequest)(nil),         // 1: core.SendEventRequest
@@ -2147,6 +2355,10 @@ var file_core_proto_goTypes = []any{
 	(*GetSyncDeltaRequest)(nil),      // 31: core.GetSyncDeltaRequest
 	(*GetSyncDeltaResponse)(nil),     // 32: core.GetSyncDeltaResponse
 	(*SyncRoom)(nil),                 // 33: core.SyncRoom
+	(*GetPresenceRequest)(nil),       // 34: core.GetPresenceRequest
+	(*GetPresenceResponse)(nil),      // 35: core.GetPresenceResponse
+	(*UpdateProfileRequest)(nil),     // 36: core.UpdateProfileRequest
+	(*UpdateProfileResponse)(nil),    // 37: core.UpdateProfileResponse
 }
 var file_core_proto_depIdxs = []int32{
 	0,  // 0: core.GetMessagesResponse.events:type_name -> core.Event
@@ -2171,24 +2383,28 @@ var file_core_proto_depIdxs = []int32{
 	26, // 19: core.CoreService.SendReceipt:input_type -> core.SendReceiptRequest
 	28, // 20: core.CoreService.GetInitialSync:input_type -> core.GetInitialSyncRequest
 	31, // 21: core.CoreService.GetSyncDelta:input_type -> core.GetSyncDeltaRequest
-	2,  // 22: core.CoreService.SendEvent:output_type -> core.SendEventResponse
-	4,  // 23: core.CoreService.CreateRoom:output_type -> core.CreateRoomResponse
-	6,  // 24: core.CoreService.JoinRoom:output_type -> core.JoinRoomResponse
-	8,  // 25: core.CoreService.GetMessages:output_type -> core.GetMessagesResponse
-	10, // 26: core.CoreService.SetPresence:output_type -> core.SetPresenceResponse
-	12, // 27: core.CoreService.SetTyping:output_type -> core.SetTypingResponse
-	14, // 28: core.CoreService.ValidateToken:output_type -> core.ValidateTokenResponse
-	16, // 29: core.CoreService.GetPendingEvents:output_type -> core.GetPendingEventsResponse
-	0,  // 30: core.CoreService.EventBus:output_type -> core.Event
-	19, // 31: core.CoreService.GetMetrics:output_type -> core.GetMetricsResponse
-	23, // 32: core.CoreService.GetRoomState:output_type -> core.GetRoomStateResponse
-	21, // 33: core.CoreService.InviteUser:output_type -> core.InviteUserResponse
-	25, // 34: core.CoreService.SetPowerLevels:output_type -> core.SetPowerLevelsResponse
-	27, // 35: core.CoreService.SendReceipt:output_type -> core.SendReceiptResponse
-	29, // 36: core.CoreService.GetInitialSync:output_type -> core.GetInitialSyncResponse
-	32, // 37: core.CoreService.GetSyncDelta:output_type -> core.GetSyncDeltaResponse
-	22, // [22:38] is the sub-list for method output_type
-	6,  // [6:22] is the sub-list for method input_type
+	34, // 22: core.CoreService.GetPresence:input_type -> core.GetPresenceRequest
+	36, // 23: core.CoreService.UpdateProfile:input_type -> core.UpdateProfileRequest
+	2,  // 24: core.CoreService.SendEvent:output_type -> core.SendEventResponse
+	4,  // 25: core.CoreService.CreateRoom:output_type -> core.CreateRoomResponse
+	6,  // 26: core.CoreService.JoinRoom:output_type -> core.JoinRoomResponse
+	8,  // 27: core.CoreService.GetMessages:output_type -> core.GetMessagesResponse
+	10, // 28: core.CoreService.SetPresence:output_type -> core.SetPresenceResponse
+	12, // 29: core.CoreService.SetTyping:output_type -> core.SetTypingResponse
+	14, // 30: core.CoreService.ValidateToken:output_type -> core.ValidateTokenResponse
+	16, // 31: core.CoreService.GetPendingEvents:output_type -> core.GetPendingEventsResponse
+	0,  // 32: core.CoreService.EventBus:output_type -> core.Event
+	19, // 33: core.CoreService.GetMetrics:output_type -> core.GetMetricsResponse
+	23, // 34: core.CoreService.GetRoomState:output_type -> core.GetRoomStateResponse
+	21, // 35: core.CoreService.InviteUser:output_type -> core.InviteUserResponse
+	25, // 36: core.CoreService.SetPowerLevels:output_type -> core.SetPowerLevelsResponse
+	27, // 37: core.CoreService.SendReceipt:output_type -> core.SendReceiptResponse
+	29, // 38: core.CoreService.GetInitialSync:output_type -> core.GetInitialSyncResponse
+	32, // 39: core.CoreService.GetSyncDelta:output_type -> core.GetSyncDeltaResponse
+	35, // 40: core.CoreService.GetPresence:output_type -> core.GetPresenceResponse
+	37, // 41: core.CoreService.UpdateProfile:output_type -> core.UpdateProfileResponse
+	24, // [24:42] is the sub-list for method output_type
+	6,  // [6:24] is the sub-list for method input_type
 	6,  // [6:6] is the sub-list for extension type_name
 	6,  // [6:6] is the sub-list for extension extendee
 	0,  // [0:6] is the sub-list for field type_name
@@ -2209,7 +2425,7 @@ func file_core_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_core_proto_rawDesc), len(file_core_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   34,
+			NumMessages:   38,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

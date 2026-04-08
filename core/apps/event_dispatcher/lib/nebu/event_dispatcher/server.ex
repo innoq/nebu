@@ -33,6 +33,18 @@ defmodule Nebu.EventDispatcher.Server do
     Application.get_env(:event_dispatcher, :receipt_db_module, Nebu.Receipt.DB)
   end
 
+  # ─── Configurable profile DB module for testability ──────────────────────────
+  # Override via Application.put_env(:event_dispatcher, :profile_db_module, FakeProfileDB) in tests.
+  defp profile_db_module do
+    Application.get_env(:event_dispatcher, :profile_db_module, Nebu.Profile.DB)
+  end
+
+  # ─── Configurable presence module for testability ────────────────────────────
+  # Override via Application.put_env(:event_dispatcher, :presence_module, FakePresenceModule) in tests.
+  defp presence_module do
+    Application.get_env(:event_dispatcher, :presence_module, Nebu.Presence.Manager)
+  end
+
   # ─── Configurable PgStore module for testability ──────────────────────────────
   # Override via Application.put_env(:event_dispatcher, :pg_store_module, FakePgStore) in tests.
   defp pg_store_module do
@@ -288,6 +300,58 @@ defmodule Nebu.EventDispatcher.Server do
 
   def set_presence(_request, _stream) do
     %Core.SetPresenceResponse{}
+  end
+
+  def get_presence(request, _stream) do
+    user_id = request.user_id
+
+    {:ok, %{status: status, last_active_at: last_active_at}} =
+      presence_module().get_presence(user_id)
+
+    now_ms = System.system_time(:millisecond)
+
+    last_active_ago =
+      if is_nil(last_active_at) do
+        0
+      else
+        max(0, now_ms - last_active_at)
+      end
+
+    %Core.GetPresenceResponse{
+      presence: Atom.to_string(status),
+      last_active_ago: last_active_ago
+    }
+  end
+
+  def update_profile(request, stream) do
+    {user_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
+
+    if is_nil(user_id) or user_id == "" do
+      raise GRPC.RPCError,
+        status: GRPC.Status.unauthenticated(),
+        message: "missing x-user-id metadata"
+    end
+
+    # Guard: caller can only update their own profile (Go already enforces this,
+    # but defense-in-depth at Core level).
+    if request.user_id != user_id do
+      raise GRPC.RPCError,
+        status: GRPC.Status.permission_denied(),
+        message: "cannot update another user's profile"
+    end
+
+    displayname = if request.displayname == "", do: nil, else: request.displayname
+    avatar_url = if request.avatar_url == "", do: nil, else: request.avatar_url
+
+    case profile_db_module().upsert_profile(user_id, displayname, avatar_url) do
+      :ok ->
+        %Core.UpdateProfileResponse{}
+
+      {:error, reason} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.internal(),
+          message: "upsert_profile failed: #{inspect(reason)}"
+    end
   end
 
   def set_typing(request, _stream) do
