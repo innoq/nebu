@@ -141,6 +141,12 @@ func (c *Client) GetSyncDelta(ctx context.Context, req *pb.GetSyncDeltaRequest) 
 	return c.core.GetSyncDelta(ctx, req)
 }
 
+// CoreServiceClient returns the underlying generated gRPC client stub.
+// Used by EventBusStream (Story 4-16) which requires the raw pb.CoreServiceClient.
+func (c *Client) CoreServiceClient() pb.CoreServiceClient {
+	return c.core
+}
+
 // NewClientWithCore constructs a Client using a pre-built CoreServiceClient.
 // This is used in tests to inject a mock without a real gRPC connection.
 func NewClientWithCore(core pb.CoreServiceClient) *Client {

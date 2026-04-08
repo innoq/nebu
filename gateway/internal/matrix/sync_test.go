@@ -32,8 +32,10 @@ import (
 	"time"
 
 	"github.com/nebu/nebu/internal/auth"
+	"github.com/nebu/nebu/internal/buffer"
 	pb "github.com/nebu/nebu/internal/grpc/pb"
 	"github.com/nebu/nebu/internal/middleware"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -946,5 +948,172 @@ func TestGetSync_ContextTimeout(t *testing.T) {
 	// The gRPC call must have been attempted (capturedReq set before sleep)
 	if mock.capturedReq == nil {
 		t.Error("expected GetInitialSync to be called (capturedReq should be set before the delay)")
+	}
+}
+
+// ─── Story 4-16: Buffer tests ─────────────────────────────────────────────────
+//
+// These tests verify the buffer pre-check logic in handleIncrementalSync:
+//   - BufferHit: pre-populated buffer events are returned immediately, Core skipped.
+//   - BufferMiss: empty buffer causes fall-through to Core (GetSyncDelta called).
+//   - NilBuffer: handler with Buffer=nil does not panic, falls through to Core.
+
+// buildAuthedSyncBufferHandler wires JWTMiddleware → GetSyncHandler with an optional
+// *buffer.MessageBuffer injected via GetSyncConfig.Buffer.
+// Pass nil for buf to test the nil-buffer code path.
+func buildAuthedSyncBufferHandler(t *testing.T, mock *mockGetSyncDeltaCoreClient, buf *buffer.MessageBuffer, opts ...time.Duration) (http.Handler, func() string) {
+	t.Helper()
+
+	oidcSrv, privateKey := setupOIDCServer(t)
+	t.Cleanup(oidcSrv.Close)
+
+	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
+
+	cfg := GetSyncConfig{
+		CoreClient: mock,
+		ServerName: "test.local",
+		Buffer:     buf,
+	}
+	if len(opts) > 0 && opts[0] > 0 {
+		cfg.Timeout = opts[0]
+	}
+	handler := NewGetSyncHandler(cfg)
+
+	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil)(
+		http.HandlerFunc(handler.GetSync),
+	)
+
+	makeToken := func() string {
+		return signJWT(t, oidcSrv.URL, privateKey, time.Now().Add(time.Hour), nil)
+	}
+
+	return authed, makeToken
+}
+
+// TestGetSync_IncrementalSync_BufferHit verifies that when the buffer already
+// contains events for the requesting user, the handler returns them immediately
+// without calling Core's GetSyncDelta.
+//
+// Given: buffer pre-populated with 1 event for @test-sub-123:test.local
+// When:  GET /_matrix/client/v3/sync?since=s_token_abc
+// Then:  200; rooms.join contains !room1:test.local; GetSyncDelta NOT called
+func TestGetSync_IncrementalSync_BufferHit(t *testing.T) {
+	// userID matches sub="test-sub-123" + serverName="test.local" (from signJWT / FormatUserID)
+	const userID = "@test-sub-123:test.local"
+	const roomID = "!room1:test.local"
+
+	buf := buffer.NewMessageBuffer(10, prometheus.NewRegistry())
+	buf.Put(userID, &pb.Event{
+		EventId:   "$buf_ev1",
+		RoomId:    roomID,
+		SenderId:  userID,
+		EventType: "m.room.message",
+		Content:   []byte(`{"msgtype":"m.text","body":"buffered"}`),
+		OriginTs:  1700000002000,
+	})
+
+	mock := &mockGetSyncDeltaCoreClient{
+		// deltaResp is intentionally nil — GetSyncDelta must NOT be called
+	}
+
+	handler, makeToken := buildAuthedSyncBufferHandler(t, mock, buf)
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync?since=s_token_abc", nil)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for buffer hit, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		NextBatch string `json:"next_batch"`
+		Rooms     struct {
+			Join map[string]json.RawMessage `json:"join"`
+		} `json:"rooms"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response body: %v", err)
+	}
+
+	// rooms.join must contain the room from the buffered event
+	if _, ok := resp.Rooms.Join[roomID]; !ok {
+		t.Errorf("expected rooms.join to contain %q from buffer, got: %v", roomID, resp.Rooms.Join)
+	}
+
+	// Core's GetSyncDelta must NOT have been called — buffer hit short-circuits
+	if mock.capturedDeltaReq != nil {
+		t.Error("expected GetSyncDelta NOT to be called on buffer hit, but capturedDeltaReq is set")
+	}
+}
+
+// TestGetSync_IncrementalSync_BufferMiss verifies that when the buffer is empty,
+// the handler falls through to Core and calls GetSyncDelta.
+//
+// Given: empty buffer; mock Core returns empty delta
+// When:  GET /_matrix/client/v3/sync?since=s_token_abc
+// Then:  200; GetSyncDelta WAS called (capturedDeltaReq != nil)
+func TestGetSync_IncrementalSync_BufferMiss(t *testing.T) {
+	buf := buffer.NewMessageBuffer(10, prometheus.NewRegistry())
+	// no events put — buffer is empty
+
+	mock := &mockGetSyncDeltaCoreClient{
+		deltaResp: &pb.GetSyncDeltaResponse{
+			SinceToken: "next_batch_miss",
+			Rooms:      []*pb.SyncRoom{},
+		},
+	}
+
+	// Use a very short timeout so WaitFor's bufCtx expires quickly and we don't stall
+	handler, makeToken := buildAuthedSyncBufferHandler(t, mock, buf, 5*time.Second)
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync?since=s_token_abc", nil)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for buffer miss, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	// Core's GetSyncDelta must have been called — buffer miss falls through
+	if mock.capturedDeltaReq == nil {
+		t.Error("expected GetSyncDelta to be called on buffer miss, but capturedDeltaReq is nil")
+	}
+}
+
+// TestGetSync_IncrementalSync_NilBuffer verifies that a handler configured with
+// Buffer=nil does not panic and falls through to Core normally.
+//
+// Given: GetSyncConfig.Buffer = nil; mock Core returns empty delta
+// When:  GET /_matrix/client/v3/sync?since=s_token_abc
+// Then:  no panic; 200; GetSyncDelta WAS called
+func TestGetSync_IncrementalSync_NilBuffer(t *testing.T) {
+	mock := &mockGetSyncDeltaCoreClient{
+		deltaResp: &pb.GetSyncDeltaResponse{
+			SinceToken: "next_batch_nil_buf",
+			Rooms:      []*pb.SyncRoom{},
+		},
+	}
+
+	// Pass nil explicitly for the buffer
+	handler, makeToken := buildAuthedSyncBufferHandler(t, mock, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync?since=s_token_abc", nil)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 with nil buffer, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	// Core's GetSyncDelta must have been called — nil buffer skips buffer logic
+	if mock.capturedDeltaReq == nil {
+		t.Error("expected GetSyncDelta to be called with nil buffer, but capturedDeltaReq is nil")
 	}
 }

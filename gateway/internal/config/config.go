@@ -1,6 +1,9 @@
 package config
 
-import "os"
+import (
+	"os"
+	"strconv"
+)
 
 // Config holds all NEBU_ environment variable configuration for the gateway.
 type Config struct {
@@ -14,8 +17,10 @@ type Config struct {
 	TLSCertFile        string // NEBU_TLS_CERT_FILE
 	TLSKeyFile         string // NEBU_TLS_KEY_FILE
 	TLSClientCAFile    string // NEBU_TLS_CLIENT_CA_FILE (mTLS Phase 2 — not wired up in MVP)
-	OIDCClaimRole      string // NEBU_OIDC_CLAIM_ROLE (default: "nebu_role")
-	OIDCDisplayName    string // NEBU_OIDC_DISPLAY_NAME (default: "SSO")
+	OIDCClaimRole      string  // NEBU_OIDC_CLAIM_ROLE (default: "nebu_role")
+	OIDCDisplayName    string  // NEBU_OIDC_DISPLAY_NAME (default: "SSO")
+	BufferCapacity     int     // NEBU_BUFFER_CAPACITY (default: 500)
+	BufferBaseRate     float64 // NEBU_BUFFER_BASE_RATE (default: 100.0)
 }
 
 // Load reads configuration from environment variables.
@@ -34,6 +39,8 @@ func Load() Config {
 		TLSClientCAFile:    os.Getenv("NEBU_TLS_CLIENT_CA_FILE"),
 		OIDCClaimRole:      getEnvOrDefault("NEBU_OIDC_CLAIM_ROLE", "nebu_role"),
 		OIDCDisplayName:    getEnvOrDefault("NEBU_OIDC_DISPLAY_NAME", "SSO"),
+		BufferCapacity:     getEnvInt("NEBU_BUFFER_CAPACITY", 500),
+		BufferBaseRate:     getEnvFloat("NEBU_BUFFER_BASE_RATE", 100.0),
 	}
 }
 
@@ -42,4 +49,32 @@ func getEnvOrDefault(key, defaultValue string) string {
 		return v
 	}
 	return defaultValue
+}
+
+// getEnvInt reads an integer environment variable.
+// Falls back to defaultValue if the variable is unset or cannot be parsed.
+func getEnvInt(key string, defaultValue int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return defaultValue
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return defaultValue
+	}
+	return n
+}
+
+// getEnvFloat reads a float64 environment variable.
+// Falls back to defaultValue if the variable is unset or cannot be parsed.
+func getEnvFloat(key string, defaultValue float64) float64 {
+	v := os.Getenv(key)
+	if v == "" {
+		return defaultValue
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		return defaultValue
+	}
+	return f
 }

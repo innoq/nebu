@@ -8,10 +8,13 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/nebu/nebu/internal/admin"
 	"github.com/nebu/nebu/internal/auth"
+	"github.com/nebu/nebu/internal/buffer"
 	"github.com/nebu/nebu/internal/config"
 	"github.com/nebu/nebu/internal/db"
 	coregrpc "github.com/nebu/nebu/internal/grpc"
@@ -29,6 +32,21 @@ type coreMetricsAdapter struct {
 	client *coregrpc.Client
 }
 
+// coreRoomStateLookup adapts *coregrpc.Client to satisfy the buffer.RoomStateLookup
+// interface required by buffer.RouteEventToUsers.
+type coreRoomStateLookup struct {
+	client *coregrpc.Client
+}
+
+// GetRoomState satisfies buffer.RoomStateLookup: calls the gRPC Core and returns member IDs.
+func (a *coreRoomStateLookup) GetRoomState(ctx context.Context, roomID string) ([]string, error) {
+	resp, err := a.client.GetRoomState(ctx, &pb.GetRoomStateRequest{RoomId: roomID})
+	if err != nil {
+		return nil, err
+	}
+	return resp.GetMembers(), nil
+}
+
 // GetMetrics calls the gRPC stub and maps the response fields.
 // If the stub returns nil response (Epic 4 not yet implemented), returns an error.
 func (a *coreMetricsAdapter) GetMetrics(ctx context.Context) (float64, int, int, error) {
@@ -42,11 +60,15 @@ func (a *coreMetricsAdapter) GetMetrics(ctx context.Context) (float64, int, int,
 func main() {
 	slog.Info("Nebu Gateway starting")
 
+	// Main context: cancelled on SIGINT/SIGTERM for graceful shutdown.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	cfg := config.Load()
 
 	// auth.NewProvider tolerates an unreachable OIDC provider at startup
 	// (logs warning, starts background retry). LoginHandler checks Inner() != nil.
-	oidcProvider := auth.NewProvider(context.Background(), cfg.OIDCIssuer)
+	oidcProvider := auth.NewProvider(ctx, cfg.OIDCIssuer)
 
 	if cfg.DBURL == "" {
 		slog.Error("database configuration required", "error", "NEBU_DB_URL not set")
@@ -76,6 +98,22 @@ func main() {
 	}
 	defer coreClient.Close()
 	slog.Info("gRPC client initialized", "addr", cfg.CoreGRPCAddr)
+
+	// Story 4-16: MessageBuffer — per-user in-memory ring buffer for event burst absorption.
+	msgBuf := buffer.NewMessageBuffer(cfg.BufferCapacity, prometheus.DefaultRegisterer)
+
+	// Start EventBus stream: one persistent gRPC server-streaming connection per gateway instance.
+	eventStream := coregrpc.NewEventBusStream(coreClient.CoreServiceClient(), cfg.ServerName)
+	eventStream.Start(ctx)
+
+	// Event routing goroutine: reads EventBus events, routes to per-user ring buffers
+	// based on room membership resolved via GetRoomState.
+	roomLookup := &coreRoomStateLookup{client: coreClient}
+	go func() {
+		for event := range eventStream.Events() {
+			buffer.RouteEventToUsers(ctx, event, msgBuf, roomLookup)
+		}
+	}()
 
 	// Public HTTP server on :8080 (health, readiness, metrics — no auth)
 	metrics := admin.NewMetrics(prometheus.DefaultRegisterer, coreClient)
@@ -277,6 +315,7 @@ func main() {
 	syncHandler := matrix.NewGetSyncHandler(matrix.GetSyncConfig{
 		CoreClient: coreClient,
 		ServerName: serverName,
+		Buffer:     msgBuf,
 	})
 	mux.Handle("GET /_matrix/client/v3/sync",
 		jwtMiddleware(http.HandlerFunc(syncHandler.GetSync)))
