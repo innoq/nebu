@@ -1,5 +1,5 @@
 # generated: 2026-03-20
-# last_updated: 2026-04-01
+# last_updated: 2026-04-03
 # project: open-chat
 # project_key: NOKEY
 # tracking_system: file-system
@@ -36,6 +36,7 @@
 
 generated: 2026-03-20
 last_updated: 2026-04-03
+# story 4-22 created: 4-22 → ready-for-dev: 2026-04-03
 # story 4-21 review: 2026-04-03
 # story 4-21 in-progress: 2026-04-03
 # story 4-21 created: 4-21 → ready-for-dev: 2026-04-03
@@ -390,8 +391,8 @@ development_status:
   4-18-profile-presence-api: done
   4-19-media-gateway-upload-aes-256-gcm-size-limit: done
   4-20-media-gateway-download-decryption: done
-  4-21-gherkin-room-create-send-receive-end-to-end: review
-  4-22-matrix-client-smoke-test-matrix-js-sdk-http-level: backlog
+  4-21-gherkin-room-create-send-receive-end-to-end: done
+  4-22-matrix-client-smoke-test-matrix-js-sdk-http-level: review
   4-23-load-test-silber-tier-500-concurrent-k6-setup-run: backlog
   epic-4-retrospective: optional
 

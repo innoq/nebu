@@ -7,7 +7,7 @@ DOCKER_ELIXIR = docker run --rm -v $(PWD):/workspace -w /workspace elixir:1.19-a
 DOCKER_BUF    = docker run --rm -v $(PWD):/workspace -w /workspace bufbuild/buf
 DOCKER_NODE   = docker run --rm -v $(PWD):/workspace -w /workspace node:22-alpine
 
-.PHONY: build-gateway build-core build-admin-css download-fonts dev setup test-unit-go test-unit-elixir test-integration test-e2e proto gen-api
+.PHONY: build-gateway build-core build-admin-css download-fonts dev setup test-unit-go test-unit-elixir test-integration test-e2e test-matrix-compat proto gen-api
 
 ## download-fonts: Download Inter + JetBrains Mono WOFF2 fonts (run once; commit results)
 download-fonts:
@@ -85,6 +85,18 @@ test-integration:
 		golang:1.26-alpine \
 		sh -c "apk add -q --no-cache gcc musl-dev && cd gateway && go test -v -tags integration ./test/integration/..."; \
 	EXIT=$$?; docker compose down; exit $$EXIT
+
+## test-matrix-compat: Matrix SDK compatibility smoke test (optional CI gate — not part of test-integration)
+## Validates that a real matrix-js-sdk client can connect, create a room, send a message, and
+## receive it back via the room timeline. Requires the full stack to be running (docker compose up -d --wait).
+test-matrix-compat:
+	docker compose up -d --wait && \
+	docker run --rm -v $(PWD):/workspace -w /workspace/tests/matrix_compat \
+		--network=nebu_default \
+		-e NEBU_MATRIX_URL=http://gateway:8008 \
+		-e NEBU_DEX_URL=http://dex:5556 \
+		node:22-alpine \
+		sh -c "npm ci && node smoke_test.js"
 
 ## test-e2e: Run Playwright E2E tests against a running stack (make dev must be up)
 ## Requires: 127.0.0.1 dex in /etc/hosts for OIDC redirect flows

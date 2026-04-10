@@ -1,0 +1,11 @@
+{
+  "name": "nebu-matrix-compat",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "node smoke_test.js"
+  },
+  "dependencies": {
+    "matrix-js-sdk": "41.3.0"
+  }
+}
