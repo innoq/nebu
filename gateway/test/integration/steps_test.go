@@ -84,4 +84,5 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^the response body contains "([^"]*)"$`, theResponseBodyContains)
 	initializeAuthSteps(sc)           // auth scenario step definitions
 	initializeAdminBootstrapSteps(sc) // admin bootstrap + dashboard step definitions
+	initializeRoomFlowSteps(sc)       // room flow step definitions
 }

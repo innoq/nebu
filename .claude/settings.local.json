@@ -27,7 +27,8 @@
       "Bash(rtk go:*)",
       "Bash(go mod:*)",
       "Bash(rtk git:*)",
-      "Bash(go run:*)"
+      "Bash(go run:*)",
+      "Bash(rtk grep:*)"
     ]
   }
 }
