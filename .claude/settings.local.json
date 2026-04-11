@@ -31,7 +31,8 @@
       "Bash(rtk grep:*)",
       "Bash(rtk read:*)",
       "mcp__context7__resolve-library-id",
-      "Bash(rtk wc:*)"
+      "Bash(rtk wc:*)",
+      "Bash(rtk make:*)"
     ]
   }
 }

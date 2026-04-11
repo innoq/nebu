@@ -7,7 +7,7 @@ DOCKER_ELIXIR = docker run --rm -v $(PWD):/workspace -w /workspace elixir:1.19-a
 DOCKER_BUF    = docker run --rm -v $(PWD):/workspace -w /workspace bufbuild/buf
 DOCKER_NODE   = docker run --rm -v $(PWD):/workspace -w /workspace node:22-alpine
 
-.PHONY: build-gateway build-core build-admin-css download-fonts dev setup test-unit-go test-unit-elixir test-integration test-e2e test-matrix-compat proto gen-api
+.PHONY: build-gateway build-core build-admin-css download-fonts dev setup test-unit-go test-unit-elixir test-integration test-e2e test-matrix-compat test-load-silber proto gen-api
 
 ## download-fonts: Download Inter + JetBrains Mono WOFF2 fonts (run once; commit results)
 download-fonts:
@@ -97,6 +97,17 @@ test-matrix-compat:
 		-e NEBU_DEX_URL=http://dex:5556 \
 		node:22-alpine \
 		sh -c "npm ci && node smoke_test.js"
+
+## test-load-silber: Silber-Tier load test — 500 concurrent VUs via k6 (optional gate — not part of test-integration)
+## Requires: running stack (docker compose up -d --wait called automatically)
+## Override: NEBU_LOAD_TARGET_URL=http://my-host:8008 make test-load-silber
+test-load-silber:
+	docker compose up -d --wait && \
+	docker run --rm -v $(PWD)/tests/load:/scripts \
+		--network=nebu_default \
+		-e NEBU_LOAD_TARGET_URL=$${NEBU_LOAD_TARGET_URL:-http://gateway:8008} \
+		-e NEBU_DEX_URL=$${NEBU_DEX_URL:-http://dex:5556} \
+		grafana/k6:0.50.0 run /scripts/k6_chat.js
 
 ## test-e2e: Run Playwright E2E tests against a running stack (make dev must be up)
 ## Requires: 127.0.0.1 dex in /etc/hosts for OIDC redirect flows
