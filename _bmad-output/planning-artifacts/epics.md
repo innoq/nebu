@@ -3316,3 +3316,32 @@ Admins können Nutzer, Rooms und Rollen über eine vollständige Web-UI verwalte
 
 - All step definitions in `tests/steps/admin_ui_steps.go`
 - All scenarios run as part of `make test-integration`; all pass green
+
+---
+
+### Story 7.15: Bootstrap Wizard — Claim-to-Role Mapping (instance_admin / compliance_officer / user)
+
+**As an** operator setting up Nebu for the first time,
+**I want** to configure which OIDC claim values map to each Nebu role during the Bootstrap Wizard,
+**so that** I can use my organisation's existing group names without hardcoding them in environment variables.
+
+**Size:** S
+
+**Background:** The current Bootstrap Wizard (Epic 3) only captures `admin_group_claim` (the single claim value that grants `instance_admin`). The role claim name (`groups`) is still env-var only (`NEBU_OIDC_CLAIM_ROLE`). Regular user login works but there is no UI to configure compliance officer or custom admin claim names. This story adds a dedicated "Role Mapping" step to the Bootstrap Wizard.
+
+**Acceptance Criteria:**
+
+- Bootstrap Wizard gains a new Step 3: **Role Mapping** (between "Connect with OIDC" and "Key Generation"):
+  - Displays the claim name field (pre-filled from env `NEBU_OIDC_CLAIM_ROLE` or default `groups`)
+  - Shows three rows for the three roles: `instance_admin`, `compliance_officer`, `user`
+  - Each row has an editable text field for the claim value (pre-filled from discovered claims where possible; `user` row defaults to `*` = all other values)
+  - "Admin claim" row is pre-filled from the claim selected in Step 2 (OIDC + claim discovery)
+- On save, writes to `server_config`:
+  - `oidc_claim_role` (the claim name, e.g. `groups`)
+  - `admin_group_claim` (value for `instance_admin`, e.g. `instance_admin`)
+  - `compliance_group_claim` (value for `compliance_officer`, e.g. `compliance_officer`)
+  - `user_group_claim` (value for `user`, e.g. `user` — informational only, "all others" semantics)
+- `auth.ExtractRoleClaim` and `auth.MapSystemRole` are updated to load `compliance_group_claim` from `server_config` at runtime instead of hardcoding `"compliance_officer"`
+- The env var `NEBU_OIDC_CLAIM_ROLE` remains as a fallback when `oidc_claim_role` is not yet in `server_config` (pre-bootstrap)
+- Unit tests: mapping with custom claim values; `user` row defaults correctly; missing claim falls back to `user` role
+- Gherkin: Bootstrap Wizard smoke flow updated to include Role Mapping step

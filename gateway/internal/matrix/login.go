@@ -71,6 +71,7 @@ type LoginHandler struct {
 	coreClient    CoreClient
 	serverName    string
 	clientID      string
+	clientSecret  string
 	roleClaimName string
 }
 
@@ -80,6 +81,7 @@ type LoginConfig struct {
 	CoreClient    CoreClient
 	ServerName    string
 	ClientID      string
+	ClientSecret  string
 	RoleClaimName string
 }
 
@@ -90,6 +92,7 @@ func NewLoginHandler(cfg LoginConfig) *LoginHandler {
 		coreClient:    cfg.CoreClient,
 		serverName:    cfg.ServerName,
 		clientID:      cfg.ClientID,
+		clientSecret:  cfg.ClientSecret,
 		roleClaimName: cfg.RoleClaimName,
 	}
 }
@@ -112,8 +115,16 @@ func (h *LoginHandler) PostLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// MAJOR-2 fix: req.Token may be an opaque SSO loginToken (64 hex chars) or a
+	// raw JWT. Try the opaque store first (single-use, 30s TTL). Fall back to
+	// treating it as a raw JWT for any client that calls POST /login directly.
+	rawJWT := req.Token
+	if idTokenFromStore, found := globalLoginTokens.pop(req.Token); found {
+		rawJWT = idTokenFromStore
+	}
+
 	verifier := inner.Verifier(&oidc.Config{ClientID: h.clientID})
-	idToken, err := verifier.Verify(r.Context(), req.Token)
+	idToken, err := verifier.Verify(r.Context(), rawJWT)
 	if err != nil {
 		writeMatrixError(w, http.StatusForbidden, "M_FORBIDDEN", "Invalid or expired token")
 		return
@@ -143,7 +154,7 @@ func (h *LoginHandler) PostLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := LoginTokenResponse{
-		AccessToken: req.Token,
+		AccessToken: rawJWT, // always the real JWT, never the opaque loginToken
 		DeviceID:    generateDeviceID(),
 		UserID:      userID,
 		TokenType:   "Bearer",

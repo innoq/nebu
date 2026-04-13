@@ -32,7 +32,12 @@
       "Bash(rtk read:*)",
       "mcp__context7__resolve-library-id",
       "Bash(rtk wc:*)",
-      "Bash(rtk make:*)"
+      "Bash(rtk make:*)",
+      "Bash(rtk find:*)",
+      "Bash(rtk curl:*)",
+      "Bash(rtk proxy:*)",
+      "Bash(rtk tsc:*)",
+      "Bash(rtk playwright:*)"
     ]
   }
 }

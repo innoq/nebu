@@ -40,9 +40,11 @@ func TestFormatUserID(t *testing.T) {
 		serverName string
 		want       string
 	}{
-		{"abc-uuid-123", "example.com", "@abc-uuid-123:example.com"},
+		{"abc-uuid-123", "example.com", "@_zbjphk2ji31:example.com"},
 		{"", "example.com", ""},
-		{"user1", "nebu.internal", "@user1:nebu.internal"},
+		{"user1", "nebu.internal", "@cgqblglkpkmb:nebu.internal"},
+		// Dex local-connector sub: SHA-256 → base64url[:12] → lowercase
+		{"CiQwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDMSBWxvY2Fs", "localhost", "@xph3zgstbkdb:localhost"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.sub+"/"+tt.serverName, func(t *testing.T) {

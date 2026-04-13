@@ -23,6 +23,7 @@ staticClients:
     secret: nebu-dev-secret
     redirectURIs:
       - "http://localhost:8008/_matrix/client/v3/login/sso/redirect/oidc"
+      - "http://localhost:7070/auth.html"
 
   - id: nebu-admin
     name: "Nebu Admin UI"

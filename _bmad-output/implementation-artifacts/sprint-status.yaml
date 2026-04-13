@@ -1,5 +1,8 @@
 # generated: 2026-03-20
-# last_updated: 2026-04-03
+# last_updated: 2026-04-11
+# story 4-24 review: 2026-04-11
+# story 4-24 in-progress: 2026-04-11
+# story 4-24 created: 4-24 → ready-for-dev: 2026-04-11
 # story 4-23 review: 2026-04-03
 # story 4-23 in-progress: 2026-04-03
 # story 4-23 created: 4-23 → ready-for-dev: 2026-04-03
@@ -38,7 +41,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-20
-last_updated: 2026-04-03
+last_updated: 2026-04-11
 # story 4-22 created: 4-22 → ready-for-dev: 2026-04-03
 # story 4-21 review: 2026-04-03
 # story 4-21 in-progress: 2026-04-03
@@ -376,7 +379,7 @@ development_status:
   epic-4: in-progress
   4-1-horde-registry-dynamicsupervisor-setup: done
   4-2-room-genserver-lifecycle-create-join-leave: done
-  4-3-ed25519-unit-tests-nebu-eventid-content-hash-module: in-progress
+  4-3-ed25519-unit-tests-nebu-eventid-content-hash-module: done
   4-4-room-genserver-send-event-ed25519-signing-txnid-idempotency: done
   4-5-session-manager-ets-session-store: done
   4-6-session-manager-postgresql-since-token-invalidation: done
@@ -396,8 +399,9 @@ development_status:
   4-20-media-gateway-download-decryption: done
   4-21-gherkin-room-create-send-receive-end-to-end: done
   4-22-matrix-client-smoke-test-matrix-js-sdk-http-level: done
-  4-23-load-test-silber-tier-500-concurrent-k6-setup-run: review
-  epic-4-retrospective: optional
+  4-23-load-test-silber-tier-500-concurrent-k6-setup-run: done
+  4-24-fluffychat-web-e2e-compatibility-test: review
+  epic-4-retrospective: done
 
   # ─────────────────────────────────────────────────────────────────────────
   # Epic 5: Compliance Officers Can Securely Request and Export Audited Communication Data
@@ -449,4 +453,5 @@ development_status:
   7-12-audit-log-view-atlas-pattern-zeitraum-filter-read-only: backlog
   7-13-wcag-audit-axe-core-report-automatisierter-scan-aller-admin-seiten: backlog
   7-14-gherkin-admin-ui-smoke-flows-user-deactivate-room-archive-via-ui: backlog
+  7-15-bootstrap-wizard-claim-role-mapping-instance-admin-compliance-user: backlog
   epic-7-retrospective: optional

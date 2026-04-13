@@ -1,0 +1,8 @@
+{
+  "applicationName": "FluffyChat",
+  "defaultHomeserver": "localhost:7070",
+  "presetHomeserver": "localhost:7070",
+  "noEncryptionWarningShown": true,
+  "hideUnknownEvents": true,
+  "renderHtml": true
+}

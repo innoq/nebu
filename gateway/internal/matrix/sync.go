@@ -3,6 +3,7 @@ package matrix
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -133,6 +134,7 @@ func (h *GetSyncHandler) GetSync(w http.ResponseWriter, r *http.Request) {
 	resp, err := h.coreClient.GetInitialSync(grpcCtx, &pb.GetInitialSyncRequest{UserId: userID})
 	if err != nil {
 		st, _ := status.FromError(err)
+		slog.Error("GetInitialSync failed", "code", st.Code(), "msg", st.Message(), "user_id", userID)
 		switch st.Code() {
 		case codes.Unavailable:
 			writeMatrixError(w, http.StatusServiceUnavailable, "M_UNAVAILABLE", "Core is temporarily unavailable")

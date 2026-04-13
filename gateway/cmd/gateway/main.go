@@ -241,16 +241,41 @@ func main() {
 		admin.Error404(w, r, tmplHandler)
 	})
 
+	// Matrix client discovery endpoints — required by all Matrix clients before login.
+	// /_matrix/client/versions: signals Matrix protocol compatibility (FluffyChat, Element, etc. check this first).
+	// /.well-known/matrix/client: auto-discovery of homeserver base URL.
+	mux.HandleFunc("GET /_matrix/client/versions", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"versions":["v1.1","v1.2","v1.3","v1.4","v1.5","v1.6","v1.7","v1.8","v1.9","v1.10","v1.11"]}`))
+	})
+
+	mux.HandleFunc("GET /.well-known/matrix/client", func(w http.ResponseWriter, r *http.Request) {
+		scheme := "http"
+		if r.TLS != nil {
+			scheme = "https"
+		}
+		baseURL := scheme + "://" + r.Host
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		fmt.Fprintf(w, `{"m.homeserver":{"base_url":%q}}`, baseURL)
+	})
+
 	loginHandler := matrix.NewLoginHandler(matrix.LoginConfig{
 		DisplayName:   cfg.OIDCDisplayName,
 		Provider:      oidcProvider,
 		CoreClient:    coreClient,
 		ServerName:    serverName,
 		ClientID:      cfg.OIDCClientID,
+		ClientSecret:  cfg.OIDCClientSecret,
 		RoleClaimName: cfg.OIDCClaimRole,
 	})
 	mux.HandleFunc("GET /_matrix/client/v3/login", loginHandler.GetLogin)
 	mux.HandleFunc("POST /_matrix/client/v3/login", loginHandler.PostLogin)
+
+	// Matrix SSO: initiate PKCE flow, then callback from Dex.
+	// /_matrix/client/v3/login/sso/redirect/oidc is registered in Dex redirectURIs.
+	mux.HandleFunc("GET /_matrix/client/v3/login/sso/redirect", loginHandler.GetSSORedirect)
+	mux.HandleFunc("GET /_matrix/client/v3/login/sso/redirect/oidc", loginHandler.GetSSOCallback)
 
 	tokenDB, err := sql.Open("pgx", cfg.DBURL)
 	if err != nil {
@@ -261,6 +286,99 @@ func main() {
 	tokenStore := db.NewPostgresTokenStore(tokenDB)
 	logoutHandler := matrix.NewLogoutHandler(tokenStore)
 	jwtMiddleware := middleware.JWTMiddleware(oidcProvider, cfg.OIDCClientID, cfg.OIDCClaimRole, tokenStore)
+
+	// Matrix compatibility endpoints — required by all Matrix clients post-login.
+	// whoami: FluffyChat calls this immediately after login to verify the session is valid.
+	mux.Handle("GET /_matrix/client/v3/account/whoami",
+		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			sub, _ := r.Context().Value(middleware.ContextKeySub).(string)
+			userID := coregrpc.FormatUserID(sub, serverName)
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"user_id":%q,"is_guest":false}`, userID)
+		})))
+
+	// capabilities: Matrix clients check server feature flags before making API calls.
+	mux.HandleFunc("GET /_matrix/client/v3/capabilities", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"capabilities":{"m.change_password":{"enabled":false},"m.room_versions":{"default":"6","available":{"6":"stable"}}}}`))
+	})
+
+	// pushrules: return empty rule set — no push notifications in MVP.
+	mux.Handle("GET /_matrix/client/v3/pushrules/",
+		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"global":{"content":[],"override":[],"room":[],"sender":[],"underride":[]}}`))
+		})))
+
+	// media config: report the upload size limit (10 MiB default).
+	mux.HandleFunc("GET /_matrix/media/v3/config", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"m.upload.size":10485760}`))
+	})
+
+	// Stubs for endpoints FluffyChat requires but Nebu MVP does not yet implement.
+	// All return valid empty responses so the client can proceed without errors.
+
+	// 3PIDs (email/phone binding) — not supported in MVP.
+	mux.Handle("GET /_matrix/client/v3/account/3pid",
+		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"threepids":[]}`))
+		})))
+
+	// Device list — no multi-device management in MVP.
+	mux.Handle("GET /_matrix/client/v3/devices",
+		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"devices":[]}`))
+		})))
+
+	// Joined rooms — clients use this as a shortcut; sync already returns room state.
+	mux.Handle("GET /_matrix/client/v3/joined_rooms",
+		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"joined_rooms":[]}`))
+		})))
+
+	// Third-party protocol bridges — none in MVP.
+	mux.HandleFunc("GET /_matrix/client/v3/thirdparty/protocols", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{}`))
+	})
+
+	// Event filter — clients POST a filter definition, receive a filter_id for use in /sync.
+	// MVP: accept any filter and return id "0" (unfiltered sync is equivalent).
+	mux.Handle("POST /_matrix/client/v3/user/{userId}/filter",
+		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"filter_id":"0"}`))
+		})))
+
+	// E2E encryption stubs — acknowledge without storing (no E2E in MVP).
+	e2eHandler := jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"one_time_key_counts":{"curve25519":0,"signed_curve25519":0}}`))
+	}))
+	mux.Handle("POST /_matrix/client/v3/keys/upload", e2eHandler)
+	mux.Handle("POST /_matrix/client/r0/keys/upload", e2eHandler)
+
+	mux.Handle("POST /_matrix/client/v3/keys/query",
+		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"device_keys":{},"failures":{}}`))
+		})))
+
+	mux.HandleFunc("GET /_matrix/client/v3/keys/changes", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"changed":[],"left":[]}`))
+	})
+
+	mux.Handle("POST /_matrix/client/v3/keys/claim",
+		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"one_time_keys":{},"failures":{}}`))
+		})))
+
 	mux.Handle("POST /_matrix/client/v3/logout", jwtMiddleware(http.HandlerFunc(logoutHandler.PostLogout)))
 
 	createRoomHandler := matrix.NewCreateRoomHandler(matrix.CreateRoomConfig{

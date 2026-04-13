@@ -1,6 +1,6 @@
 # Story 4.3: Ed25519 Unit Tests + `Nebu.EventId` Content-Hash Module
 
-Status: in-progress
+Status: done
 
 ## Story
 
@@ -406,6 +406,8 @@ All tests run inside Docker containers — no local Elixir install needed.
 
 ## Change Log
 
+- 2026-04-11: Test review passed — 100/100 (A), 0 actionable violations, all 5 ACs covered; status → done
+- 2026-04-11: Re-verification — `make test-unit-elixir` (221 tests, 0 failures, --warnings-as-errors clean); status → review
 - 2026-04-03: Code review — 1 MAJOR fixed (`normalize_keys` Map.new→Jason.OrderedObject), 2 MINOR fixed (doctest, comment); status → in-progress for re-verification
 - 2026-04-03: Story implemented — `Nebu.EventId` module + 10 unit tests added; all ACs satisfied; umbrella tests green
 - 2026-04-03: Story created — ready-for-dev
