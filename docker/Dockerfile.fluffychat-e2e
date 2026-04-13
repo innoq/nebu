@@ -1,99 +1,95 @@
-# Stage 1: Build FluffyChat Flutter web app
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 1: vodozemac WASM build (Rust → WASM via flutter_rust_bridge_codegen)
 #
-# Uses cirruslabs/flutter which includes the Flutter SDK + Dart SDK.
-# Dart SDK >=3.11.1 required by FluffyChat pubspec.yaml.
-#
-# Skipped build steps:
-#   - Rust/WASM compilation of flutter_vodozemac (requires cargo, clang, wasm-pack)
-#     → replaced with minimal stub WASM + JS files in assets/vodozemac/
-#   - native_imaging download (requires curl + GitHub release assets)
-#     → replaced with a no-op Imaging.js stub in web/
-#
-# These stubs disable E2E encryption at build time.
-# noEncryptionWarningShown=true in config.json prevents the encryption
-# setup modal from appearing at runtime.
-FROM ghcr.io/cirruslabs/flutter:3.22.3 AS builder
+# This stage is cached independently from the Flutter build stage.
+# It only re-runs when the flutter_vodozemac version changes.
+# First build: ~25–30 min (cargo install + Rust compile).
+# Subsequent builds: instant (Docker layer cache).
+# ─────────────────────────────────────────────────────────────────────────────
+FROM ghcr.io/cirruslabs/flutter:3.41.6 AS vodozemac-builder
+
+# Install Rust + required system deps for WASM compilation
+RUN apt-get update -qq && apt-get install -y -q --no-install-recommends \
+        curl git build-essential pkg-config libssl-dev clang \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:$PATH
+
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain stable --no-modify-path && \
+    rustup target add wasm32-unknown-unknown && \
+    # flutter_rust_bridge_codegen builds the Dart ↔ Rust bridge for web.
+    # Version pinned to match the flutter_rust_bridge dep in FluffyChat pubspec.
+    cargo install flutter_rust_bridge_codegen --version 2.11.1
+
+# Copy only the flutter_vodozemac version from pubspec so Docker invalidates
+# this stage only when the version changes (not on every source change).
+COPY tmp/fluffychat/pubspec.yaml /pubspec.yaml
+
+# Clone dart-vodozemac at the version declared in pubspec.yaml and build WASM
+RUN VODOZEMAC_VERSION=$(grep 'flutter_vodozemac' /pubspec.yaml | sed 's/.*\^\([0-9.]*\).*/\1/') && \
+    echo "Building flutter_vodozemac v${VODOZEMAC_VERSION}" && \
+    git clone https://github.com/famedly/dart-vodozemac.git \
+        --branch "${VODOZEMAC_VERSION}" --depth 1 /vodozemac && \
+    cd /vodozemac && \
+    # flutter_rust_bridge_codegen build-web requires absolute paths (mirrors prepare-web.sh)
+    flutter_rust_bridge_codegen build-web \
+        --dart-root /vodozemac/dart \
+        --rust-root /vodozemac/rust \
+        --release && \
+    mkdir -p /vodozemac-out && \
+    cp dart/web/pkg/vodozemac_bindings_dart.js /vodozemac-out/ && \
+    cp dart/web/pkg/vodozemac_bindings_dart_bg.wasm /vodozemac-out/ && \
+    echo "vodozemac WASM build complete"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 2: Flutter web build
+# ─────────────────────────────────────────────────────────────────────────────
+FROM ghcr.io/cirruslabs/flutter:3.41.6 AS flutter-builder
 
 WORKDIR /app
-
-# Copy the FluffyChat source tree from the monorepo context (project root).
 COPY tmp/fluffychat/ .
 
-# Inject config.json before building so FluffyChat reads the correct homeserver
-# on startup. The file is served from /config.json by nginx at runtime but
-# must also be present in the web/ directory during the build so that Flutter
-# embeds it in the asset bundle.
+# Inject homeserver config before build
 COPY docker/fluffychat-config.json /app/web/config.json
 
-# ---------------------------------------------------------------------------
-# Stub 1: vodozemac WASM / JS
-#
-# prepare-web.sh compiles Rust → WASM and places the output into
-# assets/vodozemac/. The pubspec.yaml references this directory as an asset.
-# We create minimal stub files so the asset directory is non-empty (Flutter
-# asset bundler fails on empty directories) and the app does not crash trying
-# to load them. E2E encryption simply stays disabled.
-# ---------------------------------------------------------------------------
-RUN mkdir -p assets/vodozemac && \
-    # Minimal valid WASM binary magic header (8 bytes) — loads as empty module
-    printf '\x00\x61\x73\x6d\x01\x00\x00\x00' > assets/vodozemac/vodozemac_bindings_dart_bg.wasm && \
-    # Stub JS loader that exports no-op functions
-    echo "var vodozemac_bindings_dart = { exports: {} };" > assets/vodozemac/vodozemac_bindings_dart.js
+# Copy the real compiled vodozemac WASM and JS from Stage 1
+COPY --from=vodozemac-builder /vodozemac-out/vodozemac_bindings_dart.js \
+     /app/assets/vodozemac/vodozemac_bindings_dart.js
+COPY --from=vodozemac-builder /vodozemac-out/vodozemac_bindings_dart_bg.wasm \
+     /app/assets/vodozemac/vodozemac_bindings_dart_bg.wasm
 
-# ---------------------------------------------------------------------------
-# Stub 2: native_imaging (Imaging.js)
-#
-# index.html loads <script src="Imaging.js"> which is generated by the
-# native_imaging download step in prepare-web.sh. We provide a no-op stub
-# that satisfies the script tag without crashing.
-# ---------------------------------------------------------------------------
-RUN echo "// native_imaging stub — image operations fall back to Dart implementation" > web/Imaging.js
+# Download native_imaging JS (fast — pre-compiled binary download from GitHub Releases)
+RUN apt-get update -qq && apt-get install -y -q --no-install-recommends curl unzip jq \
+    && rm -rf /var/lib/apt/lists/* \
+    && NATIVE_IMAGING_VERSION=$(grep 'native_imaging' pubspec.yaml | sed 's/.*\^\([0-9.]*\).*/\1/') \
+    && curl -fsSL \
+        "https://github.com/famedly/dart_native_imaging/releases/download/v${NATIVE_IMAGING_VERSION}/native_imaging.zip" \
+        -o /tmp/native_imaging.zip \
+    && unzip -q /tmp/native_imaging.zip -d /tmp/native_imaging \
+    && mv /tmp/native_imaging/js/* web/ \
+    && rm -rf /tmp/native_imaging /tmp/native_imaging.zip
 
-# ---------------------------------------------------------------------------
-# Stub 3: native_executor.js
-#
-# prepare-web.sh also compiles web/native_executor.dart → web/native_executor.js
-# using dart compile js. This is used for background Isolate communication.
-# We compile it here using the Dart SDK included in the Flutter image.
-# ---------------------------------------------------------------------------
+# Compile native_executor.dart → native_executor.js (background Isolate bridge)
 RUN flutter pub get && \
     dart compile js web/native_executor.dart \
         -o web/native_executor.js \
         -m \
         --no-source-maps \
-    || echo "native_executor compile skipped (non-fatal for web renderer html)"
+    || echo "native_executor compile skipped (non-fatal)"
 
-# ---------------------------------------------------------------------------
-# Build Flutter web app
-#
-# --web-renderer html: Uses the HTML renderer instead of CanvasKit/Skia WASM.
-#   - Renders actual DOM elements (required for Playwright DOM selectors)
-#   - No additional WASM download at startup
-#   - Smaller initial bundle size
-#
-# --dart-define=FLUTTER_WEB_USE_SKIA=false: Belt-and-suspenders for HTML renderer.
-# ---------------------------------------------------------------------------
-RUN flutter build web \
-    --web-renderer html \
-    --dart-define=FLUTTER_WEB_USE_SKIA=false \
-    --release
+# Build Flutter web (CanvasKit default — accessibility semantics via flt-semantics)
+RUN flutter build web --release
 
-# ---------------------------------------------------------------------------
-# Stage 2: Serve the built app via nginx
-# ---------------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 3: nginx serve
+# ─────────────────────────────────────────────────────────────────────────────
 FROM nginx:stable-alpine
 
-# Remove default nginx config
 RUN rm /etc/nginx/conf.d/default.conf
-
-# Copy the Flutter web build output
-COPY --from=builder /app/build/web /usr/share/nginx/html
-
-# Inject FluffyChat config — overrides the one baked in during build so that
-# the same image works with different homeserver URLs if needed.
+COPY --from=flutter-builder /app/build/web /usr/share/nginx/html
 COPY docker/fluffychat-config.json /usr/share/nginx/html/config.json
-
-# Custom nginx config: SPA routing + /_matrix/ proxy to gateway
 COPY docker/nginx-fluffychat-e2e.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80

@@ -355,12 +355,26 @@ func main() {
 		})))
 
 	// E2E encryption stubs — acknowledge without storing (no E2E in MVP).
+	// Return non-zero one_time_key_counts so Element Web considers keys uploaded
+	// and skips the "Setting up keys / Unable to set up keys" cross-signing dialog.
 	e2eHandler := jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"one_time_key_counts":{"curve25519":0,"signed_curve25519":0}}`))
+		w.Write([]byte(`{"one_time_key_counts":{"curve25519":50,"signed_curve25519":50}}`))
 	}))
 	mux.Handle("POST /_matrix/client/v3/keys/upload", e2eHandler)
 	mux.Handle("POST /_matrix/client/r0/keys/upload", e2eHandler)
+
+	// Cross-signing stubs (used by Element Web for device verification setup).
+	mux.Handle("POST /_matrix/client/v3/keys/device_signing/upload",
+		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{}`))
+		})))
+	mux.Handle("POST /_matrix/client/v3/keys/signatures/upload",
+		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"failures":{}}`))
+		})))
 
 	mux.Handle("POST /_matrix/client/v3/keys/query",
 		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

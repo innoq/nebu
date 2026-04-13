@@ -1,0 +1,13 @@
+{
+  "default_server_config": {
+    "m.homeserver": {
+      "base_url": "http://localhost:7070",
+      "server_name": "localhost"
+    }
+  },
+  "brand": "Nebu E2E",
+  "disable_custom_urls": true,
+  "disable_guests": true,
+  "default_theme": "light",
+  "room_directory": { "servers": ["localhost"] }
+}

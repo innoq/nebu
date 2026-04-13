@@ -1,0 +1,15 @@
+# Element Web E2E test sidecar.
+#
+# Uses the official Element Web image as source, serves it via a custom nginx
+# that proxies /_matrix/* to the Nebu gateway — same-origin trick avoids CORS.
+#
+# Build time: ~5 seconds (image pull + copy).
+# docker build -t nebu-element-e2e:dev -f docker/Dockerfile.element-e2e .
+FROM vectorim/element-web AS element-source
+
+FROM nginx:stable-alpine
+RUN rm /etc/nginx/conf.d/default.conf
+COPY --from=element-source /usr/share/nginx/html /usr/share/nginx/html
+COPY docker/element-config.json /usr/share/nginx/html/config.json
+COPY docker/nginx-element-e2e.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80
