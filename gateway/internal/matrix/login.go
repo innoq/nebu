@@ -136,15 +136,33 @@ func (h *LoginHandler) PostLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sub, _ := allClaims["sub"].(string)
-	preferredUsername, _ := allClaims["preferred_username"].(string)
 	email, _ := allClaims["email"].(string)
 	rawRole := auth.ExtractRoleClaim(allClaims, h.roleClaimName)
 	systemRole := auth.MapSystemRole(rawRole)
 
+	// Resolve display name from JWT claims in priority order:
+	//   1. preferred_username (OIDC standard)
+	//   2. name (Dex maps username → name claim for local passwords)
+	//   3. email local part as fallback
+	// Later: this should come from a configurable claim-mapping (Story 7-15).
+	displayName, _ := allClaims["preferred_username"].(string)
+	if displayName == "" {
+		displayName, _ = allClaims["name"].(string)
+	}
+	if displayName == "" && email != "" {
+		// Fall back to local part of email (before @)
+		for i, c := range email {
+			if c == '@' {
+				displayName = email[:i]
+				break
+			}
+		}
+	}
+
 	userID := coregrpc.FormatUserID(sub, h.serverName)
 	grpcCtx := coregrpc.WithUserMetadata(r.Context(), userID, systemRole)
 	_, err = h.coreClient.ValidateToken(grpcCtx, &pb.ValidateTokenRequest{
-		DisplayName: preferredUsername,
+		DisplayName: displayName,
 		Email:       email,
 	})
 	if err != nil {
