@@ -87,6 +87,52 @@ defmodule Core.JoinRoomResponse do
   field :room_id, 1, type: :string, json_name: "roomId"
 end
 
+defmodule Core.LeaveRoomRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.LeaveRoomRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :user_id, 1, type: :string, json_name: "userId"
+  field :room_id, 2, type: :string, json_name: "roomId"
+end
+
+defmodule Core.LeaveRoomResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.LeaveRoomResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :room_id, 1, type: :string, json_name: "roomId"
+end
+
+defmodule Core.LeaveRoomRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.LeaveRoomRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :user_id, 1, type: :string, json_name: "userId"
+  field :room_id, 2, type: :string, json_name: "roomId"
+end
+
+defmodule Core.LeaveRoomResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.LeaveRoomResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :room_id, 1, type: :string, json_name: "roomId"
+end
+
 defmodule Core.GetMessagesRequest do
   @moduledoc false
 

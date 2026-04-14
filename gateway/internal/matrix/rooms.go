@@ -3,6 +3,7 @@ package matrix
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -14,10 +15,11 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// CreateRoomCoreClient is a consumer-defined interface for the CreateRoom gRPC call.
-// Keep it minimal — only what this handler needs (Go interface convention, ADR-009).
+// CreateRoomCoreClient is a consumer-defined interface for the CreateRoom gRPC calls.
+// InviteUser is included so PostCreateRoom can process the invite list inline.
 type CreateRoomCoreClient interface {
 	CreateRoom(ctx context.Context, req *pb.CreateRoomRequest) (*pb.CreateRoomResponse, error)
+	InviteUser(ctx context.Context, req *pb.InviteUserRequest) (*pb.InviteUserResponse, error)
 }
 
 // CreateRoomRequest is the JSON body for POST /_matrix/client/v3/createRoom.
@@ -98,6 +100,19 @@ func (h *CreateRoomHandler) PostCreateRoom(w http.ResponseWriter, r *http.Reques
 	if resp == nil {
 		writeMatrixError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
 		return
+	}
+
+	// Process invite list — send InviteUser gRPC for each invited user.
+	// Errors are logged but non-fatal: the room is already created.
+	for _, invitee := range req.Invite {
+		_, invErr := h.coreClient.InviteUser(grpcCtx, &pb.InviteUserRequest{
+			RoomId:    resp.RoomId,
+			InviterId: userID,
+			InviteeId: invitee,
+		})
+		if invErr != nil {
+			slog.Warn("createRoom: invite failed", "room_id", resp.RoomId, "invitee", invitee, "err", invErr)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

@@ -38,7 +38,8 @@
       "Bash(rtk proxy:*)",
       "Bash(rtk tsc:*)",
       "Bash(rtk playwright:*)",
-      "Bash(rtk docker:*)"
+      "Bash(rtk docker:*)",
+      "Bash(node:*)"
     ]
   }
 }

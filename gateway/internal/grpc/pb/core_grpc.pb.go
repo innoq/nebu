@@ -22,6 +22,7 @@ const (
 	CoreService_SendEvent_FullMethodName        = "/core.CoreService/SendEvent"
 	CoreService_CreateRoom_FullMethodName       = "/core.CoreService/CreateRoom"
 	CoreService_JoinRoom_FullMethodName         = "/core.CoreService/JoinRoom"
+	CoreService_LeaveRoom_FullMethodName        = "/core.CoreService/LeaveRoom"
 	CoreService_GetMessages_FullMethodName      = "/core.CoreService/GetMessages"
 	CoreService_SetPresence_FullMethodName      = "/core.CoreService/SetPresence"
 	CoreService_SetTyping_FullMethodName        = "/core.CoreService/SetTyping"
@@ -50,6 +51,7 @@ type CoreServiceClient interface {
 	SendEvent(ctx context.Context, in *SendEventRequest, opts ...grpc.CallOption) (*SendEventResponse, error)
 	CreateRoom(ctx context.Context, in *CreateRoomRequest, opts ...grpc.CallOption) (*CreateRoomResponse, error)
 	JoinRoom(ctx context.Context, in *JoinRoomRequest, opts ...grpc.CallOption) (*JoinRoomResponse, error)
+	LeaveRoom(ctx context.Context, in *LeaveRoomRequest, opts ...grpc.CallOption) (*LeaveRoomResponse, error)
 	GetMessages(ctx context.Context, in *GetMessagesRequest, opts ...grpc.CallOption) (*GetMessagesResponse, error)
 	SetPresence(ctx context.Context, in *SetPresenceRequest, opts ...grpc.CallOption) (*SetPresenceResponse, error)
 	SetTyping(ctx context.Context, in *SetTypingRequest, opts ...grpc.CallOption) (*SetTypingResponse, error)
@@ -109,6 +111,16 @@ func (c *coreServiceClient) JoinRoom(ctx context.Context, in *JoinRoomRequest, o
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(JoinRoomResponse)
 	err := c.cc.Invoke(ctx, CoreService_JoinRoom_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) LeaveRoom(ctx context.Context, in *LeaveRoomRequest, opts ...grpc.CallOption) (*LeaveRoomResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(LeaveRoomResponse)
+	err := c.cc.Invoke(ctx, CoreService_LeaveRoom_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -285,6 +297,7 @@ type CoreServiceServer interface {
 	SendEvent(context.Context, *SendEventRequest) (*SendEventResponse, error)
 	CreateRoom(context.Context, *CreateRoomRequest) (*CreateRoomResponse, error)
 	JoinRoom(context.Context, *JoinRoomRequest) (*JoinRoomResponse, error)
+	LeaveRoom(context.Context, *LeaveRoomRequest) (*LeaveRoomResponse, error)
 	GetMessages(context.Context, *GetMessagesRequest) (*GetMessagesResponse, error)
 	SetPresence(context.Context, *SetPresenceRequest) (*SetPresenceResponse, error)
 	SetTyping(context.Context, *SetTypingRequest) (*SetTypingResponse, error)
@@ -328,6 +341,9 @@ func (UnimplementedCoreServiceServer) CreateRoom(context.Context, *CreateRoomReq
 }
 func (UnimplementedCoreServiceServer) JoinRoom(context.Context, *JoinRoomRequest) (*JoinRoomResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method JoinRoom not implemented")
+}
+func (UnimplementedCoreServiceServer) LeaveRoom(context.Context, *LeaveRoomRequest) (*LeaveRoomResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method LeaveRoom not implemented")
 }
 func (UnimplementedCoreServiceServer) GetMessages(context.Context, *GetMessagesRequest) (*GetMessagesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetMessages not implemented")
@@ -445,6 +461,24 @@ func _CoreService_JoinRoom_Handler(srv interface{}, ctx context.Context, dec fun
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(CoreServiceServer).JoinRoom(ctx, req.(*JoinRoomRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_LeaveRoom_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LeaveRoomRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).LeaveRoom(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_LeaveRoom_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).LeaveRoom(ctx, req.(*LeaveRoomRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -730,6 +764,10 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "JoinRoom",
 			Handler:    _CoreService_JoinRoom_Handler,
+		},
+		{
+			MethodName: "LeaveRoom",
+			Handler:    _CoreService_LeaveRoom_Handler,
 		},
 		{
 			MethodName: "GetMessages",

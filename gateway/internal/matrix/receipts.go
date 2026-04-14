@@ -3,6 +3,7 @@ package matrix
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 
 	coregrpc "github.com/nebu/nebu/internal/grpc"
@@ -73,6 +74,7 @@ func (h *ReceiptsHandler) PostReceipt(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// Step 5: Map gRPC errors.
 		st, _ := status.FromError(err)
+		slog.Error("SendReceipt gRPC failed", "code", st.Code(), "msg", st.Message(), "room", roomID, "user", userID)
 		switch st.Code() {
 		case codes.PermissionDenied:
 			writeMatrixError(w, http.StatusForbidden, "M_FORBIDDEN", "You are not a member of this room")

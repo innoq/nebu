@@ -11,6 +11,7 @@ service CoreService {
   rpc SendEvent(SendEventRequest)           returns (SendEventResponse);
   rpc CreateRoom(CreateRoomRequest)         returns (CreateRoomResponse);
   rpc JoinRoom(JoinRoomRequest)             returns (JoinRoomResponse);
+  rpc LeaveRoom(LeaveRoomRequest)           returns (LeaveRoomResponse);
   rpc GetMessages(GetMessagesRequest)       returns (GetMessagesResponse);
   rpc SetPresence(SetPresenceRequest)       returns (SetPresenceResponse);
   rpc SetTyping(SetTypingRequest)           returns (SetTypingResponse);
@@ -89,6 +90,15 @@ message JoinRoomRequest {
   string room_id_or_alias = 2;
 }
 message JoinRoomResponse {
+  string room_id = 1;
+}
+
+// LeaveRoom
+message LeaveRoomRequest {
+  string user_id = 1;
+  string room_id = 2;
+}
+message LeaveRoomResponse {
   string room_id = 1;
 }
 

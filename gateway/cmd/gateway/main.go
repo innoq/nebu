@@ -22,6 +22,8 @@ import (
 	coregrpc "github.com/nebu/nebu/internal/grpc"
 	pb "github.com/nebu/nebu/internal/grpc/pb"
 	"github.com/nebu/nebu/internal/health"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"github.com/nebu/nebu/internal/matrix"
 	"github.com/nebu/nebu/internal/middleware"
 	"github.com/nebu/nebu/internal/registry"
@@ -293,8 +295,7 @@ func main() {
 	// whoami: FluffyChat calls this immediately after login to verify the session is valid.
 	mux.Handle("GET /_matrix/client/v3/account/whoami",
 		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			sub, _ := r.Context().Value(middleware.ContextKeySub).(string)
-			userID := coregrpc.FormatUserID(sub, serverName)
+			userID, _ := r.Context().Value(middleware.ContextKeyUserID).(string)
 			w.Header().Set("Content-Type", "application/json")
 			fmt.Fprintf(w, `{"user_id":%q,"is_guest":false}`, userID)
 		})))
@@ -600,6 +601,55 @@ func main() {
 	})
 	mux.Handle("GET /_matrix/client/v3/presence/{userId}/status",
 		jwtMiddleware(http.HandlerFunc(presenceHandler.GetPresenceStatus)))
+
+	// PUT /presence/{userId}/status — set own presence (Matrix spec requires PUT)
+	mux.Handle("PUT /_matrix/client/v3/presence/{userId}/status",
+		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			userID, _ := r.Context().Value(middleware.ContextKeyUserID).(string)
+			systemRole, _ := r.Context().Value(middleware.ContextKeySystemRole).(string)
+			var body struct {
+				Presence  string `json:"presence"`
+				StatusMsg string `json:"status_msg"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			grpcCtx := coregrpc.WithUserMetadata(r.Context(), userID, systemRole)
+			_, _ = coreClient.SetPresence(grpcCtx, &pb.SetPresenceRequest{
+				UserId:   userID,
+				Presence: body.Presence,
+			})
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{}`))
+		})))
+
+	// POST /rooms/{roomId}/leave — leave a room (calls Elixir LeaveRoom gRPC)
+	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/leave",
+		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			roomID := r.PathValue("roomId")
+			userID, _ := r.Context().Value(middleware.ContextKeyUserID).(string)
+			systemRole, _ := r.Context().Value(middleware.ContextKeySystemRole).(string)
+			grpcCtx := coregrpc.WithUserMetadata(r.Context(), userID, systemRole)
+			_, err := coreClient.LeaveRoom(grpcCtx, &pb.LeaveRoomRequest{
+				RoomId: roomID,
+				UserId: userID,
+			})
+			w.Header().Set("Content-Type", "application/json")
+			if err != nil {
+				st, _ := status.FromError(err)
+				switch st.Code() {
+				case codes.NotFound:
+					w.WriteHeader(http.StatusNotFound)
+					fmt.Fprintf(w, `{"errcode":"M_NOT_FOUND","error":"Room not found"}`)
+				case codes.PermissionDenied:
+					w.WriteHeader(http.StatusForbidden)
+					fmt.Fprintf(w, `{"errcode":"M_FORBIDDEN","error":"Not a member of this room"}`)
+				default:
+					w.WriteHeader(http.StatusInternalServerError)
+					fmt.Fprintf(w, `{"errcode":"M_UNKNOWN","error":"Internal server error"}`)
+				}
+				return
+			}
+			w.Write([]byte(`{}`))
+		})))
 
 	slog.Info("HTTP server starting", "addr", ":8008")
 	if err := http.ListenAndServe(":8008", mux); err != nil {

@@ -4,6 +4,7 @@ defmodule Core.CoreService.Service do
   rpc :SendEvent, Core.SendEventRequest, Core.SendEventResponse
   rpc :CreateRoom, Core.CreateRoomRequest, Core.CreateRoomResponse
   rpc :JoinRoom, Core.JoinRoomRequest, Core.JoinRoomResponse
+  rpc :LeaveRoom, Core.LeaveRoomRequest, Core.LeaveRoomResponse
   rpc :GetMessages, Core.GetMessagesRequest, Core.GetMessagesResponse
   rpc :SetPresence, Core.SetPresenceRequest, Core.SetPresenceResponse
   rpc :SetTyping, Core.SetTypingRequest, Core.SetTypingResponse
@@ -14,6 +15,7 @@ defmodule Core.CoreService.Service do
   rpc :GetRoomState, Core.GetRoomStateRequest, Core.GetRoomStateResponse
   rpc :InviteUser, Core.InviteUserRequest, Core.InviteUserResponse
   rpc :SetPowerLevels, Core.SetPowerLevelsRequest, Core.SetPowerLevelsResponse
+  rpc :SendReceipt, Core.SendReceiptRequest, Core.SendReceiptResponse
   rpc :GetInitialSync, Core.GetInitialSyncRequest, Core.GetInitialSyncResponse
   rpc :GetSyncDelta, Core.GetSyncDeltaRequest, Core.GetSyncDeltaResponse
 end

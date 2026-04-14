@@ -156,6 +156,35 @@ defmodule Nebu.EventDispatcher.Server do
     end
   end
 
+  def leave_room(request, _stream) do
+    room_id = request.room_id
+    user_id = request.user_id
+
+    case Nebu.Room.RoomSupervisor.lookup_room(room_id) do
+      {:error, :not_found} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "room not found: #{room_id}"
+
+      {:ok, _pid} ->
+        case Nebu.Room.Server.leave(room_id, user_id) do
+          :ok ->
+            %Core.LeaveRoomResponse{room_id: room_id}
+
+          {:error, :not_member} ->
+            # User has a pending invite but hasn't joined — treat as "decline invite".
+            # Reject the pending invitation so it disappears from rooms.invite.
+            db_module_invite().reject_invitation(room_id, user_id)
+            %Core.LeaveRoomResponse{room_id: room_id}
+
+          {:error, reason} ->
+            raise GRPC.RPCError,
+              status: GRPC.Status.internal(),
+              message: "leave failed: #{inspect(reason)}"
+        end
+    end
+  end
+
   def invite_user(request, _stream) do
     room_id = request.room_id
     inviter = request.inviter_id
@@ -403,18 +432,18 @@ defmodule Nebu.EventDispatcher.Server do
     end
   end
 
-  def send_receipt(request, stream) do
+  def send_receipt(request, _stream) do
     room_id = request.room_id
     receipt_type = request.receipt_type
     event_id = request.event_id
 
-    # Extract authenticated user_id from gRPC metadata.
-    {user_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
+    # user_id is sent in the request body by the Go gateway (same as join_room pattern).
+    user_id = request.user_id
 
     if is_nil(user_id) or user_id == "" do
       raise GRPC.RPCError,
         status: GRPC.Status.unauthenticated(),
-        message: "missing x-user-id metadata"
+        message: "missing user_id in request"
     end
 
     # Room existence check.

@@ -78,6 +78,11 @@ func (c *Client) JoinRoom(ctx context.Context, req *pb.JoinRoomRequest) (*pb.Joi
 	return c.core.JoinRoom(ctx, req)
 }
 
+// LeaveRoom calls the Elixir core to leave a room.
+func (c *Client) LeaveRoom(ctx context.Context, req *pb.LeaveRoomRequest) (*pb.LeaveRoomResponse, error) {
+	return c.core.LeaveRoom(ctx, req)
+}
+
 // InviteUser calls the Elixir core to invite a user to a room.
 func (c *Client) InviteUser(ctx context.Context, req *pb.InviteUserRequest) (*pb.InviteUserResponse, error) {
 	return c.core.InviteUser(ctx, req)

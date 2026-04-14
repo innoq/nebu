@@ -38,6 +38,32 @@ defmodule Nebu.Room.InviteDB do
     end
   end
 
+  @sql_reject_invitation """
+  UPDATE room_invitations
+  SET rejected_at = $3
+  WHERE room_id = $1 AND invitee_id = $2
+    AND accepted_at IS NULL AND rejected_at IS NULL
+  """
+
+  @doc """
+  Marks a pending invitation as rejected by setting `rejected_at`.
+  Called when a user declines an invite via POST /rooms/{roomId}/leave on an invited room.
+  Returns `:ok` on success.
+  """
+  @spec reject_invitation(String.t(), String.t()) :: :ok | {:error, term()}
+  def reject_invitation(room_id, invitee_id) do
+    now_ms = System.system_time(:millisecond)
+
+    case Ecto.Adapters.SQL.query(Nebu.Repo, @sql_reject_invitation, [
+           room_id,
+           invitee_id,
+           now_ms
+         ]) do
+      {:ok, _result} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   @sql_accept_invitation """
   UPDATE room_invitations
   SET accepted_at = $3

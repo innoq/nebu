@@ -453,6 +453,103 @@ func (x *JoinRoomResponse) GetRoomId() string {
 	return ""
 }
 
+// LeaveRoom
+type LeaveRoomRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	RoomId        string                 `protobuf:"bytes,2,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LeaveRoomRequest) Reset() {
+	*x = LeaveRoomRequest{}
+	mi := &file_core_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LeaveRoomRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LeaveRoomRequest) ProtoMessage() {}
+
+func (x *LeaveRoomRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LeaveRoomRequest.ProtoReflect.Descriptor instead.
+func (*LeaveRoomRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *LeaveRoomRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *LeaveRoomRequest) GetRoomId() string {
+	if x != nil {
+		return x.RoomId
+	}
+	return ""
+}
+
+type LeaveRoomResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RoomId        string                 `protobuf:"bytes,1,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LeaveRoomResponse) Reset() {
+	*x = LeaveRoomResponse{}
+	mi := &file_core_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LeaveRoomResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LeaveRoomResponse) ProtoMessage() {}
+
+func (x *LeaveRoomResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LeaveRoomResponse.ProtoReflect.Descriptor instead.
+func (*LeaveRoomResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *LeaveRoomResponse) GetRoomId() string {
+	if x != nil {
+		return x.RoomId
+	}
+	return ""
+}
+
 // GetMessages
 type GetMessagesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -467,7 +564,7 @@ type GetMessagesRequest struct {
 
 func (x *GetMessagesRequest) Reset() {
 	*x = GetMessagesRequest{}
-	mi := &file_core_proto_msgTypes[7]
+	mi := &file_core_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -479,7 +576,7 @@ func (x *GetMessagesRequest) String() string {
 func (*GetMessagesRequest) ProtoMessage() {}
 
 func (x *GetMessagesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[7]
+	mi := &file_core_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -492,7 +589,7 @@ func (x *GetMessagesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMessagesRequest.ProtoReflect.Descriptor instead.
 func (*GetMessagesRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{7}
+	return file_core_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *GetMessagesRequest) GetRoomId() string {
@@ -541,7 +638,7 @@ type GetMessagesResponse struct {
 
 func (x *GetMessagesResponse) Reset() {
 	*x = GetMessagesResponse{}
-	mi := &file_core_proto_msgTypes[8]
+	mi := &file_core_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -553,7 +650,7 @@ func (x *GetMessagesResponse) String() string {
 func (*GetMessagesResponse) ProtoMessage() {}
 
 func (x *GetMessagesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[8]
+	mi := &file_core_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -566,7 +663,7 @@ func (x *GetMessagesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMessagesResponse.ProtoReflect.Descriptor instead.
 func (*GetMessagesResponse) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{8}
+	return file_core_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *GetMessagesResponse) GetEvents() []*Event {
@@ -602,7 +699,7 @@ type SetPresenceRequest struct {
 
 func (x *SetPresenceRequest) Reset() {
 	*x = SetPresenceRequest{}
-	mi := &file_core_proto_msgTypes[9]
+	mi := &file_core_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -614,7 +711,7 @@ func (x *SetPresenceRequest) String() string {
 func (*SetPresenceRequest) ProtoMessage() {}
 
 func (x *SetPresenceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[9]
+	mi := &file_core_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -627,7 +724,7 @@ func (x *SetPresenceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetPresenceRequest.ProtoReflect.Descriptor instead.
 func (*SetPresenceRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{9}
+	return file_core_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *SetPresenceRequest) GetUserId() string {
@@ -659,7 +756,7 @@ type SetPresenceResponse struct {
 
 func (x *SetPresenceResponse) Reset() {
 	*x = SetPresenceResponse{}
-	mi := &file_core_proto_msgTypes[10]
+	mi := &file_core_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -671,7 +768,7 @@ func (x *SetPresenceResponse) String() string {
 func (*SetPresenceResponse) ProtoMessage() {}
 
 func (x *SetPresenceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[10]
+	mi := &file_core_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -684,7 +781,7 @@ func (x *SetPresenceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetPresenceResponse.ProtoReflect.Descriptor instead.
 func (*SetPresenceResponse) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{10}
+	return file_core_proto_rawDescGZIP(), []int{12}
 }
 
 // SetTyping
@@ -700,7 +797,7 @@ type SetTypingRequest struct {
 
 func (x *SetTypingRequest) Reset() {
 	*x = SetTypingRequest{}
-	mi := &file_core_proto_msgTypes[11]
+	mi := &file_core_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -712,7 +809,7 @@ func (x *SetTypingRequest) String() string {
 func (*SetTypingRequest) ProtoMessage() {}
 
 func (x *SetTypingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[11]
+	mi := &file_core_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -725,7 +822,7 @@ func (x *SetTypingRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetTypingRequest.ProtoReflect.Descriptor instead.
 func (*SetTypingRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{11}
+	return file_core_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *SetTypingRequest) GetRoomId() string {
@@ -764,7 +861,7 @@ type SetTypingResponse struct {
 
 func (x *SetTypingResponse) Reset() {
 	*x = SetTypingResponse{}
-	mi := &file_core_proto_msgTypes[12]
+	mi := &file_core_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -776,7 +873,7 @@ func (x *SetTypingResponse) String() string {
 func (*SetTypingResponse) ProtoMessage() {}
 
 func (x *SetTypingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[12]
+	mi := &file_core_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -789,7 +886,7 @@ func (x *SetTypingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetTypingResponse.ProtoReflect.Descriptor instead.
 func (*SetTypingResponse) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{12}
+	return file_core_proto_rawDescGZIP(), []int{14}
 }
 
 // ValidateToken — Go validates OIDC token, Elixir trusts Go fully (ADR G2)
@@ -805,7 +902,7 @@ type ValidateTokenRequest struct {
 
 func (x *ValidateTokenRequest) Reset() {
 	*x = ValidateTokenRequest{}
-	mi := &file_core_proto_msgTypes[13]
+	mi := &file_core_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -817,7 +914,7 @@ func (x *ValidateTokenRequest) String() string {
 func (*ValidateTokenRequest) ProtoMessage() {}
 
 func (x *ValidateTokenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[13]
+	mi := &file_core_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -830,7 +927,7 @@ func (x *ValidateTokenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidateTokenRequest.ProtoReflect.Descriptor instead.
 func (*ValidateTokenRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{13}
+	return file_core_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ValidateTokenRequest) GetDisplayName() string {
@@ -859,7 +956,7 @@ type ValidateTokenResponse struct {
 
 func (x *ValidateTokenResponse) Reset() {
 	*x = ValidateTokenResponse{}
-	mi := &file_core_proto_msgTypes[14]
+	mi := &file_core_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -871,7 +968,7 @@ func (x *ValidateTokenResponse) String() string {
 func (*ValidateTokenResponse) ProtoMessage() {}
 
 func (x *ValidateTokenResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[14]
+	mi := &file_core_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -884,7 +981,7 @@ func (x *ValidateTokenResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidateTokenResponse.ProtoReflect.Descriptor instead.
 func (*ValidateTokenResponse) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{14}
+	return file_core_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ValidateTokenResponse) GetUserId() string {
@@ -926,7 +1023,7 @@ type GetPendingEventsRequest struct {
 
 func (x *GetPendingEventsRequest) Reset() {
 	*x = GetPendingEventsRequest{}
-	mi := &file_core_proto_msgTypes[15]
+	mi := &file_core_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -938,7 +1035,7 @@ func (x *GetPendingEventsRequest) String() string {
 func (*GetPendingEventsRequest) ProtoMessage() {}
 
 func (x *GetPendingEventsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[15]
+	mi := &file_core_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -951,7 +1048,7 @@ func (x *GetPendingEventsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPendingEventsRequest.ProtoReflect.Descriptor instead.
 func (*GetPendingEventsRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{15}
+	return file_core_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *GetPendingEventsRequest) GetNodeId() string {
@@ -978,7 +1075,7 @@ type GetPendingEventsResponse struct {
 
 func (x *GetPendingEventsResponse) Reset() {
 	*x = GetPendingEventsResponse{}
-	mi := &file_core_proto_msgTypes[16]
+	mi := &file_core_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -990,7 +1087,7 @@ func (x *GetPendingEventsResponse) String() string {
 func (*GetPendingEventsResponse) ProtoMessage() {}
 
 func (x *GetPendingEventsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[16]
+	mi := &file_core_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1003,7 +1100,7 @@ func (x *GetPendingEventsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPendingEventsResponse.ProtoReflect.Descriptor instead.
 func (*GetPendingEventsResponse) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{16}
+	return file_core_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *GetPendingEventsResponse) GetEvents() []*Event {
@@ -1031,7 +1128,7 @@ type EventBusRequest struct {
 
 func (x *EventBusRequest) Reset() {
 	*x = EventBusRequest{}
-	mi := &file_core_proto_msgTypes[17]
+	mi := &file_core_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1043,7 +1140,7 @@ func (x *EventBusRequest) String() string {
 func (*EventBusRequest) ProtoMessage() {}
 
 func (x *EventBusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[17]
+	mi := &file_core_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1056,7 +1153,7 @@ func (x *EventBusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EventBusRequest.ProtoReflect.Descriptor instead.
 func (*EventBusRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{17}
+	return file_core_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *EventBusRequest) GetNodeId() string {
@@ -1082,7 +1179,7 @@ type GetMetricsRequest struct {
 
 func (x *GetMetricsRequest) Reset() {
 	*x = GetMetricsRequest{}
-	mi := &file_core_proto_msgTypes[18]
+	mi := &file_core_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1094,7 +1191,7 @@ func (x *GetMetricsRequest) String() string {
 func (*GetMetricsRequest) ProtoMessage() {}
 
 func (x *GetMetricsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[18]
+	mi := &file_core_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1107,7 +1204,7 @@ func (x *GetMetricsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMetricsRequest.ProtoReflect.Descriptor instead.
 func (*GetMetricsRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{18}
+	return file_core_proto_rawDescGZIP(), []int{20}
 }
 
 type GetMetricsResponse struct {
@@ -1121,7 +1218,7 @@ type GetMetricsResponse struct {
 
 func (x *GetMetricsResponse) Reset() {
 	*x = GetMetricsResponse{}
-	mi := &file_core_proto_msgTypes[19]
+	mi := &file_core_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1133,7 +1230,7 @@ func (x *GetMetricsResponse) String() string {
 func (*GetMetricsResponse) ProtoMessage() {}
 
 func (x *GetMetricsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[19]
+	mi := &file_core_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1146,7 +1243,7 @@ func (x *GetMetricsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMetricsResponse.ProtoReflect.Descriptor instead.
 func (*GetMetricsResponse) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{19}
+	return file_core_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *GetMetricsResponse) GetMsgPerSec() float32 {
@@ -1182,7 +1279,7 @@ type InviteUserRequest struct {
 
 func (x *InviteUserRequest) Reset() {
 	*x = InviteUserRequest{}
-	mi := &file_core_proto_msgTypes[20]
+	mi := &file_core_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1194,7 +1291,7 @@ func (x *InviteUserRequest) String() string {
 func (*InviteUserRequest) ProtoMessage() {}
 
 func (x *InviteUserRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[20]
+	mi := &file_core_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1207,7 +1304,7 @@ func (x *InviteUserRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InviteUserRequest.ProtoReflect.Descriptor instead.
 func (*InviteUserRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{20}
+	return file_core_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *InviteUserRequest) GetRoomId() string {
@@ -1239,7 +1336,7 @@ type InviteUserResponse struct {
 
 func (x *InviteUserResponse) Reset() {
 	*x = InviteUserResponse{}
-	mi := &file_core_proto_msgTypes[21]
+	mi := &file_core_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1251,7 +1348,7 @@ func (x *InviteUserResponse) String() string {
 func (*InviteUserResponse) ProtoMessage() {}
 
 func (x *InviteUserResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[21]
+	mi := &file_core_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1264,7 +1361,7 @@ func (x *InviteUserResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InviteUserResponse.ProtoReflect.Descriptor instead.
 func (*InviteUserResponse) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{21}
+	return file_core_proto_rawDescGZIP(), []int{23}
 }
 
 // GetRoomState — unary: Go queries current room members + metadata
@@ -1277,7 +1374,7 @@ type GetRoomStateRequest struct {
 
 func (x *GetRoomStateRequest) Reset() {
 	*x = GetRoomStateRequest{}
-	mi := &file_core_proto_msgTypes[22]
+	mi := &file_core_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1289,7 +1386,7 @@ func (x *GetRoomStateRequest) String() string {
 func (*GetRoomStateRequest) ProtoMessage() {}
 
 func (x *GetRoomStateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[22]
+	mi := &file_core_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1302,7 +1399,7 @@ func (x *GetRoomStateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRoomStateRequest.ProtoReflect.Descriptor instead.
 func (*GetRoomStateRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{22}
+	return file_core_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *GetRoomStateRequest) GetRoomId() string {
@@ -1323,7 +1420,7 @@ type GetRoomStateResponse struct {
 
 func (x *GetRoomStateResponse) Reset() {
 	*x = GetRoomStateResponse{}
-	mi := &file_core_proto_msgTypes[23]
+	mi := &file_core_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1335,7 +1432,7 @@ func (x *GetRoomStateResponse) String() string {
 func (*GetRoomStateResponse) ProtoMessage() {}
 
 func (x *GetRoomStateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[23]
+	mi := &file_core_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1348,7 +1445,7 @@ func (x *GetRoomStateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRoomStateResponse.ProtoReflect.Descriptor instead.
 func (*GetRoomStateResponse) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{23}
+	return file_core_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *GetRoomStateResponse) GetMembers() []string {
@@ -1383,7 +1480,7 @@ type SetPowerLevelsRequest struct {
 
 func (x *SetPowerLevelsRequest) Reset() {
 	*x = SetPowerLevelsRequest{}
-	mi := &file_core_proto_msgTypes[24]
+	mi := &file_core_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1395,7 +1492,7 @@ func (x *SetPowerLevelsRequest) String() string {
 func (*SetPowerLevelsRequest) ProtoMessage() {}
 
 func (x *SetPowerLevelsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[24]
+	mi := &file_core_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1408,7 +1505,7 @@ func (x *SetPowerLevelsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetPowerLevelsRequest.ProtoReflect.Descriptor instead.
 func (*SetPowerLevelsRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{24}
+	return file_core_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *SetPowerLevelsRequest) GetRoomId() string {
@@ -1433,7 +1530,7 @@ type SetPowerLevelsResponse struct {
 
 func (x *SetPowerLevelsResponse) Reset() {
 	*x = SetPowerLevelsResponse{}
-	mi := &file_core_proto_msgTypes[25]
+	mi := &file_core_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1445,7 +1542,7 @@ func (x *SetPowerLevelsResponse) String() string {
 func (*SetPowerLevelsResponse) ProtoMessage() {}
 
 func (x *SetPowerLevelsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[25]
+	mi := &file_core_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1458,7 +1555,7 @@ func (x *SetPowerLevelsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetPowerLevelsResponse.ProtoReflect.Descriptor instead.
 func (*SetPowerLevelsResponse) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{25}
+	return file_core_proto_rawDescGZIP(), []int{27}
 }
 
 // SendReceipt — persists a read receipt for a user in a room
@@ -1474,7 +1571,7 @@ type SendReceiptRequest struct {
 
 func (x *SendReceiptRequest) Reset() {
 	*x = SendReceiptRequest{}
-	mi := &file_core_proto_msgTypes[26]
+	mi := &file_core_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1486,7 +1583,7 @@ func (x *SendReceiptRequest) String() string {
 func (*SendReceiptRequest) ProtoMessage() {}
 
 func (x *SendReceiptRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[26]
+	mi := &file_core_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1499,7 +1596,7 @@ func (x *SendReceiptRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendReceiptRequest.ProtoReflect.Descriptor instead.
 func (*SendReceiptRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{26}
+	return file_core_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *SendReceiptRequest) GetRoomId() string {
@@ -1538,7 +1635,7 @@ type SendReceiptResponse struct {
 
 func (x *SendReceiptResponse) Reset() {
 	*x = SendReceiptResponse{}
-	mi := &file_core_proto_msgTypes[27]
+	mi := &file_core_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1550,7 +1647,7 @@ func (x *SendReceiptResponse) String() string {
 func (*SendReceiptResponse) ProtoMessage() {}
 
 func (x *SendReceiptResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[27]
+	mi := &file_core_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1563,7 +1660,7 @@ func (x *SendReceiptResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendReceiptResponse.ProtoReflect.Descriptor instead.
 func (*SendReceiptResponse) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{27}
+	return file_core_proto_rawDescGZIP(), []int{29}
 }
 
 // GetInitialSync — returns full state snapshot for all of a user's joined rooms
@@ -1576,7 +1673,7 @@ type GetInitialSyncRequest struct {
 
 func (x *GetInitialSyncRequest) Reset() {
 	*x = GetInitialSyncRequest{}
-	mi := &file_core_proto_msgTypes[28]
+	mi := &file_core_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1588,7 +1685,7 @@ func (x *GetInitialSyncRequest) String() string {
 func (*GetInitialSyncRequest) ProtoMessage() {}
 
 func (x *GetInitialSyncRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[28]
+	mi := &file_core_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1601,7 +1698,7 @@ func (x *GetInitialSyncRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetInitialSyncRequest.ProtoReflect.Descriptor instead.
 func (*GetInitialSyncRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{28}
+	return file_core_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *GetInitialSyncRequest) GetUserId() string {
@@ -1621,7 +1718,7 @@ type GetInitialSyncResponse struct {
 
 func (x *GetInitialSyncResponse) Reset() {
 	*x = GetInitialSyncResponse{}
-	mi := &file_core_proto_msgTypes[29]
+	mi := &file_core_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1633,7 +1730,7 @@ func (x *GetInitialSyncResponse) String() string {
 func (*GetInitialSyncResponse) ProtoMessage() {}
 
 func (x *GetInitialSyncResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[29]
+	mi := &file_core_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1646,7 +1743,7 @@ func (x *GetInitialSyncResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetInitialSyncResponse.ProtoReflect.Descriptor instead.
 func (*GetInitialSyncResponse) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{29}
+	return file_core_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *GetInitialSyncResponse) GetSinceToken() string {
@@ -1676,7 +1773,7 @@ type SyncRoomStateEvent struct {
 
 func (x *SyncRoomStateEvent) Reset() {
 	*x = SyncRoomStateEvent{}
-	mi := &file_core_proto_msgTypes[30]
+	mi := &file_core_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1688,7 +1785,7 @@ func (x *SyncRoomStateEvent) String() string {
 func (*SyncRoomStateEvent) ProtoMessage() {}
 
 func (x *SyncRoomStateEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[30]
+	mi := &file_core_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1701,7 +1798,7 @@ func (x *SyncRoomStateEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SyncRoomStateEvent.ProtoReflect.Descriptor instead.
 func (*SyncRoomStateEvent) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{30}
+	return file_core_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *SyncRoomStateEvent) GetType() string {
@@ -1744,7 +1841,7 @@ type GetSyncDeltaRequest struct {
 
 func (x *GetSyncDeltaRequest) Reset() {
 	*x = GetSyncDeltaRequest{}
-	mi := &file_core_proto_msgTypes[31]
+	mi := &file_core_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1756,7 +1853,7 @@ func (x *GetSyncDeltaRequest) String() string {
 func (*GetSyncDeltaRequest) ProtoMessage() {}
 
 func (x *GetSyncDeltaRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[31]
+	mi := &file_core_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1769,7 +1866,7 @@ func (x *GetSyncDeltaRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSyncDeltaRequest.ProtoReflect.Descriptor instead.
 func (*GetSyncDeltaRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{31}
+	return file_core_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *GetSyncDeltaRequest) GetUserId() string {
@@ -1804,7 +1901,7 @@ type GetSyncDeltaResponse struct {
 
 func (x *GetSyncDeltaResponse) Reset() {
 	*x = GetSyncDeltaResponse{}
-	mi := &file_core_proto_msgTypes[32]
+	mi := &file_core_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1816,7 +1913,7 @@ func (x *GetSyncDeltaResponse) String() string {
 func (*GetSyncDeltaResponse) ProtoMessage() {}
 
 func (x *GetSyncDeltaResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[32]
+	mi := &file_core_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1829,7 +1926,7 @@ func (x *GetSyncDeltaResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSyncDeltaResponse.ProtoReflect.Descriptor instead.
 func (*GetSyncDeltaResponse) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{32}
+	return file_core_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *GetSyncDeltaResponse) GetSinceToken() string {
@@ -1867,7 +1964,7 @@ type SyncRoom struct {
 
 func (x *SyncRoom) Reset() {
 	*x = SyncRoom{}
-	mi := &file_core_proto_msgTypes[33]
+	mi := &file_core_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1879,7 +1976,7 @@ func (x *SyncRoom) String() string {
 func (*SyncRoom) ProtoMessage() {}
 
 func (x *SyncRoom) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[33]
+	mi := &file_core_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1892,7 +1989,7 @@ func (x *SyncRoom) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SyncRoom.ProtoReflect.Descriptor instead.
 func (*SyncRoom) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{33}
+	return file_core_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *SyncRoom) GetRoomId() string {
@@ -1940,7 +2037,7 @@ type GetPresenceRequest struct {
 
 func (x *GetPresenceRequest) Reset() {
 	*x = GetPresenceRequest{}
-	mi := &file_core_proto_msgTypes[34]
+	mi := &file_core_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1952,7 +2049,7 @@ func (x *GetPresenceRequest) String() string {
 func (*GetPresenceRequest) ProtoMessage() {}
 
 func (x *GetPresenceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[34]
+	mi := &file_core_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1965,7 +2062,7 @@ func (x *GetPresenceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPresenceRequest.ProtoReflect.Descriptor instead.
 func (*GetPresenceRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{34}
+	return file_core_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *GetPresenceRequest) GetUserId() string {
@@ -1985,7 +2082,7 @@ type GetPresenceResponse struct {
 
 func (x *GetPresenceResponse) Reset() {
 	*x = GetPresenceResponse{}
-	mi := &file_core_proto_msgTypes[35]
+	mi := &file_core_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1997,7 +2094,7 @@ func (x *GetPresenceResponse) String() string {
 func (*GetPresenceResponse) ProtoMessage() {}
 
 func (x *GetPresenceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[35]
+	mi := &file_core_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2010,7 +2107,7 @@ func (x *GetPresenceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPresenceResponse.ProtoReflect.Descriptor instead.
 func (*GetPresenceResponse) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{35}
+	return file_core_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *GetPresenceResponse) GetPresence() string {
@@ -2040,7 +2137,7 @@ type UpdateProfileRequest struct {
 
 func (x *UpdateProfileRequest) Reset() {
 	*x = UpdateProfileRequest{}
-	mi := &file_core_proto_msgTypes[36]
+	mi := &file_core_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2052,7 +2149,7 @@ func (x *UpdateProfileRequest) String() string {
 func (*UpdateProfileRequest) ProtoMessage() {}
 
 func (x *UpdateProfileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[36]
+	mi := &file_core_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2065,7 +2162,7 @@ func (x *UpdateProfileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateProfileRequest.ProtoReflect.Descriptor instead.
 func (*UpdateProfileRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{36}
+	return file_core_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *UpdateProfileRequest) GetUserId() string {
@@ -2097,7 +2194,7 @@ type UpdateProfileResponse struct {
 
 func (x *UpdateProfileResponse) Reset() {
 	*x = UpdateProfileResponse{}
-	mi := &file_core_proto_msgTypes[37]
+	mi := &file_core_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2109,7 +2206,7 @@ func (x *UpdateProfileResponse) String() string {
 func (*UpdateProfileResponse) ProtoMessage() {}
 
 func (x *UpdateProfileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[37]
+	mi := &file_core_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2122,7 +2219,7 @@ func (x *UpdateProfileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateProfileResponse.ProtoReflect.Descriptor instead.
 func (*UpdateProfileResponse) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{37}
+	return file_core_proto_rawDescGZIP(), []int{39}
 }
 
 var File_core_proto protoreflect.FileDescriptor
@@ -2164,6 +2261,11 @@ const file_core_proto_rawDesc = "" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12'\n" +
 	"\x10room_id_or_alias\x18\x02 \x01(\tR\rroomIdOrAlias\"+\n" +
 	"\x10JoinRoomResponse\x12\x17\n" +
+	"\aroom_id\x18\x01 \x01(\tR\x06roomId\"D\n" +
+	"\x10LeaveRoomRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x17\n" +
+	"\aroom_id\x18\x02 \x01(\tR\x06roomId\",\n" +
+	"\x11LeaveRoomResponse\x12\x17\n" +
 	"\aroom_id\x18\x01 \x01(\tR\x06roomId\"\xad\x01\n" +
 	"\x12GetMessagesRequest\x12\x17\n" +
 	"\aroom_id\x18\x01 \x01(\tR\x06roomId\x12\x1d\n" +
@@ -2283,12 +2385,14 @@ const file_core_proto_rawDesc = "" +
 	"\vdisplayname\x18\x02 \x01(\tR\vdisplayname\x12\x1d\n" +
 	"\n" +
 	"avatar_url\x18\x03 \x01(\tR\tavatarUrl\"\x17\n" +
-	"\x15UpdateProfileResponse2\xd8\t\n" +
+	"\x15UpdateProfileResponse2\x96\n" +
+	"\n" +
 	"\vCoreService\x12<\n" +
 	"\tSendEvent\x12\x16.core.SendEventRequest\x1a\x17.core.SendEventResponse\x12?\n" +
 	"\n" +
 	"CreateRoom\x12\x17.core.CreateRoomRequest\x1a\x18.core.CreateRoomResponse\x129\n" +
-	"\bJoinRoom\x12\x15.core.JoinRoomRequest\x1a\x16.core.JoinRoomResponse\x12B\n" +
+	"\bJoinRoom\x12\x15.core.JoinRoomRequest\x1a\x16.core.JoinRoomResponse\x12<\n" +
+	"\tLeaveRoom\x12\x16.core.LeaveRoomRequest\x1a\x17.core.LeaveRoomResponse\x12B\n" +
 	"\vGetMessages\x12\x18.core.GetMessagesRequest\x1a\x19.core.GetMessagesResponse\x12B\n" +
 	"\vSetPresence\x12\x18.core.SetPresenceRequest\x1a\x19.core.SetPresenceResponse\x12<\n" +
 	"\tSetTyping\x12\x16.core.SetTypingRequest\x1a\x17.core.SetTypingResponse\x12H\n" +
@@ -2319,7 +2423,7 @@ func file_core_proto_rawDescGZIP() []byte {
 	return file_core_proto_rawDescData
 }
 
-var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 38)
+var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 40)
 var file_core_proto_goTypes = []any{
 	(*Event)(nil),                    // 0: core.Event
 	(*SendEventRequest)(nil),         // 1: core.SendEventRequest
@@ -2328,83 +2432,87 @@ var file_core_proto_goTypes = []any{
 	(*CreateRoomResponse)(nil),       // 4: core.CreateRoomResponse
 	(*JoinRoomRequest)(nil),          // 5: core.JoinRoomRequest
 	(*JoinRoomResponse)(nil),         // 6: core.JoinRoomResponse
-	(*GetMessagesRequest)(nil),       // 7: core.GetMessagesRequest
-	(*GetMessagesResponse)(nil),      // 8: core.GetMessagesResponse
-	(*SetPresenceRequest)(nil),       // 9: core.SetPresenceRequest
-	(*SetPresenceResponse)(nil),      // 10: core.SetPresenceResponse
-	(*SetTypingRequest)(nil),         // 11: core.SetTypingRequest
-	(*SetTypingResponse)(nil),        // 12: core.SetTypingResponse
-	(*ValidateTokenRequest)(nil),     // 13: core.ValidateTokenRequest
-	(*ValidateTokenResponse)(nil),    // 14: core.ValidateTokenResponse
-	(*GetPendingEventsRequest)(nil),  // 15: core.GetPendingEventsRequest
-	(*GetPendingEventsResponse)(nil), // 16: core.GetPendingEventsResponse
-	(*EventBusRequest)(nil),          // 17: core.EventBusRequest
-	(*GetMetricsRequest)(nil),        // 18: core.GetMetricsRequest
-	(*GetMetricsResponse)(nil),       // 19: core.GetMetricsResponse
-	(*InviteUserRequest)(nil),        // 20: core.InviteUserRequest
-	(*InviteUserResponse)(nil),       // 21: core.InviteUserResponse
-	(*GetRoomStateRequest)(nil),      // 22: core.GetRoomStateRequest
-	(*GetRoomStateResponse)(nil),     // 23: core.GetRoomStateResponse
-	(*SetPowerLevelsRequest)(nil),    // 24: core.SetPowerLevelsRequest
-	(*SetPowerLevelsResponse)(nil),   // 25: core.SetPowerLevelsResponse
-	(*SendReceiptRequest)(nil),       // 26: core.SendReceiptRequest
-	(*SendReceiptResponse)(nil),      // 27: core.SendReceiptResponse
-	(*GetInitialSyncRequest)(nil),    // 28: core.GetInitialSyncRequest
-	(*GetInitialSyncResponse)(nil),   // 29: core.GetInitialSyncResponse
-	(*SyncRoomStateEvent)(nil),       // 30: core.SyncRoomStateEvent
-	(*GetSyncDeltaRequest)(nil),      // 31: core.GetSyncDeltaRequest
-	(*GetSyncDeltaResponse)(nil),     // 32: core.GetSyncDeltaResponse
-	(*SyncRoom)(nil),                 // 33: core.SyncRoom
-	(*GetPresenceRequest)(nil),       // 34: core.GetPresenceRequest
-	(*GetPresenceResponse)(nil),      // 35: core.GetPresenceResponse
-	(*UpdateProfileRequest)(nil),     // 36: core.UpdateProfileRequest
-	(*UpdateProfileResponse)(nil),    // 37: core.UpdateProfileResponse
+	(*LeaveRoomRequest)(nil),         // 7: core.LeaveRoomRequest
+	(*LeaveRoomResponse)(nil),        // 8: core.LeaveRoomResponse
+	(*GetMessagesRequest)(nil),       // 9: core.GetMessagesRequest
+	(*GetMessagesResponse)(nil),      // 10: core.GetMessagesResponse
+	(*SetPresenceRequest)(nil),       // 11: core.SetPresenceRequest
+	(*SetPresenceResponse)(nil),      // 12: core.SetPresenceResponse
+	(*SetTypingRequest)(nil),         // 13: core.SetTypingRequest
+	(*SetTypingResponse)(nil),        // 14: core.SetTypingResponse
+	(*ValidateTokenRequest)(nil),     // 15: core.ValidateTokenRequest
+	(*ValidateTokenResponse)(nil),    // 16: core.ValidateTokenResponse
+	(*GetPendingEventsRequest)(nil),  // 17: core.GetPendingEventsRequest
+	(*GetPendingEventsResponse)(nil), // 18: core.GetPendingEventsResponse
+	(*EventBusRequest)(nil),          // 19: core.EventBusRequest
+	(*GetMetricsRequest)(nil),        // 20: core.GetMetricsRequest
+	(*GetMetricsResponse)(nil),       // 21: core.GetMetricsResponse
+	(*InviteUserRequest)(nil),        // 22: core.InviteUserRequest
+	(*InviteUserResponse)(nil),       // 23: core.InviteUserResponse
+	(*GetRoomStateRequest)(nil),      // 24: core.GetRoomStateRequest
+	(*GetRoomStateResponse)(nil),     // 25: core.GetRoomStateResponse
+	(*SetPowerLevelsRequest)(nil),    // 26: core.SetPowerLevelsRequest
+	(*SetPowerLevelsResponse)(nil),   // 27: core.SetPowerLevelsResponse
+	(*SendReceiptRequest)(nil),       // 28: core.SendReceiptRequest
+	(*SendReceiptResponse)(nil),      // 29: core.SendReceiptResponse
+	(*GetInitialSyncRequest)(nil),    // 30: core.GetInitialSyncRequest
+	(*GetInitialSyncResponse)(nil),   // 31: core.GetInitialSyncResponse
+	(*SyncRoomStateEvent)(nil),       // 32: core.SyncRoomStateEvent
+	(*GetSyncDeltaRequest)(nil),      // 33: core.GetSyncDeltaRequest
+	(*GetSyncDeltaResponse)(nil),     // 34: core.GetSyncDeltaResponse
+	(*SyncRoom)(nil),                 // 35: core.SyncRoom
+	(*GetPresenceRequest)(nil),       // 36: core.GetPresenceRequest
+	(*GetPresenceResponse)(nil),      // 37: core.GetPresenceResponse
+	(*UpdateProfileRequest)(nil),     // 38: core.UpdateProfileRequest
+	(*UpdateProfileResponse)(nil),    // 39: core.UpdateProfileResponse
 }
 var file_core_proto_depIdxs = []int32{
 	0,  // 0: core.GetMessagesResponse.events:type_name -> core.Event
 	0,  // 1: core.GetPendingEventsResponse.events:type_name -> core.Event
-	33, // 2: core.GetInitialSyncResponse.rooms:type_name -> core.SyncRoom
-	33, // 3: core.GetSyncDeltaResponse.rooms:type_name -> core.SyncRoom
-	30, // 4: core.SyncRoom.state_events:type_name -> core.SyncRoomStateEvent
+	35, // 2: core.GetInitialSyncResponse.rooms:type_name -> core.SyncRoom
+	35, // 3: core.GetSyncDeltaResponse.rooms:type_name -> core.SyncRoom
+	32, // 4: core.SyncRoom.state_events:type_name -> core.SyncRoomStateEvent
 	0,  // 5: core.SyncRoom.timeline_events:type_name -> core.Event
 	1,  // 6: core.CoreService.SendEvent:input_type -> core.SendEventRequest
 	3,  // 7: core.CoreService.CreateRoom:input_type -> core.CreateRoomRequest
 	5,  // 8: core.CoreService.JoinRoom:input_type -> core.JoinRoomRequest
-	7,  // 9: core.CoreService.GetMessages:input_type -> core.GetMessagesRequest
-	9,  // 10: core.CoreService.SetPresence:input_type -> core.SetPresenceRequest
-	11, // 11: core.CoreService.SetTyping:input_type -> core.SetTypingRequest
-	13, // 12: core.CoreService.ValidateToken:input_type -> core.ValidateTokenRequest
-	15, // 13: core.CoreService.GetPendingEvents:input_type -> core.GetPendingEventsRequest
-	17, // 14: core.CoreService.EventBus:input_type -> core.EventBusRequest
-	18, // 15: core.CoreService.GetMetrics:input_type -> core.GetMetricsRequest
-	22, // 16: core.CoreService.GetRoomState:input_type -> core.GetRoomStateRequest
-	20, // 17: core.CoreService.InviteUser:input_type -> core.InviteUserRequest
-	24, // 18: core.CoreService.SetPowerLevels:input_type -> core.SetPowerLevelsRequest
-	26, // 19: core.CoreService.SendReceipt:input_type -> core.SendReceiptRequest
-	28, // 20: core.CoreService.GetInitialSync:input_type -> core.GetInitialSyncRequest
-	31, // 21: core.CoreService.GetSyncDelta:input_type -> core.GetSyncDeltaRequest
-	34, // 22: core.CoreService.GetPresence:input_type -> core.GetPresenceRequest
-	36, // 23: core.CoreService.UpdateProfile:input_type -> core.UpdateProfileRequest
-	2,  // 24: core.CoreService.SendEvent:output_type -> core.SendEventResponse
-	4,  // 25: core.CoreService.CreateRoom:output_type -> core.CreateRoomResponse
-	6,  // 26: core.CoreService.JoinRoom:output_type -> core.JoinRoomResponse
-	8,  // 27: core.CoreService.GetMessages:output_type -> core.GetMessagesResponse
-	10, // 28: core.CoreService.SetPresence:output_type -> core.SetPresenceResponse
-	12, // 29: core.CoreService.SetTyping:output_type -> core.SetTypingResponse
-	14, // 30: core.CoreService.ValidateToken:output_type -> core.ValidateTokenResponse
-	16, // 31: core.CoreService.GetPendingEvents:output_type -> core.GetPendingEventsResponse
-	0,  // 32: core.CoreService.EventBus:output_type -> core.Event
-	19, // 33: core.CoreService.GetMetrics:output_type -> core.GetMetricsResponse
-	23, // 34: core.CoreService.GetRoomState:output_type -> core.GetRoomStateResponse
-	21, // 35: core.CoreService.InviteUser:output_type -> core.InviteUserResponse
-	25, // 36: core.CoreService.SetPowerLevels:output_type -> core.SetPowerLevelsResponse
-	27, // 37: core.CoreService.SendReceipt:output_type -> core.SendReceiptResponse
-	29, // 38: core.CoreService.GetInitialSync:output_type -> core.GetInitialSyncResponse
-	32, // 39: core.CoreService.GetSyncDelta:output_type -> core.GetSyncDeltaResponse
-	35, // 40: core.CoreService.GetPresence:output_type -> core.GetPresenceResponse
-	37, // 41: core.CoreService.UpdateProfile:output_type -> core.UpdateProfileResponse
-	24, // [24:42] is the sub-list for method output_type
-	6,  // [6:24] is the sub-list for method input_type
+	7,  // 9: core.CoreService.LeaveRoom:input_type -> core.LeaveRoomRequest
+	9,  // 10: core.CoreService.GetMessages:input_type -> core.GetMessagesRequest
+	11, // 11: core.CoreService.SetPresence:input_type -> core.SetPresenceRequest
+	13, // 12: core.CoreService.SetTyping:input_type -> core.SetTypingRequest
+	15, // 13: core.CoreService.ValidateToken:input_type -> core.ValidateTokenRequest
+	17, // 14: core.CoreService.GetPendingEvents:input_type -> core.GetPendingEventsRequest
+	19, // 15: core.CoreService.EventBus:input_type -> core.EventBusRequest
+	20, // 16: core.CoreService.GetMetrics:input_type -> core.GetMetricsRequest
+	24, // 17: core.CoreService.GetRoomState:input_type -> core.GetRoomStateRequest
+	22, // 18: core.CoreService.InviteUser:input_type -> core.InviteUserRequest
+	26, // 19: core.CoreService.SetPowerLevels:input_type -> core.SetPowerLevelsRequest
+	28, // 20: core.CoreService.SendReceipt:input_type -> core.SendReceiptRequest
+	30, // 21: core.CoreService.GetInitialSync:input_type -> core.GetInitialSyncRequest
+	33, // 22: core.CoreService.GetSyncDelta:input_type -> core.GetSyncDeltaRequest
+	36, // 23: core.CoreService.GetPresence:input_type -> core.GetPresenceRequest
+	38, // 24: core.CoreService.UpdateProfile:input_type -> core.UpdateProfileRequest
+	2,  // 25: core.CoreService.SendEvent:output_type -> core.SendEventResponse
+	4,  // 26: core.CoreService.CreateRoom:output_type -> core.CreateRoomResponse
+	6,  // 27: core.CoreService.JoinRoom:output_type -> core.JoinRoomResponse
+	8,  // 28: core.CoreService.LeaveRoom:output_type -> core.LeaveRoomResponse
+	10, // 29: core.CoreService.GetMessages:output_type -> core.GetMessagesResponse
+	12, // 30: core.CoreService.SetPresence:output_type -> core.SetPresenceResponse
+	14, // 31: core.CoreService.SetTyping:output_type -> core.SetTypingResponse
+	16, // 32: core.CoreService.ValidateToken:output_type -> core.ValidateTokenResponse
+	18, // 33: core.CoreService.GetPendingEvents:output_type -> core.GetPendingEventsResponse
+	0,  // 34: core.CoreService.EventBus:output_type -> core.Event
+	21, // 35: core.CoreService.GetMetrics:output_type -> core.GetMetricsResponse
+	25, // 36: core.CoreService.GetRoomState:output_type -> core.GetRoomStateResponse
+	23, // 37: core.CoreService.InviteUser:output_type -> core.InviteUserResponse
+	27, // 38: core.CoreService.SetPowerLevels:output_type -> core.SetPowerLevelsResponse
+	29, // 39: core.CoreService.SendReceipt:output_type -> core.SendReceiptResponse
+	31, // 40: core.CoreService.GetInitialSync:output_type -> core.GetInitialSyncResponse
+	34, // 41: core.CoreService.GetSyncDelta:output_type -> core.GetSyncDeltaResponse
+	37, // 42: core.CoreService.GetPresence:output_type -> core.GetPresenceResponse
+	39, // 43: core.CoreService.UpdateProfile:output_type -> core.UpdateProfileResponse
+	25, // [25:44] is the sub-list for method output_type
+	6,  // [6:25] is the sub-list for method input_type
 	6,  // [6:6] is the sub-list for extension type_name
 	6,  // [6:6] is the sub-list for extension extendee
 	0,  // [0:6] is the sub-list for field type_name
@@ -2416,16 +2524,16 @@ func file_core_proto_init() {
 		return
 	}
 	file_core_proto_msgTypes[3].OneofWrappers = []any{}
-	file_core_proto_msgTypes[7].OneofWrappers = []any{}
 	file_core_proto_msgTypes[9].OneofWrappers = []any{}
-	file_core_proto_msgTypes[17].OneofWrappers = []any{}
+	file_core_proto_msgTypes[11].OneofWrappers = []any{}
+	file_core_proto_msgTypes[19].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_core_proto_rawDesc), len(file_core_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   38,
+			NumMessages:   40,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
