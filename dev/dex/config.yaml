@@ -52,3 +52,17 @@ staticPasswords:
     userID: "00000000-0000-0000-0000-000000000003"
     groups:
       - user
+
+  - email: "marie@example.com"
+    hash: "$2a$10$E4ye88CWSgoigClMVojmGOu.gHlKe7L7RRf07QWZ60aZmZ7Rfak/6"
+    username: "marie"
+    userID: "00000000-0000-0000-0000-000000000004"
+    groups:
+      - user
+
+  - email: "tom@example.com"
+    hash: "$2a$10$E4ye88CWSgoigClMVojmGOu.gHlKe7L7RRf07QWZ60aZmZ7Rfak/6"
+    username: "tom"
+    userID: "00000000-0000-0000-0000-000000000005"
+    groups:
+      - user
