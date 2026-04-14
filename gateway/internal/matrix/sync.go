@@ -2,6 +2,7 @@ package matrix
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -30,6 +31,7 @@ type GetSyncHandler struct {
 	serverName string
 	timeout    time.Duration
 	buffer     *buffer.MessageBuffer // Story 4-16: local event buffer (nil = disabled)
+	db         *sql.DB               // for pending invite queries
 }
 
 // GetSyncConfig holds dependencies for NewGetSyncHandler.
@@ -38,6 +40,7 @@ type GetSyncConfig struct {
 	ServerName string
 	Timeout    time.Duration         // gRPC call timeout; defaults to 5s if zero
 	Buffer     *buffer.MessageBuffer // Story 4-16: optional local event buffer
+	DB         *sql.DB               // optional: enables rooms.invite in sync response
 }
 
 // NewGetSyncHandler constructs a GetSyncHandler from the provided config.
@@ -51,7 +54,45 @@ func NewGetSyncHandler(cfg GetSyncConfig) *GetSyncHandler {
 		serverName: cfg.ServerName,
 		timeout:    timeout,
 		buffer:     cfg.Buffer,
+		db:         cfg.DB,
 	}
+}
+
+// buildInviteRooms queries pending room invitations for userID and builds the
+// rooms.invite section of the Matrix sync response.
+func (h *GetSyncHandler) buildInviteRooms(ctx context.Context, userID string) map[string]interface{} {
+	invites := map[string]interface{}{}
+	if h.db == nil {
+		return invites
+	}
+	rows, err := h.db.QueryContext(ctx,
+		`SELECT room_id, inviter_id FROM room_invitations
+		 WHERE invitee_id = $1 AND accepted_at IS NULL AND rejected_at IS NULL`,
+		userID)
+	if err != nil {
+		slog.Warn("buildInviteRooms: query failed", "err", err)
+		return invites
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var roomID, inviterID string
+		if err := rows.Scan(&roomID, &inviterID); err != nil {
+			continue
+		}
+		invites[roomID] = map[string]interface{}{
+			"invite_state": map[string]interface{}{
+				"events": []map[string]interface{}{
+					{
+						"type":      "m.room.member",
+						"sender":    inviterID,
+						"state_key": userID,
+						"content":   map[string]string{"membership": "invite"},
+					},
+				},
+			},
+		}
+	}
+	return invites
 }
 
 // ─── JSON response structs ─────────────────────────────────────────────────────
@@ -150,7 +191,7 @@ func (h *GetSyncHandler) GetSync(w http.ResponseWriter, r *http.Request) {
 		NextBatch: resp.GetSinceToken(),
 		Rooms: syncRooms{
 			Join:   joinedRooms,
-			Invite: map[string]interface{}{},
+			Invite: h.buildInviteRooms(r.Context(), userID),
 			Leave:  map[string]interface{}{},
 		},
 		Presence: syncPresence{Events: []interface{}{}},
@@ -257,7 +298,7 @@ func (h *GetSyncHandler) handleIncrementalSync(w http.ResponseWriter, r *http.Re
 			NextBatch: initialResp.GetSinceToken(),
 			Rooms: syncRooms{
 				Join:   joinedRooms,
-				Invite: map[string]interface{}{},
+				Invite: h.buildInviteRooms(r.Context(), userID),
 				Leave:  map[string]interface{}{},
 			},
 			Presence: syncPresence{Events: []interface{}{}},
@@ -273,7 +314,7 @@ func (h *GetSyncHandler) handleIncrementalSync(w http.ResponseWriter, r *http.Re
 		NextBatch: deltaResp.GetSinceToken(),
 		Rooms: syncRooms{
 			Join:   joinedRooms,
-			Invite: map[string]interface{}{},
+			Invite: h.buildInviteRooms(r.Context(), userID),
 			Leave:  map[string]interface{}{},
 		},
 		Presence: syncPresence{Events: []interface{}{}},
@@ -300,6 +341,7 @@ func (h *GetSyncHandler) buildResponseFromBufferedEvents(events []*pb.Event, sin
 		})
 		joinedRooms[ev.RoomId] = room
 	}
+	// Buffer-based fast path: skip invite query (caller handles full sync fallback).
 	return syncResponse{
 		NextBatch: sinceToken,
 		Rooms: syncRooms{

@@ -561,6 +561,7 @@ func main() {
 		CoreClient: coreClient,
 		ServerName: serverName,
 		Buffer:     msgBuf,
+		DB:         bootstrapDB, // for rooms.invite pending invitation queries
 	})
 	mux.Handle("GET /_matrix/client/v3/sync",
 		jwtMiddleware(http.HandlerFunc(syncHandler.GetSync)))
