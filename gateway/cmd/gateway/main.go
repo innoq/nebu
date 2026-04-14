@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -303,6 +305,15 @@ func main() {
 		w.Write([]byte(`{"capabilities":{"m.change_password":{"enabled":false},"m.room_versions":{"default":"6","available":{"6":"stable"}}}}`))
 	})
 
+	// MSC2965 OIDC-native auth metadata — not supported; return explicit 404 so
+	// Element Web falls back to the standard m.login.sso flow instead of caching
+	// a silent failure and breaking subsequent login attempts in non-private windows.
+	mux.HandleFunc("GET /_matrix/client/unstable/org.matrix.msc2965/auth_metadata", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"errcode":"M_UNRECOGNIZED","error":"MSC2965 OIDC-native auth is not supported by this server. Use m.login.sso."}`))
+	})
+
 	// pushrules: return empty rule set — no push notifications in MVP.
 	mux.Handle("GET /_matrix/client/v3/pushrules/",
 		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -364,17 +375,78 @@ func main() {
 	mux.Handle("POST /_matrix/client/v3/keys/upload", e2eHandler)
 	mux.Handle("POST /_matrix/client/r0/keys/upload", e2eHandler)
 
-	// Cross-signing stubs (used by Element Web for device verification setup).
+	// Cross-signing upload with UIA (User-Interactive Auth).
+	// Element Web calls this to set up cross-signing keys.  The Matrix spec
+	// requires a UIA challenge even though we don't actually enforce auth.
+	// We implement the minimal UIA flow: m.login.dummy (no real challenge) so
+	// Element considers the setup successful and skips the error dialog.
 	mux.Handle("POST /_matrix/client/v3/keys/device_signing/upload",
 		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var body map[string]interface{}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			// If the request includes an "auth" field, treat it as the confirmed UIA step.
+			if _, hasAuth := body["auth"]; hasAuth {
+				w.Header().Set("Content-Type", "application/json")
+				w.Write([]byte(`{}`))
+				return
+			}
+			// First call (no auth): return UIA challenge with m.login.dummy.
+			// m.login.dummy requires no actual credentials — Element completes it
+			// automatically, allowing the cross-signing setup to succeed silently.
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{}`))
+			w.WriteHeader(http.StatusUnauthorized)
+			fmt.Fprintf(w, `{"flows":[{"stages":["m.login.dummy"]}],"params":{},"session":"%s"}`,
+				fmt.Sprintf("%x", func() []byte { b := make([]byte, 8); _, _ = rand.Read(b); return b }()))
 		})))
 	mux.Handle("POST /_matrix/client/v3/keys/signatures/upload",
 		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"failures":{}}`))
 		})))
+
+	// Key backup stubs — Element Web tries to create/fetch key backups.
+	// Returning 404 for GET (no backup) and 200 for POST (accept creation silently)
+	// prevents the "Unable to set up keys" error dialog from appearing.
+	mux.Handle("GET /_matrix/client/v3/room_keys/version",
+		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(`{"errcode":"M_NOT_FOUND","error":"No backup found"}`))
+		})))
+	mux.Handle("POST /_matrix/client/v3/room_keys/version",
+		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"version":"1"}`))
+		})))
+
+	// Account data endpoints (used for secret storage, notification settings, etc.)
+	mux.Handle("GET /_matrix/client/v3/user/{userId}/account_data/{type}",
+		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(`{"errcode":"M_NOT_FOUND","error":"Account data not found"}`))
+		})))
+	mux.Handle("PUT /_matrix/client/v3/user/{userId}/account_data/{type}",
+		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{}`))
+		})))
+
+	// Misc stubs to suppress other 404s in Element Web startup
+	mux.HandleFunc("GET /_matrix/client/v3/voip/turnServer", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"errcode":"M_NOT_FOUND","error":"TURN not configured"}`))
+	})
+	mux.HandleFunc("GET /_matrix/client/unstable/org.matrix.msc3814.v1/dehydrated_device", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"errcode":"M_NOT_FOUND","error":"Dehydrated device not supported"}`))
+	})
+	mux.HandleFunc("GET /_matrix/client/unstable/org.matrix.msc4143/rtc/transports", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"ice_servers":[]}`))
+	})
 
 	mux.Handle("POST /_matrix/client/v3/keys/query",
 		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -1,13 +1,20 @@
 {
   "default_server_config": {
     "m.homeserver": {
-      "base_url": "http://localhost:7070",
-      "server_name": "localhost"
+      "base_url": "http://localhost:7070"
+    },
+    "m.identity_server": {
+      "base_url": "http://dex:5556/dex"
     }
   },
   "brand": "Nebu E2E",
   "disable_custom_urls": true,
   "disable_guests": true,
   "default_theme": "light",
-  "room_directory": { "servers": ["localhost"] }
+  "room_directory": { "servers": ["localhost"] },
+  "sso_redirect_options": {
+    "immediate": false,
+    "on_welcome_page": true,
+    "on_login_page": true
+  }
 }

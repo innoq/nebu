@@ -193,17 +193,24 @@ test.describe('Element Web — Matrix client compatibility (Story 4-24)', () => 
     await createResp.json(); // consume body
 
     // Reload so Element gets a fresh initial sync that includes the new room.
-    // Incremental sync may not return new room memberships immediately.
     await page.reload();
-    await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
 
-    // Dismiss key-setup dialog if it reappears after reload
+    // Wait for Element to re-initialize after reload.
+    // Either the search bar appears (app ready) OR the key dialog appears (dismiss it).
+    await Promise.race([
+      page.locator('[placeholder*="Search"]').first().waitFor({ state: 'visible', timeout: 30_000 }),
+      page.getByRole('button', { name: /cancel/i }).waitFor({ state: 'visible', timeout: 30_000 }),
+    ]).catch(() => {});
     const cancelKey2 = page.getByRole('button', { name: /cancel/i });
-    if (await cancelKey2.isVisible({ timeout: 5_000 }).catch(() => false)) {
+    if (await cancelKey2.isVisible({ timeout: 1_000 }).catch(() => false)) {
       await cancelKey2.click();
     }
 
-    // Click the last room in the sidebar — Element renders rooms as option[role=option]
+    // Wait for room tiles to render after dismissing any dialog
+    await expect(page.getByRole('option', { name: /open room/i }).first())
+      .toBeVisible({ timeout: 15_000 });
+
+    // Click the last room in the sidebar
     const roomTiles = page.getByRole('option', { name: /open room/i });
     const count = await roomTiles.count();
     expect(count).toBeGreaterThan(0);

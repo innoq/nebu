@@ -126,9 +126,14 @@ func ssoCallbackURL(r *http.Request) string {
 // isRedirectURLAllowed validates the Matrix client's redirectUrl against an
 // allowlist to prevent open-redirect token exfiltration (MAJOR-1).
 //
-// MVP allowlist: only localhost (any port) is permitted.
-// Production deployments should extend this to a configurable list of known
-// client origins (e.g. Element Web origin, mobile app deep-link scheme).
+// Allowed:
+//   - localhost (any port) — local web clients (Element Web dev, etc.)
+//   - Non-HTTP/S schemes — mobile/desktop app deep links (fluffychat://,
+//     io.element.fluffychat://, element://, etc.). These cannot be
+//     weaponised for web-based open-redirect attacks because browsers do
+//     not follow custom-scheme redirects to arbitrary servers.
+//
+// Blocked: any http/https URL whose host is not localhost.
 func isRedirectURLAllowed(raw string) bool {
 	if raw == "" {
 		return false
@@ -137,8 +142,12 @@ func isRedirectURLAllowed(raw string) bool {
 	if err != nil {
 		return false
 	}
-	host := u.Hostname() // strips port
-	// Allow localhost (IPv4 and IPv6 loopback) for dev and local clients.
+	// Custom URL schemes (app deep links) — safe against open-redirect.
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return u.Scheme != "" // must have a scheme; reject bare strings
+	}
+	// For http/https only allow loopback.
+	host := u.Hostname()
 	switch host {
 	case "localhost", "127.0.0.1", "::1":
 		return true
@@ -254,7 +263,7 @@ func (h *LoginHandler) GetSSOCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	opaqueToken := hex.EncodeToString(tokenBytes)
-	globalLoginTokens.save(opaqueToken, rawIDToken, 30*time.Second)
+	globalLoginTokens.save(opaqueToken, rawIDToken, 5*time.Minute)
 
 	// Redirect to the Matrix client with the opaque loginToken.
 	// The client calls POST /_matrix/client/v3/login with

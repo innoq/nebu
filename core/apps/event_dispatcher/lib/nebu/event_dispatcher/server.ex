@@ -237,7 +237,24 @@ defmodule Nebu.EventDispatcher.Server do
   # The `content` column is JSONB (returned as Elixir map by Postgrex) —
   # re-encode to JSON bytes for the proto bytes field.
   defp event_map_to_proto(event) do
-    content_json = Jason.encode!(Map.get(event, "content", %{}))
+    # content from the DB may arrive as either:
+    #   - Elixir map (Postgrex decoded JSONB object directly)
+    #   - Elixir binary/string (Postgrex decoded JSONB string — happens when
+    #     the content was stored as a JSON-encoded string rather than a raw object).
+    # Normalise to a map before re-encoding so the proto bytes field always
+    # contains a JSON object, never a doubly-encoded JSON string.
+    raw = Map.get(event, "content", %{})
+    content_map =
+      cond do
+        is_map(raw) -> raw
+        is_binary(raw) ->
+          case Jason.decode(raw) do
+            {:ok, decoded} when is_map(decoded) -> decoded
+            _ -> %{}
+          end
+        true -> %{}
+      end
+    content_json = Jason.encode!(content_map)
 
     %Core.Event{
       event_id: Map.get(event, "event_id", ""),
