@@ -10,6 +10,7 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/nebu/nebu/internal/auth"
+	coregrpc "github.com/nebu/nebu/internal/grpc"
 )
 
 type contextKey string
@@ -21,6 +22,9 @@ const (
 	ContextKeyNebuRole          contextKey = "nebu_role"
 	ContextKeySystemRole        contextKey = "system_role"
 	ContextKeyTokenExpiry       contextKey = "token_expiry"
+	// ContextKeyUserID holds the pre-computed Matrix user ID (@localpart:server).
+	// Handlers should read this instead of calling FormatUserID themselves.
+	ContextKeyUserID contextKey = "user_id"
 )
 
 type matrixError struct {
@@ -38,7 +42,13 @@ func writeMatrixError(w http.ResponseWriter, status int, errcode, message string
 // sub, preferred_username, email, the raw role claim value (ContextKeyNebuRole),
 // the mapped canonical system role (ContextKeySystemRole), and token expiry
 // (ContextKeyTokenExpiry). Pass nil for store to disable invalidation checking.
-func JWTMiddleware(provider *auth.Provider, clientID string, claimName string, store TokenStore) func(http.Handler) http.Handler {
+// JWTMiddleware validates OIDC JWT bearer tokens.
+// serverName is the Matrix server name (used to pre-compute ContextKeyUserID).
+func JWTMiddleware(provider *auth.Provider, clientID string, claimName string, store TokenStore, serverName ...string) func(http.Handler) http.Handler {
+	srv := ""
+	if len(serverName) > 0 {
+		srv = serverName[0]
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
@@ -81,9 +91,14 @@ func JWTMiddleware(provider *auth.Provider, clientID string, claimName string, s
 
 			sub, _ := allClaims["sub"].(string)
 			preferredUsername, _ := allClaims["preferred_username"].(string)
+			name, _ := allClaims["name"].(string)
 			email, _ := allClaims["email"].(string)
 			rawRole := auth.ExtractRoleClaim(allClaims, claimName)
 			systemRole := auth.MapSystemRole(rawRole)
+
+			// Pre-compute Matrix user ID using name claim if available.
+			// This is the canonical user ID for all downstream handlers.
+			userID := coregrpc.FormatUserIDFromClaims(sub, name, srv)
 
 			ctx := r.Context()
 			ctx = context.WithValue(ctx, ContextKeySub, sub)
@@ -92,6 +107,7 @@ func JWTMiddleware(provider *auth.Provider, clientID string, claimName string, s
 			ctx = context.WithValue(ctx, ContextKeyNebuRole, rawRole)
 			ctx = context.WithValue(ctx, ContextKeySystemRole, systemRole)
 			ctx = context.WithValue(ctx, ContextKeyTokenExpiry, idToken.Expiry)
+			ctx = context.WithValue(ctx, ContextKeyUserID, userID)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

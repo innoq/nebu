@@ -60,9 +60,9 @@ func (h *TypingHandler) PutTyping(w http.ResponseWriter, r *http.Request) {
 	pathUserID := r.PathValue("userId")
 
 	// Step 2: Extract authenticated user_id from JWT context.
-	sub, _ := r.Context().Value(middleware.ContextKeySub).(string)
+	userID, _ := r.Context().Value(middleware.ContextKeyUserID).(string)
 	systemRole, _ := r.Context().Value(middleware.ContextKeySystemRole).(string)
-	authedUserID := coregrpc.FormatUserID(sub, h.serverName)
+	authedUserID := userID
 
 	// Step 3: Validate path userId matches authenticated user_id.
 	if pathUserID != authedUserID {

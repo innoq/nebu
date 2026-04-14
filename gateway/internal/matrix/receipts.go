@@ -59,9 +59,8 @@ func (h *ReceiptsHandler) PostReceipt(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Step 3: Extract authenticated user_id from JWT context.
-	sub, _ := r.Context().Value(middleware.ContextKeySub).(string)
+	userID, _ := r.Context().Value(middleware.ContextKeyUserID).(string)
 	systemRole, _ := r.Context().Value(middleware.ContextKeySystemRole).(string)
-	userID := coregrpc.FormatUserID(sub, h.serverName)
 
 	// Step 4: Call gRPC Core.
 	grpcCtx := coregrpc.WithUserMetadata(r.Context(), userID, systemRole)

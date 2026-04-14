@@ -43,7 +43,7 @@ func TestFormatUserID(t *testing.T) {
 		{"abc-uuid-123", "example.com", "@_zbjphk2ji31:example.com"},
 		{"", "example.com", ""},
 		{"user1", "nebu.internal", "@cgqblglkpkmb:nebu.internal"},
-		// Dex local-connector sub: SHA-256 → base64url[:12] → lowercase
+		// Dex local-connector sub: SHA-256 → base64url[:12] → lowercase (fallback when name is empty)
 		{"CiQwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDMSBWxvY2Fs", "localhost", "@xph3zgstbkdb:localhost"},
 	}
 	for _, tt := range tests {

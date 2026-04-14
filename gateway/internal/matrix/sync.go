@@ -122,9 +122,8 @@ func (h *GetSyncHandler) GetSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sub, _ := r.Context().Value(middleware.ContextKeySub).(string)
+	userID, _ := r.Context().Value(middleware.ContextKeyUserID).(string)
 	systemRole, _ := r.Context().Value(middleware.ContextKeySystemRole).(string)
-	userID := coregrpc.FormatUserID(sub, h.serverName)
 
 	// AC #6: configurable timeout (defaults to 5s)
 	ctx, cancel := context.WithTimeout(r.Context(), h.timeout)
@@ -186,9 +185,8 @@ func (h *GetSyncHandler) handleIncrementalSync(w http.ResponseWriter, r *http.Re
 		timeoutMs = maxSyncTimeoutMs
 	}
 
-	sub, _ := r.Context().Value(middleware.ContextKeySub).(string)
+	userID, _ := r.Context().Value(middleware.ContextKeyUserID).(string)
 	systemRole, _ := r.Context().Value(middleware.ContextKeySystemRole).(string)
-	userID := coregrpc.FormatUserID(sub, h.serverName)
 
 	// Story 4-16: buffer pre-check — drain local ring buffer before hitting Core.
 	// If events are already available locally, return them immediately (skip Core long-poll).

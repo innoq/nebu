@@ -70,9 +70,8 @@ func (h *CreateRoomHandler) PostCreateRoom(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	sub, _ := r.Context().Value(middleware.ContextKeySub).(string)
+	userID, _ := r.Context().Value(middleware.ContextKeyUserID).(string)
 	systemRole, _ := r.Context().Value(middleware.ContextKeySystemRole).(string)
-	userID := coregrpc.FormatUserID(sub, h.serverName)
 	grpcCtx := coregrpc.WithUserMetadata(r.Context(), userID, systemRole)
 
 	grpcReq := &pb.CreateRoomRequest{CreatorId: userID}
@@ -142,9 +141,8 @@ func NewJoinRoomHandler(cfg JoinRoomConfig) *JoinRoomHandler {
 // postJoinRoomWithID is the shared implementation for both join endpoints.
 // roomIDOrAlias is extracted from the URL path by the caller.
 func (h *JoinRoomHandler) postJoinRoomWithID(w http.ResponseWriter, r *http.Request, roomIDOrAlias string) {
-	sub, _ := r.Context().Value(middleware.ContextKeySub).(string)
+	userID, _ := r.Context().Value(middleware.ContextKeyUserID).(string)
 	systemRole, _ := r.Context().Value(middleware.ContextKeySystemRole).(string)
-	userID := coregrpc.FormatUserID(sub, h.serverName)
 	grpcCtx := coregrpc.WithUserMetadata(r.Context(), userID, systemRole)
 
 	resp, err := h.coreClient.JoinRoom(grpcCtx, &pb.JoinRoomRequest{
@@ -244,9 +242,9 @@ func (h *InviteUserHandler) PostInviteUser(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	sub, _ := r.Context().Value(middleware.ContextKeySub).(string)
+	userID, _ := r.Context().Value(middleware.ContextKeyUserID).(string)
 	systemRole, _ := r.Context().Value(middleware.ContextKeySystemRole).(string)
-	callerUserID := coregrpc.FormatUserID(sub, h.serverName)
+	callerUserID := userID
 	grpcCtx := coregrpc.WithUserMetadata(r.Context(), callerUserID, systemRole)
 
 	_, err := h.coreClient.InviteUser(grpcCtx, &pb.InviteUserRequest{
@@ -317,9 +315,8 @@ func (h *SetRoomStateHandler) PutSetRoomState(w http.ResponseWriter, r *http.Req
 	roomID := r.PathValue("roomId")
 	eventType := r.PathValue("eventType")
 
-	sub, _ := r.Context().Value(middleware.ContextKeySub).(string)
+	userID, _ := r.Context().Value(middleware.ContextKeyUserID).(string)
 	systemRole, _ := r.Context().Value(middleware.ContextKeySystemRole).(string)
-	userID := coregrpc.FormatUserID(sub, h.serverName)
 	grpcCtx := coregrpc.WithUserMetadata(r.Context(), userID, systemRole)
 
 	var body map[string]any
@@ -408,9 +405,8 @@ func (h *SendEventHandler) PutSendEvent(w http.ResponseWriter, r *http.Request) 
 	eventType := r.PathValue("eventType")
 	txnID := r.PathValue("txnId")
 
-	sub, _ := r.Context().Value(middleware.ContextKeySub).(string)
+	userID, _ := r.Context().Value(middleware.ContextKeyUserID).(string)
 	systemRole, _ := r.Context().Value(middleware.ContextKeySystemRole).(string)
-	userID := coregrpc.FormatUserID(sub, h.serverName)
 	grpcCtx := coregrpc.WithUserMetadata(r.Context(), userID, systemRole)
 
 	var content map[string]any

@@ -287,7 +287,7 @@ func main() {
 	defer tokenDB.Close()
 	tokenStore := db.NewPostgresTokenStore(tokenDB)
 	logoutHandler := matrix.NewLogoutHandler(tokenStore)
-	jwtMiddleware := middleware.JWTMiddleware(oidcProvider, cfg.OIDCClientID, cfg.OIDCClaimRole, tokenStore)
+	jwtMiddleware := middleware.JWTMiddleware(oidcProvider, cfg.OIDCClientID, cfg.OIDCClaimRole, tokenStore, serverName)
 
 	// Matrix compatibility endpoints — required by all Matrix clients post-login.
 	// whoami: FluffyChat calls this immediately after login to verify the session is valid.

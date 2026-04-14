@@ -97,9 +97,8 @@ func (h *GetMessagesHandler) GetMessages(w http.ResponseWriter, r *http.Request)
 	fromToken := q.Get("from")
 	toToken := q.Get("to")
 
-	sub, _ := r.Context().Value(middleware.ContextKeySub).(string)
+	userID, _ := r.Context().Value(middleware.ContextKeyUserID).(string)
 	systemRole, _ := r.Context().Value(middleware.ContextKeySystemRole).(string)
-	userID := coregrpc.FormatUserID(sub, h.serverName)
 	grpcCtx := coregrpc.WithUserMetadata(r.Context(), userID, systemRole)
 
 	resp, err := h.coreClient.GetMessages(grpcCtx, &pb.GetMessagesRequest{

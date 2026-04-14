@@ -102,9 +102,9 @@ func (h *ProfileHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
 func (h *ProfileHandler) PutDisplayname(w http.ResponseWriter, r *http.Request) {
 	pathUserID := r.PathValue("userId")
 
-	sub, _ := r.Context().Value(middleware.ContextKeySub).(string)
+	userID, _ := r.Context().Value(middleware.ContextKeyUserID).(string)
 	systemRole, _ := r.Context().Value(middleware.ContextKeySystemRole).(string)
-	authedUserID := coregrpc.FormatUserID(sub, h.serverName)
+	authedUserID := userID
 
 	if pathUserID != authedUserID {
 		writeMatrixError(w, http.StatusForbidden, "M_FORBIDDEN", "You can only update your own profile")
@@ -154,9 +154,9 @@ func (h *ProfileHandler) PutDisplayname(w http.ResponseWriter, r *http.Request) 
 func (h *ProfileHandler) PutAvatarURL(w http.ResponseWriter, r *http.Request) {
 	pathUserID := r.PathValue("userId")
 
-	sub, _ := r.Context().Value(middleware.ContextKeySub).(string)
+	userID, _ := r.Context().Value(middleware.ContextKeyUserID).(string)
 	systemRole, _ := r.Context().Value(middleware.ContextKeySystemRole).(string)
-	authedUserID := coregrpc.FormatUserID(sub, h.serverName)
+	authedUserID := userID
 
 	if pathUserID != authedUserID {
 		writeMatrixError(w, http.StatusForbidden, "M_FORBIDDEN", "You can only update your own profile")

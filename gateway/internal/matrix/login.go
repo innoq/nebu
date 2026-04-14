@@ -159,7 +159,9 @@ func (h *LoginHandler) PostLogin(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	userID := coregrpc.FormatUserID(sub, h.serverName)
+	// Use name claim as Matrix localpart if available (e.g. "alex" → "@alex:server").
+	// Story 7-15 will make this configurable via Bootstrap claim-mapping.
+	userID := coregrpc.FormatUserIDFromClaims(sub, displayName, h.serverName)
 	grpcCtx := coregrpc.WithUserMetadata(r.Context(), userID, systemRole)
 	_, err = h.coreClient.ValidateToken(grpcCtx, &pb.ValidateTokenRequest{
 		DisplayName: displayName,
