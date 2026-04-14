@@ -200,6 +200,11 @@ defmodule Nebu.Room.Server do
     else
       case db_module().insert_member(state.room_id, user_id) do
         :ok ->
+          # Emit m.room.member state event so incremental sync (GetSyncDelta)
+          # detects the join via fetch_events_since — without this event,
+          # the room never appeared in rooms.join on the next delta sync
+          # ("stuck on Joining…" in Element Web — GAP-1 fix).
+          emit_membership_event(state.room_id, user_id, "join")
           new_state = %{state | members: MapSet.put(members, user_id)}
           {:reply, :ok, new_state}
 
@@ -216,6 +221,8 @@ defmodule Nebu.Room.Server do
     else
       case db_module().delete_member(state.room_id, user_id) do
         :ok ->
+          # Emit m.room.member leave event so sync delta includes the left room.
+          emit_membership_event(state.room_id, user_id, "leave")
           new_state = %{state | members: MapSet.delete(members, user_id)}
           {:reply, :ok, new_state}
 
@@ -370,4 +377,38 @@ defmodule Nebu.Room.Server do
   end
 
   defp parse_power_levels(_), do: %{}
+
+  # Builds, signs, and persists an m.room.member state event.
+  # Called after successful join/leave DB operations so that incremental sync
+  # (GetSyncDelta / fetch_events_since) can detect the membership change.
+  # Non-fatal: if event write fails, membership is still applied — we log and continue.
+  defp emit_membership_event(room_id, user_id, membership) do
+    event_map = %{
+      "room_id"          => room_id,
+      "type"             => "m.room.member",
+      "state_key"        => user_id,
+      "sender"           => user_id,
+      "content"          => %{"membership" => membership},
+      "origin_server_ts" => Nebu.DB.Helpers.now_ms()
+    }
+
+    event_id    = Nebu.EventId.generate(event_map)
+    event_with_id = Map.put(event_map, "event_id", event_id)
+
+    {_pub, priv} = :persistent_term.get(:nebu_signing_key)
+    event_json  = Nebu.CanonicalJson.encode!(event_map)
+    signature   = :crypto.sign(:eddsa, :none, event_json, [priv, :ed25519])
+    sig_b64     = Base.encode64(signature)
+    signed      = Map.put(event_with_id, "signatures", %{"nebu" => sig_b64})
+
+    case db_module().insert_event(signed) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        # Non-fatal: membership already applied; log but don't roll back.
+        require Logger
+        Logger.warning("emit_membership_event: failed to write #{membership} event for #{user_id} in #{room_id}: #{inspect(reason)}")
+    end
+  end
 end

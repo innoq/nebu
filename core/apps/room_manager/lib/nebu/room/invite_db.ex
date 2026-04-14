@@ -37,4 +37,33 @@ defmodule Nebu.Room.InviteDB do
         {:error, reason}
     end
   end
+
+  @sql_accept_invitation """
+  UPDATE room_invitations
+  SET accepted_at = $3
+  WHERE room_id = $1 AND invitee_id = $2
+    AND accepted_at IS NULL AND rejected_at IS NULL
+  """
+
+  @doc """
+  Marks a pending invitation as accepted by setting `accepted_at`.
+  Called when a user joins a room they were invited to, so the invite
+  disappears from `rooms.invite` in subsequent sync responses.
+
+  No-op if there is no pending invitation (e.g. public room join without invite).
+  Returns `:ok` on success, `{:error, reason}` on DB error.
+  """
+  @spec accept_invitation(String.t(), String.t()) :: :ok | {:error, term()}
+  def accept_invitation(room_id, invitee_id) do
+    now_ms = System.system_time(:millisecond)
+
+    case Ecto.Adapters.SQL.query(Nebu.Repo, @sql_accept_invitation, [
+           room_id,
+           invitee_id,
+           now_ms
+         ]) do
+      {:ok, _result} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
 end

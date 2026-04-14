@@ -21,11 +21,15 @@ var lastRoomID string
 var lastEventID string
 var kaiAccessToken string
 var alexAccessToken string
+var marieAccessToken string
 var kaiUserID string
 var alexUserID string
+var marieUserID string
 var lastTxnID string
 var lastSecondEventID string
 var lastMsgBody string
+var marieCapturedSyncToken string
+var marieIncrementalSyncBody string
 
 // authenticateUser runs the Dex authorization code flow for the given credentials
 // and then performs POST /login on the Matrix endpoint. The resulting access_token
@@ -333,6 +337,167 @@ func theBodyContainsExactlyOnce(substr string) error {
 	return nil
 }
 
+// marieIsAuthenticated authenticates marie@example.com.
+func marieIsAuthenticated() error {
+	return authenticateUser("marie@example.com", "changeme", &marieAccessToken, &marieUserID)
+}
+
+// alexCreatesARoom creates a room as alex (not kai).
+func alexCreatesARoom(name string) error {
+	payload := fmt.Sprintf(`{"name":%q}`, name)
+	req, _ := http.NewRequest(http.MethodPost, matrixURL+"/_matrix/client/v3/createRoom", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+alexAccessToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("POST /createRoom: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	lastStatusCode = resp.StatusCode
+	lastBody = string(body)
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("createRoom returned %d: %s", resp.StatusCode, lastBody)
+	}
+	var cr struct {
+		RoomID string `json:"room_id"`
+	}
+	if err := json.Unmarshal(body, &cr); err != nil || cr.RoomID == "" {
+		return fmt.Errorf("no room_id in response: %s", lastBody)
+	}
+	lastRoomID = cr.RoomID
+	return nil
+}
+
+// alexInvitesMarie invites marie to the last created room as alex.
+func alexInvitesMarie() error {
+	payload := fmt.Sprintf(`{"user_id":%q}`, marieUserID)
+	url := fmt.Sprintf("%s/_matrix/client/v3/rooms/%s/invite", matrixURL, lastRoomID)
+	req, _ := http.NewRequest(http.MethodPost, url, strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+alexAccessToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("POST /invite: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	lastStatusCode = resp.StatusCode
+	lastBody = string(body)
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("invite returned %d: %s", resp.StatusCode, lastBody)
+	}
+	return nil
+}
+
+// marieCapturesSyncToken performs GET /sync?timeout=0 as marie and stores next_batch.
+// This token is used to detect changes that happen AFTER this point (the join).
+func marieCapturesSyncTokenBeforeJoining() error {
+	req, _ := http.NewRequest(http.MethodGet,
+		matrixURL+"/_matrix/client/v3/sync?timeout=0", nil)
+	req.Header.Set("Authorization", "Bearer "+marieAccessToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("GET /sync (pre-join): %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("sync returned %d: %s", resp.StatusCode, string(body))
+	}
+	var syncResp struct {
+		NextBatch string `json:"next_batch"`
+	}
+	if err := json.Unmarshal(body, &syncResp); err != nil || syncResp.NextBatch == "" {
+		return fmt.Errorf("no next_batch in pre-join sync: %s", string(body))
+	}
+	marieCapturedSyncToken = syncResp.NextBatch
+	return nil
+}
+
+// marieJoinsTheRoom calls POST /join/{lastRoomID} as marie.
+func marieJoinsTheRoom() error {
+	url := fmt.Sprintf("%s/_matrix/client/v3/join/%s", matrixURL, lastRoomID)
+	req, _ := http.NewRequest(http.MethodPost, url, strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+marieAccessToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("POST /join: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	lastStatusCode = resp.StatusCode
+	lastBody = string(body)
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("join returned %d: %s", resp.StatusCode, lastBody)
+	}
+	return nil
+}
+
+// marieCallsIncrementalSync calls GET /sync?since=<captured_token>&timeout=0 as marie.
+func marieCallsIncrementalSyncWithCapturedToken() error {
+	url := fmt.Sprintf("%s/_matrix/client/v3/sync?since=%s&timeout=0",
+		matrixURL, marieCapturedSyncToken)
+	req, _ := http.NewRequest(http.MethodGet, url, nil)
+	req.Header.Set("Authorization", "Bearer "+marieAccessToken)
+	// Retry up to 3 times with short delay — sync may need a moment to process the join.
+	var body []byte
+	var statusCode int
+	for i := 0; i < 3; i++ {
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("GET /sync (incremental): %w", err)
+		}
+		body, _ = io.ReadAll(resp.Body)
+		resp.Body.Close()
+		statusCode = resp.StatusCode
+		if statusCode == http.StatusOK {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	if statusCode != http.StatusOK {
+		return fmt.Errorf("incremental sync returned %d: %s", statusCode, string(body))
+	}
+	marieIncrementalSyncBody = string(body)
+	return nil
+}
+
+// theIncrementalSyncContainsRoomInJoin asserts that lastRoomID is in rooms.join.
+func theIncrementalSyncContainsRoomInJoin() error {
+	var syncResp struct {
+		Rooms struct {
+			Join map[string]json.RawMessage `json:"join"`
+		} `json:"rooms"`
+	}
+	if err := json.Unmarshal([]byte(marieIncrementalSyncBody), &syncResp); err != nil {
+		return fmt.Errorf("parsing incremental sync: %w (body: %s)", err, marieIncrementalSyncBody)
+	}
+	if _, ok := syncResp.Rooms.Join[lastRoomID]; !ok {
+		return fmt.Errorf("room %q not found in rooms.join — GAP-1 not fixed.\nSync body: %s",
+			lastRoomID, marieIncrementalSyncBody)
+	}
+	return nil
+}
+
+// theIncrementalSyncDoesNotContainRoomInInvite asserts lastRoomID is absent from rooms.invite.
+func theIncrementalSyncDoesNotContainRoomInInvite() error {
+	var syncResp struct {
+		Rooms struct {
+			Invite map[string]json.RawMessage `json:"invite"`
+		} `json:"rooms"`
+	}
+	if err := json.Unmarshal([]byte(marieIncrementalSyncBody), &syncResp); err != nil {
+		return fmt.Errorf("parsing incremental sync: %w", err)
+	}
+	if _, ok := syncResp.Rooms.Invite[lastRoomID]; ok {
+		return fmt.Errorf("room %q still in rooms.invite after joining — should have moved to rooms.join",
+			lastRoomID)
+	}
+	return nil
+}
+
 // initializeRoomFlowSteps registers all step definitions used by room_flow.feature.
 // Called from InitializeScenario in steps_test.go.
 func initializeRoomFlowSteps(sc *godog.ScenarioContext) {
@@ -341,8 +506,12 @@ func initializeRoomFlowSteps(sc *godog.ScenarioContext) {
 		lastEventID = ""
 		kaiAccessToken = ""
 		alexAccessToken = ""
+		marieAccessToken = ""
 		kaiUserID = ""
 		alexUserID = ""
+		marieUserID = ""
+		marieCapturedSyncToken = ""
+		marieIncrementalSyncBody = ""
 		lastTxnID = ""
 		lastSecondEventID = ""
 		lastMsgBody = ""
@@ -350,9 +519,17 @@ func initializeRoomFlowSteps(sc *godog.ScenarioContext) {
 	})
 	sc.Step(`^kai is authenticated via OIDC$`, kaiIsAuthenticated)
 	sc.Step(`^alex is authenticated via OIDC$`, alexIsAuthenticated)
+	sc.Step(`^marie is authenticated via OIDC$`, marieIsAuthenticated)
 	sc.Step(`^kai creates a room named "([^"]*)"$`, kaiCreatesARoom)
+	sc.Step(`^alex creates a room named "([^"]*)"$`, alexCreatesARoom)
 	sc.Step(`^kai invites alex to the room$`, kaiInvitesAlex)
+	sc.Step(`^alex invites marie to the room$`, alexInvitesMarie)
 	sc.Step(`^alex joins the room$`, alexJoinsTheRoom)
+	sc.Step(`^marie captures a sync token before joining$`, marieCapturesSyncTokenBeforeJoining)
+	sc.Step(`^marie joins the room$`, marieJoinsTheRoom)
+	sc.Step(`^marie calls incremental sync with the captured token$`, marieCallsIncrementalSyncWithCapturedToken)
+	sc.Step(`^the incremental sync response contains the room in rooms\.join$`, theIncrementalSyncContainsRoomInJoin)
+	sc.Step(`^the incremental sync response does not contain the room in rooms\.invite$`, theIncrementalSyncDoesNotContainRoomInInvite)
 	sc.Step(`^kai sends the message "([^"]*)" to the room$`, kaiSendsMessage)
 	sc.Step(`^kai sends the same message again with the same txnId$`, kaiSendsTheSameMessageAgain)
 	sc.Step(`^alex retrieves messages from the room$`, alexRetrievesMessagesFromTheRoom)

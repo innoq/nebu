@@ -139,6 +139,9 @@ defmodule Nebu.EventDispatcher.Server do
       {:ok, _pid} ->
         case Nebu.Room.Server.join(room_id, user_id) do
           :ok ->
+            # Mark any pending invitation as accepted so it disappears from
+            # rooms.invite in subsequent sync responses (no-op for public joins).
+            db_module_invite().accept_invitation(room_id, user_id)
             %Core.JoinRoomResponse{room_id: room_id}
 
           {:error, :already_member} ->
