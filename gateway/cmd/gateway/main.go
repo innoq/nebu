@@ -351,6 +351,47 @@ func main() {
 			w.Write([]byte(`{"joined_rooms":[]}`))
 		})))
 
+	// User directory search — returns registered users matching the search term.
+	// Queries the users table so Element Web can find other users by username.
+	mux.Handle("POST /_matrix/client/v3/user_directory/search",
+		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var req struct {
+				SearchTerm string `json:"search_term"`
+				Limit      int    `json:"limit"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&req)
+			if req.Limit <= 0 || req.Limit > 50 {
+				req.Limit = 10
+			}
+			// Query users table by user_id (which now contains the username as localpart).
+			rows, err := bootstrapDB.QueryContext(r.Context(),
+				`SELECT user_id FROM users WHERE user_id ILIKE $1 LIMIT $2`,
+				fmt.Sprintf("%%%s%%", req.SearchTerm), req.Limit)
+			if err != nil {
+				slog.Error("user_directory search failed", "err", err)
+				w.Header().Set("Content-Type", "application/json")
+				w.Write([]byte(`{"results":[],"limited":false}`))
+				return
+			}
+			defer rows.Close()
+			type result struct {
+				UserID      string `json:"user_id"`
+				DisplayName string `json:"display_name"`
+			}
+			results := []result{}
+			for rows.Next() {
+				var uid string
+				if err := rows.Scan(&uid); err == nil {
+					results = append(results, result{UserID: uid, DisplayName: uid[1:strings.Index(uid, ":")]})
+				}
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"results": results,
+				"limited": false,
+			})
+		})))
+
 	// Third-party protocol bridges — none in MVP.
 	mux.HandleFunc("GET /_matrix/client/v3/thirdparty/protocols", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
