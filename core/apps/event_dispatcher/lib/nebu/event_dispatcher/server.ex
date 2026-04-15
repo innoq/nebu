@@ -160,11 +160,16 @@ defmodule Nebu.EventDispatcher.Server do
     room_id = request.room_id
     user_id = request.user_id
 
+    # If the room GenServer is not running (e.g. after stack restart or the user
+    # was only invited and the room was never started for them), we still honour
+    # the leave / decline-invite semantics by operating on the DB directly.
     case Nebu.Room.RoomSupervisor.lookup_room(room_id) do
       {:error, :not_found} ->
-        raise GRPC.RPCError,
-          status: GRPC.Status.not_found(),
-          message: "room not found: #{room_id}"
+        # Room GenServer not running — try to reject any pending invitation so
+        # the room disappears from rooms.invite. This covers the common case where
+        # a user wants to decline an invite after a stack restart.
+        db_module_invite().reject_invitation(room_id, user_id)
+        %Core.LeaveRoomResponse{room_id: room_id}
 
       {:ok, _pid} ->
         case Nebu.Room.Server.leave(room_id, user_id) do
@@ -173,7 +178,6 @@ defmodule Nebu.EventDispatcher.Server do
 
           {:error, :not_member} ->
             # User has a pending invite but hasn't joined — treat as "decline invite".
-            # Reject the pending invitation so it disappears from rooms.invite.
             db_module_invite().reject_invitation(room_id, user_id)
             %Core.LeaveRoomResponse{room_id: room_id}
 

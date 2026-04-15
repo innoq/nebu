@@ -393,6 +393,25 @@ func main() {
 			})
 		})))
 
+	// Room directory / alias endpoints.
+	// PUT: Element Web calls this when creating a public room with an address.
+	// MVP: accept and acknowledge without storing — aliases not implemented yet.
+	mux.Handle("PUT /_matrix/client/v3/directory/room/{roomAlias}",
+		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{}`))
+		})))
+	mux.Handle("DELETE /_matrix/client/v3/directory/room/{roomAlias}",
+		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{}`))
+		})))
+	mux.HandleFunc("GET /_matrix/client/v3/directory/room/{roomAlias}", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"errcode":"M_NOT_FOUND","error":"Room alias not found"}`))
+	})
+
 	// Third-party protocol bridges — none in MVP.
 	mux.HandleFunc("GET /_matrix/client/v3/thirdparty/protocols", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
