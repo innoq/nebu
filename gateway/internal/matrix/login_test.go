@@ -82,6 +82,10 @@ func signJWT(t *testing.T, serverURL string, privateKey *rsa.PrivateKey, expiry 
 		"preferred_username": "kai.mueller",
 		"email":              "kai@example.com",
 		"nebu_role":          "instance_admin",
+		// "name" drives FormatUserIDFromClaims → @test-sub-123:{server}.
+		// All matrix package tests rely on this predictable user_id.
+		// Callers can override via the claims parameter.
+		"name": "test-sub-123",
 	}
 	for k, v := range claims {
 		extra[k] = v
@@ -253,8 +257,10 @@ func TestPostLogin(t *testing.T) {
 				if resp.TokenType != "Bearer" {
 					t.Errorf("expected token_type Bearer, got %s", resp.TokenType)
 				}
-				if resp.UserID != "@test-sub-123:localhost" {
-					t.Errorf("expected user_id @test-sub-123:localhost, got %s", resp.UserID)
+				// login.go resolves displayName from preferred_username first ("kai.mueller"),
+				// then falls back to name claim. FormatUserIDFromClaims → @kai.mueller:localhost.
+				if resp.UserID != "@kai.mueller:localhost" {
+					t.Errorf("expected user_id @kai.mueller:localhost, got %s", resp.UserID)
 				}
 				if len(resp.DeviceID) == 0 {
 					t.Error("device_id should not be empty")

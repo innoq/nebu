@@ -77,7 +77,7 @@ func buildAuthedTypingHandler(t *testing.T, mock *mockTypingCoreClient) (http.Ha
 		ServerName: "test.local",
 	})
 
-	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil)(
+	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
 		http.HandlerFunc(handler.PutTyping),
 	)
 

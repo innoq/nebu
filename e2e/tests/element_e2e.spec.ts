@@ -12,7 +12,7 @@
  * (which only runs bootstrap tests) is never broken by this file.
  */
 
-import { test, expect, type Page, type Request } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
 const ELEMENT_URL   = 'http://localhost:7070';
 const DEX_HEALTH    = 'http://localhost:5556/dex/.well-known/openid-configuration';
@@ -373,5 +373,190 @@ test.describe('Element Web — Matrix client compatibility (Story 4-24)', () => 
     if (marieToken) {
       expect(bodies, 'marie reply missing').toContain('Hey Alex from marie!');
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// New endpoint smoke tests
+// Adopted from Element Web test patterns (stored-credentials, invite-dialog,
+// read-receipts) — adapted for Nebu's SSO-only stack.
+// Covers the 3 endpoints added in Stories 5-1/5-2/5-3.
+// ---------------------------------------------------------------------------
+
+test.describe('Element Web — New endpoint smoke tests (Stories 5-1/5-2/5-3)', () => {
+  test.setTimeout(120_000);
+
+  test.beforeAll(async () => {
+    const [elemOk, dexOk] = await Promise.all([isElementReachable(), isDexReachable()]);
+    test.skip(!elemOk, `Element Web at ${ELEMENT_URL} is unreachable`);
+    test.skip(!dexOk, 'Dex unreachable — add "127.0.0.1 dex" to /etc/hosts');
+  });
+
+  // ── Story 5-1: GET /user/{userId}/filter/{filterId} ───────────────────────
+  //
+  // Pattern from Element Web stored-credentials.spec.ts:
+  //   "Shows the last known page on reload"
+  //
+  // Without the filter endpoint: Element enters a permanent sync ERROR loop
+  // after page reload (filter fetch fails → sync never recovers).
+  // With the endpoint: Element reconnects silently and the room list stays visible.
+
+  test('Reconnect after reload — no sync ERROR loop (Story 5-1: GET /filter)', async ({ page }) => {
+    // Step 1: SSO login → establishes session + POSTs filter (returns filter_id "0")
+    const accessToken = await performSsoLogin(page);
+    expect(accessToken, 'SSO login must return a token').toBeTruthy();
+
+    // Step 2: Create a room so the left panel shows something after reload
+    const createResp = await page.request.post(`${ELEMENT_URL}/_matrix/client/v3/createRoom`, {
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      data: { name: 'reconnect-test-room', visibility: 'private' },
+    });
+    expect(createResp.status()).toBe(200);
+
+    // Step 3: Collect console errors — a sync ERROR loop produces repeated
+    // "Getting filter failed" / "sync state => ERROR" messages.
+    const consoleErrors: string[] = [];
+    page.on('console', (msg) => {
+      if (msg.type() === 'error' || (msg.type() === 'debug' && msg.text().includes('ERROR'))) {
+        consoleErrors.push(msg.text());
+      }
+    });
+
+    // Step 4: Reload — Element fetches GET /filter/0 to restore session.
+    // Before Story 5-1 this returned 404 → sync crashed.
+    await page.reload();
+
+    // Wait for Element to re-initialize (dismiss key dialog if present)
+    await Promise.race([
+      page.locator('[placeholder*="Search"]').first().waitFor({ state: 'visible', timeout: 30_000 }),
+      page.getByRole('button', { name: /cancel/i }).waitFor({ state: 'visible', timeout: 30_000 }),
+    ]).catch(() => {});
+    const cancelBtn = page.getByRole('button', { name: /cancel/i });
+    if (await cancelBtn.isVisible({ timeout: 1_000 }).catch(() => false)) await cancelBtn.click();
+
+    // Step 5: Room list must be visible — if sync is broken it won't render
+    await expect(
+      page.getByRole('option', { name: /open room/i }).first()
+        .or(page.locator('[placeholder*="Search"]').first()),
+    ).toBeVisible({ timeout: 20_000 });
+
+    // Step 6: No repeating "Getting filter failed" errors — the sync loop is healthy.
+    // We wait 3 seconds to let any retry storm settle.
+    await page.waitForTimeout(3_000);
+    const filterErrors = consoleErrors.filter(m => m.includes('Getting filter failed'));
+    expect(filterErrors.length, `Sync ERROR loop detected: ${filterErrors.join(' | ')}`).toBe(0);
+  });
+
+  // ── Story 5-2: GET /rooms/{roomId}/members ────────────────────────────────
+  //
+  // Pattern from Element Web invite-dialog.spec.ts:
+  //   Room members are fetched and displayed when entering a room.
+  //
+  // Without the endpoint: "Room members will appear incomplete" — member count
+  // shows 0 or member panel is empty.
+  // With the endpoint: logged-in user's display name appears in the member panel.
+
+  test('Member list populated after joining room (Story 5-2: GET /members)', async ({ page }) => {
+    const accessToken = await performSsoLogin(page);
+
+    // Create a room and navigate into it
+    const createResp = await page.request.post(`${ELEMENT_URL}/_matrix/client/v3/createRoom`, {
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      data: { name: 'members-test-room', visibility: 'private' },
+    });
+    expect(createResp.status()).toBe(200);
+    const { room_id: roomId } = await createResp.json();
+
+    // Navigate to the room
+    await page.goto(`${ELEMENT_URL}/#/room/${roomId}`);
+
+    // Dismiss key dialog if present
+    const cancelBtn = page.getByRole('button', { name: /cancel/i });
+    if (await cancelBtn.isVisible({ timeout: 5_000 }).catch(() => false)) await cancelBtn.click();
+
+    // Wait for the room header to load
+    await expect(page.locator('.mx_RoomHeader, [data-testid="room-header"]').first())
+      .toBeVisible({ timeout: 20_000 });
+
+    // Open the member list via the room info button or member count
+    // Element shows "N members" in the header — click it to open the panel.
+    const memberButton = page
+      .getByRole('button', { name: /\d+ member/i })
+      .or(page.locator('[aria-label*="member" i]').first());
+    if (await memberButton.isVisible({ timeout: 5_000 }).catch(() => false)) {
+      await memberButton.click();
+    } else {
+      // Fallback: open room info panel
+      await page.getByRole('button', { name: /room info/i }).first().click().catch(() => {});
+    }
+
+    // The member panel must show at least one member (the logged-in user "alex").
+    // Before Story 5-2: panel is empty or shows error.
+    // After Story 5-2: panel shows member entries from GET /members response.
+    await expect(
+      page.locator('.mx_MemberList, [data-testid="member-list"]').first()
+        .or(page.locator('[class*="MemberList"], [class*="memberList"]').first()),
+    ).toBeVisible({ timeout: 15_000 });
+
+    // At minimum, the creator (alex) must appear somewhere in the member area.
+    // The display name or user ID must be present.
+    await expect(
+      page.getByText(/alex/i, { exact: false }).first()
+        .or(page.locator('[class*="memberInfo"], [class*="MemberInfo"]').first()),
+    ).toBeVisible({ timeout: 10_000 });
+  });
+
+  // ── Story 5-3: POST /rooms/{roomId}/read_markers ──────────────────────────
+  //
+  // Pattern from Element Web read-receipts/high-level.spec.ts:
+  //   After viewing messages, the room is marked as read.
+  //
+  // Without the endpoint: Element sends POST /read_markers → 404 → retries
+  // repeatedly, producing "Error sending fully_read" log spam.
+  // With the endpoint: 200 → no retry, room shown as read.
+
+  test('No read_markers retry loop when entering room (Story 5-3: POST /read_markers)', async ({ page }) => {
+    const accessToken = await performSsoLogin(page);
+
+    // Create a room and send a message (so there's something to mark as read)
+    const createResp = await page.request.post(`${ELEMENT_URL}/_matrix/client/v3/createRoom`, {
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      data: { name: 'read-markers-test-room', visibility: 'private' },
+    });
+    expect(createResp.status()).toBe(200);
+    const { room_id: roomId } = await createResp.json();
+
+    await page.request.put(
+      `${ELEMENT_URL}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/send/m.room.message/txn-rm-1`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        data: { msgtype: 'm.text', body: 'test message for read markers' },
+      },
+    );
+
+    // Collect errors — read_markers retry produces repeated "Error sending fully_read"
+    const readMarkerErrors: string[] = [];
+    page.on('console', (msg) => {
+      if (msg.text().includes('fully_read') || msg.text().includes('read_markers')) {
+        readMarkerErrors.push(`[${msg.type()}] ${msg.text()}`);
+      }
+    });
+
+    // Navigate to the room — Element will POST /read_markers on entry
+    await page.goto(`${ELEMENT_URL}/#/room/${roomId}`);
+
+    const cancelBtn = page.getByRole('button', { name: /cancel/i });
+    if (await cancelBtn.isVisible({ timeout: 5_000 }).catch(() => false)) await cancelBtn.click();
+
+    // Wait for timeline to render
+    await expect(page.locator('.mx_RoomView_timeline, [class*="timeline"]').first())
+      .toBeVisible({ timeout: 20_000 });
+
+    // Wait 5 seconds for any retry storm to emerge (without fix: 5+ errors appear)
+    await page.waitForTimeout(5_000);
+
+    // Count errors: with fix → 0 errors; without fix → many "Error sending fully_read"
+    const errors = readMarkerErrors.filter(m => m.toLowerCase().includes('error'));
+    expect(errors.length, `read_markers retry storm detected:\n${errors.join('\n')}`).toBe(0);
   });
 });

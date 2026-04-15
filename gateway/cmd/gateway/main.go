@@ -426,6 +426,12 @@ func main() {
 			w.Write([]byte(`{"filter_id":"0"}`))
 		})))
 
+	// GET filter — Element Web fetches the stored filter on reconnect.
+	// Without this endpoint, /sync enters a permanent ERROR loop (filter fetch fails → no sync).
+	filterHandler := matrix.NewFilterHandler(matrix.FilterConfig{ServerName: serverName})
+	mux.Handle("GET /_matrix/client/v3/user/{userId}/filter/{filterId}",
+		jwtMiddleware(http.HandlerFunc(filterHandler.GetFilter)))
+
 	// E2E encryption stubs — acknowledge without storing (no E2E in MVP).
 	// Return non-zero one_time_key_counts so Element Web considers keys uploaded
 	// and skips the "Setting up keys / Unable to set up keys" cross-signing dialog.
@@ -599,6 +605,20 @@ func main() {
 	})
 	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/receipt/{receiptType}/{eventId}",
 		jwtMiddleware(http.HandlerFunc(receiptsHandler.PostReceipt)))
+
+	// Room members — Element Web calls this to populate the member sidebar after entering a room.
+	getRoomMembersHandler := matrix.NewGetRoomMembersHandler(matrix.GetRoomMembersConfig{
+		CoreClient: coreClient,
+		ServerName: serverName,
+	})
+	mux.Handle("GET /_matrix/client/v3/rooms/{roomId}/members",
+		jwtMiddleware(http.HandlerFunc(getRoomMembersHandler.GetRoomMembers)))
+
+	// Read markers — Element Web posts fully-read markers; acknowledge without persisting (MVP).
+	// Without this, Element enters a retry loop producing "Error sending fully_read" log spam.
+	readMarkersHandler := matrix.NewReadMarkersHandler(matrix.ReadMarkersConfig{ServerName: serverName})
+	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/read_markers",
+		jwtMiddleware(http.HandlerFunc(readMarkersHandler.PostReadMarkers)))
 
 	// Profile DB: reuse the bootstrapDB connection for direct profile reads (GET /profile — no gRPC).
 	profileHandler := matrix.NewProfileHandler(matrix.ProfileConfig{

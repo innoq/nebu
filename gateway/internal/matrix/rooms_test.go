@@ -47,6 +47,10 @@ func (m *mockCreateRoomCoreClient) CreateRoom(_ context.Context, req *pb.CreateR
 	return m.resp, m.err
 }
 
+func (m *mockCreateRoomCoreClient) InviteUser(_ context.Context, _ *pb.InviteUserRequest) (*pb.InviteUserResponse, error) {
+	return &pb.InviteUserResponse{}, nil
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 // buildCreateRoomHandler returns a CreateRoomHandler wired with the given mock.
@@ -70,7 +74,7 @@ func buildAuthedHandler(t *testing.T, mock *mockCreateRoomCoreClient) (http.Hand
 	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
 
 	handler := buildCreateRoomHandler(mock)
-	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil)(
+	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
 		http.HandlerFunc(handler.PostCreateRoom),
 	)
 
@@ -376,7 +380,7 @@ func buildAuthedJoinRoomHandler(t *testing.T, mock *mockJoinRoomCoreClient) (htt
 	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
 
 	handler := buildJoinRoomHandler(mock)
-	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil)(
+	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
 		http.HandlerFunc(handler.PostJoinRoom),
 	)
 
@@ -405,7 +409,7 @@ func buildAuthedInviteUserHandler(t *testing.T, mock *mockInviteUserCoreClient) 
 		CoreClient: mock,
 		ServerName: "test.local",
 	})
-	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil)(
+	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
 		http.HandlerFunc(handler.PostInviteUser),
 	)
 
@@ -712,7 +716,7 @@ func buildAuthedJoinRoomByIdHandler(t *testing.T, mock *mockJoinRoomCoreClient) 
 	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
 
 	handler := buildJoinRoomHandler(mock)
-	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil)(
+	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
 		http.HandlerFunc(handler.PostJoinRoomById),
 	)
 
@@ -942,7 +946,7 @@ func buildAuthedSendEventHandler(t *testing.T, mock *mockSendEventCoreClient) (h
 	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
 
 	handler := buildSendEventHandler(mock)
-	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil)(
+	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
 		http.HandlerFunc(handler.PutSendEvent),
 	)
 
@@ -1303,7 +1307,7 @@ func buildAuthedSetRoomStateHandler(t *testing.T, mock *mockSetRoomStateCoreClie
 		CoreClient: mock,
 		ServerName: "test.local",
 	})
-	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil)(
+	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
 		http.HandlerFunc(handler.PutSetRoomState),
 	)
 

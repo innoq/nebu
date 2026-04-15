@@ -96,7 +96,7 @@ func buildAuthedSyncHandler(t *testing.T, mock *mockGetSyncCoreClient, opts ...t
 	}
 	handler := NewGetSyncHandler(cfg)
 
-	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil)(
+	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
 		http.HandlerFunc(handler.GetSync),
 	)
 
@@ -387,7 +387,7 @@ func buildAuthedSyncDeltaHandler(t *testing.T, mock *mockGetSyncDeltaCoreClient,
 	}
 	handler := NewGetSyncHandler(cfg)
 
-	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil)(
+	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
 		http.HandlerFunc(handler.GetSync),
 	)
 
@@ -979,7 +979,7 @@ func buildAuthedSyncBufferHandler(t *testing.T, mock *mockGetSyncDeltaCoreClient
 	}
 	handler := NewGetSyncHandler(cfg)
 
-	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil)(
+	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
 		http.HandlerFunc(handler.GetSync),
 	)
 
