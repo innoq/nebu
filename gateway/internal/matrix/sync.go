@@ -58,6 +58,56 @@ func NewGetSyncHandler(cfg GetSyncConfig) *GetSyncHandler {
 	}
 }
 
+// buildLeaveRooms queries rooms the user has left or declined and builds the
+// rooms.leave section of the Matrix sync response.
+// Includes: rooms where left_at IS NOT NULL (user left after joining) and
+// rooms where the invitation was rejected (rejected_at IS NOT NULL).
+// Element Web uses rooms.leave to remove rooms from its local state — without
+// it, declined invitations and left rooms remain visible in the UI indefinitely.
+func (h *GetSyncHandler) buildLeaveRooms(ctx context.Context, userID string) map[string]interface{} {
+	leaves := map[string]interface{}{}
+	if h.db == nil {
+		return leaves
+	}
+	// Rooms the user has left (was a member, now has left_at set)
+	leftRows, err := h.db.QueryContext(ctx,
+		`SELECT room_id FROM room_members WHERE user_id = $1 AND left_at IS NOT NULL`,
+		userID)
+	if err == nil {
+		defer leftRows.Close()
+		for leftRows.Next() {
+			var roomID string
+			if err := leftRows.Scan(&roomID); err == nil {
+				leaves[roomID] = map[string]interface{}{
+					"timeline":     map[string]interface{}{"events": []interface{}{}, "limited": false},
+					"state":        map[string]interface{}{"events": []interface{}{}},
+					"account_data": map[string]interface{}{"events": []interface{}{}},
+				}
+			}
+		}
+	}
+	// Invitations the user has declined (rejected_at IS NOT NULL)
+	rejRows, err := h.db.QueryContext(ctx,
+		`SELECT room_id FROM room_invitations WHERE invitee_id = $1 AND rejected_at IS NOT NULL`,
+		userID)
+	if err == nil {
+		defer rejRows.Close()
+		for rejRows.Next() {
+			var roomID string
+			if err := rejRows.Scan(&roomID); err == nil {
+				if _, already := leaves[roomID]; !already {
+					leaves[roomID] = map[string]interface{}{
+						"timeline":     map[string]interface{}{"events": []interface{}{}, "limited": false},
+						"state":        map[string]interface{}{"events": []interface{}{}},
+						"account_data": map[string]interface{}{"events": []interface{}{}},
+					}
+				}
+			}
+		}
+	}
+	return leaves
+}
+
 // buildInviteRooms queries pending room invitations for userID and builds the
 // rooms.invite section of the Matrix sync response.
 func (h *GetSyncHandler) buildInviteRooms(ctx context.Context, userID string) map[string]interface{} {
@@ -192,7 +242,7 @@ func (h *GetSyncHandler) GetSync(w http.ResponseWriter, r *http.Request) {
 		Rooms: syncRooms{
 			Join:   joinedRooms,
 			Invite: h.buildInviteRooms(r.Context(), userID),
-			Leave:  map[string]interface{}{},
+			Leave:  h.buildLeaveRooms(r.Context(), userID),
 		},
 		Presence: syncPresence{Events: []interface{}{}},
 	}
@@ -299,7 +349,7 @@ func (h *GetSyncHandler) handleIncrementalSync(w http.ResponseWriter, r *http.Re
 			Rooms: syncRooms{
 				Join:   joinedRooms,
 				Invite: h.buildInviteRooms(r.Context(), userID),
-				Leave:  map[string]interface{}{},
+				Leave:  h.buildLeaveRooms(r.Context(), userID),
 			},
 			Presence: syncPresence{Events: []interface{}{}},
 		}
@@ -315,7 +365,7 @@ func (h *GetSyncHandler) handleIncrementalSync(w http.ResponseWriter, r *http.Re
 		Rooms: syncRooms{
 			Join:   joinedRooms,
 			Invite: h.buildInviteRooms(r.Context(), userID),
-			Leave:  map[string]interface{}{},
+			Leave:  h.buildLeaveRooms(r.Context(), userID),
 		},
 		Presence: syncPresence{Events: []interface{}{}},
 	}
@@ -341,7 +391,7 @@ func (h *GetSyncHandler) buildResponseFromBufferedEvents(events []*pb.Event, sin
 		})
 		joinedRooms[ev.RoomId] = room
 	}
-	// Buffer-based fast path: skip invite query (caller handles full sync fallback).
+	// Buffer-based fast path: skip invite/leave queries (caller handles full sync).
 	return syncResponse{
 		NextBatch: sinceToken,
 		Rooms: syncRooms{
