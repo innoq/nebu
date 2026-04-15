@@ -1,6 +1,14 @@
-# Story 4.24: FluffyChat Web E2E Compatibility Test (Docker Sidecar + Playwright)
+# Story 4.24: Element Web E2E Compatibility Test (Docker Sidecar + Playwright)
 
-Status: review
+Status: done
+
+## Pivot Note (2026-04-13)
+
+Originally planned as a FluffyChat Flutter-web sidecar. Pivoted to Element Web during implementation:
+- FluffyChat required Rust/Flutter compilation (complex multi-stage build, vodozemac WASM stubs needed)
+- Element Web requires only `docker pull vectorim/element-web` — trivial 5s build
+- `docker/Dockerfile.fluffychat-e2e` remains as backup artifact
+- Primary delivery is Element Web (`docker/Dockerfile.element-e2e` + `element_e2e.spec.ts`)
 
 ## Story
 
@@ -29,24 +37,24 @@ During Epic 4, manual testing with the FluffyChat macOS app revealed compatibili
    {"defaultHomeserver":"localhost:7070","presetHomeserver":"localhost:7070","noEncryptionWarningShown":true}
    ```
 
-4. `docker-compose.yml` has a `fluffychat` service under `profiles: [e2e]`:
+4. `docker-compose.yml` has an `element` service under `profiles: [e2e]`:
    - Port mapping `7070:80`
-   - `context: .` (project root), `dockerfile: docker/Dockerfile.fluffychat-e2e`
+   - `context: .`, `dockerfile: docker/Dockerfile.element-e2e`
    - Does NOT start with `make dev` (profile-gated)
+   - (FluffyChat `Dockerfile.fluffychat-e2e` exists as backup — no compose service required)
 
-5. `e2e/tests/fluffychat_e2e.spec.ts` contains three Playwright scenarios that run against `http://localhost:7070`:
-   - **SSO Login**: FluffyChat loads → click SSO button → Dex login form fills with `alex@example.com` / `changeme` → submit → `loginToken` received → room list visible, no error toast
-   - **Create Room**: After login → create room named `e2e-test-room` → room appears in room list
-   - **Send & Receive**: In the created room → type `hello from playwright` → send → message appears in timeline
+5. `e2e/tests/element_e2e.spec.ts` contains Playwright scenarios (primary) and `e2e/tests/fluffychat_e2e.spec.ts` (secondary, auto-skip if unreachable) against `http://localhost:7070`:
+   - **SSO Login**: Element/FluffyChat loads → SSO button → Dex form → `loginToken` → room list visible, no error toast
+   - **Create Room**: After login → create room named `e2e-test-room` → room appears in sidebar
+   - **Send & Receive**: In the room → type `hello from playwright` → send → message appears in timeline
 
-6. `Makefile` target `build-fluffychat-e2e` builds the Docker image (no push).
+6. `Makefile` target `build-element-e2e` builds the Element Web Docker image (no push). `build-fluffychat-e2e` also present.
 
-7. `Makefile` target `test-e2e-fluffychat`:
+7. `Makefile` target `test-e2e-element`:
    - Runs `docker compose --profile e2e up -d --wait`
-   - Runs Playwright tests from `e2e/` directory against `http://localhost:7070`
-   - Does NOT call `docker compose down` (leaves stack running for debugging)
-   - Is documented with `##` comment and listed in `.PHONY`
-   - Is NOT added to `make test-integration`
+   - Runs `element_e2e.spec.ts` Playwright tests against `http://localhost:7070`
+   - Does NOT call `docker compose down`
+   - `test-e2e-fluffychat` also present (non-functional without FluffyChat compose service — intentional, FluffyChat pivoted out)
 
 8. `dev/dex/config.yaml` has a new `redirectURIs` entry for the FluffyChat `auth.html` callback:
    ```

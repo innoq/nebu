@@ -5,7 +5,7 @@
 #
 # Build time: ~5 seconds (image pull + copy).
 # docker build -t nebu-element-e2e:dev -f docker/Dockerfile.element-e2e .
-FROM vectorim/element-web AS element-source
+FROM vectorim/element-web:v1.12.15 AS element-source
 
 FROM nginx:stable-alpine
 RUN rm /etc/nginx/conf.d/default.conf

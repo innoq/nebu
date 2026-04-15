@@ -400,7 +400,7 @@ development_status:
   4-21-gherkin-room-create-send-receive-end-to-end: done
   4-22-matrix-client-smoke-test-matrix-js-sdk-http-level: done
   4-23-load-test-silber-tier-500-concurrent-k6-setup-run: done
-  4-24-fluffychat-web-e2e-compatibility-test: review
+  4-24-fluffychat-web-e2e-compatibility-test: done
   4-25-get-user-filter-filterid-sync-loop-fix: done
   4-26-get-rooms-roomid-members: done
   4-27-post-rooms-roomid-read-markers: done

@@ -47,7 +47,11 @@ async function isDexReachable(): Promise<boolean> {
 // SSO login helper — returns the access token for API calls
 // ---------------------------------------------------------------------------
 
-async function performSsoLogin(page: Page): Promise<string> {
+async function performSsoLogin(
+  page: Page,
+  email: string = TEST_USER,
+  password: string = TEST_PASS,
+): Promise<string> {
   let capturedToken = '';
   // Intercept the POST /login response to capture the access_token directly
   page.on('response', async (resp) => {
@@ -74,8 +78,8 @@ async function performSsoLogin(page: Page): Promise<string> {
   await page.waitForURL(/dex.*\/auth/i, { timeout: 15_000 });
 
   // Fill Dex credentials
-  await page.locator('input[name="login"]').fill(TEST_USER);
-  await page.locator('input[name="password"]').fill(TEST_PASS);
+  await page.locator('input[name="login"]').fill(email);
+  await page.locator('input[name="password"]').fill(password);
   await page.locator('button[type="submit"]').click();
 
   // Dex redirects back to gateway callback, then to Element with loginToken
@@ -332,8 +336,8 @@ test.describe('Element Web — Matrix client compatibility (Story 4-24)', () => 
     const marieContext = await page.context().browser()!.newContext();
     const mariePage = await marieContext.newPage();
 
-    // Login marie via SSO programmatically
-    const marieToken = await performSsoLogin(mariePage).catch(() => null);
+    // Login marie via SSO programmatically — use marie's own credentials
+    const marieToken = await performSsoLogin(mariePage, 'marie@example.com', 'changeme').catch(() => null);
     await mariePage.close();
     await marieContext.close();
 

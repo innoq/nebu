@@ -7,7 +7,7 @@ DOCKER_ELIXIR = docker run --rm -v $(PWD):/workspace -w /workspace elixir:1.19-a
 DOCKER_BUF    = docker run --rm -v $(PWD):/workspace -w /workspace bufbuild/buf
 DOCKER_NODE   = docker run --rm -v $(PWD):/workspace -w /workspace node:22-alpine
 
-.PHONY: build-gateway build-core build-admin-css download-fonts dev setup test-unit-go test-unit-elixir test-integration test-e2e test-matrix-compat test-load-silber build-element-e2e test-e2e-element proto gen-api
+.PHONY: build-gateway build-core build-admin-css download-fonts dev setup test-unit-go test-unit-elixir test-integration test-e2e test-matrix-compat test-load-silber build-element-e2e test-e2e-element build-fluffychat-e2e test-e2e-fluffychat proto gen-api
 
 ## download-fonts: Download Inter + JetBrains Mono WOFF2 fonts (run once; commit results)
 download-fonts:
@@ -134,6 +134,22 @@ test-e2e-element:
 	cd e2e && npm install --silent && \
 	npx playwright install chromium --with-deps --quiet && \
 	npx playwright test tests/element_e2e.spec.ts; \
+	EXIT=$$?; exit $$EXIT
+
+## build-fluffychat-e2e: Build the FluffyChat Web E2E Docker image (Flutter multi-stage — slow first build)
+## Requires: tmp/fluffychat/ to contain the FluffyChat source checkout.
+build-fluffychat-e2e:
+	docker build -t nebu-fluffychat-e2e:dev -f docker/Dockerfile.fluffychat-e2e .
+
+## test-e2e-fluffychat: Run Playwright E2E tests against FluffyChat Web (real Matrix client)
+## Requires: 127.0.0.1 dex in /etc/hosts (for SSO redirect via Dex)
+## Starts full stack + fluffychat sidecar via --profile e2e.
+## Does NOT run docker compose down after tests — leaves stack for debugging.
+test-e2e-fluffychat:
+	docker compose --profile e2e up -d --wait && \
+	cd e2e && npm install --silent && \
+	npx playwright install chromium --with-deps --quiet && \
+	npx playwright test tests/fluffychat_e2e.spec.ts; \
 	EXIT=$$?; exit $$EXIT
 
 ## proto: Generate gRPC stubs from .proto definitions (via buf + protoc)
