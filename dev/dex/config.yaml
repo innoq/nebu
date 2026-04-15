@@ -15,6 +15,10 @@ oauth2:
     - authorization_code
     - password
 
+expiry:
+  idTokens: 24h        # JWT ID token valid 24h (dev convenience — was 1h default)
+  signingKeys: 6h
+
 enablePasswordDB: true
 
 staticClients:
