@@ -334,7 +334,7 @@ test.describe('Error Pages', () => {
     const resp = await page.goto('/admin/login');
     // 401 page is served by Error401 helper when session is invalid
     // We verify the template renders without JS errors
-    const errors = [];
+    const errors: Error[] = [];
     page.on('pageerror', e => errors.push(e));
     expect(errors).toHaveLength(0);
   });

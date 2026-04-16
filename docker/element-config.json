@@ -1,8 +1,7 @@
 {
   "default_server_config": {
     "m.homeserver": {
-      "base_url": "http://localhost:7070",
-      "server_name": "localhost"
+      "base_url": "http://localhost:7070"
     }
   },
   "brand": "Nebu E2E",

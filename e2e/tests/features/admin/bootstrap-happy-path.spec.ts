@@ -21,7 +21,7 @@ import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
 import * as path from 'path';
 
-const PROJECT_ROOT = path.resolve(__dirname, '../..');
+const PROJECT_ROOT = path.resolve(__dirname, '../../..');
 
 // ---------------------------------------------------------------------------
 // DB Reset Helper

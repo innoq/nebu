@@ -403,6 +403,10 @@ defmodule Nebu.Room.Server do
 
     case db_module().insert_event(signed) do
       :ok ->
+        # Broadcast to :pg subscribers so long-poll sync wakes up immediately.
+        # Mirrors send_event broadcast — prevents 30-second sync delay after join/leave.
+        members = :pg.get_local_members("room:#{room_id}")
+        Enum.each(members, fn pid -> send(pid, {:new_event, signed}) end)
         :ok
 
       {:error, reason} ->

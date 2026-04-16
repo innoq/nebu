@@ -41,7 +41,9 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-20
-last_updated: 2026-04-11
+last_updated: 2026-04-15
+# story 4-29 done (code review passed, 2 MINOR fixed): 2026-04-15
+# story 4-29 created: 4-29 → ready-for-dev: 2026-04-15
 # story 4-22 created: 4-22 → ready-for-dev: 2026-04-03
 # story 4-21 review: 2026-04-03
 # story 4-21 in-progress: 2026-04-03
@@ -405,6 +407,7 @@ development_status:
   4-26-get-rooms-roomid-members: done
   4-27-post-rooms-roomid-read-markers: done
   4-28-element-web-browser-e2e-gap-coverage: done
+  4-29-element-web-playwright-oidc-fixture-mvp-test-adaptation: done
   epic-4-retrospective: done
 
   # ─────────────────────────────────────────────────────────────────────────
