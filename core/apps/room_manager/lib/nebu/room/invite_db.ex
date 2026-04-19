@@ -92,4 +92,40 @@ defmodule Nebu.Room.InviteDB do
       {:error, reason} -> {:error, reason}
     end
   end
+
+  @sql_get_pending_invite_rooms """
+  SELECT room_id FROM room_invitations
+  WHERE invitee_id = $1 AND accepted_at IS NULL AND rejected_at IS NULL
+  """
+
+  @doc "Returns room_ids where user has a pending (not accepted, not rejected) invitation."
+  @spec get_pending_invite_rooms_for_user(String.t()) :: {:ok, [String.t()]} | {:error, term()}
+  def get_pending_invite_rooms_for_user(invitee_id) do
+    case Ecto.Adapters.SQL.query(Nebu.Repo, @sql_get_pending_invite_rooms, [invitee_id]) do
+      {:ok, %{rows: rows}} -> {:ok, Enum.map(rows, fn [rid] -> rid end)}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @sql_get_declined_invite_rooms """
+  SELECT room_id FROM room_invitations
+  WHERE invitee_id = $1 AND rejected_at IS NOT NULL
+  """
+
+  @doc """
+  Returns room_ids where the user has a declined invitation (rejected_at IS NOT NULL).
+
+  Used by do_incremental_sync to include recently-declined rooms in fetch_delta_rooms.
+  This ensures the m.room.member leave event emitted by emit_decline_event is found
+  even when the sync task starts AFTER the decline (and pending-invite list is empty).
+  fetch_events_since will return [] for old declines (their events predate since_ts),
+  so only genuinely new decline events cause an immediate sync return.
+  """
+  @spec get_declined_invite_rooms_for_user(String.t()) :: {:ok, [String.t()]} | {:error, term()}
+  def get_declined_invite_rooms_for_user(invitee_id) do
+    case Ecto.Adapters.SQL.query(Nebu.Repo, @sql_get_declined_invite_rooms, [invitee_id]) do
+      {:ok, %{rows: rows}} -> {:ok, Enum.map(rows, fn [rid] -> rid end)}
+      {:error, reason} -> {:error, reason}
+    end
+  end
 end

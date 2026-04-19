@@ -64,11 +64,63 @@ func NewGetSyncHandler(cfg GetSyncConfig) *GetSyncHandler {
 // rooms where the invitation was rejected (rejected_at IS NOT NULL).
 // Element Web uses rooms.leave to remove rooms from its local state — without
 // it, declined invitations and left rooms remain visible in the UI indefinitely.
+//
+// Fix-1: For each left/rejected room, the most recent m.room.member leave event
+// is fetched from the events table and included in state.events. If no event is
+// found (e.g. rooms created before this fix), state.events degrades to empty.
 func (h *GetSyncHandler) buildLeaveRooms(ctx context.Context, userID string) map[string]interface{} {
 	leaves := map[string]interface{}{}
 	if h.db == nil {
 		return leaves
 	}
+
+	// leaveEventQuery fetches the most recent m.room.member leave event for a given
+	// room and user. Content may be stored as a JSONB object or a double-encoded
+	// JSONB string — the CASE guard mirrors the pattern already used in buildInviteRooms.
+	const leaveEventQuery = `
+		SELECT
+		    event_id,
+		    sender,
+		    CASE
+		        WHEN jsonb_typeof(content) = 'object' THEN content::text
+		        ELSE content#>>'{}'
+		    END AS content_json,
+		    origin_server_ts
+		FROM events
+		WHERE room_id = $1
+		  AND event_type = 'm.room.member'
+		  AND sender = $2
+		  AND (
+		    CASE
+		        WHEN jsonb_typeof(content) = 'object' THEN content->>'membership'
+		        ELSE ((content#>>'{}')::jsonb)->>'membership'
+		    END
+		  ) = 'leave'
+		ORDER BY origin_server_ts DESC
+		LIMIT 1`
+
+	// buildStateEvents queries the events table for a leave event and returns the
+	// state.events slice to include in the leave room entry.
+	// Degrades gracefully to an empty slice if no event is found or the query fails.
+	buildStateEvents := func(roomID string) []map[string]interface{} {
+		stateEvents := []map[string]interface{}{}
+		row := h.db.QueryRowContext(ctx, leaveEventQuery, roomID, userID)
+		var eventID, sender, contentJSON string
+		var originTS int64
+		if err := row.Scan(&eventID, &sender, &contentJSON, &originTS); err != nil {
+			// sql.ErrNoRows is the expected case for graceful degradation — no log needed.
+			// Any other error is also silently degraded to empty state.events (no crash).
+			return stateEvents
+		}
+		stateEvents = append(stateEvents, map[string]interface{}{
+			"type":      "m.room.member",
+			"state_key": userID,
+			"sender":    sender,
+			"content":   json.RawMessage(contentJSON),
+		})
+		return stateEvents
+	}
+
 	// Rooms the user has left (was a member, now has left_at set)
 	leftRows, err := h.db.QueryContext(ctx,
 		`SELECT room_id FROM room_members WHERE user_id = $1 AND left_at IS NOT NULL`,
@@ -78,9 +130,10 @@ func (h *GetSyncHandler) buildLeaveRooms(ctx context.Context, userID string) map
 		for leftRows.Next() {
 			var roomID string
 			if err := leftRows.Scan(&roomID); err == nil {
+				stateEvents := buildStateEvents(roomID)
 				leaves[roomID] = map[string]interface{}{
 					"timeline":     map[string]interface{}{"events": []interface{}{}, "limited": false},
-					"state":        map[string]interface{}{"events": []interface{}{}},
+					"state":        map[string]interface{}{"events": stateEvents},
 					"account_data": map[string]interface{}{"events": []interface{}{}},
 				}
 			}
@@ -96,9 +149,10 @@ func (h *GetSyncHandler) buildLeaveRooms(ctx context.Context, userID string) map
 			var roomID string
 			if err := rejRows.Scan(&roomID); err == nil {
 				if _, already := leaves[roomID]; !already {
+					stateEvents := buildStateEvents(roomID)
 					leaves[roomID] = map[string]interface{}{
 						"timeline":     map[string]interface{}{"events": []interface{}{}, "limited": false},
-						"state":        map[string]interface{}{"events": []interface{}{}},
+						"state":        map[string]interface{}{"events": stateEvents},
 						"account_data": map[string]interface{}{"events": []interface{}{}},
 					}
 				}
@@ -129,16 +183,37 @@ func (h *GetSyncHandler) buildInviteRooms(ctx context.Context, userID string) ma
 		if err := rows.Scan(&roomID, &inviterID); err != nil {
 			continue
 		}
+		// Build invite_state with at least the membership event.
+		// Also include m.room.name if available so the client can display
+		// the room name in the invite tile (Matrix spec: stripped state).
+		events := []map[string]interface{}{
+			{
+				"type":      "m.room.member",
+				"sender":    inviterID,
+				"state_key": userID,
+				"content":   map[string]string{"membership": "invite"},
+			},
+		}
+		var roomName string
+		nameRow := h.db.QueryRowContext(ctx,
+			`SELECT CASE
+				WHEN jsonb_typeof(content) = 'object' THEN content->>'name'
+				ELSE ((content#>>'{}')::jsonb)->>'name'
+			 END
+			 FROM events WHERE room_id = $1 AND event_type = 'm.room.name'
+			 ORDER BY origin_server_ts DESC LIMIT 1`,
+			roomID)
+		if err := nameRow.Scan(&roomName); err == nil && roomName != "" {
+			events = append(events, map[string]interface{}{
+				"type":      "m.room.name",
+				"sender":    inviterID,
+				"state_key": "",
+				"content":   map[string]string{"name": roomName},
+			})
+		}
 		invites[roomID] = map[string]interface{}{
 			"invite_state": map[string]interface{}{
-				"events": []map[string]interface{}{
-					{
-						"type":      "m.room.member",
-						"sender":    inviterID,
-						"state_key": userID,
-						"content":   map[string]string{"membership": "invite"},
-					},
-				},
+				"events": events,
 			},
 		}
 	}
@@ -358,14 +433,23 @@ func (h *GetSyncHandler) handleIncrementalSync(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// Build delta sync response
+	// Build delta sync response.
+	// leaveRooms is built first so we can exclude left rooms from joinedRooms.
+	// A room must not appear in both rooms.join and rooms.leave in the same response —
+	// Element Web behaviour is undefined for such conflicts and it may fail to navigate
+	// away. Rooms.leave takes precedence: a room the user just left must not be returned
+	// as joined even if fetch_delta_rooms found its leave event in the timeline.
+	leaveRooms := h.buildLeaveRooms(r.Context(), userID)
 	joinedRooms := buildJoinedRooms(deltaResp.GetRooms())
+	for roomID := range leaveRooms {
+		delete(joinedRooms, roomID)
+	}
 	syncResp := syncResponse{
 		NextBatch: deltaResp.GetSinceToken(),
 		Rooms: syncRooms{
 			Join:   joinedRooms,
 			Invite: h.buildInviteRooms(r.Context(), userID),
-			Leave:  h.buildLeaveRooms(r.Context(), userID),
+			Leave:  leaveRooms,
 		},
 		Presence: syncPresence{Events: []interface{}{}},
 	}

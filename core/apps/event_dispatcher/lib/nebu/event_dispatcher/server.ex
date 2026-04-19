@@ -111,6 +111,32 @@ defmodule Nebu.EventDispatcher.Server do
         creator_pl = put_in(default_pl, ["users", creator_id], 100)
         :ok = Nebu.Room.Server.set_power_levels(room_id, creator_id, creator_pl)
 
+        # Emit m.room.name state event if a name was provided
+        name = request.name
+        if name != nil and name != "" do
+          event_map = %{
+            "room_id"          => room_id,
+            "type"             => "m.room.name",
+            "state_key"        => "",
+            "sender"           => creator_id,
+            "content"          => %{"name" => name},
+            "origin_server_ts" => Nebu.DB.Helpers.now_ms()
+          }
+          event_id = Nebu.EventId.generate(event_map)
+          event_with_id = Map.put(event_map, "event_id", event_id)
+          {_pub, priv} = :persistent_term.get(:nebu_signing_key)
+          event_json = Nebu.CanonicalJson.encode!(event_map)
+          signature = :crypto.sign(:eddsa, :none, event_json, [priv, :ed25519])
+          sig_b64 = Base.encode64(signature)
+          signed = Map.put(event_with_id, "signatures", %{"nebu" => sig_b64})
+          case messages_db_module().insert_event(signed) do
+            :ok ->
+              Enum.each(:pg.get_local_members("room:#{room_id}"), &send(&1, {:new_event, signed}))
+            {:error, reason} ->
+              Logger.warning("create_room: failed to write m.room.name for #{room_id}: #{inspect(reason)}")
+          end
+        end
+
         %Core.CreateRoomResponse{room_id: room_id}
 
       {:error, reason} ->
@@ -165,10 +191,11 @@ defmodule Nebu.EventDispatcher.Server do
     # the leave / decline-invite semantics by operating on the DB directly.
     case Nebu.Room.RoomSupervisor.lookup_room(room_id) do
       {:error, :not_found} ->
-        # Room GenServer not running — try to reject any pending invitation so
-        # the room disappears from rooms.invite. This covers the common case where
-        # a user wants to decline an invite after a stack restart.
+        # Room GenServer not running — reject the pending invitation directly in DB.
         db_module_invite().reject_invitation(room_id, user_id)
+        # Emit a proper m.room.member leave event so fetch_delta_rooms can find it
+        # even if the :pg broadcast arrives between two sync cycles (race-proof).
+        emit_decline_event(room_id, user_id)
         %Core.LeaveRoomResponse{room_id: room_id}
 
       {:ok, _pid} ->
@@ -179,6 +206,7 @@ defmodule Nebu.EventDispatcher.Server do
           {:error, :not_member} ->
             # User has a pending invite but hasn't joined — treat as "decline invite".
             db_module_invite().reject_invitation(room_id, user_id)
+            emit_decline_event(room_id, user_id)
             %Core.LeaveRoomResponse{room_id: room_id}
 
           {:error, reason} ->
@@ -630,7 +658,7 @@ defmodule Nebu.EventDispatcher.Server do
       Enum.flat_map(room_ids, fn room_id ->
         try do
           state = room_registry_module().get_state(room_id)
-          state_events = build_state_events(state)
+          state_events = build_state_events(state, room_id)
 
           {:ok, events, _next_batch, prev_batch} =
             messages_db_module().fetch_events(room_id, "b", 20, "")
@@ -652,10 +680,26 @@ defmodule Nebu.EventDispatcher.Server do
             }
           ]
         catch
-          # Room GenServer temporarily unavailable (e.g. crashed between DB query
-          # and get_state call) — skip the room gracefully rather than crashing
-          # the entire sync response.
-          :exit, {:noproc, _} -> []
+          # Room GenServer not running (e.g. after core restart). Start it on demand —
+          # Room.init/1 reloads all state from DB, so this is always safe.
+          :exit, {:noproc, _} ->
+            _ = Nebu.Room.RoomSupervisor.start_room(room_id)
+            try do
+              state      = room_registry_module().get_state(room_id)
+              state_evs  = build_state_events(state, room_id)
+              {:ok, evs, _next_batch, prev_b} =
+                messages_db_module().fetch_events(room_id, "b", 20, "")
+              tl_evs = evs |> Enum.reverse() |> Enum.map(&event_map_to_proto/1)
+              [%Core.SyncRoom{
+                room_id:        room_id,
+                state_events:   state_evs,
+                timeline_events: tl_evs,
+                limited:        length(evs) >= 20,
+                prev_batch:     prev_b
+              }]
+            catch
+              :exit, _ -> []
+            end
         end
       end)
 
@@ -745,6 +789,29 @@ defmodule Nebu.EventDispatcher.Server do
         {:error, _} -> []
       end
 
+    # Also subscribe to rooms where user has a pending invite — so that
+    # invite-decline broadcasts wake up this sync task immediately.
+    invited_room_ids =
+      case db_module_invite().get_pending_invite_rooms_for_user(user_id) do
+        {:ok, ids} -> ids
+        {:error, _} -> []
+      end
+
+    # Also include rooms where the user has ALREADY declined an invite.
+    # Race condition fix: if the decline happens just before this sync task starts,
+    # get_pending_invite_rooms_for_user returns [] (rejected_at IS NOT NULL).
+    # Without declined_room_ids, fetch_delta_rooms never checks the declined room
+    # and the :pg broadcast is missed → 30 s long-poll → sync returns too late.
+    # fetch_events_since returns [] for old declines (events predate since_ts),
+    # so this only triggers an immediate return for genuinely new decline events.
+    declined_room_ids =
+      case db_module_invite().get_declined_invite_rooms_for_user(user_id) do
+        {:ok, ids} -> ids
+        {:error, _} -> []
+      end
+
+    room_ids = room_ids ++ invited_room_ids ++ declined_room_ids
+
     # Step 5: Subscribe to :pg groups BEFORE DB check (race prevention)
     Enum.each(room_ids, fn room_id ->
       :pg.join("room:#{room_id}", self())
@@ -812,7 +879,7 @@ defmodule Nebu.EventDispatcher.Server do
         {:ok, events} ->
           try do
             state = room_registry_module().get_state(room_id)
-            state_events = build_state_events(state)
+            state_events = build_state_events(state, room_id)
             timeline_events = Enum.map(events, &event_map_to_proto/1)
 
             [
@@ -864,8 +931,9 @@ defmodule Nebu.EventDispatcher.Server do
     {new_token, newest_event_id}
   end
 
-  # Build state events for a room: one m.room.member per active member + one m.room.power_levels.
-  defp build_state_events(state) do
+  # Build state events for a room: one m.room.member per active member + one m.room.power_levels
+  # + one m.room.name (if a name has been stored).
+  defp build_state_events(state, room_id) do
     member_events =
       state.members
       |> MapSet.to_list()
@@ -885,7 +953,19 @@ defmodule Nebu.EventDispatcher.Server do
       sender: ""
     }
 
-    member_events ++ [pl_event]
+    name_events =
+      case messages_db_module().get_room_name(room_id) do
+        {:ok, name} ->
+          [%Core.SyncRoomStateEvent{
+            type: "m.room.name",
+            state_key: "",
+            content: Jason.encode!(%{"name" => name}),
+            sender: ""
+          }]
+        _ -> []
+      end
+
+    member_events ++ [pl_event] ++ name_events
   end
 
   # ─── Private helpers ─────────────────────────────────────────────────────────
@@ -957,5 +1037,38 @@ defmodule Nebu.EventDispatcher.Server do
 
   defp do_send_reply(stream, event) do
     GRPC.Server.send_reply(stream, event)
+  end
+
+  # Emits a signed m.room.member leave event into the events table and broadcasts
+  # it to any :pg subscribers of the room. Called when an invite is declined via
+  # POST /rooms/{roomId}/leave so that:
+  #   1. fetch_delta_rooms can detect the decline even across sync-cycle boundaries
+  #      (race-proof — event persisted in DB, not just a volatile :pg message).
+  #   2. Any sync task subscribed to the room's :pg group wakes up immediately.
+  defp emit_decline_event(room_id, user_id) do
+    event_map = %{
+      "room_id"          => room_id,
+      "type"             => "m.room.member",
+      "state_key"        => user_id,
+      "sender"           => user_id,
+      "content"          => %{"membership" => "leave"},
+      "origin_server_ts" => Nebu.DB.Helpers.now_ms()
+    }
+    event_id      = Nebu.EventId.generate(event_map)
+    event_with_id = Map.put(event_map, "event_id", event_id)
+    {_pub, priv}  = :persistent_term.get(:nebu_signing_key)
+    event_json    = Nebu.CanonicalJson.encode!(event_map)
+    signature     = :crypto.sign(:eddsa, :none, event_json, [priv, :ed25519])
+    sig_b64       = Base.encode64(signature)
+    signed        = Map.put(event_with_id, "signatures", %{"nebu" => sig_b64})
+
+    case messages_db_module().insert_event(signed) do
+      :ok ->
+        Enum.each(:pg.get_local_members("room:#{room_id}"), &send(&1, {:new_event, signed}))
+
+      {:error, reason} ->
+        require Logger
+        Logger.warning("emit_decline_event: failed for #{user_id} in #{room_id}: #{inspect(reason)}")
+    end
   end
 end

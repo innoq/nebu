@@ -56,3 +56,4 @@ erl_crash.dump
 !lib/
 /.claude/
 /e2e/node_modules/
+.playwright-mcp/

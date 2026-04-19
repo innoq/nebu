@@ -25,9 +25,12 @@ package matrix
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
@@ -36,6 +39,7 @@ import (
 	pb "github.com/nebu/nebu/internal/grpc/pb"
 	"github.com/nebu/nebu/internal/middleware"
 	"github.com/prometheus/client_golang/prometheus"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -1115,5 +1119,442 @@ func TestGetSync_IncrementalSync_NilBuffer(t *testing.T) {
 	// Core's GetSyncDelta must have been called — nil buffer skips buffer logic
 	if mock.capturedDeltaReq == nil {
 		t.Error("expected GetSyncDelta to be called with nil buffer, but capturedDeltaReq is nil")
+	}
+}
+
+// ─── Fix-1: buildLeaveRooms — m.room.member leave event in state.events ──────
+//
+// These tests are written FIRST (ATDD gate) for Fix Story 1.
+// ALL tests in this section are expected to FAIL until the fix is applied to
+// buildLeaveRooms() in sync.go.
+//
+// Test strategy:
+//   - Tests require NEBU_TEST_DB_URL env var (Postgres DSN). Skipped if absent
+//     so `make test-unit-go` (no DB) does not fail the build pipeline.
+//   - To observe failures before the fix: set NEBU_TEST_DB_URL and run:
+//     go test -run TestBuildLeaveRooms ./internal/matrix/
+//   - A minimal schema (users + rooms + room_members + events) is created inline
+//     for each test; all rows are cleaned up via t.Cleanup.
+//   - The JSONB content column may store objects directly ('object') or as a
+//     double-encoded string. The tests use the object form (most common in prod).
+//
+// AC coverage:
+//   AC #1 + AC #2 → TestBuildLeaveRooms_ReturnsLeaveEventInStateEvents
+//   AC #3         → TestBuildLeaveRooms_GracefulDegradation_NoLeaveEvent
+//   AC #4         → TestBuildLeaveRooms_RejectedInvite_IncludesLeaveEventIfPresent
+//   AC #5         → see e2e/tests/features/room/room-lifecycle.spec.ts (existing, documented below)
+
+// openTestDB opens a *sql.DB connection using NEBU_TEST_DB_URL.
+// Skips the calling test if the env var is not set.
+// Creates the minimal schema required by buildLeaveRooms tests.
+func openTestDB(t *testing.T) *sql.DB {
+	t.Helper()
+
+	dsn := os.Getenv("NEBU_TEST_DB_URL")
+	if dsn == "" {
+		t.Skip("NEBU_TEST_DB_URL not set — skipping DB-dependent test (set to a Postgres DSN to run)")
+	}
+
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatalf("openTestDB: sql.Open: %v", err)
+	}
+	if err := db.Ping(); err != nil {
+		db.Close()
+		t.Fatalf("openTestDB: ping failed: %v — is Postgres running at %s?", err, dsn)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	// Create the minimal schema needed for buildLeaveRooms tests.
+	// IF NOT EXISTS guards allow multiple tests to run in the same DB session.
+	schema := `
+		CREATE TABLE IF NOT EXISTS users (
+			user_id      TEXT    PRIMARY KEY,
+			system_role  TEXT    NOT NULL DEFAULT 'user',
+			is_active    BOOLEAN NOT NULL DEFAULT true,
+			created_at   BIGINT  NOT NULL
+		);
+		CREATE TABLE IF NOT EXISTS rooms (
+			room_id     TEXT    PRIMARY KEY,
+			name        TEXT,
+			visibility  TEXT    NOT NULL DEFAULT 'private',
+			created_at  BIGINT  NOT NULL
+		);
+		CREATE TABLE IF NOT EXISTS room_members (
+			room_id    TEXT    NOT NULL REFERENCES rooms(room_id),
+			user_id    TEXT    NOT NULL REFERENCES users(user_id),
+			joined_at  BIGINT  NOT NULL,
+			left_at    BIGINT,
+			PRIMARY KEY (room_id, user_id)
+		);
+		CREATE TABLE IF NOT EXISTS events (
+			event_id         TEXT    PRIMARY KEY,
+			room_id          TEXT    NOT NULL REFERENCES rooms(room_id),
+			sender           TEXT    NOT NULL,
+			event_type       TEXT    NOT NULL,
+			content          JSONB   NOT NULL,
+			origin_server_ts BIGINT  NOT NULL,
+			signatures       JSONB
+		);
+		CREATE TABLE IF NOT EXISTS room_invitations (
+			room_id      TEXT    NOT NULL REFERENCES rooms(room_id),
+			inviter_id   TEXT    NOT NULL,
+			invitee_id   TEXT    NOT NULL,
+			invited_at   BIGINT  NOT NULL,
+			accepted_at  BIGINT,
+			rejected_at  BIGINT,
+			PRIMARY KEY (room_id, invitee_id)
+		);
+	`
+	if _, err := db.Exec(schema); err != nil {
+		t.Fatalf("openTestDB: schema creation failed: %v", err)
+	}
+
+	return db
+}
+
+// insertTestLeaveFixture inserts a minimal leave fixture:
+//   - a user row
+//   - a room row
+//   - a room_members row with left_at set (user has left)
+//   - an events row for m.room.member with membership=leave (if withEvent=true)
+//
+// Returns a cleanup function that removes all inserted rows.
+func insertTestLeaveFixture(t *testing.T, db *sql.DB, userID, roomID, eventID string, withEvent bool) func() {
+	t.Helper()
+
+	now := int64(1700000000000)
+
+	// Insert user
+	_, err := db.Exec(`INSERT INTO users (user_id, system_role, is_active, created_at) VALUES ($1, 'user', true, $2) ON CONFLICT DO NOTHING`, userID, now)
+	if err != nil {
+		t.Fatalf("insertTestLeaveFixture: insert user: %v", err)
+	}
+
+	// Insert room
+	_, err = db.Exec(`INSERT INTO rooms (room_id, visibility, created_at) VALUES ($1, 'private', $2) ON CONFLICT DO NOTHING`, roomID, now)
+	if err != nil {
+		t.Fatalf("insertTestLeaveFixture: insert room: %v", err)
+	}
+
+	// Insert room_members with left_at set
+	_, err = db.Exec(
+		`INSERT INTO room_members (room_id, user_id, joined_at, left_at) VALUES ($1, $2, $3, $4) ON CONFLICT (room_id, user_id) DO UPDATE SET left_at = EXCLUDED.left_at`,
+		roomID, userID, now-1000, now,
+	)
+	if err != nil {
+		t.Fatalf("insertTestLeaveFixture: insert room_members: %v", err)
+	}
+
+	if withEvent {
+		// Insert m.room.member leave event.
+		// Content is stored as a JSONB object (object form, not double-encoded string).
+		leaveContent := fmt.Sprintf(`{"membership":"leave","displayname":"%s"}`, userID)
+		_, err = db.Exec(
+			`INSERT INTO events (event_id, room_id, sender, event_type, content, origin_server_ts) VALUES ($1, $2, $3, 'm.room.member', $4::jsonb, $5) ON CONFLICT DO NOTHING`,
+			eventID, roomID, userID, leaveContent, now,
+		)
+		if err != nil {
+			t.Fatalf("insertTestLeaveFixture: insert event: %v", err)
+		}
+	}
+
+	return func() {
+		if withEvent {
+			_, _ = db.Exec(`DELETE FROM events WHERE event_id = $1`, eventID)
+		}
+		_, _ = db.Exec(`DELETE FROM room_members WHERE room_id = $1 AND user_id = $2`, roomID, userID)
+		_, _ = db.Exec(`DELETE FROM rooms WHERE room_id = $1`, roomID)
+		_, _ = db.Exec(`DELETE FROM users WHERE user_id = $1`, userID)
+	}
+}
+
+// ─── Fix-1 Test 1 (AC #1, AC #2): buildLeaveRooms returns leave event in state.events ─────
+//
+// Given: a room in room_members with left_at IS NOT NULL, and an events row for
+//        m.room.member with {"membership":"leave"} and sender == userID
+// When:  buildLeaveRooms(ctx, userID) is called
+// Then:  the returned map has an entry for the room; state.events contains exactly
+//        1 event with type="m.room.member", state_key=userID, content.membership="leave"
+//
+// This test MUST FAIL until buildLeaveRooms queries the events table and includes
+// the leave event in the state.events slice.
+
+func TestBuildLeaveRooms_ReturnsLeaveEventInStateEvents(t *testing.T) {
+	db := openTestDB(t)
+
+	userID := "@leavetest-user:test.local"
+	roomID := "!leavetest-room:test.local"
+	eventID := "$leavetest-ev1:test.local"
+
+	cleanup := insertTestLeaveFixture(t, db, userID, roomID, eventID, true /* withEvent */)
+	t.Cleanup(cleanup)
+
+	h := &GetSyncHandler{db: db}
+
+	leaves := h.buildLeaveRooms(context.Background(), userID)
+
+	// AC #1: rooms.leave must contain an entry for the left room
+	roomEntry, ok := leaves[roomID]
+	if !ok {
+		t.Fatalf("buildLeaveRooms: expected entry for room %q, got none; result: %v", roomID, leaves)
+	}
+
+	roomMap, ok := roomEntry.(map[string]interface{})
+	if !ok {
+		t.Fatalf("buildLeaveRooms: room entry is not map[string]interface{}, got %T", roomEntry)
+	}
+
+	stateRaw, ok := roomMap["state"]
+	if !ok {
+		t.Fatal("buildLeaveRooms: room entry missing 'state' key")
+	}
+
+	stateMap, ok := stateRaw.(map[string]interface{})
+	if !ok {
+		t.Fatalf("buildLeaveRooms: 'state' is not map[string]interface{}, got %T", stateRaw)
+	}
+
+	eventsRaw, ok := stateMap["events"]
+	if !ok {
+		t.Fatal("buildLeaveRooms: state missing 'events' key")
+	}
+
+	// AC #1: state.events must contain exactly 1 m.room.member leave event.
+	// The current implementation (before the fix) always returns []interface{}{} here,
+	// so this assertion will FAIL with the unfixed code.
+	events, ok := eventsRaw.([]map[string]interface{})
+	if !ok {
+		// Also handle []interface{} (the current hardcoded empty slice)
+		eventsSlice, ok2 := eventsRaw.([]interface{})
+		if !ok2 {
+			t.Fatalf("buildLeaveRooms: state.events is not a slice, got %T", eventsRaw)
+		}
+		if len(eventsSlice) == 0 {
+			t.Fatalf("buildLeaveRooms: state.events is EMPTY — fix required: buildLeaveRooms must query events table for m.room.member leave event (AC #1)")
+		}
+		// Convert to []map[string]interface{} for further assertions
+		events = make([]map[string]interface{}, 0, len(eventsSlice))
+		for _, e := range eventsSlice {
+			em, ok := e.(map[string]interface{})
+			if !ok {
+				t.Fatalf("buildLeaveRooms: state.events[i] is not map[string]interface{}, got %T", e)
+			}
+			events = append(events, em)
+		}
+	}
+
+	if len(events) != 1 {
+		t.Fatalf("buildLeaveRooms: expected 1 event in state.events, got %d (AC #1)", len(events))
+	}
+
+	ev := events[0]
+
+	if ev["type"] != "m.room.member" {
+		t.Errorf("buildLeaveRooms: state.events[0].type must be 'm.room.member', got %q", ev["type"])
+	}
+
+	if ev["state_key"] != userID {
+		t.Errorf("buildLeaveRooms: state.events[0].state_key must be %q (userID), got %q", userID, ev["state_key"])
+	}
+
+	if ev["sender"] != userID {
+		t.Errorf("buildLeaveRooms: state.events[0].sender must be %q (userID), got %q", userID, ev["sender"])
+	}
+
+	// Assert content contains membership=leave.
+	// Content may be json.RawMessage or map[string]interface{} depending on implementation.
+	switch c := ev["content"].(type) {
+	case map[string]interface{}:
+		if c["membership"] != "leave" {
+			t.Errorf("buildLeaveRooms: state.events[0].content.membership must be 'leave', got %q", c["membership"])
+		}
+	case json.RawMessage:
+		var cm map[string]interface{}
+		if err := json.Unmarshal(c, &cm); err != nil {
+			t.Fatalf("buildLeaveRooms: cannot unmarshal content: %v", err)
+		}
+		if cm["membership"] != "leave" {
+			t.Errorf("buildLeaveRooms: state.events[0].content.membership must be 'leave', got %q", cm["membership"])
+		}
+	default:
+		t.Fatalf("buildLeaveRooms: state.events[0].content is unexpected type %T", ev["content"])
+	}
+}
+
+// ─── Fix-1 Test 2 (AC #3): graceful degradation — no leave event in DB ───────
+//
+// Given: a room in room_members with left_at IS NOT NULL, but NO events row for
+//        m.room.member (room created before this fix, or event was not persisted)
+// When:  buildLeaveRooms(ctx, userID) is called
+// Then:  the room entry is still present in the returned map; state.events is an
+//        empty slice (not nil, not a panic); no error is returned to the caller
+//
+// This test MUST PASS before AND after the fix (it validates graceful degradation).
+// It will FAIL if the implementation crashes or panics on missing events.
+
+func TestBuildLeaveRooms_GracefulDegradation_NoLeaveEvent(t *testing.T) {
+	db := openTestDB(t)
+
+	userID := "@graceful-user:test.local"
+	roomID := "!graceful-room:test.local"
+
+	cleanup := insertTestLeaveFixture(t, db, userID, roomID, "" /* no eventID */, false /* withEvent=false */)
+	t.Cleanup(cleanup)
+
+	h := &GetSyncHandler{db: db}
+
+	// Must not panic
+	leaves := h.buildLeaveRooms(context.Background(), userID)
+
+	// The room entry must be present
+	roomEntry, ok := leaves[roomID]
+	if !ok {
+		t.Fatalf("buildLeaveRooms: expected entry for room %q even when no leave event in DB, got none", roomID)
+	}
+
+	roomMap, ok := roomEntry.(map[string]interface{})
+	if !ok {
+		t.Fatalf("buildLeaveRooms: room entry is not map[string]interface{}, got %T", roomEntry)
+	}
+
+	stateRaw, ok := roomMap["state"]
+	if !ok {
+		t.Fatal("buildLeaveRooms: room entry missing 'state' key")
+	}
+
+	stateMap, ok := stateRaw.(map[string]interface{})
+	if !ok {
+		t.Fatalf("buildLeaveRooms: 'state' is not map[string]interface{}, got %T", stateRaw)
+	}
+
+	eventsRaw, ok := stateMap["events"]
+	if !ok {
+		t.Fatal("buildLeaveRooms: state missing 'events' key (must degrade gracefully, not remove state key)")
+	}
+
+	// state.events must be an empty slice (not nil, not a panic).
+	// Accept both []interface{} and []map[string]interface{}.
+	switch e := eventsRaw.(type) {
+	case []interface{}:
+		if len(e) != 0 {
+			t.Errorf("buildLeaveRooms: graceful degradation: state.events must be empty when no leave event in DB, got %d entries", len(e))
+		}
+	case []map[string]interface{}:
+		if len(e) != 0 {
+			t.Errorf("buildLeaveRooms: graceful degradation: state.events must be empty when no leave event in DB, got %d entries", len(e))
+		}
+	case nil:
+		t.Error("buildLeaveRooms: graceful degradation: state.events must not be nil")
+	default:
+		t.Errorf("buildLeaveRooms: graceful degradation: state.events is unexpected type %T", eventsRaw)
+	}
+}
+
+// ─── Fix-1 Test 3 (AC #4): rejected invite — includes leave event if one exists ─
+//
+// Given: a room_invitations row with rejected_at IS NOT NULL (invite declined),
+//        AND an events row for m.room.member with membership=leave for that user
+// When:  buildLeaveRooms(ctx, userID) is called
+// Then:  the room entry appears in rooms.leave; state.events contains the leave event
+//
+// This test MUST FAIL until the rejected_at branch of buildLeaveRooms also queries
+// the events table (AC #4).
+//
+// Note: This test inserts into room_invitations but NOT into room_members (the user
+// rejected the invite without ever joining). The room must still appear in rooms.leave
+// with the leave event if one is present in the events table.
+
+func TestBuildLeaveRooms_RejectedInvite_IncludesLeaveEventIfPresent(t *testing.T) {
+	db := openTestDB(t)
+
+	userID := "@rejected-user:test.local"
+	inviterID := "@inviter-user:test.local"
+	roomID := "!rejected-room:test.local"
+	eventID := "$rejected-ev1:test.local"
+
+	now := int64(1700000001000)
+
+	// Insert users
+	for _, uid := range []string{userID, inviterID} {
+		_, err := db.Exec(`INSERT INTO users (user_id, system_role, is_active, created_at) VALUES ($1, 'user', true, $2) ON CONFLICT DO NOTHING`, uid, now)
+		if err != nil {
+			t.Fatalf("insertTestRejectedInviteFixture: insert user %s: %v", uid, err)
+		}
+	}
+
+	// Insert room
+	_, err := db.Exec(`INSERT INTO rooms (room_id, visibility, created_at) VALUES ($1, 'private', $2) ON CONFLICT DO NOTHING`, roomID, now)
+	if err != nil {
+		t.Fatalf("insertTestRejectedInviteFixture: insert room: %v", err)
+	}
+
+	// Insert room_invitations with rejected_at set.
+	// Composite PK is (room_id, invitee_id) — no invitation_id column.
+	// No room_members row: user received and rejected the invite without joining.
+	_, err = db.Exec(
+		`INSERT INTO room_invitations (room_id, inviter_id, invitee_id, invited_at, rejected_at) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (room_id, invitee_id) DO UPDATE SET rejected_at = EXCLUDED.rejected_at`,
+		roomID, inviterID, userID, now-1000, now,
+	)
+	if err != nil {
+		t.Fatalf("insertTestRejectedInviteFixture: insert invitation: %v", err)
+	}
+
+	// Insert m.room.member leave event (as if Core emitted it on rejection)
+	leaveContent := `{"membership":"leave"}`
+	_, err = db.Exec(
+		`INSERT INTO events (event_id, room_id, sender, event_type, content, origin_server_ts) VALUES ($1, $2, $3, 'm.room.member', $4::jsonb, $5) ON CONFLICT DO NOTHING`,
+		eventID, roomID, userID, leaveContent, now,
+	)
+	if err != nil {
+		t.Fatalf("insertTestRejectedInviteFixture: insert event: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = db.Exec(`DELETE FROM events WHERE event_id = $1`, eventID)
+		_, _ = db.Exec(`DELETE FROM room_invitations WHERE room_id = $1 AND invitee_id = $2`, roomID, userID)
+		_, _ = db.Exec(`DELETE FROM rooms WHERE room_id = $1`, roomID)
+		for _, uid := range []string{userID, inviterID} {
+			_, _ = db.Exec(`DELETE FROM users WHERE user_id = $1`, uid)
+		}
+	})
+
+	h := &GetSyncHandler{db: db}
+
+	leaves := h.buildLeaveRooms(context.Background(), userID)
+
+	// Room must appear in rooms.leave
+	roomEntry, ok := leaves[roomID]
+	if !ok {
+		t.Fatalf("buildLeaveRooms (rejected invite): expected entry for room %q, got none", roomID)
+	}
+
+	roomMap, ok := roomEntry.(map[string]interface{})
+	if !ok {
+		t.Fatalf("buildLeaveRooms (rejected invite): room entry is not map[string]interface{}, got %T", roomEntry)
+	}
+
+	stateRaw := roomMap["state"]
+	stateMap, ok := stateRaw.(map[string]interface{})
+	if !ok {
+		t.Fatalf("buildLeaveRooms (rejected invite): 'state' is not map[string]interface{}, got %T", stateRaw)
+	}
+
+	eventsRaw := stateMap["events"]
+
+	// AC #4: state.events must contain the leave event.
+	// Current implementation (before the fix) always returns empty [] here — this test FAILS.
+	eventsSlice, ok := eventsRaw.([]interface{})
+	if ok && len(eventsSlice) == 0 {
+		t.Fatalf("buildLeaveRooms (rejected invite): state.events is EMPTY — fix required: rejected_at branch must also query events table for m.room.member leave event (AC #4)")
+	}
+
+	eventsMap, ok := eventsRaw.([]map[string]interface{})
+	if ok && len(eventsMap) == 0 {
+		t.Fatalf("buildLeaveRooms (rejected invite): state.events is EMPTY — fix required: rejected_at branch must also query events table for m.room.member leave event (AC #4)")
+	}
+
+	if eventsRaw == nil {
+		t.Fatal("buildLeaveRooms (rejected invite): state.events is nil — must be a slice")
 	}
 }

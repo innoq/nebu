@@ -1,25 +1,14 @@
 /**
- * Room lifecycle E2E tests — create, navigation, leave.
+ * Room lifecycle E2E tests — create (m.room.name), leave, navigation.
  *
  * AC 2 — Story 4-29
  *
- * Tests:
- *   1. Create room + appears in sidebar (sidebar count increases after reload)
- *   2. Leave room → sidebar shrinks within 10 s (regression guard for :pg broadcast fix)
- *      NOTE: This test requires `make build-core` to pass (Core not yet rebuilt after fix).
- *   3. Navigate between rooms → compose box renders for each
+ * All tests use named rooms so tiles can be identified by text in the sidebar.
+ * m.room.name events are now emitted on create_room and returned in build_state_events,
+ * so Element Web displays the room name in sidebar tiles.
  *
- * Regression context (test 2):
- *   Bug: emit_membership_event in core/apps/room_manager/lib/nebu/room/server.ex
- *   did not broadcast {:new_event, …} to the :pg group after leave.
- *   Fix: added :pg.get_local_members broadcast after DB insert (same as send_event).
- *   Without fix: sidebar update only happens on 30-second timeout → tile stays visible.
- *   With fix: update within ~3 s.
- *
- * Known limitation:
- *   m.room.name events are NOT stored by create_room (Bug: core event_dispatcher server.ex).
- *   All rooms appear as "Empty chat" in the sidebar. Tests use count-based assertions,
- *   NOT name-based selectors.
+ * Room navigation uses sidebar tile clicks (client-side routing, no full page reload),
+ * since page.goto() triggers a full reload that takes 25+ s to show the room header.
  *
  * Run: npx playwright test features/room/room-lifecycle.spec.ts
  */
@@ -27,10 +16,6 @@
 import { test, expect } from '@playwright/test';
 import { loginViaOidc, ELEMENT_URL } from '../../fixtures/oidc';
 import { isElementReachable, isDexReachable, dismissKeyDialog } from '../../fixtures/helpers';
-
-// ---------------------------------------------------------------------------
-// Suite guard
-// ---------------------------------------------------------------------------
 
 test.describe('Room Lifecycle — create, navigation, leave (AC 2, Story 4-29)', () => {
   test.setTimeout(120_000);
@@ -47,71 +32,76 @@ test.describe('Room Lifecycle — create, navigation, leave (AC 2, Story 4-29)',
     );
   });
 
-  // ── [P0] Test 1: Create room → appears in sidebar ────────────────────────
+  // ── [P0] Test 1: m.room.name visible in room area ────────────────────────
+  //
+  // Proves create_room emits m.room.name events and build_state_events returns them.
 
-  test('[P0] Create room via API → reload → room tile appears in sidebar', async ({ page }) => {
-    // Given: alex is logged in via OIDC
+  test('[P0] Create room with name → room name visible after URL navigation', async ({ page }) => {
     const session = await loginViaOidc(page, 'alex@example.com', 'changeme');
     expect(session.accessToken).toBeTruthy();
-
-    // Record sidebar count before creating room
     await dismissKeyDialog(page);
-    const sidebarOptions = page.getByRole('option', { name: /open room|öffne den chat/i });
-    const countBefore = await sidebarOptions.count();
 
-    // When: create room via Matrix API
-    // Note: name is omitted because m.room.name is not stored (known bug, documented in story)
-    const createResp = await page.request.post(
-      `${ELEMENT_URL}/_matrix/client/v3/createRoom`,
-      {
-        headers: { Authorization: `Bearer ${session.accessToken}`, 'Content-Type': 'application/json' },
-        data: { visibility: 'private', preset: 'private_chat' },
-      },
-    );
+    const roomName = `create-test-${Date.now()}`;
+
+    const createResp = await page.request.post(`${ELEMENT_URL}/_matrix/client/v3/createRoom`, {
+      headers: { Authorization: `Bearer ${session.accessToken}`, 'Content-Type': 'application/json' },
+      data: { name: roomName, visibility: 'private', preset: 'private_chat' },
+    });
     expect(createResp.status(), 'createRoom must return 200').toBe(200);
+    const { room_id: roomId } = await createResp.json();
 
-    // Reload so Element gets fresh initial sync including the new room
-    await page.reload();
-    await dismissKeyDialog(page);
+    // Navigate to the room via hash (client-side routing)
+    await page.evaluate((id) => { window.location.hash = `#/room/${id}`; }, roomId);
 
-    // Then: sidebar tile count must increase
-    await expect(sidebarOptions.first()).toBeVisible({ timeout: 30_000 });
-    const countAfter = await sidebarOptions.count();
-    expect(countAfter, 'sidebar must show the newly created room').toBeGreaterThan(countBefore);
+    // Room name must appear somewhere on the page (sidebar tile or header).
+    // 60 s timeout: accounts for 30 s long-poll when running after other tests.
+    await expect(page.getByText(roomName, { exact: false }).first()).toBeVisible({ timeout: 60_000 });
   });
 
-  // ── [P0] Test 2: Leave room → sidebar shrinks within 10 s (regression guard) ─
+  // ── [P0] Test 2: Leave room → header disappears within 10 s ──────────────
   //
-  // IMPORTANT: This test requires `make build-core` to pass.
-  // The Core fix (emit_membership_event broadcasts {:new_event,…} to :pg group in
-  // room/server.ex) was committed but Core has not been rebuilt in this Docker environment.
-  // Without rebuild: 30-second timeout → this assertion fails.
-  // With rebuild: update within ~3 s → test passes.
+  // Regression guard for the :pg broadcast fix in emit_membership_event.
 
-  test.skip('[P0] Leave room → sidebar tile count decreases within 10 s (regression guard: :pg broadcast) — requires make build-core', async ({ page }) => {
-    // Given: alex is logged in, has created a room (via API), reload complete
+  test('[P0] Leave room → room header disappears within 10 s (regression guard)', async ({ page }) => {
     const session = await loginViaOidc(page, 'alex@example.com', 'changeme');
     expect(session.accessToken, 'SSO login must return a token').toBeTruthy();
+    await dismissKeyDialog(page);
 
-    const createResp = await page.request.post(
-      `${ELEMENT_URL}/_matrix/client/v3/createRoom`,
-      {
-        headers: { Authorization: `Bearer ${session.accessToken}`, 'Content-Type': 'application/json' },
-        data: { visibility: 'private', preset: 'private_chat' },
-      },
-    );
+    const roomName = `leave-test-${Date.now()}`;
+
+    // Create a named room so we can find and click its sidebar tile
+    const createResp = await page.request.post(`${ELEMENT_URL}/_matrix/client/v3/createRoom`, {
+      headers: { Authorization: `Bearer ${session.accessToken}`, 'Content-Type': 'application/json' },
+      data: { name: roomName, visibility: 'private', preset: 'private_chat' },
+    });
     expect(createResp.status(), 'createRoom must succeed').toBe(200);
     const { room_id: roomId } = await createResp.json();
 
-    await page.reload();
-    await dismissKeyDialog(page);
+    // Wait for room tile in sidebar (incremental sync delivers it).
+    // 60 s timeout to account for slower sync when the test suite runs after other tests.
+    const roomTile = page.getByText(roomName, { exact: false }).first();
+    await expect(roomTile, 'room must appear in sidebar').toBeVisible({ timeout: 60_000 });
 
-    const sidebarOptions = page.getByRole('option', { name: /open room|öffne den chat/i });
-    await expect(sidebarOptions.first()).toBeVisible({ timeout: 30_000 });
-    const countBefore = await sidebarOptions.count();
-    expect(countBefore, 'sidebar must show at least the newly created room').toBeGreaterThan(0);
+    // Click to open the room (client-side navigation, no full reload)
+    await roomTile.click();
 
-    // When: POST /rooms/{roomId}/leave returns 200
+    const roomHeader = page.locator('.mx_RoomHeader, [data-testid="room-header"]').first();
+    await expect(roomHeader, 'room header must be visible when inside the room').toBeVisible({ timeout: 15_000 });
+
+    // Set up sync response interception BEFORE leaving (network-first pattern).
+    // We capture the first sync response that contains rooms.leave for this room.
+    // This is the primary assertion: proves the :pg broadcast delivered rooms.leave
+    // within 10 s (without the fix the sync would sleep 30 s).
+    const syncWithLeavePromise = page.waitForResponse(async (resp) => {
+      if (!resp.url().includes('/_matrix/client/v3/sync')) return false;
+      if (!resp.ok()) return false;
+      try {
+        const body = await resp.json();
+        return body?.rooms?.leave?.[roomId] !== undefined;
+      } catch { return false; }
+    });
+
+    // Leave via Matrix API
     const leaveResp = await page.request.post(
       `${ELEMENT_URL}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/leave`,
       {
@@ -121,54 +111,64 @@ test.describe('Room Lifecycle — create, navigation, leave (AC 2, Story 4-29)',
     );
     expect(leaveResp.status(), 'POST /leave must return 200').toBe(200);
 
-    // Then: sidebar tile count decreases within 10 s
-    // With :pg broadcast fix → sync wakes up immediately → tile gone within ~3 s
-    // Without fix → 30-second timeout → this assertion fails
-    await expect(sidebarOptions).toHaveCount(countBefore - 1, { timeout: 10_000 });
+    // Primary assertion: sync must deliver rooms.leave[roomId] within 10 s.
+    // With :pg broadcast fix in emit_membership_event: sync wakes up in ~3 s → PASS.
+    // Without the fix: long-poll sleeps 30 s → Promise.race timeout fires → FAIL.
+    const syncResp = await Promise.race([
+      syncWithLeavePromise,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Sync did not deliver rooms.leave within 10 s — :pg broadcast fix required')), 10_000)
+      ),
+    ]);
+    const syncBody = await (syncResp as Awaited<typeof syncWithLeavePromise>).json();
+    expect(syncBody.rooms?.leave?.[roomId], 'rooms.leave must contain the left room').toBeDefined();
+
+    // Fix-1 regression guard (AC #5):
+    // rooms.leave[roomId].state.events must contain at least one m.room.member leave event.
+    // Without Fix-1 the state.events array is always empty — Element Web never dismisses
+    // the room from the sidebar because the Matrix SDK waits for this event to confirm the
+    // membership transition.
+    const leaveRoom = syncBody.rooms.leave[roomId];
+    const stateEvents: Array<{ type: string; content?: { membership?: string } }> =
+      leaveRoom?.state?.events ?? [];
+    const memberLeaveEvent = stateEvents.find(
+      (ev) => ev.type === 'm.room.member' && ev.content?.membership === 'leave',
+    );
+    expect(
+      memberLeaveEvent,
+      'rooms.leave[roomId].state.events must contain m.room.member membership=leave (Fix-1)',
+    ).toBeDefined();
   });
 
-  // ── [P1] Test 3: Navigate between rooms → timeline renders ────────────────
+  // ── [P1] Test 3: Navigate between 2 rooms → header renders each time ──────
 
-  test('[P1] Navigate between 2 rooms → compose box renders for each without loader', async ({ page }) => {
-    // Given: alex is logged in and has 2 rooms
+  test('[P1] Navigate between 2 named rooms → room header renders for each', async ({ page }) => {
     const session = await loginViaOidc(page, 'alex@example.com', 'changeme');
-
-    const roomIds: string[] = [];
-    for (let i = 0; i < 2; i++) {
-      const createResp = await page.request.post(
-        `${ELEMENT_URL}/_matrix/client/v3/createRoom`,
-        {
-          headers: { Authorization: `Bearer ${session.accessToken}`, 'Content-Type': 'application/json' },
-          data: { visibility: 'private', preset: 'private_chat' },
-        },
-      );
-      expect(createResp.status()).toBe(200);
-      const { room_id } = await createResp.json();
-      roomIds.push(room_id);
-    }
-
-    await page.reload();
     await dismissKeyDialog(page);
 
-    const sidebarOptions = page.getByRole('option', { name: /open room|öffne den chat/i });
-    await expect(sidebarOptions.first()).toBeVisible({ timeout: 30_000 });
-    const count = await sidebarOptions.count();
-    expect(count, 'at least 2 room tiles must be visible').toBeGreaterThanOrEqual(2);
+    const ts = Date.now();
+    const names = [`nav-a-${ts}`, `nav-b-${ts}`];
 
-    // When: click between rooms — compose box renders for each
-    const composeBox = page
-      .locator('[contenteditable="true"][data-testid="message-composer-input"]')
-      .or(page.locator('.mx_SendMessageComposer [contenteditable="true"]'))
-      .first();
+    for (const name of names) {
+      const resp = await page.request.post(`${ELEMENT_URL}/_matrix/client/v3/createRoom`, {
+        headers: { Authorization: `Bearer ${session.accessToken}`, 'Content-Type': 'application/json' },
+        data: { name, visibility: 'private', preset: 'private_chat' },
+      });
+      expect(resp.status()).toBe(200);
+    }
 
-    // Click first room
-    await sidebarOptions.first().click();
-    // Then: compose box visible (inside the room, no loader blocking)
-    await expect(composeBox).toBeVisible({ timeout: 15_000 });
+    const roomHeader = page.locator('.mx_RoomHeader, [data-testid="room-header"]').first();
 
-    // Click second room
-    await sidebarOptions.nth(1).click();
-    // Then: compose box still visible (navigated correctly)
-    await expect(composeBox).toBeVisible({ timeout: 15_000 });
+    // Click first room tile (60 s: accounts for slow sync after suite warm-up)
+    const tile1 = page.getByText(names[0], { exact: false }).first();
+    await expect(tile1).toBeVisible({ timeout: 60_000 });
+    await tile1.click();
+    await expect(roomHeader).toBeVisible({ timeout: 15_000 });
+
+    // Click second room tile
+    const tile2 = page.getByText(names[1], { exact: false }).first();
+    await expect(tile2).toBeVisible({ timeout: 10_000 });
+    await tile2.click();
+    await expect(roomHeader).toBeVisible({ timeout: 15_000 });
   });
 });

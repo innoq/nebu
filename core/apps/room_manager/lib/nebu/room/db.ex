@@ -410,4 +410,32 @@ defmodule Nebu.Room.DB do
   end
 
   defp decode_token(_), do: :empty
+
+  @doc """
+  Returns the room name from the most recent m.room.name event, or {:error, :not_found}.
+
+  Content is stored as a JSONB string (Postgrex encodes the map as a JSON string before
+  inserting, so the JSONB column contains a string value, not an object). The query handles
+  both forms:
+    - JSONB object  {"name": "…"}  → content->>'name' works directly
+    - JSONB string  "{"name":"…"}" → (content#>>'{}')::jsonb->>'name' extracts via the
+                                     text path operator first
+  """
+  @spec get_room_name(String.t()) :: {:ok, String.t()} | {:error, :not_found | term()}
+  def get_room_name(room_id) do
+    sql = """
+    SELECT CASE
+      WHEN jsonb_typeof(content) = 'object' THEN content->>'name'
+      ELSE ((content#>>'{}')::jsonb)->>'name'
+    END
+    FROM events
+    WHERE room_id = $1 AND event_type = 'm.room.name'
+    ORDER BY origin_server_ts DESC LIMIT 1
+    """
+    case Ecto.Adapters.SQL.query(Nebu.Repo, sql, [room_id]) do
+      {:ok, %{rows: [[name]]}} when not is_nil(name) -> {:ok, name}
+      {:ok, _} -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
 end

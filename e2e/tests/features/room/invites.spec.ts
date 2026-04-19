@@ -26,7 +26,7 @@ import { isElementReachable, isDexReachable, dismissKeyDialog } from '../../fixt
 // ---------------------------------------------------------------------------
 
 test.describe('Room Invites — render and decline (AC 3, Story 4-29)', () => {
-  test.setTimeout(120_000);
+  test.setTimeout(150_000);
 
   test.beforeAll(async () => {
     const [elemOk, dexOk] = await Promise.all([isElementReachable(), isDexReachable()]);
@@ -59,16 +59,29 @@ test.describe('Room Invites — render and decline (AC 3, Story 4-29)', () => {
 
     expect(marieSession.accessToken, 'marie must be logged in').toBeTruthy();
 
-    // When: marie creates a room and invites alex
+    // When: marie creates a named room and invites alex
+    const roomName = `invite-test-${Date.now()}`;
     const createResp = await page.request.post(
       `${ELEMENT_URL}/_matrix/client/v3/createRoom`,
       {
         headers: { Authorization: `Bearer ${marieSession.accessToken}`, 'Content-Type': 'application/json' },
-        data: { visibility: 'private', preset: 'private_chat' },
+        data: { name: roomName, visibility: 'private', preset: 'private_chat' },
       },
     );
     expect(createResp.status(), 'marie must be able to createRoom').toBe(200);
     const { room_id: roomId } = await createResp.json();
+
+    // Set up sync interception BEFORE sending invite (network-first — Murat TEA).
+    // Invites don't trigger a :pg broadcast, so the long-poll runs its full 30 s.
+    // We wait up to 35 s for the sync response that includes rooms.invite[roomId].
+    const syncWithInvitePromise = page.waitForResponse(async (resp) => {
+      if (!resp.url().includes('/_matrix/client/v3/sync')) return false;
+      if (!resp.ok()) return false;
+      try {
+        const body = await resp.json();
+        return body?.rooms?.invite?.[roomId] !== undefined;
+      } catch { return false; }
+    });
 
     const inviteResp = await page.request.post(
       `${ELEMENT_URL}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/invite`,
@@ -79,17 +92,23 @@ test.describe('Room Invites — render and decline (AC 3, Story 4-29)', () => {
     );
     expect(inviteResp.status(), 'POST /invite must return 200').toBe(200);
 
-    // Then: next incremental sync delivers rooms.invite
-    // alex's sidebar shows the room in invite state within 20 s
-    // Element Web shows invites as options in the sidebar (same role as regular rooms)
-    // or in an "Invites" section. We check for any new option appearing.
-    const sidebarOptions = page.getByRole('option', { name: /open room|öffne den chat|invited/i });
-    await expect(sidebarOptions.first()).toBeVisible({ timeout: 20_000 });
+    // Wait for sync to deliver rooms.invite (long-poll max 30 s + margin)
+    await Promise.race([
+      syncWithInvitePromise,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Invite not delivered in sync within 35 s')), 35_000)
+      ),
+    ]);
+
+    // Invite tile with the room name must now be visible
+    await expect(
+      page.getByText(roomName, { exact: false }).first(),
+    ).toBeVisible({ timeout: 5_000 });
   });
 
   // ── [P0] Test 2: Decline invite removes from sidebar ─────────────────────
 
-  test('[P0] Decline invite: POST /leave → invite tile gone within 10 s', async ({ page }) => {
+  test('[P0] Decline invite: POST /leave → invite tile disappears within 10 s', async ({ page }) => {
     // Tests the same :pg broadcast path as room-lifecycle leave test (AC 2 test 2).
     //
     // Given: alex is logged in and has a pending invite from marie
@@ -105,31 +124,59 @@ test.describe('Room Invites — render and decline (AC 3, Story 4-29)', () => {
     await mariePage.close();
     await marieContext.close();
 
-    // marie creates room and invites alex
+    // marie creates a named room and invites alex
+    const declineRoomName = `decline-test-${Date.now()}`;
     const createResp = await page.request.post(
       `${ELEMENT_URL}/_matrix/client/v3/createRoom`,
       {
         headers: { Authorization: `Bearer ${marieSession.accessToken}`, 'Content-Type': 'application/json' },
-        data: { visibility: 'private', preset: 'private_chat' },
+        data: { name: declineRoomName, visibility: 'private', preset: 'private_chat' },
       },
     );
     expect(createResp.status()).toBe(200);
     const { room_id: roomId } = await createResp.json();
 
-    const inviteResp = await page.request.post(
+    // Set up sync interception BEFORE sending invite
+    const syncWithInvitePromise = page.waitForResponse(async (resp) => {
+      if (!resp.url().includes('/_matrix/client/v3/sync')) return false;
+      if (!resp.ok()) return false;
+      try {
+        const body = await resp.json();
+        return body?.rooms?.invite?.[roomId] !== undefined;
+      } catch { return false; }
+    });
+
+    await page.request.post(
       `${ELEMENT_URL}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/invite`,
       {
         headers: { Authorization: `Bearer ${marieSession.accessToken}`, 'Content-Type': 'application/json' },
         data: { user_id: alexSession.userId },
       },
     );
-    expect(inviteResp.status()).toBe(200);
 
-    // Wait for invite to appear in alex's sidebar
-    const sidebarOptions = page.getByRole('option', { name: /open room|öffne den chat|invited/i });
-    await expect(sidebarOptions.first()).toBeVisible({ timeout: 20_000 });
-    const countWithInvite = await sidebarOptions.count();
-    expect(countWithInvite).toBeGreaterThan(0);
+    // Wait for sync to deliver rooms.invite (long-poll max 30 s + margin)
+    await Promise.race([
+      syncWithInvitePromise,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Invite not delivered in sync within 35 s')), 35_000)
+      ),
+    ]);
+
+    // Invite tile must now be visible (Element processes sync response asynchronously)
+    await expect(
+      page.getByText(declineRoomName, { exact: false }).first(),
+      'invite tile must appear before decline',
+    ).toBeVisible({ timeout: 30_000 });
+
+    // Set up sync interception BEFORE declining (network-first pattern — Murat TEA)
+    const syncWithLeavePromise = page.waitForResponse(async (resp) => {
+      if (!resp.url().includes('/_matrix/client/v3/sync')) return false;
+      if (!resp.ok()) return false;
+      try {
+        const body = await resp.json();
+        return body?.rooms?.leave?.[roomId] !== undefined;
+      } catch { return false; }
+    });
 
     // When: alex declines via POST /rooms/{roomId}/leave
     const leaveResp = await page.request.post(
@@ -141,7 +188,17 @@ test.describe('Room Invites — render and decline (AC 3, Story 4-29)', () => {
     );
     expect(leaveResp.status(), 'POST /leave (decline) must return 200').toBe(200);
 
-    // Then: invite tile gone within 10 s (same :pg broadcast timing as leave-room test)
-    await expect(sidebarOptions).toHaveCount(countWithInvite - 1, { timeout: 10_000 });
+    // Primary assertion: sync must deliver rooms.leave[roomId] within 10 s.
+    // emit_decline_event inserts m.room.member leave into events table + broadcasts
+    // to :pg → fetch_delta_rooms finds it even across sync-cycle boundaries (race-proof).
+    // Without the fix: long-poll sleeps 30 s → timeout fires → FAIL.
+    const syncResp = await Promise.race([
+      syncWithLeavePromise,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Sync did not deliver rooms.leave within 10 s')), 10_000)
+      ),
+    ]);
+    const syncBody = await (syncResp as Awaited<typeof syncWithLeavePromise>).json();
+    expect(syncBody.rooms?.leave?.[roomId], 'rooms.leave must contain the declined room').toBeDefined();
   });
 });
