@@ -24,6 +24,17 @@ import (
 // ErrOIDCConfigMissing is returned when required OIDC configuration is absent from server_config.
 var ErrOIDCConfigMissing = errors.New("OIDC configuration missing in server_config")
 
+// ErrAlreadyCompleted is returned by CompleteBootstrap when bootstrap_completed is already set.
+// The handler maps this sentinel to 403 Forbidden (defense-in-depth against replay attacks).
+var ErrAlreadyCompleted = errors.New("bootstrap already completed")
+
+// sqlQuerier is a minimal interface satisfied by both *sql.DB and *sql.Tx.
+// It allows internal DB helpers to be called within a transaction or standalone.
+type sqlQuerier interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
 // ServerConfigReader reads and writes config from/to server_config.
 type ServerConfigReader interface {
 	LoadOIDCConfig(ctx context.Context) (issuer, clientID, clientSecret string, err error)
@@ -105,7 +116,14 @@ func (r *postgresServerConfigReader) SaveAdminGroupClaim(ctx context.Context, cl
 // Returns an error if bootstrap was already completed (0 rows affected) — this
 // prevents privilege escalation via mode=bootstrap replay after initial setup.
 func (r *postgresServerConfigReader) CompleteBootstrap(ctx context.Context) error {
-	result, err := r.db.ExecContext(ctx,
+	return completeBootstrapTx(ctx, r.db)
+}
+
+// completeBootstrapTx executes the CompleteBootstrap write via the given sqlQuerier
+// (which may be a *sql.Tx or a *sql.DB). Returns ErrAlreadyCompleted when the row
+// already exists (ON CONFLICT DO NOTHING → 0 rows affected).
+func completeBootstrapTx(ctx context.Context, q sqlQuerier) error {
+	result, err := q.ExecContext(ctx,
 		`INSERT INTO server_config (key, value, set_at) VALUES ($1, $2, $3)
 		 ON CONFLICT (key) DO NOTHING`,
 		"bootstrap_completed", "true", time.Now().UnixMilli())
@@ -117,48 +135,70 @@ func (r *postgresServerConfigReader) CompleteBootstrap(ctx context.Context) erro
 		return err
 	}
 	if rows == 0 {
-		return errors.New("bootstrap already completed")
+		return ErrAlreadyCompleted
 	}
 	return nil
 }
 
+// saveAdminGroupClaimTx executes the SaveAdminGroupClaim upsert via the given sqlQuerier.
+func saveAdminGroupClaimTx(ctx context.Context, q sqlQuerier, claimValue string) error {
+	_, err := q.ExecContext(ctx,
+		`INSERT INTO server_config (key, value, set_at) VALUES ('admin_group_claim', $1, $2)
+		 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, set_at = EXCLUDED.set_at`,
+		claimValue, time.Now().UnixMilli())
+	return err
+}
+
 // AdminAuth handles PKCE-protected OIDC Authorization Code flow for the Admin UI.
 type AdminAuth struct {
-	provider           *auth.Provider
-	clientID           string
-	clientSecret       string
-	claimName          string // from cfg.OIDCClaimRole (legacy env-var fallback)
-	secret             []byte // HMAC key — same internalSecret as PSK
-	configReader       ServerConfigReader
-	tmpl               *TemplateHandler
-	draftStore         BootstrapDraftStore    // for bootstrap claim-selection flow
-	bootstrapPersister BootstrapPersister     // for saving bootstrap config during claim selection
-	bootstrapChecker   BootstrapStatusChecker // guards mode=bootstrap replay after completion
+	provider         *auth.Provider
+	clientID         string
+	clientSecret     string
+	claimName        string // from cfg.OIDCClaimRole (legacy env-var fallback)
+	secret           []byte // HMAC key — same internalSecret as PSK
+	configReader     ServerConfigReader
+	tmpl             *TemplateHandler
+	draftStore       BootstrapDraftStore    // for bootstrap claim-selection flow
+	bootstrapChecker BootstrapStatusChecker // guards mode=bootstrap replay after completion
+	// runInTx executes fn inside a transaction. On success fn must return nil and the
+	// caller commits; on error the transaction is rolled back before returning.
+	// Injected at construction time — production uses *sql.Tx, tests inject a fake.
+	runInTx func(ctx context.Context, fn func(q sqlQuerier) error) error
 }
 
 // NewAdminAuth creates an AdminAuth instance.
 func NewAdminAuth(provider *auth.Provider, clientID, clientSecret, claimName string, secret []byte, db *sql.DB, tmpl *TemplateHandler) *AdminAuth {
 	var reader ServerConfigReader
 	var draft BootstrapDraftStore
-	var persister BootstrapPersister
 	var checker BootstrapStatusChecker
+	var runInTx func(ctx context.Context, fn func(q sqlQuerier) error) error
 	if db != nil {
 		reader = &postgresServerConfigReader{db: db, secret: secret}
 		draft = &postgresBootstrapDraftStore{db: db}
-		persister = &postgresBootstrapPersister{db: db}
 		checker = NewPostgresBootstrapChecker(db)
+		runInTx = func(ctx context.Context, fn func(q sqlQuerier) error) error {
+			tx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+			if err != nil {
+				return err
+			}
+			defer tx.Rollback() //nolint:errcheck // best-effort rollback; commit error is returned below
+			if err := fn(tx); err != nil {
+				return err
+			}
+			return tx.Commit()
+		}
 	}
 	return &AdminAuth{
-		provider:           provider,
-		clientID:           clientID,
-		clientSecret:       clientSecret,
-		claimName:          claimName,
-		secret:             secret,
-		configReader:       reader,
-		tmpl:               tmpl,
-		draftStore:         draft,
-		bootstrapPersister: persister,
-		bootstrapChecker:   checker,
+		provider:         provider,
+		clientID:         clientID,
+		clientSecret:     clientSecret,
+		claimName:        claimName,
+		secret:           secret,
+		configReader:     reader,
+		tmpl:             tmpl,
+		draftStore:       draft,
+		bootstrapChecker: checker,
+		runInTx:          runInTx,
 	}
 }
 
@@ -594,7 +634,7 @@ func (a *AdminAuth) ClaimSelectionHandler(w http.ResponseWriter, r *http.Request
 		selectedClaim = "instance_admin"
 	}
 
-	if a.draftStore == nil || a.configReader == nil || a.bootstrapPersister == nil {
+	if a.draftStore == nil || a.configReader == nil || a.runInTx == nil {
 		http.Error(w, "bootstrap not available", http.StatusServiceUnavailable)
 		return
 	}
@@ -608,14 +648,7 @@ func (a *AdminAuth) ClaimSelectionHandler(w http.ResponseWriter, r *http.Request
 	}
 	email, _, _ := a.draftStore.LoadDraft(r.Context(), "bootstrap_email")
 
-	// Save admin_group_claim to server_config.
-	if err := a.configReader.SaveAdminGroupClaim(r.Context(), selectedClaim); err != nil {
-		slog.Error("claim selection: failed to save admin_group_claim", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	// Load OIDC config from draft and persist to server_config.
+	// Load OIDC config from draft.
 	instanceName, _, _ := a.draftStore.LoadDraft(r.Context(), "instance_name")
 	oidcIssuer, _, _ := a.draftStore.LoadDraft(r.Context(), "oidc_issuer")
 	oidcClientID, _, _ := a.draftStore.LoadDraft(r.Context(), "oidc_client_id")
@@ -625,15 +658,33 @@ func (a *AdminAuth) ClaimSelectionHandler(w http.ResponseWriter, r *http.Request
 		http.Error(w, "internal error: bootstrap draft incomplete — please restart the wizard", http.StatusInternalServerError)
 		return
 	}
-	if err := a.bootstrapPersister.SaveBootstrapConfig(r.Context(), instanceName, oidcIssuer, oidcClientID, encryptedSecret); err != nil {
-		slog.Error("claim selection: failed to save bootstrap config", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
 
-	// CompleteBootstrap: writes bootstrap_completed = true, ending bootstrap mode.
-	if err := a.configReader.CompleteBootstrap(r.Context()); err != nil {
-		slog.Error("claim selection: failed to complete bootstrap", "err", err)
+	// AC1: SaveBootstrapConfig, SaveAdminGroupClaim, ClearDraft, and CompleteBootstrap
+	// run inside a single transaction. If any step fails the transaction is rolled back
+	// and no server_config changes persist.
+	txErr := a.runInTx(r.Context(), func(q sqlQuerier) error {
+		if err := saveBootstrapConfigTx(r.Context(), q, instanceName, oidcIssuer, oidcClientID, encryptedSecret); err != nil {
+			return fmt.Errorf("save bootstrap config: %w", err)
+		}
+		if err := saveAdminGroupClaimTx(r.Context(), q, selectedClaim); err != nil {
+			return fmt.Errorf("save admin group claim: %w", err)
+		}
+		// AC4: ClearDraft runs inside the same TX — its failure aborts the transaction.
+		if err := clearDraftTx(r.Context(), q); err != nil {
+			return fmt.Errorf("clear draft: %w", err)
+		}
+		// completeBootstrapTx is the commit sentinel — returns ErrAlreadyCompleted on replay.
+		if err := completeBootstrapTx(r.Context(), q); err != nil {
+			return err // preserve ErrAlreadyCompleted sentinel unwrapped
+		}
+		return nil
+	})
+	if errors.Is(txErr, ErrAlreadyCompleted) {
+		slog.Error("claim selection: bootstrap already completed", "err", txErr)
+		http.Error(w, "Bootstrap already completed", http.StatusForbidden)
+		return
+	} else if txErr != nil {
+		slog.Error("claim selection: transaction failed", "err", txErr)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
@@ -659,11 +710,6 @@ func (a *AdminAuth) ClaimSelectionHandler(w http.ResponseWriter, r *http.Request
 		Secure:   r.TLS != nil,
 		SameSite: http.SameSiteLaxMode,
 	})
-
-	// Clear bootstrap draft (non-fatal on failure).
-	if err := a.draftStore.ClearDraft(r.Context()); err != nil {
-		slog.Warn("claim selection: failed to clear bootstrap draft", "err", err)
-	}
 
 	http.Redirect(w, r, "/admin/dashboard", http.StatusSeeOther)
 }

@@ -1,5 +1,9 @@
 # Deferred Work
 
+## Deferred from: code review of story-5-11 (2026-04-20)
+
+- Draft reads outside TX boundary (TOCTOU): `ClaimSelectionHandler` reads draft data (instanceName, oidcIssuer, etc.) outside the transaction, then writes them inside the TX. A concurrent request could theoretically read stale draft data. Pre-existing; bootstrap runs exactly once by a single admin and Story 5.10 guards the entry points.
+
 ## Deferred from: code review of story-4-4 (2026-04-03)
 
 - Private key stored in `:persistent_term` without access control — acknowledged MVP limitation; Phase 2 must persist key to DB/disk to survive restarts.

@@ -281,8 +281,23 @@ func (p *postgresBootstrapPersister) SaveBootstrapConfig(ctx context.Context, in
 		return fmt.Errorf("begin transaction: %w", err)
 	}
 
+	if err := saveBootstrapConfigTx(ctx, tx, instanceName, oidcIssuer, oidcClientID, encryptedSecret); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit transaction: %w", err)
+	}
+
+	return nil
+}
+
+// saveBootstrapConfigTx writes the bootstrap config rows via the given sqlQuerier
+// (which may be a *sql.Tx or a *sql.DB). No commit/rollback is performed here.
+func saveBootstrapConfigTx(ctx context.Context, q sqlQuerier, instanceName, oidcIssuer, oidcClientID, encryptedSecret string) error {
 	nowMs := time.Now().UnixMilli()
-	// Note: bootstrap_completed is NOT set here — it is written by CallbackHandler
+	// Note: bootstrap_completed is NOT set here — it is written by ClaimSelectionHandler
 	// after the first successful admin login (mode=bootstrap), ensuring the admin
 	// identity is confirmed before the instance is considered fully bootstrapped.
 	rows := []struct{ key, value string }{
@@ -293,19 +308,20 @@ func (p *postgresBootstrapPersister) SaveBootstrapConfig(ctx context.Context, in
 	}
 
 	for _, row := range rows {
-		if _, err := tx.ExecContext(ctx,
+		if _, err := q.ExecContext(ctx,
 			`INSERT INTO server_config (key, value, set_at) VALUES ($1, $2, $3)
              ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, set_at = EXCLUDED.set_at`,
 			row.key, row.value, nowMs,
 		); err != nil {
-			_ = tx.Rollback()
 			return fmt.Errorf("inserting %s: %w", row.key, err)
 		}
 	}
 
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit transaction: %w", err)
-	}
-
 	return nil
+}
+
+// clearDraftTx deletes all bootstrap_draft rows via the given sqlQuerier.
+func clearDraftTx(ctx context.Context, q sqlQuerier) error {
+	_, err := q.ExecContext(ctx, `DELETE FROM bootstrap_draft`)
+	return err
 }
