@@ -197,7 +197,15 @@ func (h *LoginHandler) GetSSORedirect(w http.ResponseWriter, r *http.Request) {
 		Scopes:       []string{oidc.ScopeOpenID, "profile", "email", "groups"},
 		Endpoint:     inner.Endpoint(),
 	}
-	authURL := oauth2Config.AuthCodeURL(state, oauth2.S256ChallengeOption(verifier))
+	// prompt=login forces Dex to re-authenticate the user even if an active Dex
+	// session cookie exists. Without this, Dex reuses the cached session and may
+	// return the same id_token that was already added to the denylist on logout,
+	// causing the first /sync after re-login to return 401 → Element lands on #/welcome.
+	// See: bugfix-logout-oidc-dex-session — OIDC Core 1.0 §3.1.2.1
+	authURL := oauth2Config.AuthCodeURL(state,
+		oauth2.S256ChallengeOption(verifier),
+		oauth2.SetAuthURLParam("prompt", "login"),
+	)
 	http.Redirect(w, r, authURL, http.StatusFound)
 }
 
