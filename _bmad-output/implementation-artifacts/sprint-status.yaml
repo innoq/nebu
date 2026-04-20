@@ -41,7 +41,8 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-20
-last_updated: 2026-04-15
+last_updated: 2026-04-20
+# stories 5-10 … 5-28 (Security Hardening) created from security audit findings: 2026-04-20
 # story 4-29 done (code review passed, 2 MINOR fixed): 2026-04-15
 # story 4-29 created: 4-29 → ready-for-dev: 2026-04-15
 # story 4-22 created: 4-22 → ready-for-dev: 2026-04-03
@@ -412,6 +413,8 @@ development_status:
 
   # ─────────────────────────────────────────────────────────────────────────
   # Epic 5: Compliance Officers Can Securely Request and Export Audited Communication Data
+  #         + Gateway Security Hardening (stories 5-10 … 5-28, added 2026-04-20
+  #         based on security audit of gateway/ — see review notes in epic-4 retro folder)
   # ─────────────────────────────────────────────────────────────────────────
   epic-5: backlog
   5-1-audit-log-schema-rls-aufbewahrungskonfiguration: backlog
@@ -423,6 +426,33 @@ development_status:
   5-7-atomare-dsgvo-deletion-key-loschung-audit-auch-bei-fehler: backlog
   5-8-operational-pii-anonymisierung-deleted-user: backlog
   5-9-gherkin-compliance-flow-end-to-end: backlog
+  # Security Hardening — Group A: Bootstrap Admin-Takeover Chain (CRITICAL)
+  5-10-bootstrap-mode-guard-replay-prevention: ready-for-dev
+  5-11-transactional-bootstrap-completion: ready-for-dev
+  5-12-server-side-admin-session-revocation: ready-for-dev
+  # Security Hardening — Group B: Web Hardening
+  5-13-csrf-middleware-admin-post: ready-for-dev
+  5-14-security-headers-middleware: ready-for-dev
+  5-15-secure-cookie-tls-terminator: ready-for-dev
+  # Security Hardening — Group C: OIDC Hardening
+  5-16-oidc-nonce-verification: ready-for-dev
+  5-17-oidc-issuer-https-provider-cache: ready-for-dev
+  5-18-jwt-algorithm-pinning: ready-for-dev
+  5-19-admin-error-message-sanitization: ready-for-dev
+  # Security Hardening — Group D: Matrix API DoS Protection
+  5-20-request-body-limits-server-timeouts: ready-for-dev
+  5-21-per-ip-rate-limiting: ready-for-dev
+  # Security Hardening — Group E: Auth Middleware
+  5-22-constant-time-psk-compare: ready-for-dev
+  5-23-jwt-denylist-after-verify: ready-for-dev
+  # Security Hardening — Group F: SSO
+  5-24-sso-redirect-scheme-allowlist: ready-for-dev
+  5-25-sso-logintoken-ttl-fix: ready-for-dev
+  # Security Hardening — Group G: Input Validation
+  5-26-user-directory-wildcard-escape: ready-for-dev
+  5-27-matrix-path-param-validation-minor-bundle: ready-for-dev
+  # Security Hardening — Group H: Pipeline / Process
+  5-28-security-review-pipeline-gate: ready-for-dev
   epic-5-retrospective: optional
 
   # ─────────────────────────────────────────────────────────────────────────
