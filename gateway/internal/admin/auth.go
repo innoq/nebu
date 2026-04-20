@@ -131,8 +131,9 @@ type AdminAuth struct {
 	secret             []byte // HMAC key — same internalSecret as PSK
 	configReader       ServerConfigReader
 	tmpl               *TemplateHandler
-	draftStore         BootstrapDraftStore // for bootstrap claim-selection flow
-	bootstrapPersister BootstrapPersister  // for saving bootstrap config during claim selection
+	draftStore         BootstrapDraftStore    // for bootstrap claim-selection flow
+	bootstrapPersister BootstrapPersister     // for saving bootstrap config during claim selection
+	bootstrapChecker   BootstrapStatusChecker // guards mode=bootstrap replay after completion
 }
 
 // NewAdminAuth creates an AdminAuth instance.
@@ -140,10 +141,12 @@ func NewAdminAuth(provider *auth.Provider, clientID, clientSecret, claimName str
 	var reader ServerConfigReader
 	var draft BootstrapDraftStore
 	var persister BootstrapPersister
+	var checker BootstrapStatusChecker
 	if db != nil {
 		reader = &postgresServerConfigReader{db: db, secret: secret}
 		draft = &postgresBootstrapDraftStore{db: db}
 		persister = &postgresBootstrapPersister{db: db}
+		checker = NewPostgresBootstrapChecker(db)
 	}
 	return &AdminAuth{
 		provider:           provider,
@@ -155,6 +158,7 @@ func NewAdminAuth(provider *auth.Provider, clientID, clientSecret, claimName str
 		tmpl:               tmpl,
 		draftStore:         draft,
 		bootstrapPersister: persister,
+		bootstrapChecker:   checker,
 	}
 }
 
@@ -272,6 +276,18 @@ func (a *AdminAuth) LoginStartHandler(w http.ResponseWriter, r *http.Request) {
 
 	mode := r.URL.Query().Get("mode") // "bootstrap" during initial setup
 
+	if mode == "bootstrap" && a.bootstrapChecker != nil {
+		active, err := a.bootstrapChecker.IsBootstrapActive(r.Context())
+		if err != nil {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+		if !active {
+			http.Error(w, "Bootstrap already completed", http.StatusForbidden)
+			return
+		}
+	}
+
 	sc := oidcStateCookie{
 		State:    state,
 		Verifier: verifier,
@@ -288,7 +304,7 @@ func (a *AdminAuth) LoginStartHandler(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     "admin_oidc_state",
 		Value:    cookieValue,
-		Path:     "/admin",
+		Path:     "/admin/callback",
 		MaxAge:   600,
 		HttpOnly: true,
 		Secure:   r.TLS != nil,
@@ -467,7 +483,7 @@ func (a *AdminAuth) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     "admin_oidc_state",
 		Value:    "",
-		Path:     "/admin",
+		Path:     "/admin/callback",
 		MaxAge:   -1,
 		HttpOnly: true,
 		Secure:   r.TLS != nil,

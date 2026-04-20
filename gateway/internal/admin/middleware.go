@@ -86,7 +86,7 @@ func SessionGuard(secret []byte) func(http.Handler) http.Handler {
 
 // BootstrapGuard returns a middleware that guards admin routes based on bootstrap state.
 // - If bootstrap is active and the request path is NOT /admin/bootstrap*, redirect 302 to /admin/bootstrap.
-// - If bootstrap is complete and the request path IS /admin/bootstrap*, redirect 302 to /admin/login.
+// - If bootstrap is complete and the request path IS /admin/bootstrap*, redirect 302 to /admin/dashboard.
 // - All other cases pass through to the next handler.
 // - On DB error, return 500 Internal Server Error.
 func BootstrapGuard(checker BootstrapStatusChecker) func(http.Handler) http.Handler {
@@ -108,7 +108,7 @@ func BootstrapGuard(checker BootstrapStatusChecker) func(http.Handler) http.Hand
 			}
 			if !active && isBootstrapPath {
 				// Already bootstrapped — redirect away from wizard
-				http.Redirect(w, r, "/admin/login", http.StatusFound)
+				http.Redirect(w, r, "/admin/dashboard", http.StatusFound)
 				return
 			}
 

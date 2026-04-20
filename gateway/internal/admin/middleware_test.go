@@ -50,12 +50,12 @@ func TestBootstrapGuard(t *testing.T) {
 			wantNext:        true,
 		},
 		{
-			name:            "complete + bootstrap path → redirect to login",
+			name:            "complete + bootstrap path → redirect to dashboard",
 			bootstrapActive: false,
 			checkerErr:      nil,
 			path:            "/admin/bootstrap",
 			wantCode:        http.StatusFound,
-			wantLocation:    "/admin/login",
+			wantLocation:    "/admin/dashboard",
 			wantNext:        false,
 		},
 		{

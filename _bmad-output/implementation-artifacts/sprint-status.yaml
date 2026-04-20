@@ -427,7 +427,7 @@ development_status:
   5-8-operational-pii-anonymisierung-deleted-user: backlog
   5-9-gherkin-compliance-flow-end-to-end: backlog
   # Security Hardening — Group A: Bootstrap Admin-Takeover Chain (CRITICAL)
-  5-10-bootstrap-mode-guard-replay-prevention: ready-for-dev
+  5-10-bootstrap-mode-guard-replay-prevention: review
   5-11-transactional-bootstrap-completion: ready-for-dev
   5-12-server-side-admin-session-revocation: ready-for-dev
   # Security Hardening — Group B: Web Hardening

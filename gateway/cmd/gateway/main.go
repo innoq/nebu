@@ -220,8 +220,8 @@ func main() {
 	mux.Handle("GET /admin/bootstrap", guard(http.HandlerFunc(bootstrapHandler.Handler)))
 	mux.Handle("POST /admin/bootstrap", guard(http.HandlerFunc(bootstrapHandler.StepHandler)))
 
-	// Claim selection — shown after OIDC callback in bootstrap mode (no guard: bootstrap_completed not yet set)
-	mux.HandleFunc("POST /admin/bootstrap/select-claim", adminAuth.ClaimSelectionHandler)
+	// Claim selection — behind BootstrapGuard: rejects replay once bootstrap_completed=true
+	mux.Handle("POST /admin/bootstrap/select-claim", guard(http.HandlerFunc(adminAuth.ClaimSelectionHandler)))
 
 	// Catch-all for unmatched /admin/* paths — redirect to bootstrap wizard if not yet set up,
 	// otherwise show 404 (Go 1.22+ mux: most specific route wins, so this only fires for unknown paths).

@@ -4,7 +4,7 @@ security_review: required
 
 # Story 5.10: Bootstrap Mode Guard — Replay Prevention
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -72,3 +72,31 @@ Combined → attacker redirects OIDC to their own IdP on the next admin login. T
 - `main.go:224` — replace `mux.HandleFunc("POST /admin/bootstrap/select-claim", …)` with `mux.Handle("POST /admin/bootstrap/select-claim", guard(http.HandlerFunc(…)))` where `guard` composes `BootstrapGuard` before the handler
 - `auth.go:288–296` — `cookie.Path = "/admin/callback"`
 - No migration needed
+
+---
+
+## Dev Agent Record
+
+### Implementation Notes
+
+- Added `bootstrapChecker BootstrapStatusChecker` field to `AdminAuth` struct
+- `NewAdminAuth` now instantiates `NewPostgresBootstrapChecker(db)` when `db != nil` and stores it as `bootstrapChecker`
+- `LoginStartHandler`: guard added after `mode` is read — when `mode == "bootstrap"` and `bootstrapChecker != nil`, calls `IsBootstrapActive`; returns 403 if inactive
+- `BootstrapGuard` (middleware.go): changed redirect target from `/admin/login` to `/admin/dashboard` when bootstrap is complete and path is a bootstrap path (AC3)
+- `LoginStartHandler` cookie `Path` changed from `/admin` to `/admin/callback` (AC4)
+- `CallbackHandler` state-cookie deletion `Path` also updated to `/admin/callback` for correctness
+- `POST /admin/bootstrap/select-claim` in `main.go` wrapped with `guard(http.HandlerFunc(...))` (AC2)
+- `bootstrap_guard_test.go` helper `newTestAdminAuthWithCheckerAndReader` uncommented the `a.bootstrapChecker = checker` line now that the field exists
+- Existing `TestBootstrapGuard` table-test case updated: "complete + bootstrap path → redirect to login" → "redirect to dashboard" to match AC3
+
+### Files Modified
+
+- `gateway/internal/admin/auth.go` — `AdminAuth` struct, `NewAdminAuth`, `LoginStartHandler` (guard + cookie Path), `CallbackHandler` (deletion cookie Path)
+- `gateway/internal/admin/middleware.go` — `BootstrapGuard` redirect target
+- `gateway/cmd/gateway/main.go` — `select-claim` route wrapped with guard
+- `gateway/internal/admin/bootstrap_guard_test.go` — wire bootstrapChecker in test helper
+- `gateway/internal/admin/middleware_test.go` — update expected redirect target in `TestBootstrapGuard`
+
+### Change Log
+
+- 2026-04-20: Story 5.10 implemented — bootstrap replay prevention: mode=bootstrap guard in LoginStartHandler, BootstrapGuard redirect to /admin/dashboard, cookie Path narrowed to /admin/callback, select-claim route behind BootstrapGuard
