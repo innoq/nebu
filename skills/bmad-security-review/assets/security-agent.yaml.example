@@ -1,0 +1,41 @@
+# .claude/security-agent.yaml
+# Optional configuration for the Kassandra security review agent.
+# Copy to .claude/security-agent.yaml and adjust. All keys are optional —
+# Kassandra uses the defaults below when the file is absent.
+
+# Model used for the review.
+# Opus for depth (default, recommended for per-story and epic-end reviews).
+# Sonnet for speed (CI / pre-commit quick scans — acceptable trade-off for LOW/MEDIUM classes).
+model: claude-opus-4-7
+
+# Severity at which the pipeline stops. One of: CRITICAL | HIGH
+# Default CRITICAL — HIGH produces a warning but does not block.
+# Set to HIGH for release-gate reviews where "narrow exploit path" is still unacceptable.
+blocking_severity: CRITICAL
+
+# Frameworks applied as lenses. Kassandra weights them by affected component automatically.
+# Removing an entry here disables that lens entirely — do so only with an explicit reason.
+frameworks:
+  - owasp-top10
+  - owasp-asvs-l2
+  - cwe-top25
+  - stride
+  - nist-sp-800-53
+  - nebu-invariants
+
+# Additional context files loaded during Phase 1.
+# All paths are relative to the project root.
+context_files:
+  - _bmad-output/planning-artifacts/architecture.md
+  - .claude/security-context.md
+
+# Paths that receive elevated scrutiny regardless of diff size.
+# Any staged file under one of these paths gets a closer look even if the
+# change appears trivial.
+sensitive_paths:
+  - gateway/internal/auth/
+  - gateway/internal/admin/
+  - gateway/internal/middleware/
+  - core/apps/signature/
+  - core/apps/permissions/
+  - gateway/migrations/

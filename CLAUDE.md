@@ -141,9 +141,11 @@ ADRs are tracked in `docs/architecture/adr/`:
 This project uses BMAD agents for structured development. The pipeline is:
 
 ```
-bmad-create-story  →  bmad-testarch-atdd  →  bmad-dev-story  →  bmad-testarch-test-review  →  bmad-code-review
-     (SM)                  (TEA)               (Dev)                    (TEA)                    (Review)
+bmad-create-story → bmad-testarch-atdd → bmad-dev-story → bmad-testarch-test-review → bmad-code-review → security-review*
+     (SM)              (TEA)               (Dev)              (TEA)                     (Review)         (conditional)
 ```
+
+`*` — Per-story security review runs conditional (see Gate 4 below); epic-end security review is mandatory.
 
 ### Gate 1 — Story Creation (`/bmad-create-story`)
 
@@ -181,6 +183,33 @@ The test review checks:
 - No cookie forging or DB-seeding shortcuts in E2E tests
 
 **MAJOR finding if:** Any acceptance criterion has zero test coverage.
+
+### Gate 4 — Security Review (SEC Gate 1 + SEC Gate 2)
+
+**Owner: Code Review Agent / Pipeline**
+
+Added 2026-04-20 after security audit found CRITICAL/HIGH findings that passed through Gates 1–3 across four epics.
+
+**SEC Gate 1 — Per-story (conditional):**
+
+Each story file declares in its frontmatter:
+
+```
+---
+security_review: required | optional | not-needed
+---
+```
+
+- `required` — pipeline runs a security-focused `/bmad-code-review` pass in a fresh subagent after Gate 3. CRITICAL/HIGH block the commit.
+- `optional` — user decides per-invocation.
+- `not-needed` — skipped.
+- Flag missing → auto-classified `required` if the staged diff touches `gateway/internal/{auth,middleware,admin,db}/`, `core/apps/{signature,permissions}/`, new routes in `cmd/gateway/main.go`, new SQL migrations, or Elixir code using `:crypto` / external input.
+
+**SEC Gate 2 — Epic-end (mandatory):**
+
+Before the retrospective, `/bmad-pipeline` runs a whole-epic security review against `git diff <epic-base>..HEAD`. The output is saved as `_bmad-output/implementation-artifacts/epic-{N}-security-review-{YYYY-MM-DD}.md` — always, even at zero findings (audit trail). CRITICAL/HIGH must become follow-up stories (or be explicitly accepted as a risk with written justification) before the epic is marked `done`.
+
+**Security scope (both gates, identical prompt):** SQL injection, XSS, CSRF on state-changing endpoints, auth bypass (missing middleware, IDOR), timing attacks on secret comparison, open redirects, missing body-size limits, missing rate limits, weak crypto primitives (md5/sha1/DES), plaintext secrets in logs, missing security headers, path traversal, JWT validation flaws (alg confusion, missing exp/aud/nonce).
 
 ### Epic Completion — Traceability
 
