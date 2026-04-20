@@ -160,6 +160,9 @@ type AdminAuth struct {
 	tmpl             *TemplateHandler
 	draftStore       BootstrapDraftStore    // for bootstrap claim-selection flow
 	bootstrapChecker BootstrapStatusChecker // guards mode=bootstrap replay after completion
+	// sessionStore backs the admin session with a server-side record (Story 5.12).
+	// nil means the legacy stateless cookie mode is active (backward-compat).
+	sessionStore AdminSessionStore
 	// runInTx executes fn inside a transaction. On success fn must return nil and the
 	// caller commits; on error the transaction is rolled back before returning.
 	// Injected at construction time — production uses *sql.Tx, tests inject a fake.
@@ -202,6 +205,12 @@ func NewAdminAuth(provider *auth.Provider, clientID, clientSecret, claimName str
 	}
 }
 
+// SetSessionStore injects the server-side session store into AdminAuth.
+// Call this after NewAdminAuth before the HTTP server starts.
+func (a *AdminAuth) SetSessionStore(store AdminSessionStore) {
+	a.sessionStore = store
+}
+
 type oidcStateCookie struct {
 	State    string `json:"state"`
 	Verifier string `json:"verifier"`
@@ -214,6 +223,13 @@ type adminSessionCookie struct {
 	Email string `json:"email"`
 	Role  string `json:"role"` // mapped system_role
 	Exp   int64  `json:"exp"`
+}
+
+// adminSessionSIDCookie is the new cookie format used when a server-side session
+// store is configured (Story 5.12). Only the opaque SID is stored in the cookie;
+// user_id and roles are read from the DB on every request.
+type adminSessionSIDCookie struct {
+	SID string `json:"sid"`
 }
 
 // signCookie returns base64url(payload) + "." + base64url(HMAC-SHA256(secret, base64url(payload))).
@@ -567,11 +583,53 @@ func (a *AdminAuth) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// AC6: cap session expiry to min(idToken.Exp, now+8h).
+	const maxSessionDuration = 8 * time.Hour
+	expiresAt := time.Now().Add(maxSessionDuration)
+	if idToken.Expiry.Before(expiresAt) {
+		expiresAt = idToken.Expiry
+	}
+
+	// AC2: if a server-side session store is wired, create a session row and store
+	// only the SID in the cookie. Fall back to the legacy stateless cookie when no
+	// store is configured (backward-compat for environments without the DB migration).
+	if a.sessionStore != nil {
+		sid, err := a.sessionStore.Create(r.Context(), sub, expiresAt)
+		if err != nil {
+			slog.Error("callback: failed to create admin session", "err", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+
+		sidPayload, err := json.Marshal(adminSessionSIDCookie{SID: sid})
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		maxAge := int(time.Until(expiresAt).Seconds())
+		if maxAge <= 0 {
+			maxAge = 1
+		}
+		// SameSite=Lax (not Strict): the OIDC callback is initiated cross-site (from Dex).
+		http.SetCookie(w, &http.Cookie{
+			Name:     "admin_session",
+			Value:    a.signCookie(sidPayload),
+			Path:     "/admin",
+			MaxAge:   maxAge,
+			HttpOnly: true,
+			Secure:   r.TLS != nil,
+			SameSite: http.SameSiteLaxMode,
+		})
+		http.Redirect(w, r, "/admin/dashboard", http.StatusSeeOther)
+		return
+	}
+
+	// Legacy stateless cookie (no session store configured).
 	sess := adminSessionCookie{
 		Sub:   sub,
 		Email: email,
 		Role:  "instance_admin",
-		Exp:   time.Now().Add(8 * time.Hour).Unix(),
+		Exp:   expiresAt.Unix(),
 	}
 	sessPayload, err := json.Marshal(sess)
 	if err != nil {
@@ -690,11 +748,43 @@ func (a *AdminAuth) ClaimSelectionHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	// Create admin session cookie — operator is now authenticated.
+	// If a server-side session store is wired, create an SID-based session row (Story 5.12).
+	expiresAt := time.Now().Add(8 * time.Hour)
+	if a.sessionStore != nil {
+		sid, err := a.sessionStore.Create(r.Context(), sub, expiresAt)
+		if err != nil {
+			slog.Error("claim selection: failed to create admin session", "err", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		sidPayload, err := json.Marshal(adminSessionSIDCookie{SID: sid})
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		maxAge := int(time.Until(expiresAt).Seconds())
+		if maxAge <= 0 {
+			maxAge = 1
+		}
+		http.SetCookie(w, &http.Cookie{
+			Name:     "admin_session",
+			Value:    a.signCookie(sidPayload),
+			Path:     "/admin",
+			MaxAge:   maxAge,
+			HttpOnly: true,
+			Secure:   r.TLS != nil,
+			SameSite: http.SameSiteLaxMode,
+		})
+		http.Redirect(w, r, "/admin/dashboard", http.StatusSeeOther)
+		return
+	}
+
+	// Legacy stateless cookie (no session store configured).
 	sess := adminSessionCookie{
 		Sub:   sub,
 		Email: email,
 		Role:  "instance_admin",
-		Exp:   time.Now().Add(8 * time.Hour).Unix(),
+		Exp:   expiresAt.Unix(),
 	}
 	sessPayload, err := json.Marshal(sess)
 	if err != nil {
@@ -710,13 +800,28 @@ func (a *AdminAuth) ClaimSelectionHandler(w http.ResponseWriter, r *http.Request
 		Secure:   r.TLS != nil,
 		SameSite: http.SameSiteLaxMode,
 	})
-
 	http.Redirect(w, r, "/admin/dashboard", http.StatusSeeOther)
 }
 
 // LogoutHandler handles GET /admin/logout.
-// Deletes the admin session cookie and redirects to /admin/login.
+// AC4: Revokes the server-side session (if a store is configured) before clearing the cookie.
+// Still returns 302 to /admin/login on success.
 func (a *AdminAuth) LogoutHandler(w http.ResponseWriter, r *http.Request) {
+	// AC4: revoke server-side session before clearing the cookie.
+	if a.sessionStore != nil {
+		if cookie, err := r.Cookie("admin_session"); err == nil {
+			if payload, err := a.verifyCookie(cookie.Value); err == nil {
+				var sidCookie adminSessionSIDCookie
+				if json.Unmarshal(payload, &sidCookie) == nil && sidCookie.SID != "" {
+					if err := a.sessionStore.Revoke(r.Context(), sidCookie.SID); err != nil {
+						slog.Warn("logout: failed to revoke session in store", "err", err)
+						// Continue to clear the cookie regardless — best-effort revocation.
+					}
+				}
+			}
+		}
+	}
+
 	http.SetCookie(w, &http.Cookie{
 		Name:     "admin_session",
 		Value:    "",

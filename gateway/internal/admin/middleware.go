@@ -84,6 +84,63 @@ func SessionGuard(secret []byte) func(http.Handler) http.Handler {
 	}
 }
 
+// SessionGuardWithStore returns a middleware that validates the admin_session cookie by
+// looking up the SID in the provided AdminSessionStore (AC3, Story 5.12).
+//
+// On missing or invalid cookie → 302 to /admin/login.
+// On SID not found in store → 302 to /admin/login.
+// On revoked_at IS NOT NULL → 302 to /admin/login.
+// On expires_at < NOW() → 302 to /admin/login.
+// On valid session → stores user_id in request context (read from DB, not cookie).
+func SessionGuardWithStore(secret []byte, store AdminSessionStore) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			cookie, err := r.Cookie("admin_session")
+			if err != nil {
+				http.Redirect(w, r, "/admin/login", http.StatusFound)
+				return
+			}
+			payload, err := verifySessionCookie(secret, cookie.Value)
+			if err != nil {
+				http.Redirect(w, r, "/admin/login", http.StatusFound)
+				return
+			}
+			var sidCookie adminSessionSIDCookie
+			if err := json.Unmarshal(payload, &sidCookie); err != nil || sidCookie.SID == "" {
+				slog.Warn("session guard (store): malformed SID cookie", "err", err)
+				http.Redirect(w, r, "/admin/login", http.StatusFound)
+				return
+			}
+
+			sess, err := store.Get(r.Context(), sidCookie.SID)
+			if err != nil {
+				slog.Warn("session guard (store): DB lookup error", "err", err)
+				http.Redirect(w, r, "/admin/login", http.StatusFound)
+				return
+			}
+			if sess == nil {
+				// Row not found.
+				http.Redirect(w, r, "/admin/login", http.StatusFound)
+				return
+			}
+			if sess.RevokedAt != nil {
+				// Session has been revoked.
+				http.Redirect(w, r, "/admin/login", http.StatusFound)
+				return
+			}
+			if !sess.ExpiresAt.After(time.Now()) {
+				// Session has expired in the DB.
+				http.Redirect(w, r, "/admin/login", http.StatusFound)
+				return
+			}
+
+			// Valid session: store user_id from DB into context.
+			ctx := context.WithValue(r.Context(), contextKeyAdminSub, sess.UserID)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
 // BootstrapGuard returns a middleware that guards admin routes based on bootstrap state.
 // - If bootstrap is active and the request path is NOT /admin/bootstrap*, redirect 302 to /admin/bootstrap.
 // - If bootstrap is complete and the request path IS /admin/bootstrap*, redirect 302 to /admin/dashboard.

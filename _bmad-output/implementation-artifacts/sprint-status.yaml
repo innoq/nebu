@@ -429,7 +429,7 @@ development_status:
   # Security Hardening — Group A: Bootstrap Admin-Takeover Chain (CRITICAL)
   5-10-bootstrap-mode-guard-replay-prevention: review
   5-11-transactional-bootstrap-completion: done
-  5-12-server-side-admin-session-revocation: ready-for-dev
+  5-12-server-side-admin-session-revocation: done
   # Security Hardening — Group B: Web Hardening
   5-13-csrf-middleware-admin-post: ready-for-dev
   5-14-security-headers-middleware: ready-for-dev

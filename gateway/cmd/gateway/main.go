@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/nebu/nebu/internal/admin"
 	"github.com/nebu/nebu/internal/auth"
@@ -185,7 +186,25 @@ func main() {
 	}
 
 	adminAuth := admin.NewAdminAuth(oidcProvider, cfg.OIDCClientID, cfg.OIDCClientSecret, cfg.OIDCClaimRole, []byte(internalSecret), bootstrapDB, tmplHandler)
-	sessionGuard := admin.SessionGuard([]byte(internalSecret))
+	sessionStore := db.NewPostgresAdminSessionStore(bootstrapDB)
+	adminAuth.SetSessionStore(sessionStore)
+	sessionGuard := admin.SessionGuardWithStore([]byte(internalSecret), sessionStore)
+
+	// AC5: Periodically clean up expired admin sessions (once per hour).
+	go func() {
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if err := sessionStore.CleanupExpired(context.Background()); err != nil {
+					slog.Warn("admin session cleanup failed", "err", err)
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 
 	// Legacy routes (backward compatibility — Story 3.10 will supersede)
 	mux.HandleFunc("GET /admin/auth/login", adminAuth.LoginHandler)
