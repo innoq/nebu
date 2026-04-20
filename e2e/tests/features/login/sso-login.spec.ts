@@ -212,6 +212,114 @@ test.describe('SSO Login — Element Web via Dex OIDC (Story 4-29)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Login → Logout → Re-Login regression (bugfix-logout-oidc-dex-session)
+// ---------------------------------------------------------------------------
+
+test.describe('SSO Logout / Re-Login regression (bugfix-logout-oidc-dex-session)', () => {
+  test.setTimeout(180_000);
+
+  test.beforeAll(async () => {
+    const [elemOk, dexOk] = await Promise.all([isElementReachable(), isDexReachable()]);
+    test.skip(
+      !elemOk,
+      `Element Web at ${ELEMENT_URL} is unreachable. Run: docker compose --profile e2e up -d --wait`,
+    );
+    test.skip(
+      !dexOk,
+      'Dex unreachable at localhost:5556 — add "127.0.0.1 dex" to /etc/hosts',
+    );
+  });
+
+  /**
+   * [P0] Login → Logout → Re-Login cycle — 3 iterations without cookie clearing.
+   *
+   * AC 2 — bugfix-logout-oidc-dex-session
+   *
+   * Before the fix (prompt=login missing in GetSSORedirect):
+   *   Dex reuses the same session cookie → returns the same id_token → the JWT
+   *   is already in the denylist → sync returns 401 → Element lands on #/welcome.
+   *
+   * After the fix (prompt=login added):
+   *   Dex is forced to re-authenticate the user on every SSO redirect →
+   *   fresh JWT with new iat/exp/jti → different denylist hash → sync succeeds →
+   *   Element shows the room list.
+   */
+  test('[P0] Login → Logout → Re-Login cycle survives 3 iterations without cookie clearing', async ({ page }) => {
+    const ITERATIONS = 3;
+
+    for (let iteration = 1; iteration <= ITERATIONS; iteration++) {
+      // ── Step 1: Navigate to Element and click Sign In ────────────────────
+      await page.goto(ELEMENT_URL);
+      await expect(
+        page.getByRole('heading', { name: /welcome to element|willkommen bei element/i }),
+      ).toBeVisible({ timeout: 15_000 });
+
+      await page.getByRole('link', { name: /sign in|anmelden/i }).click();
+      await expect(
+        page.getByRole('button', { name: /continue with sso|mit sso fortfahren|weiter mit sso/i }),
+      ).toBeVisible({ timeout: 15_000 });
+
+      // ── Step 2: Click SSO → Dex form must appear (forced by prompt=login) ─
+      await page.getByRole('button', { name: /continue with sso|mit sso fortfahren|weiter mit sso/i }).click();
+      await page.waitForURL(/dex.*\/auth/i, { timeout: 15_000 });
+
+      // With prompt=login, Dex MUST show the credential form even if a session cookie exists.
+      // If the form is missing, the test fails here — indicating prompt=login is not set.
+      await expect(page.locator('input[name="login"]')).toBeVisible({ timeout: 10_000 });
+
+      // ── Step 3: Fill credentials and submit ──────────────────────────────
+      await page.locator('input[name="login"]').fill('alex@example.com');
+      await page.locator('input[name="password"]').fill('changeme');
+      await page.locator('button[type="submit"]').click();
+
+      // ── Step 4: Back to Element — dismiss key dialog, assert room list ───
+      await page.waitForURL(/localhost:7070/, { timeout: 20_000 });
+      await dismissKeyDialog(page);
+
+      // AC 2: room list (Search placeholder) must be visible — NOT #/welcome.
+      // Before the fix this assertion fails on iteration 2+ because sync returns 401.
+      await expect(
+        page.locator('[placeholder*="Search"]').first(),
+      ).toBeVisible({ timeout: 20_000 });
+
+      // Explicit guard: if the URL contains #/welcome the bug is present.
+      const afterLoginUrl = page.url();
+      if (afterLoginUrl.includes('#/welcome')) {
+        throw new Error(
+          `Iteration ${iteration}/${ITERATIONS}: landed on #/welcome after SSO login.\n` +
+          'Root cause: Dex returned a cached (denylist\'d) id_token because prompt=login is missing.\n' +
+          'Fix: add oauth2.SetAuthURLParam("prompt", "login") to GetSSORedirect in sso.go',
+        );
+      }
+
+      // ── Step 5: Sign Out (skip on last iteration — no need to log out) ───
+      if (iteration < ITERATIONS) {
+        // Open user menu and sign out
+        const avatarButton = page.locator('[data-testid="user-menu-trigger"]')
+          .or(page.locator('.mx_UserMenu_userAvatarButton'))
+          .or(page.locator('[aria-label*="user menu" i]'))
+          .first();
+        await avatarButton.click({ timeout: 10_000 });
+
+        await page.getByRole('menuitem', { name: /sign out|abmelden/i }).click({ timeout: 10_000 });
+
+        // Confirm sign-out dialog if present (scoped inside dialog to avoid matching menu items)
+        const dialog = page.getByRole('dialog');
+        const confirmBtn = dialog.getByRole('button', { name: /sign out|abmelden/i });
+        if (await confirmBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
+          await confirmBtn.click();
+        }
+
+        // Wait for welcome screen — confirms logout completed
+        await expect(
+          page.getByRole('heading', { name: /welcome to element|willkommen bei element/i }),
+        ).toBeVisible({ timeout: 20_000 });
+      }
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // New endpoint smoke tests (Stories 5-1/5-2/5-3)
 // ---------------------------------------------------------------------------
 
@@ -309,111 +417,5 @@ test.describe('Element Web — New endpoint smoke tests (Stories 5-1/5-2/5-3)', 
 
     const errors = readMarkerErrors.filter(m => m.toLowerCase().includes('error'));
     expect(errors.length, `read_markers retry storm detected:\n${errors.join('\n')}`).toBe(0);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Login → Logout → Re-Login regression (bugfix-logout-oidc-dex-session)
-// ---------------------------------------------------------------------------
-//
-// Root cause: POST /logout only adds the JWT to the denylist but does NOT call
-// Dex's end_session_endpoint. Dex can reuse its session cookie and return the
-// same id_token, which is then rejected by JWTMiddleware (IsInvalidated=true)
-// on the first /sync → Element lands on #/welcome.
-//
-// Fix: prompt=login in GetSSORedirect forces Dex to always re-authenticate,
-// guaranteeing a fresh JWT with a new hash that is not in the denylist.
-//
-// This test reproduces the bug by cycling through login→logout→login three
-// times WITHOUT clearing cookies between iterations. All iterations must reach
-// the room list (search bar visible), never #/welcome.
-
-test.describe('SSO Logout / Re-Login regression (bugfix-logout-oidc-dex-session)', () => {
-  test.setTimeout(180_000);
-
-  test.beforeAll(async () => {
-    const [elemOk, dexOk] = await Promise.all([isElementReachable(), isDexReachable()]);
-    test.skip(
-      !elemOk,
-      `Element Web at ${ELEMENT_URL} is unreachable. Run: docker compose --profile e2e up -d --wait`,
-    );
-    test.skip(
-      !dexOk,
-      'Dex unreachable at localhost:5556 — add "127.0.0.1 dex" to /etc/hosts',
-    );
-  });
-
-  test('[P0] Login → Logout → Re-Login cycle survives 3 iterations without cookie clearing', async ({ page }) => {
-    const ITERATIONS = 3;
-
-    for (let i = 1; i <= ITERATIONS; i++) {
-      // ── Login via SSO ──────────────────────────────────────────────────────
-      await page.goto(ELEMENT_URL);
-
-      // Welcome screen
-      await expect(page.getByRole('heading', { name: /welcome to element|willkommen bei element/i }))
-        .toBeVisible({ timeout: 15_000 });
-
-      await page.getByRole('link', { name: /sign in|anmelden/i }).click();
-      await expect(page.getByRole('button', { name: /continue with sso|mit sso fortfahren|weiter mit sso/i }))
-        .toBeVisible({ timeout: 15_000 });
-
-      await page.getByRole('button', { name: /continue with sso|mit sso fortfahren|weiter mit sso/i }).click();
-
-      // Dex credential form — must appear on EVERY iteration when prompt=login is active.
-      // If this times out on iteration 2+, Dex is auto-authenticating (prompt=login missing).
-      await page.waitForURL(/dex.*\/auth/i, { timeout: 15_000 });
-      await expect(page.locator('input[name="login"]')).toBeVisible({ timeout: 10_000 });
-      await page.locator('input[name="login"]').fill('alex@example.com');
-      await page.locator('input[name="password"]').fill('changeme');
-      await page.locator('button[type="submit"]').click();
-
-      // Back to Element after SSO
-      await page.waitForURL(/localhost:7070/, { timeout: 20_000 });
-      await dismissKeyDialog(page);
-
-      // Room list must be visible — NOT #/welcome.
-      // If this fails on iteration 2+, the Dex session reuse + denylist bug is present.
-      const roomListVisible = await page
-        .locator('[placeholder*="Search"]').first()
-        .isVisible({ timeout: 15_000 })
-        .catch(() => false);
-
-      const currentUrl = page.url();
-      expect(
-        roomListVisible,
-        `Iteration ${i}: Expected room list (Search input), but page is at ${currentUrl}. ` +
-        `If URL contains #/welcome, the JWT denylist bug is present — check prompt=login in sso.go`,
-      ).toBe(true);
-
-      // ── Logout ─────────────────────────────────────────────────────────────
-      if (i < ITERATIONS) {
-        // Open user menu — try data-testid first, then class-based fallbacks
-        const avatarButton = page
-          .locator('[data-testid="user-menu-trigger"]')
-          .or(page.locator('.mx_UserMenu_userAvatarButton'))
-          .or(page.locator('[aria-label*="user menu" i]'))
-          .first();
-
-        await avatarButton.click({ timeout: 10_000 });
-
-        // Click "Sign out" in the menu
-        await page.getByRole('menuitem', { name: /sign out|abmelden/i })
-          .or(page.getByRole('button', { name: /sign out|abmelden/i }).first())
-          .click({ timeout: 10_000 });
-
-        // Confirm sign-out dialog (scoped to the dialog to avoid selector fragility)
-        const dialog = page.locator('[role="dialog"]');
-        const confirmBtn = dialog.getByRole('button', { name: /sign out|abmelden/i });
-        if (await confirmBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
-          await confirmBtn.click();
-        }
-
-        // Wait for welcome screen — confirms logout completed
-        await expect(
-          page.getByRole('heading', { name: /welcome to element|willkommen bei element/i }),
-        ).toBeVisible({ timeout: 15_000 });
-      }
-    }
   });
 });

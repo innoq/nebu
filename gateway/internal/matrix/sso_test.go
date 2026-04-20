@@ -14,7 +14,7 @@ import (
 // prompt=login to the OIDC authorization URL so that Dex always forces
 // fresh credential entry, regardless of any existing Dex session.
 //
-// AC 1 — bugfix-logout-oidc-dex-session
+// # AC 1 — bugfix-logout-oidc-dex-session
 //
 // Without prompt=login, Dex reuses a cached session and may return the same
 // id_token that was added to the denylist on logout. The first /sync after
@@ -26,7 +26,7 @@ func TestSSORedirect_PromptLoginParameter(t *testing.T) {
 
 	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
 	if provider.Inner() == nil {
-		t.Fatal("OIDC provider discovery failed: Inner() is nil — mock server may not be ready")
+		t.Fatal("OIDC discovery failed — provider.Inner() is nil; mock server may not be ready")
 	}
 
 	h := NewLoginHandler(LoginConfig{
