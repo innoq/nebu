@@ -71,6 +71,15 @@ func main() {
 
 	cfg := config.Load()
 
+	// Warn when NEBU_TRUSTED_PROXY=true is combined with a non-HTTPS OIDC issuer or public
+	// base URL. This combination almost always indicates a misconfiguration — the proxy
+	// terminates TLS but the application URLs still reference plain HTTP.
+	if os.Getenv("NEBU_TRUSTED_PROXY") == "true" {
+		if strings.HasPrefix(cfg.OIDCIssuer, "http://") || strings.HasPrefix(os.Getenv("NEBU_PUBLIC_BASE_URL"), "http://") {
+			slog.Warn("NEBU_TRUSTED_PROXY=true but OIDC issuer or public base URL uses http:// — likely misconfiguration")
+		}
+	}
+
 	// auth.NewProvider tolerates an unreachable OIDC provider at startup
 	// (logs warning, starts background retry). LoginHandler checks Inner() != nil.
 	oidcProvider := auth.NewProvider(ctx, cfg.OIDCIssuer)

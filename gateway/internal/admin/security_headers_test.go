@@ -106,9 +106,11 @@ func TestHSTS_OnlyOnHTTPS(t *testing.T) {
 }
 
 // TestHSTS_ViaForwardedProto verifies the X-Forwarded-Proto fallback:
-// When X-Forwarded-Proto: https is set (r.TLS is still nil — termination at proxy),
-// SecurityHeadersMiddleware must set HSTS.
+// When NEBU_TRUSTED_PROXY=true and X-Forwarded-Proto: https is set
+// (r.TLS is still nil — termination at proxy), SecurityHeadersMiddleware must set HSTS.
 func TestHSTS_ViaForwardedProto(t *testing.T) {
+	t.Setenv("NEBU_TRUSTED_PROXY", "true")
+
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -122,5 +124,25 @@ func TestHSTS_ViaForwardedProto(t *testing.T) {
 
 	if v := rr.Header().Get("Strict-Transport-Security"); v != expectedHSTS {
 		t.Errorf("Strict-Transport-Security via X-Forwarded-Proto: got %q, want %q", v, expectedHSTS)
+	}
+}
+
+// TestHSTS_ForwardedProtoIgnoredWithoutTrust verifies that X-Forwarded-Proto: https
+// is ignored when NEBU_TRUSTED_PROXY is not set — HSTS must be absent.
+func TestHSTS_ForwardedProtoIgnoredWithoutTrust(t *testing.T) {
+	t.Setenv("NEBU_TRUSTED_PROXY", "")
+
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := SecurityHeadersMiddleware()(next)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/dashboard", nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if v := rr.Header().Get("Strict-Transport-Security"); v != "" {
+		t.Errorf("Strict-Transport-Security must NOT be set when NEBU_TRUSTED_PROXY is unset, got %q", v)
 	}
 }

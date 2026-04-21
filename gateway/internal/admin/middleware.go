@@ -179,8 +179,7 @@ func BootstrapGuard(checker BootstrapStatusChecker) func(http.Handler) http.Hand
 
 // SecurityHeadersMiddleware sets standard security headers on every response to
 // mitigate clickjacking, MIME-sniffing, and XSS. HSTS is only added when the
-// connection is HTTPS (r.TLS != nil) or when X-Forwarded-Proto: https is set
-// by a terminating reverse proxy.
+// request is considered secure (direct TLS or trusted proxy with X-Forwarded-Proto: https).
 func SecurityHeadersMiddleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -188,7 +187,7 @@ func SecurityHeadersMiddleware() func(http.Handler) http.Handler {
 			w.Header().Set("X-Frame-Options", "DENY")
 			w.Header().Set("X-Content-Type-Options", "nosniff")
 			w.Header().Set("Referrer-Policy", "no-referrer")
-			if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+			if isRequestSecure(r) {
 				w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
 			}
 			next.ServeHTTP(w, r)
@@ -254,7 +253,7 @@ func CSRFMiddleware() func(http.Handler) http.Handler {
 						Path:     "/admin",
 						HttpOnly: false, // must be JS-readable for SPA scenarios
 						SameSite: http.SameSiteStrictMode,
-						Secure:   false, // Story 5.15 will enable HTTPS/Secure
+						Secure:   isRequestSecure(r),
 					})
 				}
 

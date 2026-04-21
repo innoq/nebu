@@ -258,9 +258,9 @@ func (a *AdminAuth) verifyCookie(value string) ([]byte, error) {
 }
 
 func (a *AdminAuth) buildOAuth2Config(r *http.Request) *oauth2.Config {
-	scheme := "https"
-	if r.TLS == nil {
-		scheme = "http"
+	scheme := "http"
+	if isRequestSecure(r) {
+		scheme = "https"
 	}
 	redirectURL := scheme + "://" + r.Host + "/admin/callback"
 	return &oauth2.Config{
@@ -308,9 +308,9 @@ func (a *AdminAuth) LoginStartHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	scheme := "https"
-	if r.TLS == nil {
-		scheme = "http"
+	scheme := "http"
+	if isRequestSecure(r) {
+		scheme = "https"
 	}
 
 	oauth2Config := &oauth2.Config{
@@ -363,7 +363,7 @@ func (a *AdminAuth) LoginStartHandler(w http.ResponseWriter, r *http.Request) {
 		Path:     "/admin/callback",
 		MaxAge:   600,
 		HttpOnly: true,
-		Secure:   r.TLS != nil,
+		Secure:   isRequestSecure(r),
 		SameSite: http.SameSiteLaxMode,
 	})
 
@@ -406,7 +406,7 @@ func (a *AdminAuth) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		Path:     "/admin/auth",
 		MaxAge:   600,
 		HttpOnly: true,
-		Secure:   r.TLS != nil,
+		Secure:   isRequestSecure(r),
 		SameSite: http.SameSiteLaxMode,
 	})
 
@@ -469,9 +469,9 @@ func (a *AdminAuth) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	scheme := "https"
-	if r.TLS == nil {
-		scheme = "http"
+	scheme := "http"
+	if isRequestSecure(r) {
+		scheme = "https"
 	}
 	// Scopes must match the original auth request so that Dex includes the groups claim
 	// in the token exchange response. The Go oauth2 library sends the scope parameter
@@ -542,7 +542,7 @@ func (a *AdminAuth) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		Path:     "/admin/callback",
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   r.TLS != nil,
+		Secure:   isRequestSecure(r),
 		SameSite: http.SameSiteLaxMode,
 	})
 
@@ -617,7 +617,7 @@ func (a *AdminAuth) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 			Path:     "/admin",
 			MaxAge:   maxAge,
 			HttpOnly: true,
-			Secure:   r.TLS != nil,
+			Secure:   isRequestSecure(r),
 			SameSite: http.SameSiteLaxMode,
 		})
 		http.Redirect(w, r, "/admin/dashboard", http.StatusSeeOther)
@@ -647,7 +647,7 @@ func (a *AdminAuth) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		Path:     "/admin",
 		MaxAge:   28800,
 		HttpOnly: true,
-		Secure:   r.TLS != nil,
+		Secure:   isRequestSecure(r),
 		SameSite: http.SameSiteLaxMode,
 	})
 
@@ -772,7 +772,7 @@ func (a *AdminAuth) ClaimSelectionHandler(w http.ResponseWriter, r *http.Request
 			Path:     "/admin",
 			MaxAge:   maxAge,
 			HttpOnly: true,
-			Secure:   r.TLS != nil,
+			Secure:   isRequestSecure(r),
 			SameSite: http.SameSiteLaxMode,
 		})
 		http.Redirect(w, r, "/admin/dashboard", http.StatusSeeOther)
@@ -797,7 +797,7 @@ func (a *AdminAuth) ClaimSelectionHandler(w http.ResponseWriter, r *http.Request
 		Path:     "/admin",
 		MaxAge:   28800,
 		HttpOnly: true,
-		Secure:   r.TLS != nil,
+		Secure:   isRequestSecure(r),
 		SameSite: http.SameSiteLaxMode,
 	})
 	http.Redirect(w, r, "/admin/dashboard", http.StatusSeeOther)
@@ -828,7 +828,7 @@ func (a *AdminAuth) LogoutHandler(w http.ResponseWriter, r *http.Request) {
 		Path:     "/admin",
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   r.TLS != nil,
+		Secure:   isRequestSecure(r),
 		SameSite: http.SameSiteStrictMode,
 	})
 	http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
