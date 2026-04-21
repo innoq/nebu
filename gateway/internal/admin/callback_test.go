@@ -66,12 +66,15 @@ func setupAdminOIDCServerWithRole(t *testing.T, role string) (*httptest.Server, 
 }
 
 // buildValidStateCookie creates a signed admin_oidc_state cookie value for use in tests.
+// Always includes the well-known testNonce so that CallbackHandler's AC5 empty-nonce
+// guard does not reject the cookie.
 func buildValidStateCookie(t *testing.T, a *AdminAuth, state string) string {
 	t.Helper()
 	sc := oidcStateCookie{
 		State:    state,
 		Verifier: "someverifier",
 		Exp:      time.Now().Add(10 * time.Minute).Unix(),
+		Nonce:    testNonce,
 	}
 	payload, err := json.Marshal(sc)
 	if err != nil {

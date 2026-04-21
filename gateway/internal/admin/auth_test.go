@@ -65,6 +65,12 @@ func setupAdminOIDCServer(t *testing.T) (*httptest.Server, *rsa.PrivateKey) {
 	return srv, privateKey
 }
 
+// testNonce is the well-known nonce used by all callback test helpers.
+// buildValidStateCookie embeds it in the state cookie; signAdminJWT embeds it
+// in the ID token. This ensures nonce verification passes for non-nonce-focused
+// tests while the AC5 guard still rejects cookies without any nonce.
+const testNonce = "test-nonce-for-callback-tests"
+
 // signAdminJWT creates a signed JWT with configurable role claim.
 func signAdminJWT(t *testing.T, issuer string, key *rsa.PrivateKey, expiry time.Time, claimName, claimValue string) string {
 	t.Helper()
@@ -84,6 +90,7 @@ func signAdminJWT(t *testing.T, issuer string, key *rsa.PrivateKey, expiry time.
 	}
 	extra := map[string]any{
 		"email":   "admin@example.com",
+		"nonce":   testNonce,
 		claimName: claimValue,
 	}
 	raw, err := josejwt.Signed(signer).Claims(cl).Claims(extra).Serialize()

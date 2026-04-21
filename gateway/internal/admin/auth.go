@@ -216,6 +216,7 @@ type oidcStateCookie struct {
 	Verifier string `json:"verifier"`
 	Exp      int64  `json:"exp"`  // Unix timestamp (seconds)
 	Mode     string `json:"mode"` // "bootstrap" during initial setup, empty otherwise
+	Nonce    string `json:"nonce"` // OIDC nonce claim (Story 5.16)
 }
 
 type adminSessionCookie struct {
@@ -330,6 +331,13 @@ func (a *AdminAuth) LoginStartHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	state := hex.EncodeToString(stateBytes)
 
+	nonceBytes := make([]byte, 32)
+	if _, err := rand.Read(nonceBytes); err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	nonce := base64.RawURLEncoding.EncodeToString(nonceBytes)
+
 	mode := r.URL.Query().Get("mode") // "bootstrap" during initial setup
 
 	if mode == "bootstrap" && a.bootstrapChecker != nil {
@@ -349,6 +357,7 @@ func (a *AdminAuth) LoginStartHandler(w http.ResponseWriter, r *http.Request) {
 		Verifier: verifier,
 		Exp:      time.Now().Add(10 * time.Minute).Unix(),
 		Mode:     mode,
+		Nonce:    nonce,
 	}
 	payload, err := json.Marshal(sc)
 	if err != nil {
@@ -367,7 +376,7 @@ func (a *AdminAuth) LoginStartHandler(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 	})
 
-	authURL := oauth2Config.AuthCodeURL(state, oauth2.S256ChallengeOption(verifier))
+	authURL := oauth2Config.AuthCodeURL(state, oauth2.S256ChallengeOption(verifier), oidc.Nonce(nonce))
 	http.Redirect(w, r, authURL, http.StatusFound)
 }
 
@@ -388,10 +397,18 @@ func (a *AdminAuth) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	state := hex.EncodeToString(stateBytes)
 
+	nonceBytes := make([]byte, 32)
+	if _, err := rand.Read(nonceBytes); err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	nonce := base64.RawURLEncoding.EncodeToString(nonceBytes)
+
 	sc := oidcStateCookie{
 		State:    state,
 		Verifier: verifier,
 		Exp:      time.Now().Add(10 * time.Minute).Unix(),
+		Nonce:    nonce,
 	}
 	payload, err := json.Marshal(sc)
 	if err != nil {
@@ -411,7 +428,7 @@ func (a *AdminAuth) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	})
 
 	oauth2Config := a.buildOAuth2Config(r)
-	authURL := oauth2Config.AuthCodeURL(state, oauth2.S256ChallengeOption(verifier))
+	authURL := oauth2Config.AuthCodeURL(state, oauth2.S256ChallengeOption(verifier), oidc.Nonce(nonce))
 	http.Redirect(w, r, authURL, http.StatusFound)
 }
 
@@ -501,6 +518,23 @@ func (a *AdminAuth) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("callback: token verification failed", "err", err)
 		http.Redirect(w, r, "/admin/login?error=auth_failed", http.StatusFound)
+		return
+	}
+
+	// AC5 (Story 5.16): reject cookies from before nonce was introduced (or
+	// from the legacy LoginHandler path that somehow lost its nonce). An empty
+	// nonce in the cookie would match an ID token that also has no nonce claim,
+	// which would silently bypass the verification.
+	if sc.Nonce == "" {
+		slog.Warn("callback: state cookie missing nonce — rejecting legacy/corrupt cookie")
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	// AC4 (Story 5.16): verify OIDC nonce to prevent token replay attacks.
+	if idToken.Nonce != sc.Nonce {
+		slog.Warn("callback: nonce mismatch", "expected", sc.Nonce, "got", idToken.Nonce)
+		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 
