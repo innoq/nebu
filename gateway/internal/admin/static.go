@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-//go:embed static/admin.css static/fonts static/vendor
+//go:embed static/admin.css static/fonts static/vendor static/js
 var staticFS embed.FS
 
 // ServeCSS serves the embedded admin.css with long-lived caching headers.
@@ -57,6 +57,25 @@ func ServeVendorFile(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/javascript")
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.WriteHeader(http.StatusOK)
+	w.Write(data) //nolint:errcheck
+}
+
+// ServeJSFile serves embedded JS files from static/js/.
+// Route: GET /admin/static/js/{filename}
+func ServeJSFile(w http.ResponseWriter, r *http.Request) {
+	filename := path.Base(r.PathValue("filename")) // path.Base prevents directory traversal
+	if !strings.HasSuffix(filename, ".js") {
+		http.Error(w, "Not Found", http.StatusNotFound)
+		return
+	}
+	data, err := staticFS.ReadFile("static/js/" + filename)
+	if err != nil {
+		http.Error(w, "Not Found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/javascript")
+	w.Header().Set("Cache-Control", "no-cache")
 	w.WriteHeader(http.StatusOK)
 	w.Write(data) //nolint:errcheck
 }

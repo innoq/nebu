@@ -64,7 +64,6 @@
             id="custom_claim"
             class="input input-bordered input-sm"
             placeholder="e.g. corp_admin"
-            oninput="document.querySelector('[name=admin_group_claim][type=radio]:checked') && (document.querySelector('[name=admin_group_claim][type=radio]:checked').checked = false); if(this.value) { document.getElementById('custom_claim_hidden').name='admin_group_claim'; document.getElementById('custom_claim_hidden').value=this.value; } else { document.getElementById('custom_claim_hidden').name=''; }"
           >
           <input type="hidden" id="custom_claim_hidden" name="" value="">
         </div>
@@ -103,4 +102,4 @@
 </div>
 {{ end }}
 
-{{ define "scripts" }}{{ end }}
+{{ define "scripts" }}<script src="/admin/static/js/bootstrap-claims.js"></script>{{ end }}

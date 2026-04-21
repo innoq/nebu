@@ -177,6 +177,25 @@ func BootstrapGuard(checker BootstrapStatusChecker) func(http.Handler) http.Hand
 	}
 }
 
+// SecurityHeadersMiddleware sets standard security headers on every response to
+// mitigate clickjacking, MIME-sniffing, and XSS. HSTS is only added when the
+// connection is HTTPS (r.TLS != nil) or when X-Forwarded-Proto: https is set
+// by a terminating reverse proxy.
+func SecurityHeadersMiddleware() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'")
+			w.Header().Set("X-Frame-Options", "DENY")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.Header().Set("Referrer-Policy", "no-referrer")
+			if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+				w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // generateCSRFToken returns a cryptographically random 32-byte base64url-encoded token.
 func generateCSRFToken() (string, error) {
 	var b [32]byte

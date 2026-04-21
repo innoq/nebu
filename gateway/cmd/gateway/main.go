@@ -241,6 +241,7 @@ func main() {
 	mux.HandleFunc("GET /admin/static/fonts/{filename}", admin.ServeFontFile)
 	mux.HandleFunc("GET /admin/static/vendor/{filename}", admin.ServeVendorFile)
 	mux.HandleFunc("GET /admin/static/metrics-widget.js", admin.ServeMetricsWidgetJS)
+	mux.HandleFunc("GET /admin/static/js/{filename}", admin.ServeJSFile)
 
 	// SSE live metrics endpoint — behind session guard (AC5: no CSRF on SSE/GET).
 	sseMetricsHandler := admin.NewSSEMetricsHandler(&coreMetricsAdapter{client: coreClient})
@@ -720,8 +721,20 @@ func main() {
 			w.Write([]byte(`{}`))
 		})))
 
+	// Story 5.14: Wrap the main mux so that every /admin/* response carries security headers.
+	// SecurityHeadersMiddleware is the outermost layer — even 302 redirects emitted by
+	// SessionGuard / BootstrapGuard will include the headers.
+	adminHandler := admin.SecurityHeadersMiddleware()(mux)
+	mainHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/admin") {
+			adminHandler.ServeHTTP(w, r)
+			return
+		}
+		mux.ServeHTTP(w, r)
+	})
+
 	slog.Info("HTTP server starting", "addr", ":8008")
-	if err := http.ListenAndServe(":8008", mux); err != nil {
+	if err := http.ListenAndServe(":8008", mainHandler); err != nil {
 		slog.Error("HTTP server failed", "err", err)
 		os.Exit(1)
 	}
