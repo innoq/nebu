@@ -341,6 +341,52 @@ test.describe('Error Pages', () => {
 });
 
 // ---------------------------------------------------------------------------
+// CSRF Protection — Story 5.13
+// ---------------------------------------------------------------------------
+// These assertions verify that:
+//   1. The csrf_token cookie is issued when visiting any bootstrap page
+//   2. Every form on the bootstrap page embeds a matching hidden _csrf field
+//   3. The token in the cookie matches the token in the hidden input (double-submit)
+
+test.describe('CSRF Protection — Bootstrap forms', () => {
+  // Precondition: stack must be in bootstrap state (bootstrap_completed not set).
+  // goToBootstrap() asserts the redirect to /admin/bootstrap — if the stack is already
+  // bootstrapped it will redirect to /admin/dashboard and the assertion will fail fast,
+  // surfacing the missing precondition rather than a spurious CSRF failure.
+  test.beforeEach(async ({ page }) => {
+    await goToBootstrap(page);
+  });
+
+  test('bootstrap page sets csrf_token cookie on GET', async ({ page, context }) => {
+    await page.goto('/admin/bootstrap');
+    const cookies = await context.cookies();
+    const csrfCookie = cookies.find(c => c.name === 'csrf_token');
+    expect(csrfCookie, 'csrf_token cookie must be set after visiting /admin/bootstrap').toBeDefined();
+    expect(csrfCookie!.value, 'csrf_token cookie must be non-empty').toBeTruthy();
+  });
+
+  test('bootstrap step 1 form contains hidden _csrf input', async ({ page }) => {
+    await page.goto('/admin/bootstrap');
+    const csrfInput = page.locator('form input[type="hidden"][name="_csrf"]');
+    // type="hidden" inputs are not visible in the DOM — use toHaveCount instead of toBeVisible.
+    await expect(csrfInput, 'form must contain a hidden _csrf input').toHaveCount(1);
+    const csrfValue = await csrfInput.inputValue();
+    expect(csrfValue, '_csrf hidden field must be non-empty').toBeTruthy();
+  });
+
+  test('_csrf form value matches csrf_token cookie (double-submit)', async ({ page, context }) => {
+    await page.goto('/admin/bootstrap');
+    const cookies = await context.cookies();
+    const csrfCookie = cookies.find(c => c.name === 'csrf_token');
+    expect(csrfCookie, 'csrf_token cookie must be present').toBeDefined();
+
+    const csrfInput = page.locator('form input[type="hidden"][name="_csrf"]').first();
+    const formToken = await csrfInput.inputValue();
+    expect(formToken).toBe(csrfCookie!.value);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Static Assets
 // ---------------------------------------------------------------------------
 

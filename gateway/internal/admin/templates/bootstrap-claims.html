@@ -30,6 +30,7 @@
 
       {{ if .Claims }}
       <form method="POST" action="/admin/bootstrap/select-claim">
+        <input type="hidden" name="_csrf" value="{{ .CSRFToken }}">
         <div class="mb-4">
           <label class="label">
             <span class="label-text font-semibold">Discovered Claims</span>
@@ -77,6 +78,7 @@
         <span>No group or role claims found in your token. Make sure your OIDC provider is configured to include group claims in the token.</span>
       </div>
       <form method="POST" action="/admin/bootstrap/select-claim">
+        <input type="hidden" name="_csrf" value="{{ .CSRFToken }}">
         <div class="form-control mb-4">
           <label class="label" for="admin_group_claim">
             <span class="label-text">Enter the admin group claim value</span>

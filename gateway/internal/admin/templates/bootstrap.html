@@ -18,6 +18,7 @@
       <!-- Step 1: Instance Name -->
       <h2 class="card-title">Step 1: Instance Name</h2>
       <form method="POST" action="/admin/bootstrap">
+        <input type="hidden" name="_csrf" value="{{ .CSRFToken }}">
         <input type="hidden" name="step" value="1">
         <!-- Carry accumulated OIDC state through back navigation -->
         <input type="hidden" name="oidc_issuer" value="{{ .OIDCIssuer }}">
@@ -53,6 +54,7 @@
       <!-- Step 2: OIDC Configuration + Connect with OIDC -->
       <h2 class="card-title">Step 2: OIDC Configuration</h2>
       <form method="POST" action="/admin/bootstrap">
+        <input type="hidden" name="_csrf" value="{{ .CSRFToken }}">
         <input type="hidden" name="step" value="2">
         <input type="hidden" name="instance_name" value="{{ .InstanceName }}">
 

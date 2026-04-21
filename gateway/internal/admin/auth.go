@@ -563,7 +563,7 @@ func (a *AdminAuth) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		// Render claim selection page with all string/array claims from the token.
 		data := ClaimSelectionPageData{
-			PageData: PageData{BootstrapMode: true, ActiveNav: "bootstrap"},
+			PageData: PageData{BootstrapMode: true, ActiveNav: "bootstrap", CSRFToken: CSRFTokenFromContext(r.Context())},
 			Claims:   extractDiscoveredClaims(claims),
 			Email:    email,
 		}

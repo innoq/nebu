@@ -3,7 +3,9 @@ package admin
 import (
 	"context"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -20,6 +22,7 @@ type contextKey int
 const (
 	contextKeyAdminSub contextKey = iota
 	contextKeyAdminEmail
+	contextKeyCSRFToken
 )
 
 // AdminSubFromContext returns the admin sub claim stored by SessionGuard, or "".
@@ -170,6 +173,101 @@ func BootstrapGuard(checker BootstrapStatusChecker) func(http.Handler) http.Hand
 			}
 
 			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// generateCSRFToken returns a cryptographically random 32-byte base64url-encoded token.
+func generateCSRFToken() (string, error) {
+	var b [32]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b[:]), nil
+}
+
+// CSRFTokenFromContext returns the CSRF token stored in the request context by CSRFMiddleware.
+// Returns an empty string if no token is present.
+func CSRFTokenFromContext(ctx context.Context) string {
+	v, _ := ctx.Value(contextKeyCSRFToken).(string)
+	return v
+}
+
+// CSRFMiddleware implements double-submit-cookie CSRF protection.
+//
+// On GET requests:
+//   - If the path is /admin/callback (login callback), always rotate: issue a fresh csrf_token cookie.
+//   - Otherwise, if no csrf_token cookie exists, issue one.
+//   - Inject the token into the request context so templates can embed it via CSRFTokenFromContext.
+//
+// On POST/PUT/DELETE requests:
+//   - Read csrf_token cookie value and _csrf form field.
+//   - Reject with 403 Forbidden if either is missing or they do not match
+//     (comparison is constant-time via subtle.ConstantTimeCompare to prevent timing oracles).
+//   - Pass through to next handler on match.
+func CSRFMiddleware() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet, http.MethodHead, http.MethodOptions:
+				// Safe methods: issue / rotate cookie, inject into context.
+				var token string
+
+				forceRotate := r.URL.Path == "/admin/callback"
+
+				if !forceRotate {
+					// Re-use existing cookie if present.
+					if c, err := r.Cookie("csrf_token"); err == nil && c.Value != "" {
+						token = c.Value
+					}
+				}
+
+				if token == "" {
+					var err error
+					token, err = generateCSRFToken()
+					if err != nil {
+						http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+						return
+					}
+					http.SetCookie(w, &http.Cookie{
+						Name:     "csrf_token",
+						Value:    token,
+						Path:     "/admin",
+						HttpOnly: false, // must be JS-readable for SPA scenarios
+						SameSite: http.SameSiteStrictMode,
+						Secure:   false, // Story 5.15 will enable HTTPS/Secure
+					})
+				}
+
+				ctx := context.WithValue(r.Context(), contextKeyCSRFToken, token)
+				next.ServeHTTP(w, r.WithContext(ctx))
+
+			default:
+				// State-changing methods: verify double-submit.
+				cookieVal := ""
+				if c, err := r.Cookie("csrf_token"); err == nil {
+					cookieVal = c.Value
+				}
+
+				if err := r.ParseForm(); err != nil {
+					http.Error(w, "Bad Request", http.StatusBadRequest)
+					return
+				}
+				formVal := r.FormValue("_csrf")
+
+				if cookieVal == "" || formVal == "" {
+					http.Error(w, "Forbidden", http.StatusForbidden)
+					return
+				}
+
+				if subtle.ConstantTimeCompare([]byte(cookieVal), []byte(formVal)) != 1 {
+					http.Error(w, "Forbidden", http.StatusForbidden)
+					return
+				}
+
+				ctx := context.WithValue(r.Context(), contextKeyCSRFToken, cookieVal)
+				next.ServeHTTP(w, r.WithContext(ctx))
+			}
 		})
 	}
 }

@@ -13,6 +13,9 @@ type PageData struct {
 	TopbarStatus string
 	// TopbarLabel is the human-readable status label shown in the topbar (e.g. "OK", "Degraded", "Down").
 	TopbarLabel string
+	// CSRFToken holds the double-submit CSRF token injected by CSRFMiddleware.
+	// Templates embed it as a hidden <input name="_csrf"> in every state-changing form.
+	CSRFToken string
 }
 
 // DashboardPageData holds data for the Dashboard page.

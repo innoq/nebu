@@ -210,16 +210,27 @@ func main() {
 	mux.HandleFunc("GET /admin/auth/login", adminAuth.LoginHandler)
 	mux.HandleFunc("GET /admin/auth/callback", adminAuth.CallbackHandler)
 
+	// Story 5.13: CSRF double-submit-cookie middleware for all admin POST endpoints.
+	csrf := admin.CSRFMiddleware()
+
 	// New canonical routes (Story 3.9)
 	mux.HandleFunc("GET /admin/login", adminAuth.LoginPageHandler)
 	mux.HandleFunc("GET /admin/login/start", adminAuth.LoginStartHandler)
-	mux.HandleFunc("GET /admin/callback", adminAuth.CallbackHandler)
+	// /admin/callback: CSRF middleware runs first to rotate the token after login (AC6).
+	mux.Handle("GET /admin/callback", csrf(http.HandlerFunc(adminAuth.CallbackHandler)))
 	// Protected routes — require a valid admin session cookie (Story 3.11)
-	mux.Handle("GET /admin/logout", sessionGuard(http.HandlerFunc(adminAuth.LogoutHandler)))
+	// GET /admin/logout intentionally returns 405 to prevent CSRF-logout via <img src="/admin/logout">.
+	// All templates use a POST form (base.html). (MINOR-1 fix, Story 5.13)
+	mux.HandleFunc("GET /admin/logout", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Allow", "POST")
+		http.Error(w, "Method Not Allowed — use POST form to logout", http.StatusMethodNotAllowed)
+	})
+	// POST /admin/logout: CSRF-protected logout via form submission (Story 5.13, AC3).
+	mux.Handle("POST /admin/logout", csrf(sessionGuard(http.HandlerFunc(adminAuth.LogoutHandler))))
 
 	// Dashboard route (Story 3.13) — registered BEFORE catch-all "GET /admin/"
 	dashboardHandler := admin.NewDashboardHandler(tmplHandler, coreClient, bootstrapDB)
-	mux.Handle("GET /admin/dashboard", sessionGuard(http.HandlerFunc(dashboardHandler.Handler)))
+	mux.Handle("GET /admin/dashboard", csrf(sessionGuard(http.HandlerFunc(dashboardHandler.Handler))))
 
 	checker := admin.NewPostgresBootstrapChecker(bootstrapDB)
 	bootstrapHandler := admin.NewBootstrapHandler(checker, tmplHandler, bootstrapDB, []byte(internalSecret))
@@ -231,16 +242,16 @@ func main() {
 	mux.HandleFunc("GET /admin/static/vendor/{filename}", admin.ServeVendorFile)
 	mux.HandleFunc("GET /admin/static/metrics-widget.js", admin.ServeMetricsWidgetJS)
 
-	// SSE live metrics endpoint — behind session guard
+	// SSE live metrics endpoint — behind session guard (AC5: no CSRF on SSE/GET).
 	sseMetricsHandler := admin.NewSSEMetricsHandler(&coreMetricsAdapter{client: coreClient})
 	mux.Handle("GET /admin/sse/metrics", sessionGuard(http.HandlerFunc(sseMetricsHandler.Handler)))
 
-	// Bootstrap page — guarded (guard checks bootstrap state)
-	mux.Handle("GET /admin/bootstrap", guard(http.HandlerFunc(bootstrapHandler.Handler)))
-	mux.Handle("POST /admin/bootstrap", guard(http.HandlerFunc(bootstrapHandler.StepHandler)))
+	// Bootstrap page — CSRF middleware issues cookie on GET; verifies token on POST.
+	mux.Handle("GET /admin/bootstrap", csrf(guard(http.HandlerFunc(bootstrapHandler.Handler))))
+	mux.Handle("POST /admin/bootstrap", csrf(guard(http.HandlerFunc(bootstrapHandler.StepHandler))))
 
-	// Claim selection — behind BootstrapGuard: rejects replay once bootstrap_completed=true
-	mux.Handle("POST /admin/bootstrap/select-claim", guard(http.HandlerFunc(adminAuth.ClaimSelectionHandler)))
+	// Claim selection — CSRF-protected (Story 5.13, AC3); also behind BootstrapGuard.
+	mux.Handle("POST /admin/bootstrap/select-claim", csrf(guard(http.HandlerFunc(adminAuth.ClaimSelectionHandler))))
 
 	// Catch-all for unmatched /admin/* paths — redirect to bootstrap wizard if not yet set up,
 	// otherwise show 404 (Go 1.22+ mux: most specific route wins, so this only fires for unknown paths).

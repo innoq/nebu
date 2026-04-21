@@ -96,6 +96,7 @@ func (h *BootstrapHandler) Handler(w http.ResponseWriter, r *http.Request) {
 		PageData: PageData{
 			BootstrapMode: true,
 			ActiveNav:     "bootstrap",
+			CSRFToken:     CSRFTokenFromContext(r.Context()),
 		},
 		Step: 1,
 	}
@@ -117,6 +118,7 @@ func (h *BootstrapHandler) StepHandler(w http.ResponseWriter, r *http.Request) {
 		PageData: PageData{
 			BootstrapMode: true,
 			ActiveNav:     "bootstrap",
+			CSRFToken:     CSRFTokenFromContext(r.Context()),
 		},
 		InstanceName: r.FormValue("instance_name"),
 		OIDCIssuer:   r.FormValue("oidc_issuer"),

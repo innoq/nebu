@@ -67,14 +67,17 @@
           </a>
         </li>
         <li>
-          <a href="/admin/logout"
-             data-navkey="logout"
-             {{ if eq .ActiveNav "logout" }}aria-current="page"{{ end }}
-             class="flex items-center gap-2 px-3 py-3 rounded text-sm
-                    {{ if eq .ActiveNav "logout" }}active bg-primary text-primary-content font-semibold{{ else }}font-medium text-base-content hover:bg-base-300{{ end }}
-                    focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-base-200">
-            Logout
-          </a>
+          <form method="POST" action="/admin/logout" style="margin:0;padding:0;">
+            <input type="hidden" name="_csrf" value="{{ .CSRFToken }}">
+            <button type="submit"
+                    data-navkey="logout"
+                    {{ if eq .ActiveNav "logout" }}aria-current="page"{{ end }}
+                    class="flex items-center gap-2 px-3 py-3 rounded text-sm w-full text-left
+                           {{ if eq .ActiveNav "logout" }}active bg-primary text-primary-content font-semibold{{ else }}font-medium text-base-content hover:bg-base-300{{ end }}
+                           focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-base-200">
+              Logout
+            </button>
+          </form>
         </li>
         {{ end }}
       </ul>

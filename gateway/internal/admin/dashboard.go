@@ -101,6 +101,7 @@ func (h *DashboardHandler) Handler(w http.ResponseWriter, r *http.Request) {
 			ActiveNav:    "dashboard",
 			TopbarStatus: topbarStatus,
 			TopbarLabel:  topbarLabel,
+			CSRFToken:    CSRFTokenFromContext(r.Context()),
 		},
 		GatewayStatus:      gatewayStatus,
 		GatewayStatusLabel: gatewayLabel,
