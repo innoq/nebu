@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/nebu/nebu/internal/validate"
 )
 
 // Provider wraps go-oidc discovery with startup-failure tolerance and
@@ -22,6 +23,11 @@ type Provider struct {
 // normally but token validation will fail until the next background refresh.
 func NewProvider(ctx context.Context, issuer string) *Provider {
 	p := &Provider{issuer: issuer}
+	if err := validate.IssuerURL(issuer); err != nil {
+		log.Printf("OIDC provider: invalid issuer URL — token validation will fail: %v", err)
+		go p.refresh()
+		return p
+	}
 	if err := p.discover(ctx); err != nil {
 		log.Printf("OIDC provider unreachable — token validation will fail until resolved: %v", err)
 	}

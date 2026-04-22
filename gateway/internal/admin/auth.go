@@ -24,6 +24,12 @@ import (
 // ErrOIDCConfigMissing is returned when required OIDC configuration is absent from server_config.
 var ErrOIDCConfigMissing = errors.New("OIDC configuration missing in server_config")
 
+// globalProviderCache caches *oidc.Provider instances by issuer URL to avoid
+// redundant OIDC discovery requests. Initialized once at package level.
+var globalProviderCache = newOIDCProviderCache(func(ctx context.Context, issuer string) (oidcProvider, error) {
+	return oidc.NewProvider(ctx, issuer)
+})
+
 // ErrAlreadyCompleted is returned by CompleteBootstrap when bootstrap_completed is already set.
 // The handler maps this sentinel to 403 Forbidden (defense-in-depth against replay attacks).
 var ErrAlreadyCompleted = errors.New("bootstrap already completed")
@@ -298,14 +304,27 @@ func (a *AdminAuth) LoginStartHandler(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/admin/bootstrap", http.StatusFound)
 			return
 		}
-		http.Error(w, "Failed to load OIDC configuration: "+err.Error(), http.StatusServiceUnavailable)
+		slog.Error("failed to load OIDC configuration", "err", err)
+		http.Error(w, "Server error: OIDC configuration unavailable. Try again later.", http.StatusServiceUnavailable)
+		return
+	}
+
+	if err := validateIssuerURL(issuer); err != nil {
+		slog.Error("invalid OIDC issuer in config, reconfigure to HTTPS", "issuer", issuer, "err", err)
+		http.Error(w, "Server configuration error: OIDC issuer must use HTTPS. Contact the operator.", http.StatusInternalServerError)
 		return
 	}
 
 	ctx := oidc.ClientContext(r.Context(), http.DefaultClient)
-	provider, err := oidc.NewProvider(ctx, issuer)
+	rawProvider, err := globalProviderCache.load(ctx, issuer)
 	if err != nil {
-		http.Error(w, "OIDC provider discovery failed: "+err.Error(), http.StatusServiceUnavailable)
+		slog.Error("OIDC provider discovery failed", "issuer", issuer, "err", err)
+		http.Error(w, "Server error: OIDC provider unavailable. Try again later.", http.StatusInternalServerError)
+		return
+	}
+	provider, ok := rawProvider.(*oidc.Provider)
+	if !ok {
+		http.Error(w, "internal error: unexpected OIDC provider type", http.StatusInternalServerError)
 		return
 	}
 
@@ -478,10 +497,23 @@ func (a *AdminAuth) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin/login?error=auth_failed", http.StatusFound)
 		return
 	}
+
+	if err := validateIssuerURL(issuer); err != nil {
+		slog.Error("callback: invalid OIDC issuer in config, reconfigure to HTTPS", "issuer", issuer, "err", err)
+		http.Error(w, "Server configuration error: OIDC issuer must use HTTPS. Contact the operator.", http.StatusInternalServerError)
+		return
+	}
+
 	ctx := oidc.ClientContext(r.Context(), http.DefaultClient)
-	provider, err := oidc.NewProvider(ctx, issuer)
+	rawProvider, err := globalProviderCache.load(ctx, issuer)
 	if err != nil {
 		slog.Error("callback: OIDC provider discovery failed", "err", err)
+		http.Redirect(w, r, "/admin/login?error=auth_failed", http.StatusFound)
+		return
+	}
+	provider, ok := rawProvider.(*oidc.Provider)
+	if !ok {
+		slog.Error("callback: unexpected OIDC provider type")
 		http.Redirect(w, r, "/admin/login?error=auth_failed", http.StatusFound)
 		return
 	}

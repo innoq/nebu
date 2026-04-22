@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"regexp"
 	"time"
 )
@@ -166,13 +165,9 @@ func (h *BootstrapHandler) StepHandler(w http.ResponseWriter, r *http.Request) {
 		// Validate OIDC fields
 		if data.OIDCIssuer == "" {
 			data.Errors["oidc_issuer"] = "OIDC Issuer URL is required."
-		} else {
-			parsed, err := url.ParseRequestURI(data.OIDCIssuer)
-			if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") {
-				data.Errors["oidc_issuer"] = "OIDC Issuer must be a valid URL (https:// or http://)."
-			} else if parsed.Scheme == "http" {
-				data.Warnings["oidc_issuer"] = "HTTP issuer — not suitable for production. Use HTTPS in production deployments."
-			}
+		} else if err := validateIssuerURL(data.OIDCIssuer); err != nil {
+			http.Error(w, `{"errcode":"M_BAD_JSON","error":"OIDC issuer must use HTTPS (http://localhost allowed for dev)"}`, http.StatusBadRequest)
+			return
 		}
 		if r.FormValue("oidc_client_id") == "" {
 			data.Errors["oidc_client_id"] = "OIDC Client ID is required."
