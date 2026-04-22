@@ -11,7 +11,25 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/nebu/nebu/internal/auth"
 	coregrpc "github.com/nebu/nebu/internal/grpc"
+	"github.com/prometheus/client_golang/prometheus"
 )
+
+// jwtValidationTotal counts JWT validation outcomes by pipeline stage and result.
+//   stage="verify"   — OIDC signature / expiry / audience check
+//   stage="denylist" — explicit logout check (only reached after verify passes)
+//   result="pass"    — check succeeded
+//   result="fail"    — check failed, request rejected 401
+var jwtValidationTotal = prometheus.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: "nebu_jwt_validation_total",
+		Help: "Total JWT validation outcomes by pipeline stage and result",
+	},
+	[]string{"stage", "result"},
+)
+
+func init() {
+	prometheus.MustRegister(jwtValidationTotal)
+}
 
 type contextKey string
 
@@ -60,12 +78,7 @@ func JWTMiddleware(provider *auth.Provider, clientID string, claimName string, s
 			}
 			rawToken := strings.TrimPrefix(authHeader, "Bearer ")
 
-			// Token invalidation check: token was explicitly logged out
-			if store != nil && store.IsInvalidated(rawToken) {
-				writeMatrixError(w, http.StatusUnauthorized, "M_UNKNOWN_TOKEN", "Token has been logged out")
-				return
-			}
-
+			// Step 1: Verify signature, expiry, audience — reject before any DB access.
 			inner := provider.Inner()
 			if inner == nil {
 				writeMatrixError(w, http.StatusUnauthorized, "M_UNKNOWN_TOKEN", "OIDC provider unavailable")
@@ -78,6 +91,7 @@ func JWTMiddleware(provider *auth.Provider, clientID string, claimName string, s
 			})
 			idToken, err := verifier.Verify(r.Context(), rawToken)
 			if err != nil {
+				jwtValidationTotal.WithLabelValues("verify", "fail").Inc()
 				var expiredErr *oidc.TokenExpiredError
 				if errors.As(err, &expiredErr) {
 					writeMatrixError(w, http.StatusUnauthorized, "M_UNKNOWN_TOKEN", "Token has expired")
@@ -85,6 +99,18 @@ func JWTMiddleware(provider *auth.Provider, clientID string, claimName string, s
 					writeMatrixError(w, http.StatusUnauthorized, "M_UNKNOWN_TOKEN", "Invalid token")
 				}
 				return
+			}
+			jwtValidationTotal.WithLabelValues("verify", "pass").Inc()
+
+			// Step 2: Denylist check — only for cryptographically verified tokens.
+			// This prevents DB flooding with random unsigned strings.
+			if store != nil && store.IsInvalidated(rawToken) {
+				jwtValidationTotal.WithLabelValues("denylist", "fail").Inc()
+				writeMatrixError(w, http.StatusUnauthorized, "M_UNKNOWN_TOKEN", "Token has been logged out")
+				return
+			}
+			if store != nil {
+				jwtValidationTotal.WithLabelValues("denylist", "pass").Inc()
 			}
 
 			var allClaims map[string]interface{}
