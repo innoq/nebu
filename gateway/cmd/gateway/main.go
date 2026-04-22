@@ -30,6 +30,7 @@ import (
 	"github.com/nebu/nebu/internal/registry"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"golang.org/x/time/rate"
 )
 
 // coreMetricsAdapter adapts *coregrpc.Client to satisfy the admin.MetricsReader interface.
@@ -181,6 +182,18 @@ func main() {
 	// bodyLimit64KiB: admin POST endpoints.
 	bodyLimit1MiB := middleware.BodyLimitMiddleware(1 << 20)
 	bodyLimit64KiB := middleware.BodyLimitMiddleware(64 * 1024)
+
+	// Story 5.21 — Per-IP rate limiting tiers.
+	// trustedProxy=true when the gateway sits behind a load-balancer that sets X-Forwarded-For.
+	// SECURITY: the reverse proxy MUST strip any X-Forwarded-For header sent by external clients
+	// so that only the proxy-appended IP (rightmost-minus-1) is trusted for rate limiting.
+	trustedProxy := os.Getenv("NEBU_TRUSTED_PROXY") == "true"
+	// strictRL: login + admin auth endpoints — 5 req/min, burst 3.
+	strictRL := middleware.NewIPRateLimiter(middleware.RateLimitConfig{Rate: rate.Limit(5.0 / 60.0), Burst: 3}, trustedProxy, "strict")
+	// mediumRL: SSO redirect/callback + public profile — 30 req/min, burst 10.
+	mediumRL := middleware.NewIPRateLimiter(middleware.RateLimitConfig{Rate: rate.Limit(30.0 / 60.0), Burst: 10}, trustedProxy, "medium")
+	// looseRL: remaining unauthenticated public endpoints — 300 req/min, burst 100.
+	looseRL := middleware.NewIPRateLimiter(middleware.RateLimitConfig{Rate: rate.Limit(300.0 / 60.0), Burst: 100}, trustedProxy, "loose")
 	reg := registry.New()
 	regHandler := registry.NewHandler(reg)
 	pskHandler := middleware.PSKMiddleware(internalSecret)(regHandler)
@@ -229,10 +242,12 @@ func main() {
 	csrf := admin.CSRFMiddleware()
 
 	// New canonical routes (Story 3.9)
-	mux.HandleFunc("GET /admin/login", adminAuth.LoginPageHandler)
-	mux.HandleFunc("GET /admin/login/start", adminAuth.LoginStartHandler)
+	// strictRL wraps login/start/callback — these are unauthenticated endpoints that trigger
+	// OIDC flows and must be protected against brute-force / amplification attacks (Story 5.21).
+	mux.Handle("GET /admin/login", strictRL(http.HandlerFunc(adminAuth.LoginPageHandler)))
+	mux.Handle("GET /admin/login/start", strictRL(http.HandlerFunc(adminAuth.LoginStartHandler)))
 	// /admin/callback: CSRF middleware runs first to rotate the token after login (AC6).
-	mux.Handle("GET /admin/callback", csrf(http.HandlerFunc(adminAuth.CallbackHandler)))
+	mux.Handle("GET /admin/callback", strictRL(csrf(http.HandlerFunc(adminAuth.CallbackHandler))))
 	// Protected routes — require a valid admin session cookie (Story 3.11)
 	// GET /admin/logout intentionally returns 405 to prevent CSRF-logout via <img src="/admin/logout">.
 	// All templates use a POST form (base.html). (MINOR-1 fix, Story 5.13)
@@ -263,11 +278,12 @@ func main() {
 	mux.Handle("GET /admin/sse/metrics", sessionGuard(http.HandlerFunc(sseMetricsHandler.Handler)))
 
 	// Bootstrap page — CSRF middleware issues cookie on GET; verifies token on POST.
-	mux.Handle("GET /admin/bootstrap", csrf(guard(http.HandlerFunc(bootstrapHandler.Handler))))
-	mux.Handle("POST /admin/bootstrap", bodyLimit64KiB(csrf(guard(http.HandlerFunc(bootstrapHandler.StepHandler)))))
+	// strictRL protects the unauthenticated bootstrap entry points (Story 5.21).
+	mux.Handle("GET /admin/bootstrap", strictRL(csrf(guard(http.HandlerFunc(bootstrapHandler.Handler)))))
+	mux.Handle("POST /admin/bootstrap", strictRL(bodyLimit64KiB(csrf(guard(http.HandlerFunc(bootstrapHandler.StepHandler))))))
 
 	// Claim selection — CSRF-protected (Story 5.13, AC3); also behind BootstrapGuard.
-	mux.Handle("POST /admin/bootstrap/select-claim", bodyLimit64KiB(csrf(guard(http.HandlerFunc(adminAuth.ClaimSelectionHandler)))))
+	mux.Handle("POST /admin/bootstrap/select-claim", strictRL(bodyLimit64KiB(csrf(guard(http.HandlerFunc(adminAuth.ClaimSelectionHandler))))))
 
 	// Catch-all for unmatched /admin/* paths — redirect to bootstrap wizard if not yet set up,
 	// otherwise show 404 (Go 1.22+ mux: most specific route wins, so this only fires for unknown paths).
@@ -294,12 +310,13 @@ func main() {
 	// Matrix client discovery endpoints — required by all Matrix clients before login.
 	// /_matrix/client/versions: signals Matrix protocol compatibility (FluffyChat, Element, etc. check this first).
 	// /.well-known/matrix/client: auto-discovery of homeserver base URL.
-	mux.HandleFunc("GET /_matrix/client/versions", func(w http.ResponseWriter, r *http.Request) {
+	// looseRL: unauthenticated discovery endpoints (300 req/min, burst 100).
+	mux.Handle("GET /_matrix/client/versions", looseRL(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"versions":["v1.1","v1.2","v1.3","v1.4","v1.5","v1.6","v1.7","v1.8","v1.9","v1.10","v1.11"]}`))
-	})
+	})))
 
-	mux.HandleFunc("GET /.well-known/matrix/client", func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("GET /.well-known/matrix/client", looseRL(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		scheme := "http"
 		if r.TLS != nil {
 			scheme = "https"
@@ -308,7 +325,7 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		fmt.Fprintf(w, `{"m.homeserver":{"base_url":%q}}`, baseURL)
-	})
+	})))
 
 	loginHandler := matrix.NewLoginHandler(matrix.LoginConfig{
 		DisplayName:   cfg.OIDCDisplayName,
@@ -319,13 +336,13 @@ func main() {
 		ClientSecret:  cfg.OIDCClientSecret,
 		RoleClaimName: cfg.OIDCClaimRole,
 	})
-	mux.HandleFunc("GET /_matrix/client/v3/login", loginHandler.GetLogin)
-	mux.Handle("POST /_matrix/client/v3/login", bodyLimit1MiB(http.HandlerFunc(loginHandler.PostLogin)))
+	mux.Handle("GET /_matrix/client/v3/login", looseRL(http.HandlerFunc(loginHandler.GetLogin)))
+	mux.Handle("POST /_matrix/client/v3/login", strictRL(bodyLimit1MiB(http.HandlerFunc(loginHandler.PostLogin))))
 
 	// Matrix SSO: initiate PKCE flow, then callback from Dex.
 	// /_matrix/client/v3/login/sso/redirect/oidc is registered in Dex redirectURIs.
-	mux.HandleFunc("GET /_matrix/client/v3/login/sso/redirect", loginHandler.GetSSORedirect)
-	mux.HandleFunc("GET /_matrix/client/v3/login/sso/redirect/oidc", loginHandler.GetSSOCallback)
+	mux.Handle("GET /_matrix/client/v3/login/sso/redirect", mediumRL(http.HandlerFunc(loginHandler.GetSSORedirect)))
+	mux.Handle("GET /_matrix/client/v3/login/sso/redirect/oidc", mediumRL(http.HandlerFunc(loginHandler.GetSSOCallback)))
 
 	tokenDB, err := sql.Open("pgx", cfg.DBURL)
 	if err != nil {
@@ -347,19 +364,21 @@ func main() {
 		})))
 
 	// capabilities: Matrix clients check server feature flags before making API calls.
-	mux.HandleFunc("GET /_matrix/client/v3/capabilities", func(w http.ResponseWriter, r *http.Request) {
+	// looseRL: unauthenticated capabilities endpoint (300 req/min, burst 100).
+	mux.Handle("GET /_matrix/client/v3/capabilities", looseRL(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"capabilities":{"m.change_password":{"enabled":false},"m.room_versions":{"default":"6","available":{"6":"stable"}}}}`))
-	})
+	})))
 
 	// MSC2965 OIDC-native auth metadata — not supported; return explicit 404 so
 	// Element Web falls back to the standard m.login.sso flow instead of caching
 	// a silent failure and breaking subsequent login attempts in non-private windows.
-	mux.HandleFunc("GET /_matrix/client/unstable/org.matrix.msc2965/auth_metadata", func(w http.ResponseWriter, r *http.Request) {
+	// looseRL: unauthenticated metadata endpoint.
+	mux.Handle("GET /_matrix/client/unstable/org.matrix.msc2965/auth_metadata", looseRL(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
 		w.Write([]byte(`{"errcode":"M_UNRECOGNIZED","error":"MSC2965 OIDC-native auth is not supported by this server. Use m.login.sso."}`))
-	})
+	})))
 
 	// pushrules: return empty rule set — no push notifications in MVP.
 	mux.Handle("GET /_matrix/client/v3/pushrules/",
@@ -369,10 +388,11 @@ func main() {
 		})))
 
 	// media config: report the upload size limit (10 MiB default).
-	mux.HandleFunc("GET /_matrix/media/v3/config", func(w http.ResponseWriter, r *http.Request) {
+	// looseRL: unauthenticated media config endpoint.
+	mux.Handle("GET /_matrix/media/v3/config", looseRL(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"m.upload.size":10485760}`))
-	})
+	})))
 
 	// Stubs for endpoints FluffyChat requires but Nebu MVP does not yet implement.
 	// All return valid empty responses so the client can proceed without errors.
@@ -452,17 +472,18 @@ func main() {
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{}`))
 		})))
-	mux.HandleFunc("GET /_matrix/client/v3/directory/room/{roomAlias}", func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("GET /_matrix/client/v3/directory/room/{roomAlias}", looseRL(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
 		w.Write([]byte(`{"errcode":"M_NOT_FOUND","error":"Room alias not found"}`))
-	})
+	})))
 
 	// Third-party protocol bridges — none in MVP.
-	mux.HandleFunc("GET /_matrix/client/v3/thirdparty/protocols", func(w http.ResponseWriter, r *http.Request) {
+	// looseRL: unauthenticated discovery endpoint.
+	mux.Handle("GET /_matrix/client/v3/thirdparty/protocols", looseRL(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{}`))
-	})
+	})))
 
 	// Event filter — clients POST a filter definition, receive a filter_id for use in /sync.
 	// MVP: accept any filter and return id "0" (unfiltered sync is equivalent).
@@ -546,20 +567,21 @@ func main() {
 		}))))
 
 	// Misc stubs to suppress other 404s in Element Web startup
-	mux.HandleFunc("GET /_matrix/client/v3/voip/turnServer", func(w http.ResponseWriter, r *http.Request) {
+	// looseRL on unauthenticated stub endpoints that clients poll at startup.
+	mux.Handle("GET /_matrix/client/v3/voip/turnServer", looseRL(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
 		w.Write([]byte(`{"errcode":"M_NOT_FOUND","error":"TURN not configured"}`))
-	})
-	mux.HandleFunc("GET /_matrix/client/unstable/org.matrix.msc3814.v1/dehydrated_device", func(w http.ResponseWriter, r *http.Request) {
+	})))
+	mux.Handle("GET /_matrix/client/unstable/org.matrix.msc3814.v1/dehydrated_device", looseRL(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
 		w.Write([]byte(`{"errcode":"M_NOT_FOUND","error":"Dehydrated device not supported"}`))
-	})
-	mux.HandleFunc("GET /_matrix/client/unstable/org.matrix.msc4143/rtc/transports", func(w http.ResponseWriter, r *http.Request) {
+	})))
+	mux.Handle("GET /_matrix/client/unstable/org.matrix.msc4143/rtc/transports", looseRL(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"ice_servers":[]}`))
-	})
+	})))
 
 	mux.Handle("POST /_matrix/client/v3/keys/query",
 		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -567,10 +589,11 @@ func main() {
 			w.Write([]byte(`{"device_keys":{},"failures":{}}`))
 		}))))
 
-	mux.HandleFunc("GET /_matrix/client/v3/keys/changes", func(w http.ResponseWriter, r *http.Request) {
+	// looseRL: keys/changes is typically called after login — protect without blocking normal use.
+	mux.Handle("GET /_matrix/client/v3/keys/changes", looseRL(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"changed":[],"left":[]}`))
-	})
+	})))
 
 	mux.Handle("POST /_matrix/client/v3/keys/claim",
 		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -673,7 +696,8 @@ func main() {
 		DB:         db.NewPostgresProfileDB(bootstrapDB),
 	})
 	// GET is unauthenticated — no jwtMiddleware wrapper (per Matrix spec: profile is public).
-	mux.HandleFunc("GET /_matrix/client/v3/profile/{userId}", profileHandler.GetProfile)
+	// GET /profile is unauthenticated (Matrix spec: profile is public) — medium rate-limit (Story 5.21, AC 2).
+	mux.Handle("GET /_matrix/client/v3/profile/{userId}", mediumRL(http.HandlerFunc(profileHandler.GetProfile)))
 	// PUT endpoints require JWT auth.
 	mux.Handle("PUT /_matrix/client/v3/profile/{userId}/displayname",
 		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(profileHandler.PutDisplayname))))

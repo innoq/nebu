@@ -3,6 +3,7 @@ package matrix
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -36,20 +37,30 @@ type ssoStateStore struct {
 
 var globalSSOState = &ssoStateStore{store: make(map[string]ssoStateEntry)}
 
-func (s *ssoStateStore) save(state, verifier, redirectURL string, ttl time.Duration) {
+// ssoStateStoreMaxEntries caps the number of pending SSO states to prevent
+// unbounded memory growth from unauthenticated requests (Story 5.21, AC 5).
+const ssoStateStoreMaxEntries = 10_000
+
+func (s *ssoStateStore) save(state, verifier, redirectURL string, ttl time.Duration) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now()
+	// Expire stale entries before checking capacity so legitimate flows are not
+	// blocked by entries that have already timed out.
 	for k, v := range s.store {
 		if now.After(v.exp) {
 			delete(s.store, k)
 		}
+	}
+	if len(s.store) >= ssoStateStoreMaxEntries {
+		return errors.New("sso state store full")
 	}
 	s.store[state] = ssoStateEntry{
 		verifier:    verifier,
 		redirectURL: redirectURL,
 		exp:         now.Add(ttl),
 	}
+	return nil
 }
 
 func (s *ssoStateStore) pop(state string) (ssoStateEntry, bool) {
@@ -188,7 +199,11 @@ func (h *LoginHandler) GetSSORedirect(w http.ResponseWriter, r *http.Request) {
 	}
 	state := hex.EncodeToString(stateBytes)
 
-	globalSSOState.save(state, verifier, clientRedirectURL, 10*time.Minute)
+	if err := globalSSOState.save(state, verifier, clientRedirectURL, 10*time.Minute); err != nil {
+		slog.Warn("matrix SSO: state store full, rejecting redirect request", "err", err)
+		writeMatrixError(w, http.StatusTooManyRequests, "M_LIMIT_EXCEEDED", "Too many pending SSO flows")
+		return
+	}
 
 	oauth2Config := &oauth2.Config{
 		ClientID:     h.clientID,

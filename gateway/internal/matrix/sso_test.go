@@ -2,10 +2,12 @@ package matrix
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/nebu/nebu/internal/auth"
 )
@@ -70,5 +72,50 @@ func TestSSORedirect_PromptLoginParameter(t *testing.T) {
 				"Fix: add oauth2.SetAuthURLParam(\"prompt\", \"login\") to AuthCodeURL in sso.go",
 			prompt, location,
 		)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TestSSOStateStore_Rejects10001stEntry
+// Story 5.21 — AC 5: ssoStateStore caps at 10 000 entries
+// ---------------------------------------------------------------------------
+
+// TestSSOStateStore_Rejects10001stEntry verifies that ssoStateStore.save
+// returns a non-nil error when the store already holds 10 000 entries and a
+// new entry is attempted.
+//
+// RED PHASE: ssoStateStore.save currently has signature
+//
+//	func (s *ssoStateStore) save(state, verifier, redirectURL string, ttl time.Duration)
+//
+// This test will fail to compile until the signature is changed to:
+//
+//	func (s *ssoStateStore) save(state, verifier, redirectURL string, ttl time.Duration) error
+//
+// and a capacity guard (return error when len(s.store) >= 10000) is added.
+func TestSSOStateStore_Rejects10001stEntry(t *testing.T) {
+	t.Parallel()
+
+	const maxEntries = 10_000
+
+	store := &ssoStateStore{store: make(map[string]ssoStateEntry)}
+
+	// Fill exactly 10 000 entries — all must succeed.
+	ttl := 10 * time.Minute
+	for i := 0; i < maxEntries; i++ {
+		key := fmt.Sprintf("state-%05d", i)
+		if err := store.save(key, "verifier", "http://localhost/", ttl); err != nil {
+			t.Fatalf("save entry %d: unexpected error: %v", i, err)
+		}
+	}
+
+	if len(store.store) != maxEntries {
+		t.Fatalf("expected %d entries after fill, got %d", maxEntries, len(store.store))
+	}
+
+	// 10 001st entry must be rejected.
+	err := store.save("state-overflow", "verifier", "http://localhost/", ttl)
+	if err == nil {
+		t.Fatal("expected error when inserting entry 10 001 into a full ssoStateStore, got nil")
 	}
 }
