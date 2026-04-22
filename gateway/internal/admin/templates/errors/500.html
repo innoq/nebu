@@ -4,6 +4,9 @@
 <div class="max-w-lg mx-auto text-center mt-16">
   <h1 class="text-3xl font-bold mb-4">Internal Server Error</h1>
   <p class="text-base-content/70 mb-6">Something went wrong. Please try again or contact your system administrator.</p>
+  {{ if .RequestID }}
+  <p class="text-sm text-base-content/50 mb-6">Reference ID: <code class="font-mono">{{ .RequestID }}</code></p>
+  {{ end }}
   <a href="/admin/dashboard" class="btn btn-primary">Back to Dashboard</a>
 </div>
 {{ end }}

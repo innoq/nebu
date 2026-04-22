@@ -78,3 +78,11 @@ type ClaimSelectionPageData struct {
 	Email    string
 	Error    string
 }
+
+// ErrorPageData holds data for server-error pages that include a request ID.
+// The RequestID is generated per-request (crypto/rand) and logged alongside
+// the full error so operators can correlate user-reported IDs with log entries.
+type ErrorPageData struct {
+	PageData
+	RequestID string
+}

@@ -319,13 +319,12 @@ func (a *AdminAuth) LoginStartHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := oidc.ClientContext(r.Context(), http.DefaultClient)
 	rawProvider, err := globalProviderCache.load(ctx, issuer)
 	if err != nil {
-		slog.Error("OIDC provider discovery failed", "issuer", issuer, "err", err)
-		http.Error(w, "Server error: OIDC provider unavailable. Try again later.", http.StatusInternalServerError)
+		renderErrorWithID(w, r, http.StatusInternalServerError, "OIDC provider discovery failed", "Please contact your administrator.", err, a.tmpl)
 		return
 	}
 	provider, ok := rawProvider.(*oidc.Provider)
 	if !ok {
-		http.Error(w, "internal error: unexpected OIDC provider type", http.StatusInternalServerError)
+		renderErrorWithID(w, r, http.StatusInternalServerError, "OIDC provider type assertion failed", "Please contact your administrator.", errors.New("unexpected OIDC provider type"), a.tmpl)
 		return
 	}
 
