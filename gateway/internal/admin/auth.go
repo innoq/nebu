@@ -18,6 +18,7 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/nebu/nebu/internal/auth"
+	"github.com/nebu/nebu/internal/validate"
 	"golang.org/x/oauth2"
 )
 
@@ -546,7 +547,10 @@ func (a *AdminAuth) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	idToken, err := provider.Verifier(&oidc.Config{ClientID: clientID}).Verify(r.Context(), rawIDToken)
+	idToken, err := provider.Verifier(&oidc.Config{
+		ClientID:             clientID,
+		SupportedSigningAlgs: validate.SupportedAlgs(),
+	}).Verify(r.Context(), rawIDToken)
 	if err != nil {
 		slog.Error("callback: token verification failed", "err", err)
 		http.Redirect(w, r, "/admin/login?error=auth_failed", http.StatusFound)

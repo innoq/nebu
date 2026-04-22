@@ -49,6 +49,8 @@ func JWTMiddleware(provider *auth.Provider, clientID string, claimName string, s
 	if len(serverName) > 0 {
 		srv = serverName[0]
 	}
+	// Parse algorithm whitelist once at middleware construction, not per request.
+	algs := ParseSupportedAlgs()
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
@@ -70,7 +72,10 @@ func JWTMiddleware(provider *auth.Provider, clientID string, claimName string, s
 				return
 			}
 
-			verifier := inner.Verifier(&oidc.Config{ClientID: clientID})
+			verifier := inner.Verifier(&oidc.Config{
+				ClientID:             clientID,
+				SupportedSigningAlgs: algs,
+			})
 			idToken, err := verifier.Verify(r.Context(), rawToken)
 			if err != nil {
 				var expiredErr *oidc.TokenExpiredError

@@ -12,6 +12,7 @@ import (
 	"github.com/nebu/nebu/internal/auth"
 	coregrpc "github.com/nebu/nebu/internal/grpc"
 	pb "github.com/nebu/nebu/internal/grpc/pb"
+	"github.com/nebu/nebu/internal/validate"
 )
 
 // CoreClient is a consumer-defined interface for gRPC calls to the Elixir core.
@@ -123,7 +124,10 @@ func (h *LoginHandler) PostLogin(w http.ResponseWriter, r *http.Request) {
 		rawJWT = idTokenFromStore
 	}
 
-	verifier := inner.Verifier(&oidc.Config{ClientID: h.clientID})
+	verifier := inner.Verifier(&oidc.Config{
+		ClientID:             h.clientID,
+		SupportedSigningAlgs: validate.SupportedAlgs(),
+	})
 	idToken, err := verifier.Verify(r.Context(), rawJWT)
 	if err != nil {
 		writeMatrixError(w, http.StatusForbidden, "M_FORBIDDEN", "Invalid or expired token")
