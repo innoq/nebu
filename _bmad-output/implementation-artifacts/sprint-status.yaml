@@ -41,7 +41,20 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-20
-last_updated: 2026-04-20
+last_updated: 2026-04-22
+# story 5-22 done (pipeline: ATDD+Dev+Code+Security review CLEAN): 2026-04-22
+# story 5-21 done (pipeline: 2 MAJOR + HIGH fixed, 2 rounds Kassandra): 2026-04-22
+# story 5-20 done (pipeline: 1 MINOR fixed — 11 missing endpoints): 2026-04-22
+# story 5-19 done (pipeline: ATDD+Dev in one pass, CLEAN): 2026-04-22
+# story 5-18 done (pipeline: CLEAN, algs parsed once at construction): 2026-04-22
+# story 5-17 done (pipeline: 2 MAJOR + HIGH fixed, shared validate pkg): 2026-04-22
+# story 5-16 done (pipeline: 1 MAJOR fixed — AC5 empty-nonce bypass + legacy LoginHandler): 2026-04-22
+# story 5-15 done (pipeline: 1 MAJOR fixed — redirect_uri scheme + HSTS XFF guard): 2026-04-22
+# story 5-14 done (pipeline: 2 MINOR fixed — handler alloc + base.html inline style): 2026-04-22
+# story 5-13 done (pipeline: 2 MINOR fixed — GET logout 405 + Playwright precondition): 2026-04-22
+# story 5-12 done (pipeline: 2 MAJOR fixed — missing test + main.go wiring, HIGH gefixt): 2026-04-22
+# story 5-11 done (pipeline: 3 rounds — real sql.Tx via runInTx injection): 2026-04-22
+# story 5-10 done (pipeline: CLEAN, Bootstrap replay entry points closed): 2026-04-22
 # stories 5-10 … 5-28 (Security Hardening) created from security audit findings: 2026-04-20
 # story 4-29 done (code review passed, 2 MINOR fixed): 2026-04-15
 # story 4-29 created: 4-29 → ready-for-dev: 2026-04-15
@@ -416,7 +429,7 @@ development_status:
   #         + Gateway Security Hardening (stories 5-10 … 5-28, added 2026-04-20
   #         based on security audit of gateway/ — see review notes in epic-4 retro folder)
   # ─────────────────────────────────────────────────────────────────────────
-  epic-5: backlog
+  epic-5: in-progress
   5-1-audit-log-schema-rls-aufbewahrungskonfiguration: backlog
   5-2-audit-log-writer-generisch-alle-admin-aktionen-atomare-garantie: backlog
   5-3-compliance-access-request-api: backlog
@@ -427,23 +440,23 @@ development_status:
   5-8-operational-pii-anonymisierung-deleted-user: backlog
   5-9-gherkin-compliance-flow-end-to-end: backlog
   # Security Hardening — Group A: Bootstrap Admin-Takeover Chain (CRITICAL)
-  5-10-bootstrap-mode-guard-replay-prevention: review
+  5-10-bootstrap-mode-guard-replay-prevention: done
   5-11-transactional-bootstrap-completion: done
   5-12-server-side-admin-session-revocation: done
   # Security Hardening — Group B: Web Hardening
-  5-13-csrf-middleware-admin-post: ready-for-dev
-  5-14-security-headers-middleware: ready-for-dev
-  5-15-secure-cookie-tls-terminator: ready-for-dev
+  5-13-csrf-middleware-admin-post: done
+  5-14-security-headers-middleware: done
+  5-15-secure-cookie-tls-terminator: done
   # Security Hardening — Group C: OIDC Hardening
-  5-16-oidc-nonce-verification: ready-for-dev
-  5-17-oidc-issuer-https-provider-cache: ready-for-dev
-  5-18-jwt-algorithm-pinning: ready-for-dev
-  5-19-admin-error-message-sanitization: ready-for-dev
+  5-16-oidc-nonce-verification: done
+  5-17-oidc-issuer-https-provider-cache: done
+  5-18-jwt-algorithm-pinning: done
+  5-19-admin-error-message-sanitization: done
   # Security Hardening — Group D: Matrix API DoS Protection
-  5-20-request-body-limits-server-timeouts: ready-for-dev
-  5-21-per-ip-rate-limiting: ready-for-dev
+  5-20-request-body-limits-server-timeouts: done
+  5-21-per-ip-rate-limiting: done
   # Security Hardening — Group E: Auth Middleware
-  5-22-constant-time-psk-compare: ready-for-dev
+  5-22-constant-time-psk-compare: done
   5-23-jwt-denylist-after-verify: ready-for-dev
   # Security Hardening — Group F: SSO
   5-24-sso-redirect-scheme-allowlist: ready-for-dev
