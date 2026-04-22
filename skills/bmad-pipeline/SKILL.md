@@ -181,7 +181,7 @@ Zeige: `✓ Schritt 4: Test-Review bestanden. Findings werden an Code-Review üb
 
 ### Schritt 5: bmad-code-review (inkl. Minor-Issue-Fix)
 
-**Modell:** `claude-opus-4-6` | **Kontext:** frisch (Task-Tool)
+**Modell:** `claude-opus-4-7` | **Kontext:** frisch (Task-Tool)
 
 Übergib die Findings aus Schritt 4 an den Code-Review-Agent:
 
@@ -210,7 +210,7 @@ git add -A
 
 ### Schritt 5b: Security-Review-Gate (SEC Gate 1 — pro Story, conditional)
 
-**Modell:** `claude-opus-4-6` | **Kontext:** frisch (Task-Tool)
+**Modell:** `claude-opus-4-7` | **Kontext:** frisch (Task-Tool)
 
 **Ziel:** Security-sensitive Stories bekommen ein zweites, fokussiertes Review. Nicht-sensitive Stories überspringen den Schritt.
 
@@ -426,7 +426,7 @@ Stoppe hier und warte auf den User.
 | bmad-testarch-atdd           | claude-sonnet-4-6 |
 | bmad-dev-story               | claude-sonnet-4-6 |
 | bmad-testarch-test-review    | claude-sonnet-4-6 |
-| bmad-code-review             | claude-opus-4-6   |
+| bmad-code-review             | claude-opus-4-7   |
 | bmad-security-review (Kassandra, Gate 1 & 2) | per `.claude/security-agent.yaml` (Default: claude-opus-4-7) |
 
 ---
