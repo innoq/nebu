@@ -1,5 +1,6 @@
 # generated: 2026-03-20
 # last_updated: 2026-04-23
+# story 5-1 created → ready-for-dev: 2026-04-23
 # story 5-25 in-progress: 2026-04-23
 # story 5-24 review: 2026-04-23
 # story 5-24 in-progress: 2026-04-23
@@ -45,6 +46,7 @@
 
 generated: 2026-03-20
 last_updated: 2026-04-23
+# story 5-1 review: 2026-04-23 (audit-log schema + RLS + retention cleanup)
 # story 5-29 created as follow-up of 5-27 scope reduction (code-review MAJOR-B): 2026-04-23
 # story 5-27 done (pipeline: 1 MAJOR-A fixed, 1 MAJOR-B deferred to 5-29, 8 MINOR fixed, Kassandra CLEAN): 2026-04-23
 # story 5-26 done (pipeline: 2 MAJOR fixed (TEA), 1 MINOR fixed (CR) — LIKE escape + input validation): 2026-04-23
@@ -439,7 +441,7 @@ development_status:
   #         based on security audit of gateway/ — see review notes in epic-4 retro folder)
   # ─────────────────────────────────────────────────────────────────────────
   epic-5: in-progress
-  5-1-audit-log-schema-rls-aufbewahrungskonfiguration: backlog
+  5-1-audit-log-schema-rls-aufbewahrungskonfiguration: review
   5-2-audit-log-writer-generisch-alle-admin-aktionen-atomare-garantie: backlog
   5-3-compliance-access-request-api: backlog
   5-4-four-eyes-approval-api-admin-dashboard-pending-badge: backlog

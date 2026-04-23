@@ -24,6 +24,9 @@ func TestFS_ContainsExpectedMigrationFiles(t *testing.T) {
 		"000006_users_email_pii.down.sql",
 		"000016_media_files.up.sql",
 		"000016_media_files.down.sql",
+		// Story 5.1: audit_log schema + RLS (000018 — 000017 is admin_sessions)
+		"000018_audit_log.up.sql",
+		"000018_audit_log.down.sql",
 	}
 
 	for _, name := range files {

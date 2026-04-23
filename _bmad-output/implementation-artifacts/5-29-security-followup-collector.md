@@ -108,6 +108,60 @@ When the pipeline for story **5-X** encounters such a finding:
   **Why deferred (instead of fixed in source story):** …
 -->
 
+### FB-51-01 — Non-superuser DB app role for real RLS enforcement
+
+**Source:** Story 5-1 code-review (2026-04-23, deferred architectural finding).
+**Severity:** HIGH (security posture gap — defense-in-depth broken in current dev setup, likely in prod too unless Compose/K8s configuration is corrected).
+**Size estimate:** M (touches docker-compose.yml, K8s manifests, migration config, test env setup, potentially CI).
+
+**Observation:** The `nebu` database user has `BYPASSRLS=t` and `rolsuper=t` (verified empirically against the running `nebu-postgres-1` container, 2026-04-23). `ALTER TABLE audit_log FORCE ROW LEVEL SECURITY` plus the implicit deny-all DELETE/UPDATE policies are **nominally present but functionally bypassed** for the only DB user the application ever connects as. The integration tests `TestAuditLogMigration_DeleteDenied`, `TestAuditLogMigration_UpdateDenied`, and `TestAuditLogPurge_SecurityDefinerElevatesAppRole` will fail with "DELETE succeeded as app role" in any env where `nebu` is a superuser.
+
+**Impact:**
+- Story 5-1's AC2/AC5 (append-only audit_log) behaviourally not provable in dev, likely not enforced in prod.
+- SECURITY DEFINER elevation for `audit_log_purge()` is irrelevant if the caller already has superuser.
+- Blocks future stories (5-2 audit writer, 5-6 data export, 5-7 GDPR deletion) from relying on DB-side authorization.
+
+**What to do:**
+1. **Two distinct DB roles:**
+   - `nebu_migrate` — owner of all tables, used only by golang-migrate. Needs DDL + GRANT privileges.
+   - `nebu_app` — plain role, **not superuser, not BYPASSRLS**. Granted only SELECT/INSERT on app tables + EXECUTE on SECURITY DEFINER functions. Runtime connection.
+2. Update `docker-compose.yml` (Compose secrets/env) and K8s manifests to provision both roles at DB-init.
+3. Update `gateway/internal/db/` so runtime uses `nebu_app`, migrations use `nebu_migrate` via separate `NEBU_DB_URL_MIGRATE`.
+4. Update test env vars (`NEBU_TEST_DB_URL` → `nebu_app`, `NEBU_TEST_MIGRATION_DB_URL` → `nebu_migrate`) in README + CI.
+5. Audit all 18 existing migrations for GRANT statements — add where `nebu_app` needs minimal privileges.
+6. Run full integration suite against the new setup — `TestAuditLogMigration_DeleteDenied` et al. must pass for the right reason.
+
+**Tests (ATDD first):**
+- Extend `TestAuditLogMigration_DeleteDenied` to assert the error message contains "row-level security" or "permission denied".
+- New `TestAppRole_CannotCreateTable` — confirms `nebu_app` lacks DDL privilege.
+- CI smoke test: `SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = 'nebu_app'` returns `(false, false)`.
+
+**Why deferred (instead of fixed in Story 5-1):**
+Cross-cutting Compose/K8s/Ops concern affecting every existing migration (18 of them). Landing it inside 5-1 would double the diff and require a separate ATDD pass for role-split. Belongs in the 5-29 collector because it recurs in 5-2, 5-6, 5-7.
+
+**Size-escalation trigger:** If step 5 (per-migration GRANT audit) needs > 5 migrations, split this block into its own **Story 5-30** rather than land in 5-29.
+
+### FB-51-02 — `audit_log.event_time` should be trigger-enforced + retention upper-bound
+
+**Source:** Story 5-1 Kassandra SEC Gate 1 (2026-04-23).
+**Severity:** MEDIUM (immutability defense-in-depth) + LOW (DoS resilience).
+**Size estimate:** S (one trigger + one guard + two tests).
+
+**Two related sub-items, bundled because they both tighten what the app role can do within the RLS envelope — they will be landed alongside FB-51-01 role separation:**
+
+**(a) MEDIUM — `event_time` trigger enforcement:**
+Currently `audit_log.event_time` is `DEFAULT NOW()`, but nothing forbids an INSERT caller from providing a custom value. A compromised gateway process could backdate, future-date, or place entries directly into the purge window. Add a `BEFORE INSERT` trigger that unconditionally sets `NEW.event_time := NOW()`. The existing integration test `TestAuditLogRetentionCleanup_DeletesOldRows` explicitly seeds old rows via `INSERT ... VALUES ($1, ...)` with hand-chosen timestamps — that path must be re-routed: either seed via the **migration role** (which is exempt from app-role RLS/trigger via its own path) or use the SECURITY DEFINER pattern to insert historical rows in tests. This is precisely why this block sits in FB-51-01's vicinity — once roles are split, the seed-path becomes clean.
+
+**(b) LOW — retention_days upper bound:**
+`audit.RunCleanup` rejects `retentionDays < 1` but not absurd values. `make_interval(days => 2^31 - 1)` raises `interval out of range` — pathological input crashes the purge but is not an exploit. Add `if retentionDays > 36500` (≈100 years) guard in Go and a matching `RAISE EXCEPTION` in `audit_log_purge`.
+
+**Tests (ATDD first):**
+- `TestAuditLog_EventTimeTrigger_ForcesNow` — INSERT with `event_time = '2000-01-01'` → row actually has `NOW()`.
+- `TestRunCleanup_RejectsExtremeRetentionDays` — `RunCleanup(ctx, db, 50000)` → `ErrInvalidRetentionDays`.
+
+**Why deferred:**
+The trigger fix interacts directly with the test-seed strategy which depends on the role split (FB-51-01). Landing it in Story 5-1 would either break existing integration tests or require a parallel refactor of seed paths that 5-29's role split solves more cleanly.
+
 ---
 
 ## Acceptance Criteria (for when 5-29 itself enters the pipeline)

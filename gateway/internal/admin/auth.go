@@ -129,6 +129,8 @@ func (r *postgresServerConfigReader) CompleteBootstrap(ctx context.Context) erro
 // completeBootstrapTx executes the CompleteBootstrap write via the given sqlQuerier
 // (which may be a *sql.Tx or a *sql.DB). Returns ErrAlreadyCompleted when the row
 // already exists (ON CONFLICT DO NOTHING → 0 rows affected).
+// Also seeds audit_log_retention_days (Story 5.1 AC3) with the default 2555 days (7 years).
+// ON CONFLICT DO NOTHING preserves any manually configured retention period.
 func completeBootstrapTx(ctx context.Context, q sqlQuerier) error {
 	result, err := q.ExecContext(ctx,
 		`INSERT INTO server_config (key, value, set_at) VALUES ($1, $2, $3)
@@ -144,7 +146,11 @@ func completeBootstrapTx(ctx context.Context, q sqlQuerier) error {
 	if rows == 0 {
 		return ErrAlreadyCompleted
 	}
-	return nil
+	_, err = q.ExecContext(ctx,
+		`INSERT INTO server_config (key, value, set_at) VALUES ($1, $2, $3)
+		 ON CONFLICT (key) DO NOTHING`,
+		"audit_log_retention_days", "2555", time.Now().UnixMilli())
+	return err
 }
 
 // saveAdminGroupClaimTx executes the SaveAdminGroupClaim upsert via the given sqlQuerier.

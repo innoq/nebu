@@ -1,5 +1,10 @@
 # Deferred Work
 
+## Deferred from: code review of story-5-1 (2026-04-23)
+
+- `gateway/migrations/migrations_test.go` only checks FS existence of migration files, no up/down roundtrip against a real DB. Pre-existing pattern across all 18 migrations; not a regression of Story 5.1.
+- **RLS defense nominal in dev:** `nebu` has `BYPASSRLS=t` + `rolsuper=t`. **Tracked in Story 5-29 as `FB-51-01`** — separate migration/app roles at the Compose/K8s level. Must be resolved before Epic-5 close. (Short summary only here; full block in `5-29-security-followup-collector.md`.)
+
 ## Deferred from: code review of story-5-11 (2026-04-20)
 
 - Draft reads outside TX boundary (TOCTOU): `ClaimSelectionHandler` reads draft data (instanceName, oidcIssuer, etc.) outside the transaction, then writes them inside the TX. A concurrent request could theoretically read stale draft data. Pre-existing; bootstrap runs exactly once by a single admin and Story 5.10 guards the entry points.
