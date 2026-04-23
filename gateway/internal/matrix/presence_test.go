@@ -47,6 +47,10 @@ func (m *mockPresenceCoreClient) GetPresence(_ context.Context, req *pb.GetPrese
 	return m.resp, m.err
 }
 
+func (m *mockPresenceCoreClient) SetPresence(_ context.Context, _ *pb.SetPresenceRequest) (*pb.SetPresenceResponse, error) {
+	return &pb.SetPresenceResponse{}, nil
+}
+
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
 // buildAuthedPresenceHandler wires JWTMiddleware → PresenceHandler and registers

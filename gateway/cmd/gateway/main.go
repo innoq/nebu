@@ -559,11 +559,11 @@ func main() {
 			w.Write([]byte(`{"device_keys":{},"failures":{}}`))
 		}))))
 
-	// looseRL: keys/changes is typically called after login — protect without blocking normal use.
-	mux.Handle("GET /_matrix/client/v3/keys/changes", looseRL(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// keys/changes requires JWT auth per Matrix spec (AC7, story 5-27).
+	mux.Handle("GET /_matrix/client/v3/keys/changes", looseRL(jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"changed":[],"left":[]}`))
-	})))
+	}))))
 
 	mux.Handle("POST /_matrix/client/v3/keys/claim",
 		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -609,8 +609,9 @@ func main() {
 		CoreClient: coreClient,
 		ServerName: serverName,
 	})
+	// GetRoomMessages wraps GetMessages with Matrix roomId path-param validation (AC2, story 5-27).
 	mux.Handle("GET /_matrix/client/v3/rooms/{roomId}/messages",
-		jwtMiddleware(http.HandlerFunc(messagesHandler.GetMessages)))
+		jwtMiddleware(http.HandlerFunc(messagesHandler.GetRoomMessages)))
 
 	setRoomStateHandler := matrix.NewSetRoomStateHandler(matrix.SetRoomStateConfig{
 		CoreClient: coreClient,
@@ -681,24 +682,9 @@ func main() {
 	mux.Handle("GET /_matrix/client/v3/presence/{userId}/status",
 		jwtMiddleware(http.HandlerFunc(presenceHandler.GetPresenceStatus)))
 
-	// PUT /presence/{userId}/status — set own presence (Matrix spec requires PUT)
+	// PUT /presence/{userId}/status — checks userId == authed user (AC5, story 5-27).
 	mux.Handle("PUT /_matrix/client/v3/presence/{userId}/status",
-		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			userID, _ := r.Context().Value(middleware.ContextKeyUserID).(string)
-			systemRole, _ := r.Context().Value(middleware.ContextKeySystemRole).(string)
-			var body struct {
-				Presence  string `json:"presence"`
-				StatusMsg string `json:"status_msg"`
-			}
-			_ = json.NewDecoder(r.Body).Decode(&body)
-			grpcCtx := coregrpc.WithUserMetadata(r.Context(), userID, systemRole)
-			_, _ = coreClient.SetPresence(grpcCtx, &pb.SetPresenceRequest{
-				UserId:   userID,
-				Presence: body.Presence,
-			})
-			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{}`))
-		}))))
+		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(presenceHandler.PutPresenceStatus))))
 
 	// POST /rooms/{roomId}/leave — leave a room (calls Elixir LeaveRoom gRPC)
 	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/leave",

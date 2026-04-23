@@ -6,12 +6,14 @@ import (
 	"net/http"
 
 	pb "github.com/nebu/nebu/internal/grpc/pb"
+	"github.com/nebu/nebu/internal/middleware"
 )
 
-// PresenceCoreClient is the consumer-defined interface for GetPresence gRPC calls.
+// PresenceCoreClient is the consumer-defined interface for presence gRPC calls.
 // Keep it minimal — only what this handler needs (Go interface convention, ADR-009).
 type PresenceCoreClient interface {
 	GetPresence(ctx context.Context, req *pb.GetPresenceRequest) (*pb.GetPresenceResponse, error)
+	SetPresence(ctx context.Context, req *pb.SetPresenceRequest) (*pb.SetPresenceResponse, error)
 }
 
 // PresenceHandler handles GET /_matrix/client/v3/presence/{userId}/status.
@@ -38,6 +40,49 @@ func NewPresenceHandler(cfg PresenceConfig) *PresenceHandler {
 type presenceStatusResponse struct {
 	Presence      string `json:"presence"`
 	LastActiveAgo int64  `json:"last_active_ago"`
+}
+
+// PutPresenceStatus handles PUT /_matrix/client/v3/presence/{userId}/status.
+// Requires JWT auth. Checks path userId == authenticated userID; mismatch → 403.
+//
+// Flow:
+//  1. Extract userId from path; compare to authenticated userID from JWT context.
+//  2. Mismatch → 403 M_FORBIDDEN (before any Core call).
+//  3. Decode body: {"presence": "online"|"offline"|"unavailable"}.
+//  4. Call CoreService.SetPresence — map errors → 503 M_UNAVAILABLE.
+//  5. Return 200 {}.
+func (h *PresenceHandler) PutPresenceStatus(w http.ResponseWriter, r *http.Request) {
+	pathUserID := r.PathValue("userId")
+
+	authedUserID, _ := r.Context().Value(middleware.ContextKeyUserID).(string)
+	if pathUserID != authedUserID {
+		writeMatrixError(w, http.StatusForbidden, "M_FORBIDDEN", "You can only set your own presence")
+		return
+	}
+
+	if !requireJSON(w, r) {
+		return
+	}
+
+	var body struct {
+		Presence string `json:"presence"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeMatrixError(w, http.StatusBadRequest, "M_BAD_JSON", "Invalid JSON body")
+		return
+	}
+
+	_, err := h.coreClient.SetPresence(r.Context(), &pb.SetPresenceRequest{
+		UserId:   authedUserID,
+		Presence: body.Presence,
+	})
+	if err != nil {
+		writeMatrixError(w, http.StatusServiceUnavailable, "M_UNAVAILABLE", "Presence service unavailable")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte("{}\n"))
 }
 
 // GetPresenceStatus handles GET /_matrix/client/v3/presence/{userId}/status.

@@ -72,7 +72,10 @@ func (h *ProfileHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
 
 	profile, err := h.db.GetProfile(r.Context(), userID)
 	if err != nil {
+		// Flatten both "user not found" and "user exists but no profile row" into
+		// an identical 404 to avoid a user-enumeration oracle (AC6, security m4).
 		if errors.Is(err, ErrProfileNotFound) {
+			w.Header().Set("Cache-Control", "public, max-age=60")
 			writeMatrixError(w, http.StatusNotFound, "M_NOT_FOUND", "Profile not found")
 			return
 		}
@@ -80,6 +83,7 @@ func (h *ProfileHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Cache-Control", "public, max-age=60")
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"displayname": profile.DisplayName,

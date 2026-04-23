@@ -51,6 +51,17 @@ func NewGetMessagesHandler(cfg GetMessagesConfig) *GetMessagesHandler {
 	}
 }
 
+// GetRoomMessages is the handler for GET /_matrix/client/v3/rooms/{roomId}/messages.
+// It validates the roomId path parameter before delegating to the shared implementation.
+func (h *GetMessagesHandler) GetRoomMessages(w http.ResponseWriter, r *http.Request) {
+	roomID := r.PathValue("roomId")
+	if err := ValidateMatrixRoomID(roomID); err != nil {
+		writeMatrixError(w, http.StatusBadRequest, "M_INVALID_PARAM", "Invalid room ID format")
+		return
+	}
+	h.GetMessages(w, r)
+}
+
 // GetMessages handles GET /_matrix/client/v3/rooms/{roomId}/messages.
 //
 // Flow:
