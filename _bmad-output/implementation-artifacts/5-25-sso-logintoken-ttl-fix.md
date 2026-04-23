@@ -4,7 +4,7 @@ security_review: required
 
 # Story 5.25: SSO LoginToken TTL Correction (5 min → 30 s)
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 

@@ -79,6 +79,11 @@ func (s *ssoStateStore) pop(state string) (ssoStateEntry, bool) {
 
 // ── Login token store (MAJOR-2 fix) ──────────────────────────────────────────
 
+// loginTokenTTL is the lifetime of a short-lived opaque loginToken.
+// 30 seconds matches the original design intent and minimises the replay window
+// for a token that passes through browser history, Referer headers, and proxy logs.
+const loginTokenTTL = 30 * time.Second
+
 // loginTokenEntry maps a short-lived opaque loginToken to the real OIDC id_token.
 // TTL is 30 seconds — single-use (popped on first read).
 type loginTokenEntry struct {
@@ -349,19 +354,19 @@ func (h *LoginHandler) GetSSOCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// MAJOR-2 fix: generate a short-lived opaque loginToken instead of passing the
-	// raw id_token in the URL. The id_token has a 1h lifetime and would be exposed
-	// in browser history, server logs, and Referer headers. The opaque token:
+	// Generate a short-lived opaque loginToken instead of passing the raw id_token
+	// in the URL. The id_token has a 1h lifetime and would be exposed in browser
+	// history, server logs, and Referer headers. The opaque token:
 	//   - is random (32 hex bytes = 128 bits of entropy)
 	//   - is single-use (popped from store on first POST /login call)
-	//   - expires in 30 seconds
+	//   - expires after loginTokenTTL (30 seconds)
 	tokenBytes := make([]byte, 32)
 	if _, err := rand.Read(tokenBytes); err != nil {
 		writeMatrixError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal error")
 		return
 	}
 	opaqueToken := hex.EncodeToString(tokenBytes)
-	globalLoginTokens.save(opaqueToken, rawIDToken, 5*time.Minute)
+	globalLoginTokens.save(opaqueToken, rawIDToken, loginTokenTTL)
 
 	// Redirect to the Matrix client with the opaque loginToken.
 	// The client calls POST /_matrix/client/v3/login with

@@ -1,5 +1,6 @@
 # generated: 2026-03-20
 # last_updated: 2026-04-23
+# story 5-25 in-progress: 2026-04-23
 # story 5-24 review: 2026-04-23
 # story 5-24 in-progress: 2026-04-23
 # story 4-24 review: 2026-04-11
@@ -44,6 +45,7 @@
 
 generated: 2026-03-20
 last_updated: 2026-04-23
+# story 5-25 done (pipeline: ATDD+Dev+Code+Security CLEAN — loginToken TTL 5m→30s): 2026-04-23
 # story 5-24 done (pipeline: ATDD+Dev+Code+Security CLEAN — SSO redirect scheme allowlist): 2026-04-23
 # story 5-23 done (pipeline: security fix — denylist check after signature verification): 2026-04-23
 # story 5-22 done (pipeline: ATDD+Dev+Code+Security review CLEAN): 2026-04-22
@@ -464,7 +466,7 @@ development_status:
   5-23-jwt-denylist-after-verify: done
   # Security Hardening — Group F: SSO
   5-24-sso-redirect-scheme-allowlist: done
-  5-25-sso-logintoken-ttl-fix: ready-for-dev
+  5-25-sso-logintoken-ttl-fix: done
   # Security Hardening — Group G: Input Validation
   5-26-user-directory-wildcard-escape: ready-for-dev
   5-27-matrix-path-param-validation-minor-bundle: ready-for-dev

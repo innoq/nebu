@@ -49,7 +49,11 @@ Ausführung. Jeder Schritt läuft in einem eigenen, frischen Subagenten-Kontext.
           ↓
     Major/Critical/HIGH Issues aus [5] oder [5b] gefunden?
        Ja  → Pause, User entscheidet
-       Nein → git commit
+       Nein → sprint-status.yaml aktualisieren (Story → done, last_updated, Kommentarzeile)
+              ↓
+              git add sprint-status.yaml
+              ↓
+              git commit
           ↓
 [6] Epic-Check: sprint-status.yaml
        Epic fertig? → [6b] Kassandra am Epic-Ende  ← SEC Gate 2
@@ -305,6 +309,41 @@ Stoppe und warte. Bei "weiter": fahre mit dem Commit fort.
 
 Zeige: `✓ Kein blockierendes Issue – commite automatisch.`
 
+**Vor jedem Commit: sprint-status.yaml aktualisieren** (gilt genauso im "weiter"-Fall aus dem Stop oben).
+
+Datei: `_bmad-output/implementation-artifacts/sprint-status.yaml`
+
+1. **Story-Status im `development_status:`-Block auf `done` setzen.**
+   Der YAML-Key enthält den vollen Slug, z.B. `5-24-sso-redirect-scheme-allowlist: done`.
+   Story-ID und Slug kommen aus der in Schritt 1 erstellten Story-Datei.
+
+2. **`last_updated:` auf das heutige Datum setzen** — kommt zweimal in der Datei vor:
+   - als Kommentar am Dateianfang (`# last_updated: YYYY-MM-DD`)
+   - als YAML-Feld (`last_updated: YYYY-MM-DD`)
+
+3. **Neue Kommentarzeile direkt unter dem `last_updated`-Kommentar einfügen**, im bestehenden Format:
+
+   ```
+   # story {STORY_ID} done (pipeline: {KURZE_ZUSAMMENFASSUNG}): {YYYY-MM-DD}
+   ```
+
+   Beispiele für `{KURZE_ZUSAMMENFASSUNG}` aus der Historie:
+   - `ATDD+Dev+Code+Security CLEAN`
+   - `CLEAN, Bootstrap replay entry points closed`
+   - `2 MINOR fixed — handler alloc + base.html inline style`
+   - `2 MAJOR + HIGH fixed, 2 rounds Kassandra`
+   - `3 rounds — real sql.Tx via runInTx injection`
+
+4. **Stagen:**
+
+   ```bash
+   git add _bmad-output/implementation-artifacts/sprint-status.yaml
+   ```
+
+Zeige: `✓ sprint-status.yaml aktualisiert ({STORY_ID} → done).`
+
+**Dann commiten:**
+
 ```bash
 git commit -m "$(cat <<'EOF'
 [KURZE_ZUSAMMENFASSUNG_AUS_STORY_ODER_REVIEW]
@@ -439,6 +478,10 @@ Stoppe hier und warte auf den User.
 - Die Findings aus dem Test-Review (Schritt 4) **müssen** an den Code-Review-Agent (Schritt 5) übergeben werden.
 - Das `git add -A` nach dem Code-Review ist immer auszuführen, unabhängig davon ob
   Minor Issues gefunden wurden oder nicht – es schadet nicht und stellt Vollständigkeit sicher.
+- **Vor jedem Commit wird `_bmad-output/implementation-artifacts/sprint-status.yaml` aktualisiert:**
+  Story-Status auf `done`, `last_updated` auf heutiges Datum (Kommentar + YAML-Feld), neue Kommentarzeile
+  `# story {ID} done (pipeline: {ZUSAMMENFASSUNG}): {DATUM}`. Ohne diesen Schritt läuft der Epic-Check
+  in Schritt 7 auf veraltete Daten und erkennt abgeschlossene Epics nicht.
 - **TEA Gate 1 (ATDD)** erzeugt failing Tests — der Dev-Agent implementiert gegen diese.
   Ohne failing Tests kein klares Definition of Done.
 - **TEA Gate 2 (Test-Review)** läuft vor dem Code-Review, damit Test-Lücken frühzeitig
