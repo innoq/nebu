@@ -474,8 +474,8 @@ development_status:
   # story 5-26 in-progress: 2026-04-23
   5-26-user-directory-wildcard-escape: done
   5-27-matrix-path-param-validation-minor-bundle: done
-  # Follow-up of 5-27 (scope reduction 2026-04-23, code-review MAJOR-B)
-  5-29-matrix-validator-rollout-remaining-handlers: ready-for-dev
+  # Collector for deferred security findings from Epic 5 stories 5-1..5-9 + 5-28 epic gate
+  5-29-security-followup-collector: ready-for-dev
   # Security Hardening — Group H: Pipeline / Process
   5-28-security-review-pipeline-gate: ready-for-dev
   epic-5-retrospective: optional
