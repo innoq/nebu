@@ -328,13 +328,14 @@ func main() {
 	})))
 
 	loginHandler := matrix.NewLoginHandler(matrix.LoginConfig{
-		DisplayName:   cfg.OIDCDisplayName,
-		Provider:      oidcProvider,
-		CoreClient:    coreClient,
-		ServerName:    serverName,
-		ClientID:      cfg.OIDCClientID,
-		ClientSecret:  cfg.OIDCClientSecret,
-		RoleClaimName: cfg.OIDCClaimRole,
+		DisplayName:        cfg.OIDCDisplayName,
+		Provider:           oidcProvider,
+		CoreClient:         coreClient,
+		ServerName:         serverName,
+		ClientID:           cfg.OIDCClientID,
+		ClientSecret:       cfg.OIDCClientSecret,
+		RoleClaimName:      cfg.OIDCClaimRole,
+		SSORedirectSchemes: cfg.SSORedirectSchemes,
 	})
 	mux.Handle("GET /_matrix/client/v3/login", looseRL(http.HandlerFunc(loginHandler.GetLogin)))
 	mux.Handle("POST /_matrix/client/v3/login", strictRL(bodyLimit1MiB(http.HandlerFunc(loginHandler.PostLogin))))

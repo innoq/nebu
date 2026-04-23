@@ -67,34 +67,37 @@ func generateDeviceID() string {
 }
 
 type LoginHandler struct {
-	displayName   string
-	provider      *auth.Provider
-	coreClient    CoreClient
-	serverName    string
-	clientID      string
-	clientSecret  string
-	roleClaimName string
+	displayName        string
+	provider           *auth.Provider
+	coreClient         CoreClient
+	serverName         string
+	clientID           string
+	clientSecret       string
+	roleClaimName      string
+	ssoRedirectSchemes []string // extra deep-link schemes from NEBU_SSO_REDIRECT_SCHEMES
 }
 
 type LoginConfig struct {
-	DisplayName   string
-	Provider      *auth.Provider
-	CoreClient    CoreClient
-	ServerName    string
-	ClientID      string
-	ClientSecret  string
-	RoleClaimName string
+	DisplayName        string
+	Provider           *auth.Provider
+	CoreClient         CoreClient
+	ServerName         string
+	ClientID           string
+	ClientSecret       string
+	RoleClaimName      string
+	SSORedirectSchemes []string // extra deep-link schemes from NEBU_SSO_REDIRECT_SCHEMES
 }
 
 func NewLoginHandler(cfg LoginConfig) *LoginHandler {
 	return &LoginHandler{
-		displayName:   cfg.DisplayName,
-		provider:      cfg.Provider,
-		coreClient:    cfg.CoreClient,
-		serverName:    cfg.ServerName,
-		clientID:      cfg.ClientID,
-		clientSecret:  cfg.ClientSecret,
-		roleClaimName: cfg.RoleClaimName,
+		displayName:        cfg.DisplayName,
+		provider:           cfg.Provider,
+		coreClient:         cfg.CoreClient,
+		serverName:         cfg.ServerName,
+		clientID:           cfg.ClientID,
+		clientSecret:       cfg.ClientSecret,
+		roleClaimName:      cfg.RoleClaimName,
+		ssoRedirectSchemes: cfg.SSORedirectSchemes,
 	}
 }
 

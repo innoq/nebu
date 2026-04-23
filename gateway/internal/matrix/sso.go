@@ -134,18 +134,64 @@ func ssoCallbackURL(r *http.Request) string {
 	return scheme + "://" + r.Host + "/_matrix/client/v3/login/sso/redirect/oidc"
 }
 
-// isRedirectURLAllowed validates the Matrix client's redirectUrl against an
-// allowlist to prevent open-redirect token exfiltration (MAJOR-1).
+// schemeOf extracts the lowercase URL scheme for logging purposes.
+// Returns "<invalid>" if the URL cannot be parsed. Never returns user-controlled
+// payloads beyond the scheme component.
+func schemeOf(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" {
+		return "<invalid>"
+	}
+	return strings.ToLower(u.Scheme)
+}
+
+// defaultDeepLinkSchemes is the default set of Matrix-client deep-link URL
+// schemes that are always accepted by isRedirectURLAllowed.
+// Operators can extend this list via NEBU_SSO_REDIRECT_SCHEMES but cannot
+// remove these defaults.
+var defaultDeepLinkSchemes = []string{
+	"element",
+	"io.element.fluffychat",
+	"fluffychat",
+}
+
+// schemeDenylist contains URL schemes that are unconditionally rejected even
+// if an operator accidentally adds them to the allowlist (AC 3, defense in
+// depth). These schemes can be used to exfiltrate the loginToken via script
+// execution, file access, or opaque data URIs.
+var schemeDenylist = map[string]bool{
+	"javascript": true,
+	"data":       true,
+	"file":       true,
+	"vbscript":   true,
+	"blob":       true,
+}
+
+// isRedirectURLAllowed validates the Matrix client's redirectUrl against a
+// strict allowlist to prevent open-redirect token exfiltration (Story 5.24).
 //
 // Allowed:
-//   - localhost (any port) — local web clients (Element Web dev, etc.)
-//   - Non-HTTP/S schemes — mobile/desktop app deep links (fluffychat://,
-//     io.element.fluffychat://, element://, etc.). These cannot be
-//     weaponised for web-based open-redirect attacks because browsers do
-//     not follow custom-scheme redirects to arbitrary servers.
+//   - https:// — always, any host (HTTPS is safe for open-redirect since TLS
+//     prevents MITM token capture and the host is validated by the browser)
+//   - http:// — only when the host is localhost or 127.0.0.1 (development)
+//   - default deep-link schemes: element://, io.element.fluffychat://, fluffychat://
+//   - operator-configured schemes from NEBU_SSO_REDIRECT_SCHEMES (comma-separated)
 //
-// Blocked: any http/https URL whose host is not localhost.
+// Blocked unconditionally (blocklist wins over allowlist):
+//   - javascript, data, file, vbscript, blob
+//
+// All other schemes are rejected.
 func isRedirectURLAllowed(raw string) bool {
+	return isRedirectURLAllowedWithSchemes(raw, nil)
+}
+
+// isRedirectURLAllowedWithSchemes is the parameterised variant of
+// isRedirectURLAllowed. extraSchemes are merged with the defaultDeepLinkSchemes
+// but the schemeDenylist always takes precedence.
+//
+// This function is called by the operator-configured path (NEBU_SSO_REDIRECT_SCHEMES
+// is parsed once at startup and passed here via LoginHandler).
+func isRedirectURLAllowedWithSchemes(raw string, extraSchemes []string) bool {
 	if raw == "" {
 		return false
 	}
@@ -153,16 +199,43 @@ func isRedirectURLAllowed(raw string) bool {
 	if err != nil {
 		return false
 	}
-	// Custom URL schemes (app deep links) — safe against open-redirect.
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return u.Scheme != "" // must have a scheme; reject bare strings
+	// Scheme must be present (rejects bare strings like "just-a-string" and
+	// relative paths like "/relative/path" that url.Parse gives an empty scheme).
+	scheme := strings.ToLower(u.Scheme)
+	if scheme == "" {
+		return false
 	}
-	// For http/https only allow loopback.
-	host := u.Hostname()
-	switch host {
-	case "localhost", "127.0.0.1", "::1":
+
+	// Hard deny — blocklist wins over every allowlist entry (AC 3).
+	if schemeDenylist[scheme] {
+		return false
+	}
+
+	// https:// — always allowed (AC 1).
+	if scheme == "https" {
 		return true
 	}
+
+	// http:// — only loopback (AC 1).
+	if scheme == "http" {
+		host := u.Hostname()
+		return host == "localhost" || host == "127.0.0.1"
+	}
+
+	// Deep-link schemes — check default allowlist first (AC 2).
+	for _, s := range defaultDeepLinkSchemes {
+		if scheme == strings.ToLower(s) {
+			return true
+		}
+	}
+
+	// Operator-configured extra schemes (AC 1 + NEBU_SSO_REDIRECT_SCHEMES).
+	for _, s := range extraSchemes {
+		if scheme == strings.ToLower(s) {
+			return true
+		}
+	}
+
 	return false
 }
 
@@ -178,10 +251,12 @@ func (h *LoginHandler) GetSSORedirect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// MAJOR-1 fix: validate redirectUrl against allowlist to prevent open redirect.
-	if !isRedirectURLAllowed(clientRedirectURL) {
-		slog.Warn("matrix SSO: redirectUrl rejected by allowlist", "url", clientRedirectURL)
-		writeMatrixError(w, http.StatusBadRequest, "M_INVALID_PARAM", "redirectUrl host is not permitted")
+	// Story 5.24: validate redirectUrl against strict scheme allowlist to prevent
+	// open-redirect token exfiltration. Scheme is not echoed in the error response
+	// to avoid XSS reflection (AC 4).
+	if !isRedirectURLAllowedWithSchemes(clientRedirectURL, h.ssoRedirectSchemes) {
+		slog.Warn("matrix SSO: redirectUrl rejected by allowlist", "scheme", schemeOf(clientRedirectURL))
+		writeMatrixError(w, http.StatusBadRequest, "M_INVALID_PARAM", "redirectUrl scheme is not permitted")
 		return
 	}
 

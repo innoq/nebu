@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 )
 
 // Config holds all NEBU_ environment variable configuration for the gateway.
@@ -17,10 +18,11 @@ type Config struct {
 	TLSCertFile        string // NEBU_TLS_CERT_FILE
 	TLSKeyFile         string // NEBU_TLS_KEY_FILE
 	TLSClientCAFile    string // NEBU_TLS_CLIENT_CA_FILE (mTLS Phase 2 — not wired up in MVP)
-	OIDCClaimRole      string  // NEBU_OIDC_CLAIM_ROLE (default: "nebu_role")
-	OIDCDisplayName    string  // NEBU_OIDC_DISPLAY_NAME (default: "SSO")
-	BufferCapacity     int     // NEBU_BUFFER_CAPACITY (default: 500)
-	BufferBaseRate     float64 // NEBU_BUFFER_BASE_RATE (default: 100.0)
+	OIDCClaimRole         string   // NEBU_OIDC_CLAIM_ROLE (default: "nebu_role")
+	OIDCDisplayName       string   // NEBU_OIDC_DISPLAY_NAME (default: "SSO")
+	SSORedirectSchemes    []string // NEBU_SSO_REDIRECT_SCHEMES (comma-separated extra deep-link schemes)
+	BufferCapacity        int      // NEBU_BUFFER_CAPACITY (default: 500)
+	BufferBaseRate        float64  // NEBU_BUFFER_BASE_RATE (default: 100.0)
 }
 
 // Load reads configuration from environment variables.
@@ -37,10 +39,11 @@ func Load() Config {
 		TLSCertFile:        os.Getenv("NEBU_TLS_CERT_FILE"),
 		TLSKeyFile:         os.Getenv("NEBU_TLS_KEY_FILE"),
 		TLSClientCAFile:    os.Getenv("NEBU_TLS_CLIENT_CA_FILE"),
-		OIDCClaimRole:      getEnvOrDefault("NEBU_OIDC_CLAIM_ROLE", "nebu_role"),
-		OIDCDisplayName:    getEnvOrDefault("NEBU_OIDC_DISPLAY_NAME", "SSO"),
-		BufferCapacity:     getEnvInt("NEBU_BUFFER_CAPACITY", 500),
-		BufferBaseRate:     getEnvFloat("NEBU_BUFFER_BASE_RATE", 100.0),
+		OIDCClaimRole:         getEnvOrDefault("NEBU_OIDC_CLAIM_ROLE", "nebu_role"),
+		OIDCDisplayName:       getEnvOrDefault("NEBU_OIDC_DISPLAY_NAME", "SSO"),
+		SSORedirectSchemes:    getEnvStringSlice("NEBU_SSO_REDIRECT_SCHEMES"),
+		BufferCapacity:        getEnvInt("NEBU_BUFFER_CAPACITY", 500),
+		BufferBaseRate:        getEnvFloat("NEBU_BUFFER_BASE_RATE", 100.0),
 	}
 }
 
@@ -63,6 +66,27 @@ func getEnvInt(key string, defaultValue int) int {
 		return defaultValue
 	}
 	return n
+}
+
+// getEnvStringSlice reads a comma-separated environment variable and returns a
+// slice of trimmed, non-empty strings. Returns nil if the variable is unset or
+// empty.
+func getEnvStringSlice(key string) []string {
+	v := os.Getenv(key)
+	if v == "" {
+		return nil
+	}
+	parts := strings.Split(v, ",")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if s := strings.TrimSpace(p); s != "" {
+			result = append(result, s)
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 // getEnvFloat reads a float64 environment variable.
