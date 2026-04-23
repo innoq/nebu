@@ -347,11 +347,11 @@ Zeige: `✓ sprint-status.yaml aktualisiert ({STORY_ID} → done).`
 ```bash
 git commit -m "$(cat <<'EOF'
 [KURZE_ZUSAMMENFASSUNG_AUS_STORY_ODER_REVIEW]
-
-Co-Authored-By: Claude Sonnet 4.6 (1M context) <noreply@anthropic.com>
 EOF
 )"
 ```
+
+Keine `Co-Authored-By`-Zeile anhängen.
 
 Zeige: `✓ Commit erstellt.`
 
