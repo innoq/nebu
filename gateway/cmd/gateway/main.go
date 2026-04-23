@@ -421,44 +421,13 @@ func main() {
 
 	// User directory search — returns registered users matching the search term.
 	// Queries the users table so Element Web can find other users by username.
+	// Story 5-26: input validation, LIKE-metachar escaping, panic-fix, result cap.
+	userDirHandler := matrix.NewUserDirectoryHandler(matrix.UserDirectoryConfig{
+		DB:         db.NewPostgresUserDirectoryDB(bootstrapDB),
+		ServerName: serverName,
+	})
 	mux.Handle("POST /_matrix/client/v3/user_directory/search",
-		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var req struct {
-				SearchTerm string `json:"search_term"`
-				Limit      int    `json:"limit"`
-			}
-			_ = json.NewDecoder(r.Body).Decode(&req)
-			if req.Limit <= 0 || req.Limit > 50 {
-				req.Limit = 10
-			}
-			// Query users table by user_id (which now contains the username as localpart).
-			rows, err := bootstrapDB.QueryContext(r.Context(),
-				`SELECT user_id FROM users WHERE user_id ILIKE $1 LIMIT $2`,
-				fmt.Sprintf("%%%s%%", req.SearchTerm), req.Limit)
-			if err != nil {
-				slog.Error("user_directory search failed", "err", err)
-				w.Header().Set("Content-Type", "application/json")
-				w.Write([]byte(`{"results":[],"limited":false}`))
-				return
-			}
-			defer rows.Close()
-			type result struct {
-				UserID      string `json:"user_id"`
-				DisplayName string `json:"display_name"`
-			}
-			results := []result{}
-			for rows.Next() {
-				var uid string
-				if err := rows.Scan(&uid); err == nil {
-					results = append(results, result{UserID: uid, DisplayName: uid[1:strings.Index(uid, ":")]})
-				}
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"results": results,
-				"limited": false,
-			})
-		}))))
+		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(userDirHandler.Search))))
 
 	// Room directory / alias endpoints.
 	// PUT: Element Web calls this when creating a public room with an address.

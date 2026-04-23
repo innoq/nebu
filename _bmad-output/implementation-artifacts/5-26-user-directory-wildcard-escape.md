@@ -4,7 +4,7 @@ security_review: required
 
 # Story 5.26: User Directory Search — LIKE Wildcard Escape + Input Validation
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 

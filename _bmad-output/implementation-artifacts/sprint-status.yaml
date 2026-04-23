@@ -45,6 +45,7 @@
 
 generated: 2026-03-20
 last_updated: 2026-04-23
+# story 5-26 done (pipeline: 2 MAJOR fixed (TEA), 1 MINOR fixed (CR) — LIKE escape + input validation): 2026-04-23
 # story 5-25 done (pipeline: ATDD+Dev+Code+Security CLEAN — loginToken TTL 5m→30s): 2026-04-23
 # story 5-24 done (pipeline: ATDD+Dev+Code+Security CLEAN — SSO redirect scheme allowlist): 2026-04-23
 # story 5-23 done (pipeline: security fix — denylist check after signature verification): 2026-04-23
@@ -468,7 +469,8 @@ development_status:
   5-24-sso-redirect-scheme-allowlist: done
   5-25-sso-logintoken-ttl-fix: done
   # Security Hardening — Group G: Input Validation
-  5-26-user-directory-wildcard-escape: ready-for-dev
+  # story 5-26 in-progress: 2026-04-23
+  5-26-user-directory-wildcard-escape: done
   5-27-matrix-path-param-validation-minor-bundle: ready-for-dev
   # Security Hardening — Group H: Pipeline / Process
   5-28-security-review-pipeline-gate: ready-for-dev
