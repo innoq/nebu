@@ -3345,3 +3345,192 @@ Admins können Nutzer, Rooms und Rollen über eine vollständige Web-UI verwalte
 - The env var `NEBU_OIDC_CLAIM_ROLE` remains as a fallback when `oidc_claim_role` is not yet in `server_config` (pre-bootstrap)
 - Unit tests: mapping with custom claim values; `user` row defaults correctly; missing claim falls back to `user` role
 - Gherkin: Bootstrap Wizard smoke flow updated to include Role Mapping step
+
+---
+
+## Epic 8: Project Is Published as a Public Open-Source Repository on GitHub
+
+Der Nebu-Maintainer kann das Repository von GitLab (privat) nach GitHub (öffentlich, Apache 2.0) überführen, ohne Secrets oder versehentliche Fremdautoren-Trailer zu leaken, mit vollständiger Contributor-, Security- und Release-Dokumentation, sodass externe Reviewer, Enterprise-Evaluatoren und potenzielle Contributors das Projekt auffinden, bewerten und beitragen können.
+
+**FRs covered:** _(Release-Epic — keine PRD-FRs)_
+**Zusätzliche Deliverables:** Commit-History-Rewrite (Co-Authored-By-Trailer entfernen), README-Attribution (BMAD + Claude), CONTRIBUTING.md, SECURITY.md, Secret-Scan (gitleaks), GitHub Actions Migration, Issue/PR-Templates, Repo-Metadaten (Topics, Badges, License-Check), verbindliches Full-Stack-Test + Epic-weites Security-Review-Gate, Initial Public Push mit Branch Protection
+
+### Story 8.1: Commit-History-Rewrite — Co-Authored-By-Trailer entfernen
+
+**As a** maintainer preparing for the public release,
+**I want** all `Co-Authored-By: Claude ...` trailers removed from the entire Git history,
+**so that** the commit log presents a clean, consistent single-author history that matches the attribution model set from 2026-04-23 forward.
+
+**Size:** S
+
+**Background:** Aktuell enthalten 50 Commits den `Co-Authored-By: Claude <noreply@anthropic.com>`-Trailer. Seit 2026-04-23 (Commit bba30c9) wird er im BMAD-Pipeline-Template nicht mehr gesetzt. Für einen konsistenten Public Release muss er retroaktiv aus der History entfernt werden. Die Attribution wandert stattdessen in README + CONTRIBUTING.md (Stories 8.2 + 8.3).
+
+**Acceptance Criteria:**
+
+- `git log --all --grep="Co-Authored-By"` returns zero matches nach Rewrite
+- Backup-Branch `backup/pre-history-rewrite` zeigt auf den HEAD-State vor dem Rewrite (reversibel)
+- Rewrite erfolgt via `git filter-repo` (oder äquivalent); alle Autor-, Committer- und Timestamp-Metadaten bleiben unverändert
+- Force-Push zum GitLab-Origin abgeschlossen; keine anderen Clones/Worktrees existieren (dokumentiert)
+- Story/Commit-SHA-Referenzen in `_bmad-output/` und `sprint-status.yaml` sind auf die neuen SHAs aktualisiert oder als `pre-rewrite-SHA` markiert
+
+---
+
+### Story 8.2: README — BMAD + Claude Attribution & Development Methodology Section
+
+**As a** potential contributor or enterprise evaluator landing on the GitHub repo,
+**I want** the README to transparently state the project's development methodology (BMAD-driven, AI-assisted via Claude),
+**so that** I understand how the code was produced without that attribution being commit-log noise.
+
+**Size:** XS
+
+**Acceptance Criteria:**
+
+- README enthält neue Section "Development Methodology" mit kurzer Erklärung des BMAD-Workflows (Link auf CONTRIBUTING.md)
+- Attribution-Passus: "This project was developed using the BMAD methodology with AI assistance via Claude (Opus 4.6/4.7, Sonnet 4.5) through Claude Code" — ein sachlicher Paragraph, kein Marketing
+- Reihenfolge: Overview → Features → Architecture → **Development Methodology** → Getting Started → Contributing → License
+- Keine Emojis, Markdown-lint-clean
+
+---
+
+### Story 8.3: CONTRIBUTING.md — BMAD-Workflow und Conventions dokumentiert
+
+**As a** potential external contributor,
+**I want** a CONTRIBUTING.md that explains the BMAD story pipeline, code conventions, and how to submit PRs,
+**so that** I can contribute effectively without reverse-engineering the process from the codebase.
+
+**Size:** S
+
+**Acceptance Criteria:**
+
+- `CONTRIBUTING.md` im Repo-Root erstellt
+- Erklärt BMAD-Gate-Sequenz: Story Creation → ATDD → Dev → Test Review → Code Review → Security Review
+- Verweist auf `CLAUDE.md` für Tech-Stack-Conventions (Go, Elixir)
+- Dokumentiert PR-Format, Commit-Message-Style (Conventional Commits, **ohne** Co-Authored-By), Branch-Naming (`feat/<epic>-<story>`)
+- Beschreibt einen Escape-Hatch für Contributor*innen ohne BMAD-Setup (Minimal-Change-Path ohne Story-Pipeline)
+
+---
+
+### Story 8.4: SECURITY.md — Vulnerability-Disclosure-Policy
+
+**As a** security researcher discovering a vulnerability in Nebu,
+**I want** a clear disclosure path with a security contact and response SLA,
+**so that** I can report responsibly without posting to public issues.
+
+**Size:** XS
+
+**Acceptance Criteria:**
+
+- `SECURITY.md` im Repo-Root (GitHub erkennt es und zeigt "Report a vulnerability"-Button)
+- Enthält: Contact-Email, optional PGP-Key-Fingerprint, SLA (acknowledge in 72h), Scope (was in/out of scope)
+- Supported-Versions-Tabelle (Matrix-Style) für Sicherheitsupdates
+- Verweis auf kommende CVE-Nummerierung / Disclosure-Timeline-Template
+
+---
+
+### Story 8.5: Secret-Scan-Gate — gitleaks über History + CI-Integration
+
+**As a** maintainer before the public push,
+**I want** an automated scan of the entire Git history for leaked secrets (API keys, private keys, PSKs, .env content),
+**so that** I can guarantee no sensitive material enters the public record.
+
+**Size:** S
+
+**Acceptance Criteria:**
+
+- `gitleaks detect --source . --log-opts="--all"` läuft über die komplette History, 0 unerlaubte Findings
+- `.gitleaks.toml` konfiguriert mit Allowlist für bekannte Test-Fixtures in `_test.go`, Dex-Test-Configs, Gherkin-Features
+- CI-Job "secret-scan" hinzugefügt, läuft auf jedem PR und blockiert bei Finding
+- Pre-push-Hook (optional, dokumentiert) für lokalen Schutz
+
+---
+
+### Story 8.6: CI-Migration — GitLab CI → GitHub Actions
+
+**As a** maintainer after the GitHub push,
+**I want** the existing GitLab CI pipeline ported to GitHub Actions with equivalent coverage,
+**so that** PRs get the same test + security gates that GitLab ran.
+
+**Size:** M
+
+**Acceptance Criteria:**
+
+- `.github/workflows/` enthält: `test.yml` (Go + Elixir Unit + Integration), `security.yml` (gitleaks + Trivy + dependency-audit), `build.yml` (Docker images)
+- Alle Jobs aus `.gitlab-ci.yml` sind äquivalent abgedeckt; Diff-Report vor/nach als Teil der Story-Doku
+- Workflows laufen auf `ubuntu-latest`, kein self-hosted Runner nötig
+- `make test-integration` läuft grün im Actions-Runner
+- GitLab `.gitlab-ci.yml` bleibt vorerst als Mirror erhalten, wird in Story 8.10 entschieden (archivieren / löschen)
+
+---
+
+### Story 8.7: GitHub Issue/PR-Templates + .github/-Infrastructure
+
+**As a** new contributor opening their first issue or PR,
+**I want** structured templates guiding me to provide the right information,
+**so that** maintainer triage is fast and consistent.
+
+**Size:** XS
+
+**Acceptance Criteria:**
+
+- `.github/ISSUE_TEMPLATE/bug_report.yml`, `feature_request.yml`, `security_disclosure.yml` (Redirect zu SECURITY.md) mit Form-Fields
+- `.github/pull_request_template.md` mit Checkliste (Tests, CHANGELOG, Security considerations, BMAD-Story-Reference)
+- `.github/CODEOWNERS` (initial: @philippbeyerlein für alles)
+- `.github/FUNDING.yml` (optional, falls Sponsoring)
+
+---
+
+### Story 8.8: Repo-Metadaten — License-Check, Topics, Description, Badges
+
+**As a** discoverer on GitHub's explore page,
+**I want** the repo to surface with accurate topics, a clear one-line description, and prominent badges,
+**so that** I can assess relevance within 5 seconds.
+
+**Size:** XS
+
+**Acceptance Criteria:**
+
+- `LICENSE` im Root enthält Apache-2.0 volltext; `go.mod`, `mix.exs`, README-License-Sektion stimmen überein
+- GitHub Topics gesetzt: `matrix`, `matrix-server`, `chat`, `elixir`, `golang`, `self-hosted`, `enterprise`, `slack-alternative`
+- Repo-Description (< 100 chars) gesetzt
+- README Badges: License (Apache 2.0), CI-Status, Go-Version, Elixir-Version, Matrix-Client-API-Version
+- Alle Badge-URLs referenzieren korrekte Workflow-Dateien (nach Story 8.6)
+
+---
+
+### Story 8.9: Release-Readiness-Gate — Full-Stack Test + Epic-weiter Security Review (100%-Pass-Pflicht)
+
+**As a** maintainer about to make the repo public,
+**I want** a 100%-green full-stack test run and a whole-repo security review before the first public commit is visible,
+**so that** day-one external reviewers and enterprise evaluators do not find critical issues that immediately erode trust.
+
+**Size:** M
+
+**Background:** Dieses Gate ist **non-negotiable**. Ein Public-Release-Repo, das an Tag 1 einen offenen CVE, einen fehlschlagenden CI-Run oder ungelöste HIGH-Security-Findings zeigt, verspielt das Enterprise-Vertrauensfenster, das Nebu als Slack/Teams-Ersatz braucht. Der Output dieses Gates entscheidet, ob Story 8.10 überhaupt ausgeführt wird.
+
+**Acceptance Criteria:**
+
+- `make test-unit-go` + `make test-unit-elixir` + `make test-integration` laufen grün: 0 Failures, 0 Skipped, 0 Flakes (über 3 aufeinanderfolgende Durchläufe bestätigt)
+- `/bmad-testarch-trace` über alle 8 Epics zeigt ≥80% P0+P1 Coverage (projekt-weit aggregiert, nicht nur per Epic)
+- `/bmad-security-review` gegen die komplette History (`git diff <empty-tree>..HEAD`): 0 CRITICAL, 0 HIGH; MEDIUM/LOW dokumentiert und entweder akzeptiert (mit Begründung) oder als Follow-up-Issue vor Push erfasst
+- Dependency-Audit: `go list -m -u all` + `mix hex.audit` — 0 unpatched CVE in direkten Deps
+- Release-Readiness-Report als `_bmad-output/implementation-artifacts/release-readiness-{YYYY-MM-DD}.md` erstellt (Audit-Trail, Pflicht-Artefakt)
+- Gate blockiert Story 8.10, solange auch nur ein Kriterium rot ist — keine Überschreibung durch Zeitdruck
+
+---
+
+### Story 8.10: Initial Public Push + Branch Protection + Required Reviews
+
+**As a** maintainer executing the public release,
+**I want** the GitHub repo initialized with proper branch protection from the very first commit,
+**so that** no direct-to-main pushes or unreviewed changes weaken the public repo's integrity.
+
+**Size:** S
+
+**Acceptance Criteria:**
+
+- GitHub-Repo erstellt, Sichtbarkeit: public, License: Apache-2.0 (via Repo-Settings erkannt)
+- `main`-Branch-Protection aktiv: Require PR, Require 1 Review, Require Status Checks (alle Workflows aus Story 8.6 müssen grün sein), Require Signed Commits, Require Linear History
+- Initial Push als Force-Push (nach Rewrite aus Story 8.1); danach Force-Push in Branch Protection deaktiviert
+- GitLab-Origin-Entscheidung dokumentiert: Mirror-Config behalten ODER Repo archivieren
+- Release-Announcement-Draft für Hacker News / r/selfhosted / Matrix-Community vorbereitet (nicht publiziert, nur Entwurf)
+- Release-Readiness-Report aus Story 8.9 wird als Repo-Release v0.1.0 Asset/Attachment angehängt oder im README verlinkt
