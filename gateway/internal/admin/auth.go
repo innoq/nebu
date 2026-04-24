@@ -17,7 +17,9 @@ import (
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/nebu/nebu/internal/audit"
 	"github.com/nebu/nebu/internal/auth"
+	pb "github.com/nebu/nebu/internal/grpc/pb"
 	"github.com/nebu/nebu/internal/validate"
 	"golang.org/x/oauth2"
 )
@@ -176,6 +178,9 @@ type AdminAuth struct {
 	// sessionStore backs the admin session with a server-side record (Story 5.12).
 	// nil means the legacy stateless cookie mode is active (backward-compat).
 	sessionStore AdminSessionStore
+	// coreClient is the gRPC client for Elixir core calls (e.g. WriteAuditLog).
+	// nil disables audit logging (backward-compat for test environments without core).
+	coreClient pb.CoreServiceClient
 	// runInTx executes fn inside a transaction. On success fn must return nil and the
 	// caller commits; on error the transaction is rolled back before returning.
 	// Injected at construction time — production uses *sql.Tx, tests inject a fake.
@@ -222,6 +227,25 @@ func NewAdminAuth(provider *auth.Provider, clientID, clientSecret, claimName str
 // Call this after NewAdminAuth before the HTTP server starts.
 func (a *AdminAuth) SetSessionStore(store AdminSessionStore) {
 	a.sessionStore = store
+}
+
+// SetCoreClient injects the gRPC core client for audit log calls.
+// Call this after NewAdminAuth before the HTTP server starts.
+func (a *AdminAuth) SetCoreClient(c pb.CoreServiceClient) {
+	a.coreClient = c
+}
+
+// logAuditEvent sends one audit event to the Elixir core via gRPC (synchronous).
+// It relies on audit.LogEvent's never-raise contract — gRPC failures are logged
+// at Warn level and swallowed; the primary request path is never blocked by an
+// error return. Latency is bounded by the standard gRPC dial/call timeouts on
+// coreClient. If coreClient is nil (test environments without a running core),
+// this is a no-op.
+func (a *AdminAuth) logAuditEvent(ctx context.Context, actorUserID, action, targetType, targetID string, metadata map[string]any, outcome, errorDetail string) {
+	if a.coreClient == nil {
+		return
+	}
+	audit.LogEvent(ctx, a.coreClient, actorUserID, action, targetType, targetID, metadata, outcome, errorDetail) //nolint:errcheck // always nil per never-raise contract
 }
 
 type oidcStateCookie struct {
@@ -654,6 +678,7 @@ func (a *AdminAuth) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if !auth.MatchesAdminGroupClaim(claims, adminGroupClaim) {
+		a.logAuditEvent(r.Context(), sub, "admin_login_failed", "user", sub, nil, "failure", "role_check_failed")
 		http.Error(w, "Access denied: admin group claim not present in token.", http.StatusForbidden)
 		return
 	}
@@ -695,6 +720,7 @@ func (a *AdminAuth) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 			Secure:   isRequestSecure(r),
 			SameSite: http.SameSiteLaxMode,
 		})
+		a.logAuditEvent(r.Context(), sub, "admin_login", "user", sub, nil, "success", "")
 		http.Redirect(w, r, "/admin/dashboard", http.StatusSeeOther)
 		return
 	}
@@ -725,7 +751,7 @@ func (a *AdminAuth) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		Secure:   isRequestSecure(r),
 		SameSite: http.SameSiteLaxMode,
 	})
-
+	a.logAuditEvent(r.Context(), sub, "admin_login", "user", sub, nil, "success", "")
 	http.Redirect(w, r, "/admin/dashboard", http.StatusSeeOther)
 }
 
@@ -822,6 +848,10 @@ func (a *AdminAuth) ClaimSelectionHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// AC6: audit bootstrap completion before creating the session.
+	a.logAuditEvent(r.Context(), sub, "bootstrap_completed", "server", "",
+		map[string]any{"instance_name": instanceName, "oidc_issuer": oidcIssuer}, "success", "")
+
 	// Create admin session cookie — operator is now authenticated.
 	// If a server-side session store is wired, create an SID-based session row (Story 5.12).
 	expiresAt := time.Now().Add(8 * time.Hour)
@@ -882,16 +912,32 @@ func (a *AdminAuth) ClaimSelectionHandler(w http.ResponseWriter, r *http.Request
 // AC4: Revokes the server-side session (if a store is configured) before clearing the cookie.
 // Still returns 302 to /admin/login on success.
 func (a *AdminAuth) LogoutHandler(w http.ResponseWriter, r *http.Request) {
+	// Extract subject for audit log — fall back to "unknown" if unavailable.
+	logoutSub := "unknown"
+
 	// AC4: revoke server-side session before clearing the cookie.
 	if a.sessionStore != nil {
 		if cookie, err := r.Cookie("admin_session"); err == nil {
 			if payload, err := a.verifyCookie(cookie.Value); err == nil {
 				var sidCookie adminSessionSIDCookie
 				if json.Unmarshal(payload, &sidCookie) == nil && sidCookie.SID != "" {
+					if sess, err := a.sessionStore.Get(r.Context(), sidCookie.SID); err == nil && sess != nil && sess.UserID != "" {
+						logoutSub = sess.UserID
+					}
 					if err := a.sessionStore.Revoke(r.Context(), sidCookie.SID); err != nil {
 						slog.Warn("logout: failed to revoke session in store", "err", err)
 						// Continue to clear the cookie regardless — best-effort revocation.
 					}
+				}
+			}
+		}
+	} else {
+		// Legacy stateless cookie — sub is in the cookie payload.
+		if cookie, err := r.Cookie("admin_session"); err == nil {
+			if payload, err := a.verifyCookie(cookie.Value); err == nil {
+				var legacyCookie adminSessionCookie
+				if json.Unmarshal(payload, &legacyCookie) == nil && legacyCookie.Sub != "" {
+					logoutSub = legacyCookie.Sub
 				}
 			}
 		}
@@ -906,5 +952,6 @@ func (a *AdminAuth) LogoutHandler(w http.ResponseWriter, r *http.Request) {
 		Secure:   isRequestSecure(r),
 		SameSite: http.SameSiteStrictMode,
 	})
+	a.logAuditEvent(r.Context(), logoutSub, "admin_logout", "user", logoutSub, nil, "success", "")
 	http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
 }

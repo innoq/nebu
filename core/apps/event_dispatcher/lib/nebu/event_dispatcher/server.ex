@@ -51,6 +51,12 @@ defmodule Nebu.EventDispatcher.Server do
     Application.get_env(:event_dispatcher, :pg_store_module, Nebu.Session.PgStore)
   end
 
+  # ─── Configurable AuditWriter module for testability ─────────────────────────
+  # Override via Application.put_env(:compliance, :audit_writer, FakeAuditWriter) in tests.
+  defp audit_writer_module do
+    Application.get_env(:compliance, :audit_writer, Compliance.AuditWriter)
+  end
+
   def send_event(request, _stream) do
     room_id = request.room_id
     sender_id = request.sender_id
@@ -137,12 +143,52 @@ defmodule Nebu.EventDispatcher.Server do
           end
         end
 
+        audit_writer_module().log(
+          creator_id,
+          "room_created",
+          "room",
+          room_id,
+          %{"is_direct" => request.is_direct},
+          "success"
+        )
+
         %Core.CreateRoomResponse{room_id: room_id}
 
       {:error, reason} ->
         raise GRPC.RPCError,
           status: GRPC.Status.internal(),
           message: "Failed to start room: #{inspect(reason)}"
+    end
+  end
+
+  # ─── WriteAuditLog ─────────────────────────────────────────────────────────────
+  # Called by the Go gateway for admin-layer events (login, logout, bootstrap).
+  # Delegates to the configurable audit_writer_module (Compliance.AuditWriter in prod).
+  # Returns ok: false when AuditWriter returns {:error, _} — Go decides whether to warn.
+  def write_audit_log(request, _stream) do
+    metadata =
+      case Jason.decode(request.metadata_json) do
+        {:ok, m} when is_map(m) -> m
+        _ -> %{}
+      end
+
+    error_detail =
+      if request.error_detail == "", do: nil, else: request.error_detail
+
+    case audit_writer_module().log(
+           request.actor_user_id,
+           request.action,
+           request.target_type,
+           request.target_id,
+           metadata,
+           request.outcome,
+           error_detail
+         ) do
+      :ok ->
+        %Core.WriteAuditLogResponse{ok: true}
+
+      {:error, _} ->
+        %Core.WriteAuditLogResponse{ok: false}
     end
   end
 
@@ -168,10 +214,12 @@ defmodule Nebu.EventDispatcher.Server do
             # Mark any pending invitation as accepted so it disappears from
             # rooms.invite in subsequent sync responses (no-op for public joins).
             db_module_invite().accept_invitation(room_id, user_id)
+            audit_writer_module().log(user_id, "room_joined", "room", room_id, %{}, "success")
             %Core.JoinRoomResponse{room_id: room_id}
 
           {:error, :already_member} ->
             # Matrix spec: idempotent — joining an already-joined room is success.
+            # No audit log for idempotent joins (AC9 scope decision).
             %Core.JoinRoomResponse{room_id: room_id}
 
           {:error, reason} ->

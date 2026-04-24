@@ -30,6 +30,13 @@ defmodule Nebu.EventDispatcher.JoinRoomTest do
   # Injected via Application.put_env(:room_manager, :db_module, FakeDB).
   # No PostgreSQL connection is required.
 
+  # No-op audit writer — Story 5-2 wired Server.join_room/2 to emit an
+  # audit log entry; this test does not verify that emission (covered in
+  # audit_room_ops_test.exs) and must not depend on Nebu.Repo.
+  defmodule NoOpAuditWriter do
+    def log(_, _, _, _, _, _, _ \\ nil), do: :ok
+  end
+
   defmodule FakeDB do
     def load_members(room_id) do
       case :ets.lookup(:join_room_test_db, {:room, room_id}) do
@@ -112,6 +119,11 @@ defmodule Nebu.EventDispatcher.JoinRoomTest do
     Application.put_env(:room_manager, :db_module, FakeDB)
     Application.put_env(:event_dispatcher, :invite_db_module, FakeInviteDB)
 
+    # Story 5-2: Server.join_room/2 now calls Compliance.AuditWriter.log/6
+    # on the :ok branch. Inject NoOpAuditWriter here so this test does not
+    # depend on Nebu.Repo being started in the :test env.
+    Application.put_env(:compliance, :audit_writer, NoOpAuditWriter)
+
     # Initialise :pg (built-in OTP, idempotent).
     case :pg.start_link() do
       {:ok, _pid} -> :ok
@@ -126,6 +138,7 @@ defmodule Nebu.EventDispatcher.JoinRoomTest do
     on_exit(fn ->
       Application.delete_env(:room_manager, :db_module)
       Application.delete_env(:event_dispatcher, :invite_db_module)
+      Application.delete_env(:compliance, :audit_writer)
 
       if :ets.info(:join_room_test_db) != :undefined do
         :ets.delete(:join_room_test_db)

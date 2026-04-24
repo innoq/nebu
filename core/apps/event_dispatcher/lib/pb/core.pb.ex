@@ -110,29 +110,6 @@ defmodule Core.LeaveRoomResponse do
   field :room_id, 1, type: :string, json_name: "roomId"
 end
 
-defmodule Core.LeaveRoomRequest do
-  @moduledoc false
-
-  use Protobuf,
-    full_name: "core.LeaveRoomRequest",
-    protoc_gen_elixir_version: "0.16.0",
-    syntax: :proto3
-
-  field :user_id, 1, type: :string, json_name: "userId"
-  field :room_id, 2, type: :string, json_name: "roomId"
-end
-
-defmodule Core.LeaveRoomResponse do
-  @moduledoc false
-
-  use Protobuf,
-    full_name: "core.LeaveRoomResponse",
-    protoc_gen_elixir_version: "0.16.0",
-    syntax: :proto3
-
-  field :room_id, 1, type: :string, json_name: "roomId"
-end
-
 defmodule Core.GetMessagesRequest do
   @moduledoc false
 
@@ -498,4 +475,32 @@ defmodule Core.UpdateProfileResponse do
     full_name: "core.UpdateProfileResponse",
     protoc_gen_elixir_version: "0.16.0",
     syntax: :proto3
+end
+
+defmodule Core.WriteAuditLogRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.WriteAuditLogRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :actor_user_id, 1, type: :string, json_name: "actorUserId"
+  field :action, 2, type: :string
+  field :target_type, 3, type: :string, json_name: "targetType"
+  field :target_id, 4, type: :string, json_name: "targetId"
+  field :metadata_json, 5, type: :bytes, json_name: "metadataJson"
+  field :outcome, 6, type: :string
+  field :error_detail, 7, type: :string, json_name: "errorDetail"
+end
+
+defmodule Core.WriteAuditLogResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.WriteAuditLogResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :ok, 1, type: :bool
 end

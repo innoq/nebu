@@ -141,6 +141,76 @@ Cross-cutting Compose/K8s/Ops concern affecting every existing migration (18 of 
 
 **Size-escalation trigger:** If step 5 (per-migration GRANT audit) needs > 5 migrations, split this block into its own **Story 5-30** rather than land in 5-29.
 
+### FB-52-01 — Core gRPC listener (port 9000) has no transport auth → audit-log forgery risk
+
+**Source:** Story 5-2 Kassandra SEC Gate 1 (2026-04-23). Pre-existing ADR-008-Phase-1 transport weakness, but 5-2 adds the first *immutability-dependent* endpoint (`WriteAuditLog`) to this listener, escalating the impact.
+**Severity:** HIGH (forgery of regulator-visible records).
+**Size estimate:** L (cuts across Compose, K8s, Elixir grpc-elixir config, Go grpc-go dial, test harness).
+
+**Observation:** `docker-compose.yml` publishes port 9000 on the host (`ports: ["9000:9000"]`), the Go client dials with `insecure.NewCredentials()`, and the Elixir grpc-elixir server has no auth interceptor. `Nebu.NodeRegistration` is a one-shot HTTP registration — it does not protect the gRPC listener at all. Any process on the host with L4 access to 9000 can call `WriteAuditLog` with arbitrary payloads. Before 5-2, forgery meant sending chat messages; from 5-2 onward, it means minting regulator-visible audit records.
+
+**What to do:**
+1. Land ADR-008 Phase 2 for real: ephemeral mTLS between gateway and core (or at minimum, a shared-secret interceptor on both sides, rotated via the existing PSK pathway).
+2. Remove the `ports: 9000:9000` host exposure from `docker-compose.yml` — the port should be reachable only via the internal Compose network.
+3. Add an Elixir grpc-elixir interceptor that rejects RPCs without a valid node-registration token in the request metadata.
+4. Update all Go call-sites (not just audit) to attach the token in gRPC metadata.
+
+**Tests (ATDD first):**
+- `TestCoreGRPC_RejectsUnauthenticatedWriteAuditLog` — a raw gRPC dial without credentials → `Unauthenticated` error.
+- `TestCoreGRPC_RejectsForgedNodeToken` — dial with a random token → rejected.
+- `TestAuditForgery_NoRowInserted` — end-to-end: unauthenticated call attempts `WriteAuditLog`, assert 0 new `audit_log` rows.
+- CI smoke: `docker compose ps` verifies port 9000 is **not** in the published ports list.
+
+**Why deferred:** Cross-cutting ops + transport-layer work. Pairs with FB-51-01 (non-superuser DB app role) because both are "the infrastructure trust model that Epic 5 assumes isn't actually there yet." They should be planned together.
+
+**Size-escalation trigger:** If mTLS cert management is non-trivial (cert rotation, distribution), split cert-management into its own **Story 5-31** and keep the interceptor + port-unbinding in 5-29's FB-52-01 scope.
+
+---
+
+### FB-52-02 — `action` field has no allowlist (forensic clarity, not integrity)
+
+**Source:** Story 5-2 Kassandra SEC Gate 1 (2026-04-23).
+**Severity:** MEDIUM.
+**Size estimate:** S (one validation function + migration pattern for known action strings).
+
+**Observation:** `WriteAuditLog` accepts any `action` string. A compromised gateway (or, combined with FB-52-01, any external caller) could write `"bootstrap_completed"` or `"security_alert_acknowledged"` without the corresponding system event actually occurring, confusing regulators and forensics. This is not an integrity-breach of the audit trail itself (rows are append-only), but it dilutes the signal.
+
+**What to do:**
+1. Define an `@known_actions` allowlist in `Compliance.AuditWriter` covering: `admin_login`, `admin_login_failed`, `admin_logout`, `bootstrap_completed`, `bootstrap_failed`, `room_created`, `room_joined`, `compliance_access_requested`, `compliance_access_approved`, `compliance_access_rejected`, `compliance_data_exported`, `user_deleted`, `user_anonymized` (and update as new stories introduce events).
+2. `AuditWriter.log` rejects unknown actions with `{:error, :audit_unknown_action}` and Logger.error — same pattern as current `validate_required`.
+3. New stories (5-3..5-9, plus future) must add their action strings to the allowlist in the same PR that introduces them.
+
+**Tests (ATDD first):**
+- `TestAuditWriter_UnknownAction_IsRejected` — `log("user", "rogue_event", ...)` → `{:error, :audit_unknown_action}`.
+- `TestAuditWriter_KnownActions_AllPass` — parametrized table over all allowlisted actions.
+
+**Why deferred:** Needs a definition decision across the Epic 5 action vocabulary, not just 5-2's four actions. Better to land once 5-3..5-9 pipeline runs have established the full set.
+
+---
+
+### FB-E5-03 — Elixir event_dispatcher: 23 pre-existing test failures (Nebu.Repo + FakeDB drift)
+
+**Source:** Discovered during Story 5-2 TEA Gate 2 (2026-04-23). Not a security issue — listed here so the collector captures all Epic-5 test-debt in one place for epic-close decision-making.
+**Severity:** MEDIUM (test pipeline hygiene, not production security).
+**Size estimate:** S (mostly fake-db updates + conditional skips).
+
+**Observation:** `make test-unit-elixir` in `event_dispatcher` reports `93 tests, 23 failures, 2 skipped`. Verified pre-existing (not caused by 5-2) via `git stash --include-untracked` on 2026-04-23: same 23 failures at HEAD before 5-2 staging. Two root causes:
+
+1. **`could not lookup Ecto repo Nebu.Repo`** — tests call code paths that use `Nebu.Room.DB` (which calls `Nebu.Repo`), and `Nebu.Repo` is only configured for `:prod`/`:dev` envs. Affected: `create_room_test` (when `name` != ""), most `sync_test` scenarios, parts of `join_room_test`.
+2. **`FakeInviteDB.accept_invitation/2 is undefined or private`** and **`SyncTestFakeDB.get_room_name/1 is undefined`** — test fakes out of sync with `Nebu.Room.DB` interface expansions in later stories.
+
+**What to do:**
+1. Decide strategy per test: (a) inject a configurable `messages_db_module` override (same pattern as `audit_writer_module()` in 5-2), or (b) mark the test as `@tag :integration` and run it only against the real DB.
+2. Update all `FakeDB`/`FakeInviteDB`/`SyncTestFakeDB` modules to implement the current interface surface (add missing `accept_invitation/2`, `get_room_name/1`, etc.). Consider introducing a `@behaviour Nebu.Room.DBBehaviour` (deferred-work.md already flagged this) so fakes are compile-time-checked.
+
+**Tests (ATDD first):**
+- Re-run `make test-unit-elixir` after each fix. Target: 0 failures, 0 skipped (or skipped with documented reason).
+- Add a compile-time behaviour conformance test for `Nebu.Room.DB` fakes.
+
+**Why deferred:** Pre-existing tech debt across multiple earlier epics. Rescoping this into Story 5-2 would have doubled its diff and delayed audit-log landing. Must be resolved before epic close for a clean pipeline signal.
+
+---
+
 ### FB-51-02 — `audit_log.event_time` should be trigger-enforced + retention upper-bound
 
 **Source:** Story 5-1 Kassandra SEC Gate 1 (2026-04-23).

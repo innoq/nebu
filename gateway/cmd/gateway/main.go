@@ -216,6 +216,7 @@ func main() {
 	adminAuth := admin.NewAdminAuth(oidcProvider, cfg.OIDCClientID, cfg.OIDCClientSecret, cfg.OIDCClaimRole, []byte(internalSecret), bootstrapDB, tmplHandler)
 	sessionStore := db.NewPostgresAdminSessionStore(bootstrapDB)
 	adminAuth.SetSessionStore(sessionStore)
+	adminAuth.SetCoreClient(coreClient.CoreServiceClient())
 	sessionGuard := admin.SessionGuardWithStore([]byte(internalSecret), sessionStore)
 
 	// AC5: Periodically clean up expired admin sessions (once per hour).

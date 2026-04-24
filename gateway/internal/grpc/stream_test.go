@@ -114,6 +114,9 @@ func (m *mockCoreClient) UpdateProfile(_ context.Context, _ *pb.UpdateProfileReq
 func (m *mockCoreClient) LeaveRoom(_ context.Context, _ *pb.LeaveRoomRequest, _ ...grpc.CallOption) (*pb.LeaveRoomResponse, error) {
 	return nil, nil
 }
+func (m *mockCoreClient) WriteAuditLog(_ context.Context, _ *pb.WriteAuditLogRequest, _ ...grpc.CallOption) (*pb.WriteAuditLogResponse, error) {
+	return nil, nil
+}
 
 // ─── Mock server-streaming client ────────────────────────────────────────────
 

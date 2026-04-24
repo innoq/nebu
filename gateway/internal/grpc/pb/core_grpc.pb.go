@@ -38,6 +38,7 @@ const (
 	CoreService_GetSyncDelta_FullMethodName     = "/core.CoreService/GetSyncDelta"
 	CoreService_GetPresence_FullMethodName      = "/core.CoreService/GetPresence"
 	CoreService_UpdateProfile_FullMethodName    = "/core.CoreService/UpdateProfile"
+	CoreService_WriteAuditLog_FullMethodName    = "/core.CoreService/WriteAuditLog"
 )
 
 // CoreServiceClient is the client API for CoreService service.
@@ -77,6 +78,9 @@ type CoreServiceClient interface {
 	GetPresence(ctx context.Context, in *GetPresenceRequest, opts ...grpc.CallOption) (*GetPresenceResponse, error)
 	// UpdateProfile — upserts displayname and/or avatar_url for a user
 	UpdateProfile(ctx context.Context, in *UpdateProfileRequest, opts ...grpc.CallOption) (*UpdateProfileResponse, error)
+	// WriteAuditLog — called by Go gateway for admin/compliance events that originate
+	// in the Go layer (login, logout, bootstrap). Room events are logged directly by Elixir.
+	WriteAuditLog(ctx context.Context, in *WriteAuditLogRequest, opts ...grpc.CallOption) (*WriteAuditLogResponse, error)
 }
 
 type coreServiceClient struct {
@@ -286,6 +290,16 @@ func (c *coreServiceClient) UpdateProfile(ctx context.Context, in *UpdateProfile
 	return out, nil
 }
 
+func (c *coreServiceClient) WriteAuditLog(ctx context.Context, in *WriteAuditLogRequest, opts ...grpc.CallOption) (*WriteAuditLogResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WriteAuditLogResponse)
+	err := c.cc.Invoke(ctx, CoreService_WriteAuditLog_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CoreServiceServer is the server API for CoreService service.
 // All implementations must embed UnimplementedCoreServiceServer
 // for forward compatibility.
@@ -323,6 +337,9 @@ type CoreServiceServer interface {
 	GetPresence(context.Context, *GetPresenceRequest) (*GetPresenceResponse, error)
 	// UpdateProfile — upserts displayname and/or avatar_url for a user
 	UpdateProfile(context.Context, *UpdateProfileRequest) (*UpdateProfileResponse, error)
+	// WriteAuditLog — called by Go gateway for admin/compliance events that originate
+	// in the Go layer (login, logout, bootstrap). Room events are logged directly by Elixir.
+	WriteAuditLog(context.Context, *WriteAuditLogRequest) (*WriteAuditLogResponse, error)
 	mustEmbedUnimplementedCoreServiceServer()
 }
 
@@ -389,6 +406,9 @@ func (UnimplementedCoreServiceServer) GetPresence(context.Context, *GetPresenceR
 }
 func (UnimplementedCoreServiceServer) UpdateProfile(context.Context, *UpdateProfileRequest) (*UpdateProfileResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method UpdateProfile not implemented")
+}
+func (UnimplementedCoreServiceServer) WriteAuditLog(context.Context, *WriteAuditLogRequest) (*WriteAuditLogResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method WriteAuditLog not implemented")
 }
 func (UnimplementedCoreServiceServer) mustEmbedUnimplementedCoreServiceServer() {}
 func (UnimplementedCoreServiceServer) testEmbeddedByValue()                     {}
@@ -746,6 +766,24 @@ func _CoreService_UpdateProfile_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_WriteAuditLog_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WriteAuditLogRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).WriteAuditLog(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_WriteAuditLog_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).WriteAuditLog(ctx, req.(*WriteAuditLogRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CoreService_ServiceDesc is the grpc.ServiceDesc for CoreService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -824,6 +862,10 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateProfile",
 			Handler:    _CoreService_UpdateProfile_Handler,
+		},
+		{
+			MethodName: "WriteAuditLog",
+			Handler:    _CoreService_WriteAuditLog_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

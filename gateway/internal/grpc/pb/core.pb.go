@@ -2222,6 +2222,145 @@ func (*UpdateProfileResponse) Descriptor() ([]byte, []int) {
 	return file_core_proto_rawDescGZIP(), []int{39}
 }
 
+// WriteAuditLog — persists one audit record in a separate DB transaction.
+// Go gateway sends admin-layer events (login, logout, bootstrap) via this RPC.
+// Room events are written directly by Elixir (no gRPC roundtrip needed).
+type WriteAuditLogRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ActorUserId   string                 `protobuf:"bytes,1,opt,name=actor_user_id,json=actorUserId,proto3" json:"actor_user_id,omitempty"`
+	Action        string                 `protobuf:"bytes,2,opt,name=action,proto3" json:"action,omitempty"`
+	TargetType    string                 `protobuf:"bytes,3,opt,name=target_type,json=targetType,proto3" json:"target_type,omitempty"`       // empty string for null
+	TargetId      string                 `protobuf:"bytes,4,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`             // empty string for null
+	MetadataJson  []byte                 `protobuf:"bytes,5,opt,name=metadata_json,json=metadataJson,proto3" json:"metadata_json,omitempty"` // JSON-encoded map; empty bytes = {}
+	Outcome       string                 `protobuf:"bytes,6,opt,name=outcome,proto3" json:"outcome,omitempty"`
+	ErrorDetail   string                 `protobuf:"bytes,7,opt,name=error_detail,json=errorDetail,proto3" json:"error_detail,omitempty"` // empty string = not applicable
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WriteAuditLogRequest) Reset() {
+	*x = WriteAuditLogRequest{}
+	mi := &file_core_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WriteAuditLogRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WriteAuditLogRequest) ProtoMessage() {}
+
+func (x *WriteAuditLogRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WriteAuditLogRequest.ProtoReflect.Descriptor instead.
+func (*WriteAuditLogRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *WriteAuditLogRequest) GetActorUserId() string {
+	if x != nil {
+		return x.ActorUserId
+	}
+	return ""
+}
+
+func (x *WriteAuditLogRequest) GetAction() string {
+	if x != nil {
+		return x.Action
+	}
+	return ""
+}
+
+func (x *WriteAuditLogRequest) GetTargetType() string {
+	if x != nil {
+		return x.TargetType
+	}
+	return ""
+}
+
+func (x *WriteAuditLogRequest) GetTargetId() string {
+	if x != nil {
+		return x.TargetId
+	}
+	return ""
+}
+
+func (x *WriteAuditLogRequest) GetMetadataJson() []byte {
+	if x != nil {
+		return x.MetadataJson
+	}
+	return nil
+}
+
+func (x *WriteAuditLogRequest) GetOutcome() string {
+	if x != nil {
+		return x.Outcome
+	}
+	return ""
+}
+
+func (x *WriteAuditLogRequest) GetErrorDetail() string {
+	if x != nil {
+		return x.ErrorDetail
+	}
+	return ""
+}
+
+type WriteAuditLogResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WriteAuditLogResponse) Reset() {
+	*x = WriteAuditLogResponse{}
+	mi := &file_core_proto_msgTypes[41]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WriteAuditLogResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WriteAuditLogResponse) ProtoMessage() {}
+
+func (x *WriteAuditLogResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[41]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WriteAuditLogResponse.ProtoReflect.Descriptor instead.
+func (*WriteAuditLogResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{41}
+}
+
+func (x *WriteAuditLogResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
 var File_core_proto protoreflect.FileDescriptor
 
 const file_core_proto_rawDesc = "" +
@@ -2385,7 +2524,18 @@ const file_core_proto_rawDesc = "" +
 	"\vdisplayname\x18\x02 \x01(\tR\vdisplayname\x12\x1d\n" +
 	"\n" +
 	"avatar_url\x18\x03 \x01(\tR\tavatarUrl\"\x17\n" +
-	"\x15UpdateProfileResponse2\x96\n" +
+	"\x15UpdateProfileResponse\"\xf2\x01\n" +
+	"\x14WriteAuditLogRequest\x12\"\n" +
+	"\ractor_user_id\x18\x01 \x01(\tR\vactorUserId\x12\x16\n" +
+	"\x06action\x18\x02 \x01(\tR\x06action\x12\x1f\n" +
+	"\vtarget_type\x18\x03 \x01(\tR\n" +
+	"targetType\x12\x1b\n" +
+	"\ttarget_id\x18\x04 \x01(\tR\btargetId\x12#\n" +
+	"\rmetadata_json\x18\x05 \x01(\fR\fmetadataJson\x12\x18\n" +
+	"\aoutcome\x18\x06 \x01(\tR\aoutcome\x12!\n" +
+	"\ferror_detail\x18\a \x01(\tR\verrorDetail\"'\n" +
+	"\x15WriteAuditLogResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok2\xe0\n" +
 	"\n" +
 	"\vCoreService\x12<\n" +
 	"\tSendEvent\x12\x16.core.SendEventRequest\x1a\x17.core.SendEventResponse\x12?\n" +
@@ -2409,7 +2559,8 @@ const file_core_proto_rawDesc = "" +
 	"\x0eGetInitialSync\x12\x1b.core.GetInitialSyncRequest\x1a\x1c.core.GetInitialSyncResponse\x12E\n" +
 	"\fGetSyncDelta\x12\x19.core.GetSyncDeltaRequest\x1a\x1a.core.GetSyncDeltaResponse\x12B\n" +
 	"\vGetPresence\x12\x18.core.GetPresenceRequest\x1a\x19.core.GetPresenceResponse\x12H\n" +
-	"\rUpdateProfile\x12\x1a.core.UpdateProfileRequest\x1a\x1b.core.UpdateProfileResponseB'Z%github.com/nebu/nebu/internal/grpc/pbb\x06proto3"
+	"\rUpdateProfile\x12\x1a.core.UpdateProfileRequest\x1a\x1b.core.UpdateProfileResponse\x12H\n" +
+	"\rWriteAuditLog\x12\x1a.core.WriteAuditLogRequest\x1a\x1b.core.WriteAuditLogResponseB'Z%github.com/nebu/nebu/internal/grpc/pbb\x06proto3"
 
 var (
 	file_core_proto_rawDescOnce sync.Once
@@ -2423,7 +2574,7 @@ func file_core_proto_rawDescGZIP() []byte {
 	return file_core_proto_rawDescData
 }
 
-var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 40)
+var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 42)
 var file_core_proto_goTypes = []any{
 	(*Event)(nil),                    // 0: core.Event
 	(*SendEventRequest)(nil),         // 1: core.SendEventRequest
@@ -2465,6 +2616,8 @@ var file_core_proto_goTypes = []any{
 	(*GetPresenceResponse)(nil),      // 37: core.GetPresenceResponse
 	(*UpdateProfileRequest)(nil),     // 38: core.UpdateProfileRequest
 	(*UpdateProfileResponse)(nil),    // 39: core.UpdateProfileResponse
+	(*WriteAuditLogRequest)(nil),     // 40: core.WriteAuditLogRequest
+	(*WriteAuditLogResponse)(nil),    // 41: core.WriteAuditLogResponse
 }
 var file_core_proto_depIdxs = []int32{
 	0,  // 0: core.GetMessagesResponse.events:type_name -> core.Event
@@ -2492,27 +2645,29 @@ var file_core_proto_depIdxs = []int32{
 	33, // 22: core.CoreService.GetSyncDelta:input_type -> core.GetSyncDeltaRequest
 	36, // 23: core.CoreService.GetPresence:input_type -> core.GetPresenceRequest
 	38, // 24: core.CoreService.UpdateProfile:input_type -> core.UpdateProfileRequest
-	2,  // 25: core.CoreService.SendEvent:output_type -> core.SendEventResponse
-	4,  // 26: core.CoreService.CreateRoom:output_type -> core.CreateRoomResponse
-	6,  // 27: core.CoreService.JoinRoom:output_type -> core.JoinRoomResponse
-	8,  // 28: core.CoreService.LeaveRoom:output_type -> core.LeaveRoomResponse
-	10, // 29: core.CoreService.GetMessages:output_type -> core.GetMessagesResponse
-	12, // 30: core.CoreService.SetPresence:output_type -> core.SetPresenceResponse
-	14, // 31: core.CoreService.SetTyping:output_type -> core.SetTypingResponse
-	16, // 32: core.CoreService.ValidateToken:output_type -> core.ValidateTokenResponse
-	18, // 33: core.CoreService.GetPendingEvents:output_type -> core.GetPendingEventsResponse
-	0,  // 34: core.CoreService.EventBus:output_type -> core.Event
-	21, // 35: core.CoreService.GetMetrics:output_type -> core.GetMetricsResponse
-	25, // 36: core.CoreService.GetRoomState:output_type -> core.GetRoomStateResponse
-	23, // 37: core.CoreService.InviteUser:output_type -> core.InviteUserResponse
-	27, // 38: core.CoreService.SetPowerLevels:output_type -> core.SetPowerLevelsResponse
-	29, // 39: core.CoreService.SendReceipt:output_type -> core.SendReceiptResponse
-	31, // 40: core.CoreService.GetInitialSync:output_type -> core.GetInitialSyncResponse
-	34, // 41: core.CoreService.GetSyncDelta:output_type -> core.GetSyncDeltaResponse
-	37, // 42: core.CoreService.GetPresence:output_type -> core.GetPresenceResponse
-	39, // 43: core.CoreService.UpdateProfile:output_type -> core.UpdateProfileResponse
-	25, // [25:44] is the sub-list for method output_type
-	6,  // [6:25] is the sub-list for method input_type
+	40, // 25: core.CoreService.WriteAuditLog:input_type -> core.WriteAuditLogRequest
+	2,  // 26: core.CoreService.SendEvent:output_type -> core.SendEventResponse
+	4,  // 27: core.CoreService.CreateRoom:output_type -> core.CreateRoomResponse
+	6,  // 28: core.CoreService.JoinRoom:output_type -> core.JoinRoomResponse
+	8,  // 29: core.CoreService.LeaveRoom:output_type -> core.LeaveRoomResponse
+	10, // 30: core.CoreService.GetMessages:output_type -> core.GetMessagesResponse
+	12, // 31: core.CoreService.SetPresence:output_type -> core.SetPresenceResponse
+	14, // 32: core.CoreService.SetTyping:output_type -> core.SetTypingResponse
+	16, // 33: core.CoreService.ValidateToken:output_type -> core.ValidateTokenResponse
+	18, // 34: core.CoreService.GetPendingEvents:output_type -> core.GetPendingEventsResponse
+	0,  // 35: core.CoreService.EventBus:output_type -> core.Event
+	21, // 36: core.CoreService.GetMetrics:output_type -> core.GetMetricsResponse
+	25, // 37: core.CoreService.GetRoomState:output_type -> core.GetRoomStateResponse
+	23, // 38: core.CoreService.InviteUser:output_type -> core.InviteUserResponse
+	27, // 39: core.CoreService.SetPowerLevels:output_type -> core.SetPowerLevelsResponse
+	29, // 40: core.CoreService.SendReceipt:output_type -> core.SendReceiptResponse
+	31, // 41: core.CoreService.GetInitialSync:output_type -> core.GetInitialSyncResponse
+	34, // 42: core.CoreService.GetSyncDelta:output_type -> core.GetSyncDeltaResponse
+	37, // 43: core.CoreService.GetPresence:output_type -> core.GetPresenceResponse
+	39, // 44: core.CoreService.UpdateProfile:output_type -> core.UpdateProfileResponse
+	41, // 45: core.CoreService.WriteAuditLog:output_type -> core.WriteAuditLogResponse
+	26, // [26:46] is the sub-list for method output_type
+	6,  // [6:26] is the sub-list for method input_type
 	6,  // [6:6] is the sub-list for extension type_name
 	6,  // [6:6] is the sub-list for extension extendee
 	0,  // [0:6] is the sub-list for field type_name
@@ -2533,7 +2688,7 @@ func file_core_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_core_proto_rawDesc), len(file_core_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   40,
+			NumMessages:   42,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

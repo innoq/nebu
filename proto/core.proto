@@ -47,6 +47,10 @@ service CoreService {
 
   // UpdateProfile — upserts displayname and/or avatar_url for a user
   rpc UpdateProfile(UpdateProfileRequest) returns (UpdateProfileResponse);
+
+  // WriteAuditLog — called by Go gateway for admin/compliance events that originate
+  // in the Go layer (login, logout, bootstrap). Room events are logged directly by Elixir.
+  rpc WriteAuditLog(WriteAuditLogRequest) returns (WriteAuditLogResponse);
 }
 
 // Shared event type used across multiple RPCs
@@ -265,3 +269,19 @@ message UpdateProfileRequest {
   string avatar_url  = 3;  // empty = not updating avatar_url
 }
 message UpdateProfileResponse {}
+
+// WriteAuditLog — persists one audit record in a separate DB transaction.
+// Go gateway sends admin-layer events (login, logout, bootstrap) via this RPC.
+// Room events are written directly by Elixir (no gRPC roundtrip needed).
+message WriteAuditLogRequest {
+  string actor_user_id = 1;
+  string action        = 2;
+  string target_type   = 3;  // empty string for null
+  string target_id     = 4;  // empty string for null
+  bytes  metadata_json = 5;  // JSON-encoded map; empty bytes = {}
+  string outcome       = 6;
+  string error_detail  = 7;  // empty string = not applicable
+}
+message WriteAuditLogResponse {
+  bool ok = 1;
+}

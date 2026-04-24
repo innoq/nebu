@@ -16,7 +16,8 @@ defmodule Nebu.MixProject do
             presence: :permanent,
             room_manager: :permanent,
             session_manager: :permanent,
-            signature: :permanent
+            signature: :permanent,
+            compliance: :permanent
           ]
         ]
       ]
