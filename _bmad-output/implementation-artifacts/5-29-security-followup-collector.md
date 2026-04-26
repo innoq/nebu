@@ -237,6 +237,23 @@ Cross-cutting Compose/K8s/Ops concern affecting every existing migration (18 of 
 
 ---
 
+### FB-54-01 — `note` body field has no max-length (paired with FB-53-02 `justification`)
+
+**Source:** Story 5-4 Kassandra SEC Gate 1 (2026-04-23).
+**Severity:** LOW (defense-in-depth; XSS surface only when Story 7-11 admin UI renders the field).
+**Size estimate:** XS (one validator + two unit tests).
+
+**Observation:** `POST /api/v1/compliance/access-requests/{id}/approve` and `.../reject` accept `{"note": "..."}` body. `bodyLimit64KiB` middleware caps the whole body, but the `note` field can still be ~63 KiB. Today the field is only persisted in `audit_log.metadata` (JSONB) — no UI render path. Once Story 7-11 surfaces the audit log to admins, oversize notes inflate the response and create a potential XSS template-escape boundary.
+
+**What to do:**
+1. Same as FB-53-02 for `justification`: add `if len(body.Note) > 4096 { 400 M_BAD_JSON }` in `postDecision`.
+2. Add tests `TestApproveRequest_NoteTooLong_Returns400` and `TestRejectRequest_NoteTooLong_Returns400`.
+3. Land alongside FB-53-02 — same fix shape, same migration of `compliance_requests.justification` length cap.
+
+**Why deferred:** Bundles cleanly with FB-53-02 (`justification` length cap); both are about "officer-controlled text fields written into audit/database without max-length". Single LOC fix once 7-11 (Compliance UI) defines the escape strategy.
+
+---
+
 ### FB-E5-03 — Elixir event_dispatcher: 23 pre-existing test failures (Nebu.Repo + FakeDB drift)
 
 **Source:** Discovered during Story 5-2 TEA Gate 2 (2026-04-23). Not a security issue — listed here so the collector captures all Epic-5 test-debt in one place for epic-close decision-making.

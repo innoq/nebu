@@ -1,5 +1,7 @@
 # generated: 2026-03-20
 # last_updated: 2026-04-23
+# story 5-4 review: 2026-04-23 (four-eyes approval API + admin dashboard pending badge)
+# story 5-4 created: 5-4 → ready-for-dev: 2026-04-23
 # story 5-3 done (pipeline: 0 TEA MAJOR / 5 MINOR fixed by CR, Kassandra CLEAN; FB-53-01 MEDIUM + FB-53-02/03 LOW deferred to 5-29): 2026-04-23
 # story 5-3 created: 5-3 → ready-for-dev: 2026-04-23
 # story 5-2 done (pipeline: 4 TEA MAJOR fixed in-pipeline, 2 CR MINOR self-fixed, Kassandra HIGH non-blocking; FB-52-01 HIGH + FB-52-02 MEDIUM + FB-E5-03 MEDIUM deferred to 5-29): 2026-04-23
@@ -449,7 +451,7 @@ development_status:
   5-1-audit-log-schema-rls-aufbewahrungskonfiguration: done
   5-2-audit-log-writer-generisch-alle-admin-aktionen-atomare-garantie: done
   5-3-compliance-access-request-api: done
-  5-4-four-eyes-approval-api-admin-dashboard-pending-badge: backlog
+  5-4-four-eyes-approval-api-admin-dashboard-pending-badge: review
   5-5-compliance-session-handler-24h-jwt-sub-binding-expiry-audit: backlog
   5-6-compliance-data-export-ed25519-signatur: backlog
   5-7-atomare-dsgvo-deletion-key-loschung-audit-auch-bei-fehler: backlog

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"runtime"
 	"time"
@@ -29,6 +30,12 @@ type ServerNameReader interface {
 	ServerName(ctx context.Context) (string, error)
 }
 
+// CompliancePendingCounter counts pending compliance access requests.
+// Implemented by postgresCompliancePendingCounter; replaceable with a test double.
+type CompliancePendingCounter interface {
+	CountPending(ctx context.Context) (int, error)
+}
+
 // postgresServerNameReader reads the server_name from the server_config table.
 type postgresServerNameReader struct {
 	db *sql.DB
@@ -45,25 +52,41 @@ func (r *postgresServerNameReader) ServerName(ctx context.Context) (string, erro
 	return name, err
 }
 
+// postgresCompliancePendingCounter implements CompliancePendingCounter via a direct DB query.
+type postgresCompliancePendingCounter struct {
+	db *sql.DB
+}
+
+// CountPending returns the number of compliance_requests with status='pending'.
+func (c *postgresCompliancePendingCounter) CountPending(ctx context.Context) (int, error) {
+	var count int
+	err := c.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM compliance_requests WHERE status = 'pending'`,
+	).Scan(&count)
+	return count, err
+}
+
 // DashboardHandler serves the /admin/dashboard SSR page.
 type DashboardHandler struct {
-	tmpl       *TemplateHandler
-	core       CoreStateReader
-	dbPinger   DBPinger
-	nameReader ServerNameReader
-	startTime  time.Time
+	tmpl           *TemplateHandler
+	core           CoreStateReader
+	dbPinger       DBPinger
+	nameReader     ServerNameReader
+	startTime      time.Time
+	pendingCounter CompliancePendingCounter // Story 5.4: compliance pending-request badge
 }
 
 // NewDashboardHandler constructs a DashboardHandler.
-// db is used for both DB ping and reading server_name from server_config.
+// db is used for DB ping, reading server_name, and querying compliance pending count.
 // startTime is captured at construction time (= gateway startup) for uptime calculation.
 func NewDashboardHandler(tmpl *TemplateHandler, core CoreStateReader, db *sql.DB) *DashboardHandler {
 	return &DashboardHandler{
-		tmpl:       tmpl,
-		core:       core,
-		dbPinger:   db,
-		nameReader: &postgresServerNameReader{db: db},
-		startTime:  time.Now(),
+		tmpl:           tmpl,
+		core:           core,
+		dbPinger:       db,
+		nameReader:     &postgresServerNameReader{db: db},
+		startTime:      time.Now(),
+		pendingCounter: &postgresCompliancePendingCounter{db: db},
 	}
 }
 
@@ -96,12 +119,23 @@ func (h *DashboardHandler) Handler(w http.ResponseWriter, r *http.Request) {
 	// --- Uptime ---
 	uptime := formatUptime(time.Since(h.startTime))
 
+	// --- Story 5.4: Compliance pending count (non-blocking: defaults to 0 on error) ---
+	var pendingCount int
+	if h.pendingCounter != nil {
+		if n, cntErr := h.pendingCounter.CountPending(r.Context()); cntErr == nil {
+			pendingCount = n
+		} else {
+			slog.Warn("dashboard: failed to fetch compliance pending count", "err", cntErr)
+		}
+	}
+
 	data := DashboardPageData{
 		PageData: PageData{
-			ActiveNav:    "dashboard",
-			TopbarStatus: topbarStatus,
-			TopbarLabel:  topbarLabel,
-			CSRFToken:    CSRFTokenFromContext(r.Context()),
+			ActiveNav:              "dashboard",
+			TopbarStatus:           topbarStatus,
+			TopbarLabel:            topbarLabel,
+			CSRFToken:              CSRFTokenFromContext(r.Context()),
+			CompliancePendingCount: pendingCount, // Story 5.4 — sidebar badge
 		},
 		GatewayStatus:      gatewayStatus,
 		GatewayStatusLabel: gatewayLabel,

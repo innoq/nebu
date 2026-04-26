@@ -705,6 +705,22 @@ func main() {
 	mux.Handle("POST /api/v1/compliance/access-requests",
 		bodyLimit64KiB(jwtMiddleware(http.HandlerFunc(accessRequestHandler.PostAccessRequest))))
 
+	// Story 5.4 — Four-Eyes Approval API
+	// GET: no body, so no bodyLimit needed
+	mux.Handle("GET /api/v1/compliance/access-requests",
+		jwtMiddleware(http.HandlerFunc(accessRequestHandler.GetAccessRequests)))
+
+	mux.Handle("POST /api/v1/compliance/access-requests/{requestId}/approve",
+		bodyLimit64KiB(jwtMiddleware(http.HandlerFunc(accessRequestHandler.PostApprove))))
+
+	mux.Handle("POST /api/v1/compliance/access-requests/{requestId}/reject",
+		bodyLimit64KiB(jwtMiddleware(http.HandlerFunc(accessRequestHandler.PostReject))))
+
+	// Admin API (session auth, not JWT) — pending-count badge for dashboard
+	pendingCountHandler := &compliance.PendingCountHandler{DB: complianceDB}
+	mux.Handle("GET /admin/api/compliance/pending-count",
+		sessionGuard(http.HandlerFunc(pendingCountHandler.Handler)))
+
 	// POST /rooms/{roomId}/leave — leave a room (calls Elixir LeaveRoom gRPC)
 	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/leave",
 		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

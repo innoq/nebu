@@ -67,6 +67,19 @@
           </a>
         </li>
         <li>
+          <a href="/admin/compliance"
+             data-navkey="compliance"
+             {{ if eq .ActiveNav "compliance" }}aria-current="page"{{ end }}
+             class="flex items-center gap-2 px-3 py-3 rounded text-sm
+                    {{ if eq .ActiveNav "compliance" }}active bg-primary text-primary-content font-semibold{{ else }}font-medium text-base-content hover:bg-base-300{{ end }}
+                    focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-base-200">
+            Compliance
+            {{ if gt .CompliancePendingCount 0 }}
+            <span class="badge badge-warning badge-sm ml-auto">{{ .CompliancePendingCount }}</span>
+            {{ end }}
+          </a>
+        </li>
+        <li>
           <form method="POST" action="/admin/logout" class="m-0 p-0">
             <input type="hidden" name="_csrf" value="{{ .CSRFToken }}">
             <button type="submit"

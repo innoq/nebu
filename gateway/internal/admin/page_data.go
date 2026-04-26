@@ -16,12 +16,16 @@ type PageData struct {
 	// CSRFToken holds the double-submit CSRF token injected by CSRFMiddleware.
 	// Templates embed it as a hidden <input name="_csrf"> in every state-changing form.
 	CSRFToken string
+	// CompliancePendingCount is the number of pending compliance access requests (Story 5.4).
+	// Only DashboardHandler populates this; all other handlers leave it at 0 (badge hidden).
+	// Placed on PageData (not DashboardPageData) so base.html can access it on all pages.
+	CompliancePendingCount int
 }
 
 // DashboardPageData holds data for the Dashboard page.
-// Embeds PageData for ActiveNav and topbar status.
+// Embeds PageData for ActiveNav, topbar status, and CompliancePendingCount (Story 5.4).
 type DashboardPageData struct {
-	PageData // embed for BootstrapMode + ActiveNav + TopbarStatus + TopbarLabel
+	PageData // embed for BootstrapMode + ActiveNav + TopbarStatus + TopbarLabel + CompliancePendingCount
 
 	// Status values: "green", "amber", or "red"
 	GatewayStatus string
@@ -39,6 +43,10 @@ type DashboardPageData struct {
 	InstanceName string
 	Uptime       string // formatted string (e.g. "3d 4h 12m")
 	GoVersion    string // value of runtime.Version()
+
+	// Note: CompliancePendingCount is reachable via embedded PageData; no
+	// separate field on DashboardPageData (avoids field shadowing — Story 5.4
+	// review). Dashboard handler sets it as PageData.CompliancePendingCount.
 }
 
 // LoginPageData holds data for the Admin login page.
