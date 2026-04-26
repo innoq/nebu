@@ -27,6 +27,9 @@ func TestFS_ContainsExpectedMigrationFiles(t *testing.T) {
 		// Story 5.1: audit_log schema + RLS (000018 — 000017 is admin_sessions)
 		"000018_audit_log.up.sql",
 		"000018_audit_log.down.sql",
+		// Story 5.3: compliance_requests table + RLS
+		"000019_compliance_requests.up.sql",
+		"000019_compliance_requests.down.sql",
 	}
 
 	for _, name := range files {

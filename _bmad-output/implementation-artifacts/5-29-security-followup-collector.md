@@ -188,6 +188,55 @@ Cross-cutting Compose/K8s/Ops concern affecting every existing migration (18 of 
 
 ---
 
+### FB-53-01 — Rate-limit `/api/v1/compliance/*` endpoints
+
+**Source:** Story 5-3 Kassandra SEC Gate 1 (2026-04-23).
+**Severity:** MEDIUM (DoS via authenticated officer token).
+**Size estimate:** S (one middleware wrapping decision).
+
+**Observation:** `POST /api/v1/compliance/access-requests` is wrapped in `bodyLimit64KiB(jwtMiddleware(...))` but no rate-limit middleware. A compromised compliance-officer token can flood the endpoint, generating arbitrary `compliance_requests` rows + audit log entries until DB pressure causes secondary failures elsewhere. Same pattern will apply to all stories 5-4..5-9 endpoints.
+
+**What to do:**
+1. Decide tier: `strictRL` (low burst, e.g. 10 req/min/IP) is appropriate — compliance request creation is rare.
+2. Wrap each `/api/v1/compliance/*` route in `strictRL(...)` in `main.go`.
+3. Test: parametrized table over compliance routes, asserts 11th request in the same window → 429.
+
+**Why deferred:** Same fix-shape will repeat across stories 5-4 through 5-9; bundling avoids 7 separate decisions.
+
+---
+
+### FB-53-02 — Verify XSS escaping for `justification` in Admin UI (Story 5-4 follow-on)
+
+**Source:** Story 5-3 Kassandra SEC Gate 1 (2026-04-23).
+**Severity:** LOW (depends on Story 5-4's rendering).
+**Size estimate:** XS (one Playwright assert + one server-side check).
+
+**Observation:** `justification` field accepts up to 64 KiB (body-size limit), no max-length validation. Go html/template auto-escapes by default, but Story 5-4 will render `justification` in the Admin Dashboard pending-list — verify no `template.HTML` raw escape, no innerHTML in client-side JS.
+
+**What to do:**
+1. Add a Playwright test in 5-4: submit a request with `justification = "<script>alert(1)</script>"`, render in admin pending-list, assert no script execution.
+2. Add a max-length validator (e.g. 4096 chars) in 5-3's request body handler — kindly informs the user instead of silently truncating in UI.
+
+**Why deferred:** Test belongs in 5-4 since that's the story rendering the field. Length cap can land in 5-29 or as a small follow-up to 5-3.
+
+---
+
+### FB-53-03 — Restrict `time_range` to a sensible window
+
+**Source:** Story 5-3 Kassandra SEC Gate 1 (2026-04-23).
+**Severity:** LOW (resource exhaustion in Story 5-5/5-6).
+**Size estimate:** XS.
+
+**Observation:** `time_range_start` / `time_range_end` accept year 0001–9999 (RFC3339 range). A compliance officer can request a 1000-year window, which Story 5-5 (session) and 5-6 (data export) will then translate into expensive event-table scans.
+
+**What to do:**
+1. In 5-3 handler: reject if `(end - start) > 365 days` with 400 `M_BAD_JSON: "time_range exceeds maximum 365 days"`.
+2. In 5-3 handler: reject if `start < NOW() - 7 years` (older than retention) with 400.
+
+**Why deferred:** Tied to retention-config decision; can land in 5-29 alongside 5-5/5-6 work.
+
+---
+
 ### FB-E5-03 — Elixir event_dispatcher: 23 pre-existing test failures (Nebu.Repo + FakeDB drift)
 
 **Source:** Discovered during Story 5-2 TEA Gate 2 (2026-04-23). Not a security issue — listed here so the collector captures all Epic-5 test-debt in one place for epic-close decision-making.

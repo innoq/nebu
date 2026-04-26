@@ -18,6 +18,7 @@ import (
 	"github.com/nebu/nebu/internal/admin"
 	"github.com/nebu/nebu/internal/auth"
 	"github.com/nebu/nebu/internal/buffer"
+	"github.com/nebu/nebu/internal/compliance"
 	"github.com/nebu/nebu/internal/config"
 	"github.com/nebu/nebu/internal/db"
 	coregrpc "github.com/nebu/nebu/internal/grpc"
@@ -686,6 +687,23 @@ func main() {
 	// PUT /presence/{userId}/status — checks userId == authed user (AC5, story 5-27).
 	mux.Handle("PUT /_matrix/client/v3/presence/{userId}/status",
 		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(presenceHandler.PutPresenceStatus))))
+
+	// Story 5.3 — Compliance Access Request API
+	// Route namespace: /api/v1/compliance/* — NOT under /_matrix/client/v3/ (Matrix CS API)
+	// and NOT under /admin/ (admin web UI). Same HTTP port (:8008), distinct path prefix.
+	// bodyLimit64KiB: compliance request body is administrative data (not Matrix message payload).
+	complianceDB, err := sql.Open("pgx", cfg.DBURL)
+	if err != nil {
+		slog.Error("failed to open DB for compliance handler", "err", err)
+		os.Exit(1)
+	}
+	defer complianceDB.Close()
+	accessRequestHandler := &compliance.AccessRequestHandler{
+		DB:         complianceDB,
+		CoreClient: coreClient.CoreServiceClient(),
+	}
+	mux.Handle("POST /api/v1/compliance/access-requests",
+		bodyLimit64KiB(jwtMiddleware(http.HandlerFunc(accessRequestHandler.PostAccessRequest))))
 
 	// POST /rooms/{roomId}/leave — leave a room (calls Elixir LeaveRoom gRPC)
 	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/leave",

@@ -1,5 +1,8 @@
 # generated: 2026-03-20
 # last_updated: 2026-04-23
+# story 5-3 review: 2026-04-23 (compliance access request API — migration 000019, handler, route)
+# story 5-3 in-progress: 2026-04-23
+# story 5-3 created: 5-3 → ready-for-dev: 2026-04-23
 # story 5-2 done (pipeline: 4 TEA MAJOR fixed in-pipeline, 2 CR MINOR self-fixed, Kassandra HIGH non-blocking; FB-52-01 HIGH + FB-52-02 MEDIUM + FB-E5-03 MEDIUM deferred to 5-29): 2026-04-23
 # epic 8 draft added to planning (separate commit, not tied to 5-2 scope): 2026-04-23
 # story 5-2 created: 5-2 → ready-for-dev: 2026-04-23
@@ -446,7 +449,7 @@ development_status:
   epic-5: in-progress
   5-1-audit-log-schema-rls-aufbewahrungskonfiguration: done
   5-2-audit-log-writer-generisch-alle-admin-aktionen-atomare-garantie: done
-  5-3-compliance-access-request-api: backlog
+  5-3-compliance-access-request-api: review
   5-4-four-eyes-approval-api-admin-dashboard-pending-badge: backlog
   5-5-compliance-session-handler-24h-jwt-sub-binding-expiry-audit: backlog
   5-6-compliance-data-export-ed25519-signatur: backlog
