@@ -254,6 +254,23 @@ Cross-cutting Compose/K8s/Ops concern affecting every existing migration (18 of 
 
 ---
 
+### FB-55-01 — `compliance_signing_key_priv` plaintext-at-rest in `server_config`
+
+**Source:** Story 5-5 Kassandra SEC Gate 1 (2026-04-23).
+**Severity:** MEDIUM (CWE-312 cleartext storage of sensitive information; mitigated today by `nebu_app` having full DB access anyway under FB-51-01, but a real regression once the role split lands).
+**Size estimate:** S (one encrypt/decrypt helper + migration to re-encrypt existing rows).
+
+**Observation:** The Ed25519 private key used to sign 24h compliance JWTs is persisted as `hex.EncodeToString(priv)` in `server_config.value`. Story 4.7 already provides `Nebu.Crypto.PII` (X25519+AES-256-GCM) for at-rest encryption of operational PII. The same primitive should wrap the compliance signing key. Today's exposure surface: anyone with read access to PostgreSQL (DB admin, leaked backup, compromised replica) can mint valid compliance JWTs for any approved request.
+
+**What to do:**
+1. Wrap `LoadComplianceSigningKey` / `ensureComplianceSigningKey` in `Nebu.Crypto.PII` encryption (or equivalent Go-side helper that calls the Elixir service).
+2. Migration `000021_encrypt_compliance_signing_key.up.sql` re-encrypts the existing plaintext value.
+3. Test: confirm DB row is ciphertext, decrypted form matches the in-memory keypair.
+
+**Why deferred:** Pairs with FB-51-01 (non-superuser `nebu_app`) — a non-superuser app role meaningfully enforces "only the gateway has read access" only after FB-51-01 lands. Until then, encrypting at rest is defense-in-depth without changing the threat model.
+
+---
+
 ### FB-E5-03 — Elixir event_dispatcher: 23 pre-existing test failures (Nebu.Repo + FakeDB drift)
 
 **Source:** Discovered during Story 5-2 TEA Gate 2 (2026-04-23). Not a security issue — listed here so the collector captures all Epic-5 test-debt in one place for epic-close decision-making.

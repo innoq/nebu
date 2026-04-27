@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/tls"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -721,6 +723,24 @@ func main() {
 	mux.Handle("GET /admin/api/compliance/pending-count",
 		sessionGuard(http.HandlerFunc(pendingCountHandler.Handler)))
 
+	// Story 5.5 — Compliance Session Issuance
+	// Seed / load the compliance signing Ed25519 keypair from server_config.
+	// This key is persisted (unlike :nebu_signing_key in Elixir, which is ephemeral).
+	// The key is read once at startup; it lives in process memory during runtime.
+	compSignKey, compPubKey, err := ensureComplianceSigningKey(complianceDB)
+	if err != nil {
+		slog.Error("failed to seed/load compliance signing key", "err", err)
+		os.Exit(1)
+	}
+	sessionHandler := &compliance.SessionHandler{
+		DB:         complianceDB,
+		CoreClient: coreClient.CoreServiceClient(),
+		SigningKey: compSignKey,
+		PublicKey:  compPubKey,
+	}
+	mux.Handle("POST /api/v1/compliance/access-requests/{requestId}/session",
+		bodyLimit64KiB(jwtMiddleware(http.HandlerFunc(sessionHandler.PostSession))))
+
 	// POST /rooms/{roomId}/leave — leave a room (calls Elixir LeaveRoom gRPC)
 	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/leave",
 		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -784,4 +804,126 @@ func main() {
 		slog.Error("HTTP server failed", "err", err)
 		os.Exit(1)
 	}
+}
+
+// ensureComplianceSigningKey reads the compliance Ed25519 keypair from server_config.
+// If the rows do not exist, a new keypair is generated and persisted.
+//
+// Keys are stored as hex-encoded TEXT in server_config:
+//   key='compliance_signing_key_priv' — hex(64-byte Ed25519 private key seed||public)
+//   key='compliance_signing_key_pub'  — hex(32-byte Ed25519 public key)
+//
+// This key is separate from :nebu_signing_key (ephemeral in Elixir — regenerated on
+// every Application.start/2). Compliance JWTs must survive an Elixir restart.
+func ensureComplianceSigningKey(db *sql.DB) (ed25519.PrivateKey, ed25519.PublicKey, error) {
+	ctx := context.Background()
+
+	// Try to load existing keys.
+	rows, err := db.QueryContext(ctx,
+		`SELECT key, value FROM server_config
+		  WHERE key IN ('compliance_signing_key_priv', 'compliance_signing_key_pub')`)
+	if err != nil {
+		return nil, nil, fmt.Errorf("ensureComplianceSigningKey: query server_config: %w", err)
+	}
+	defer rows.Close()
+
+	kvs := make(map[string]string)
+	for rows.Next() {
+		var k, v string
+		if err := rows.Scan(&k, &v); err != nil {
+			return nil, nil, fmt.Errorf("ensureComplianceSigningKey: scan row: %w", err)
+		}
+		kvs[k] = v
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("ensureComplianceSigningKey: rows.Err: %w", err)
+	}
+
+	privHex, hasPriv := kvs["compliance_signing_key_priv"]
+	pubHex, hasPub := kvs["compliance_signing_key_pub"]
+
+	if hasPriv && hasPub {
+		// Parse existing keys from hex.
+		privBytes, err := hex.DecodeString(privHex)
+		if err != nil {
+			return nil, nil, fmt.Errorf("ensureComplianceSigningKey: decode priv hex: %w", err)
+		}
+		pubBytes, err := hex.DecodeString(pubHex)
+		if err != nil {
+			return nil, nil, fmt.Errorf("ensureComplianceSigningKey: decode pub hex: %w", err)
+		}
+		return ed25519.PrivateKey(privBytes), ed25519.PublicKey(pubBytes), nil
+	}
+
+	// Generate a new Ed25519 keypair.
+	pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, nil, fmt.Errorf("ensureComplianceSigningKey: generate key: %w", err)
+	}
+
+	privHex = hex.EncodeToString(privKey)
+	pubHex = hex.EncodeToString(pubKey)
+
+	// INSERT both keys with ON CONFLICT DO NOTHING. If another gateway instance
+	// raced us and already inserted, our generated key is discarded — we re-read
+	// and use the persisted key. This preserves any tokens already signed with
+	// the persisted key. (Using DO UPDATE SET value=EXCLUDED.value would silently
+	// invalidate every token issued by the first writer.)
+	// Kassandra MEDIUM-3 (2026-04-23): server_config.set_at is BIGINT NOT NULL
+	// without a default — first cold-start crashed before this fix.
+	setAt := time.Now().UnixMilli()
+	_, err = db.ExecContext(ctx,
+		`INSERT INTO server_config (key, value, set_at) VALUES
+		   ('compliance_signing_key_priv', $1, $3),
+		   ('compliance_signing_key_pub',  $2, $3)
+		 ON CONFLICT (key) DO NOTHING`,
+		privHex, pubHex, setAt,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("ensureComplianceSigningKey: insert keys: %w", err)
+	}
+
+	// Re-read to obtain whichever pair actually won the race (ours or another
+	// instance's). The pair is guaranteed to be present after the INSERT above.
+	persistedRows, err := db.QueryContext(ctx,
+		`SELECT key, value FROM server_config
+		  WHERE key IN ('compliance_signing_key_priv', 'compliance_signing_key_pub')`)
+	if err != nil {
+		return nil, nil, fmt.Errorf("ensureComplianceSigningKey: re-read after insert: %w", err)
+	}
+	defer persistedRows.Close()
+
+	persisted := make(map[string]string)
+	for persistedRows.Next() {
+		var k, v string
+		if err := persistedRows.Scan(&k, &v); err != nil {
+			return nil, nil, fmt.Errorf("ensureComplianceSigningKey: re-read scan: %w", err)
+		}
+		persisted[k] = v
+	}
+	if err := persistedRows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("ensureComplianceSigningKey: re-read rows.Err: %w", err)
+	}
+
+	persistedPriv, okPriv := persisted["compliance_signing_key_priv"]
+	persistedPub, okPub := persisted["compliance_signing_key_pub"]
+	if !okPriv || !okPub {
+		return nil, nil, fmt.Errorf("ensureComplianceSigningKey: keys missing after insert (got %d rows)", len(persisted))
+	}
+
+	privBytes, err := hex.DecodeString(persistedPriv)
+	if err != nil {
+		return nil, nil, fmt.Errorf("ensureComplianceSigningKey: decode persisted priv hex: %w", err)
+	}
+	pubBytes, err := hex.DecodeString(persistedPub)
+	if err != nil {
+		return nil, nil, fmt.Errorf("ensureComplianceSigningKey: decode persisted pub hex: %w", err)
+	}
+
+	if persistedPriv == privHex {
+		slog.Info("compliance signing key generated and stored in server_config")
+	} else {
+		slog.Info("compliance signing key already present (won by concurrent instance) — using persisted key")
+	}
+	return ed25519.PrivateKey(privBytes), ed25519.PublicKey(pubBytes), nil
 }

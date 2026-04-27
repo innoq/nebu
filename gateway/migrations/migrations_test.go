@@ -30,6 +30,9 @@ func TestFS_ContainsExpectedMigrationFiles(t *testing.T) {
 		// Story 5.3: compliance_requests table + RLS
 		"000019_compliance_requests.up.sql",
 		"000019_compliance_requests.down.sql",
+		// Story 5.5: compliance_sessions table + partial unique index + RLS
+		"000020_compliance_sessions.up.sql",
+		"000020_compliance_sessions.down.sql",
 	}
 
 	for _, name := range files {

@@ -2,12 +2,15 @@ package compliance
 
 // handler.go — Story 5.3: Compliance Access Request API
 //                Story 5.4: Four-Eyes Approval API + Admin Dashboard Pending Badge
+//                Story 5.5: Compliance Session Handler (SessionHandler + PostSession)
 //
 // Route namespace: /api/v1/compliance/* — separate from /_matrix/client/v3/ (Matrix CS API)
 // and /admin/ (admin web UI). Same HTTP port (:8008), distinct path prefix.
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -436,4 +439,160 @@ func requireJSON(w http.ResponseWriter, r *http.Request) bool {
 	writeComplianceError(w, http.StatusUnsupportedMediaType, "M_UNSUPPORTED_MEDIA_TYPE",
 		"Content-Type must be application/json")
 	return false
+}
+
+// ─── Story 5.5: SessionHandler ────────────────────────────────────────────────
+
+// SessionHandler handles POST /api/v1/compliance/access-requests/{requestId}/session.
+// It issues a 24-hour Ed25519-signed JWT for an approved compliance access request.
+//
+// SigningKey and PublicKey are loaded at gateway startup from server_config
+// (compliance_signing_key_priv / compliance_signing_key_pub) — persisted Ed25519
+// keypair separate from the ephemeral :nebu_signing_key in Elixir core.
+type SessionHandler struct {
+	DB         *sql.DB
+	CoreClient pb.CoreServiceClient
+	SigningKey ed25519.PrivateKey
+	PublicKey  ed25519.PublicKey
+}
+
+// PostSession handles POST /api/v1/compliance/access-requests/{requestId}/session.
+//
+// Handler flow (in order):
+//  1. Role gate — 403 if not compliance_officer.
+//  2. Path-param length cap — 400 if requestId > maxRequestIDLen bytes.
+//  3. Pre-flight SELECT requester_user_id, status, room_id, time_range_start, time_range_end
+//     FROM compliance_requests WHERE id = $1.
+//     → 404 M_NOT_FOUND on 0 rows.
+//     → 403 M_FORBIDDEN if status != 'approved'.
+//     → 403 M_FORBIDDEN if requester_user_id != callerSub.
+//  4. Duplicate session check: SELECT 1 FROM compliance_sessions WHERE request_id=$1 AND revoked_at IS NULL.
+//     → 409 M_CONFLICT if row found.
+//  5. Issue EdDSA JWT via IssueComplianceToken (exp = now+86400, sub = callerSub).
+//  6. INSERT INTO compliance_sessions (request_id, token_hash, expires_at) RETURNING id, expires_at.
+//  7. Audit compliance_session_issued (never-raise, 500ms timeout).
+//  8. Return 201 {"session_token": "<jwt>", "expires_at": "<RFC3339>"}.
+func (h *SessionHandler) PostSession(w http.ResponseWriter, r *http.Request) {
+	// Step 1: Role gate — must be compliance_officer.
+	systemRole, _ := r.Context().Value(middleware.ContextKeySystemRole).(string)
+	if systemRole != "compliance_officer" {
+		writeComplianceError(w, http.StatusForbidden, "M_FORBIDDEN", "Compliance officer role required")
+		return
+	}
+
+	callerSub, _ := r.Context().Value(middleware.ContextKeySub).(string)
+
+	// Step 2: Path-param + length cap (defence-in-depth).
+	requestID := r.PathValue("requestId")
+	if requestID == "" {
+		writeComplianceError(w, http.StatusBadRequest, "M_BAD_JSON", "requestId is required")
+		return
+	}
+	if len(requestID) > maxRequestIDLen {
+		writeComplianceError(w, http.StatusBadRequest, "M_BAD_JSON", "requestId is too long")
+		return
+	}
+
+	// Step 3: Pre-flight SELECT — fetch all required fields in one query.
+	// Scanning 5 columns: requester_user_id, status, room_id, time_range_start, time_range_end.
+	// A DB error here returns 500 M_UNKNOWN rather than silently producing a JWT with empty claims.
+	var requesterUserID, status, roomID, timeRangeStart, timeRangeEnd string
+	err := h.DB.QueryRowContext(r.Context(),
+		`SELECT requester_user_id, status, room_id, time_range_start::text, time_range_end::text
+		   FROM compliance_requests WHERE id = $1`,
+		requestID,
+	).Scan(&requesterUserID, &status, &roomID, &timeRangeStart, &timeRangeEnd)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeComplianceError(w, http.StatusNotFound, "M_NOT_FOUND", "Request not found")
+		return
+	}
+	if err != nil {
+		slog.Error("compliance/session: pre-flight query failed", "err", err)
+		writeComplianceError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
+		return
+	}
+
+	// Status check before identity check (order per AC3/AC2 spec).
+	if status != "approved" {
+		writeComplianceError(w, http.StatusForbidden, "M_FORBIDDEN", "Request must be in approved status")
+		return
+	}
+
+	// Caller must be the original requester (no delegated issuance).
+	if requesterUserID != callerSub {
+		writeComplianceError(w, http.StatusForbidden, "M_FORBIDDEN", "Only the original requester can issue a session")
+		return
+	}
+
+	// Step 4: Duplicate active session check.
+	var exists int
+	dupErr := h.DB.QueryRowContext(r.Context(),
+		`SELECT 1 FROM compliance_sessions WHERE request_id = $1 AND revoked_at IS NULL`,
+		requestID,
+	).Scan(&exists)
+	if dupErr == nil { // row found → conflict
+		writeComplianceError(w, http.StatusConflict, "M_CONFLICT", "An active session already exists for this request")
+		return
+	}
+	if !errors.Is(dupErr, sql.ErrNoRows) {
+		slog.Error("compliance/session: duplicate session check failed", "err", dupErr)
+		writeComplianceError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
+		return
+	}
+
+	// Step 5: Build claims and issue JWT.
+	now := time.Now()
+	claims := ComplianceClaims{
+		Sub:                 callerSub,
+		ComplianceRequestID: requestID,
+		RoomID:              roomID,
+		TimeRangeStart:      timeRangeStart,
+		TimeRangeEnd:        timeRangeEnd,
+		Iat:                 now.Unix(),
+		Exp:                 now.Add(86400 * time.Second).Unix(),
+	}
+
+	tokenStr, err := IssueComplianceToken(h.SigningKey, claims)
+	if err != nil {
+		slog.Error("compliance/session: IssueComplianceToken failed", "err", err)
+		writeComplianceError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
+		return
+	}
+
+	// Step 6: Compute SHA-256 token hash and INSERT.
+	hash := sha256.Sum256([]byte(tokenStr))
+
+	var sessionID string
+	var expiresAt interface{}
+	err = h.DB.QueryRowContext(r.Context(),
+		`INSERT INTO compliance_sessions (request_id, token_hash, expires_at)
+		 VALUES ($1, $2, NOW() + INTERVAL '86400 seconds')
+		 RETURNING id, expires_at`,
+		requestID, hash[:],
+	).Scan(&sessionID, &expiresAt)
+	if err != nil {
+		// Unique constraint violation → duplicate session (belt-and-suspenders with step 4).
+		slog.Error("compliance/session: INSERT compliance_sessions failed", "err", err)
+		writeComplianceError(w, http.StatusConflict, "M_CONFLICT", "An active session already exists for this request")
+		return
+	}
+
+	// Normalise expiresAt to RFC 3339 string.
+	expiresAtStr := formatTimeField(expiresAt)
+
+	// Step 7: Audit — never-raise, 500ms timeout.
+	auditCtx, cancel := context.WithTimeout(context.Background(), auditTimeout)
+	defer cancel()
+	_ = auditpkg.LogEvent(auditCtx, h.CoreClient, callerSub,
+		"compliance_session_issued", "compliance_request", requestID,
+		map[string]any{"expires_at": expiresAtStr},
+		"success", "")
+
+	// Step 8: Return 201.
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"session_token": tokenStr,
+		"expires_at":    expiresAtStr,
+	})
 }
