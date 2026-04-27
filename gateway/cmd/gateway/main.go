@@ -741,6 +741,18 @@ func main() {
 	mux.Handle("POST /api/v1/compliance/access-requests/{requestId}/session",
 		bodyLimit64KiB(jwtMiddleware(http.HandlerFunc(sessionHandler.PostSession))))
 
+	// Story 5.6 — Compliance Data Export
+	// GET endpoint — no body, so no bodyLimit64KiB or requireJSON needed.
+	// All export scope comes from the validated X-Compliance-Token claims (not URL params).
+	exportHandler := &compliance.ExportHandler{
+		DB:         complianceDB,
+		CoreClient: coreClient.CoreServiceClient(),
+		SigningKey:  compSignKey,
+		PublicKey:   compPubKey,
+	}
+	mux.Handle("GET /api/v1/compliance/export",
+		jwtMiddleware(http.HandlerFunc(exportHandler.GetExport)))
+
 	// POST /rooms/{roomId}/leave — leave a room (calls Elixir LeaveRoom gRPC)
 	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/leave",
 		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

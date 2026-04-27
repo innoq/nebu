@@ -10,10 +10,13 @@ package compliance
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -595,4 +598,239 @@ func (h *SessionHandler) PostSession(w http.ResponseWriter, r *http.Request) {
 		"session_token": tokenStr,
 		"expires_at":    expiresAtStr,
 	})
+}
+
+// ─── Story 5.6: ExportHandler ────────────────────────────────────────────────
+
+// ExportHandler handles GET /api/v1/compliance/export.
+// DB is the complianceDB handle; CoreClient for audit; SigningKey/PublicKey for export doc signing.
+//
+// Room-ID scope comes exclusively from the validated X-Compliance-Token claims — there is
+// no URL room_id parameter. A tampered token (modified room_id claim) fails
+// ValidateComplianceToken signature check → 401 before any room_id is used.
+// Therefore the AC10 room_id-scope guard is implicitly satisfied by AC3 (Story 5.6 scope decision).
+//
+// Export document is signed over struct-marshalled JSON (deterministic field order via map).
+// Full Matrix Canonical JSON for export documents is deferred per Story 5.6 scope decision.
+type ExportHandler struct {
+	DB         *sql.DB
+	CoreClient pb.CoreServiceClient
+	SigningKey  ed25519.PrivateKey
+	PublicKey   ed25519.PublicKey
+}
+
+// generateExportUUID returns a random UUID v4 string using crypto/rand.
+func generateExportUUID() string {
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	b[6] = (b[6] & 0x0f) | 0x40 // Version 4
+	b[8] = (b[8] & 0x3f) | 0x80 // Variant bits
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
+		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
+// exportEvent represents one event entry in the compliance export.
+type exportEvent struct {
+	EventID        string          `json:"event_id"`
+	RoomID         string          `json:"room_id"`
+	Sender         string          `json:"sender"`
+	Type           string          `json:"type"`
+	Content        json.RawMessage `json:"content"`
+	OriginServerTS int64           `json:"origin_server_ts"`
+	Signatures     json.RawMessage `json:"signatures,omitempty"`
+}
+
+// GetExport handles GET /api/v1/compliance/export.
+//
+// Handler flow (in order):
+//  1. Role gate — 403 M_FORBIDDEN if not compliance_officer.
+//  2. Extract X-Compliance-Token header — 401 M_UNKNOWN_TOKEN if absent.
+//  3. Validate token via ValidateComplianceToken — 401 M_UNKNOWN_TOKEN on any failure.
+//  4. Parse time range from claims (RFC 3339 → epoch milliseconds).
+//  5. Pre-flight SELECT requester_user_id, approver_user_id FROM compliance_requests.
+//     → 500 M_UNKNOWN on 0 rows (token valid but request deleted — data integrity issue) or DB error.
+//  6. Fetch m.room.message events (strict scope: room_id + event_type + origin_server_ts BETWEEN).
+//  7. Build export document map (alphabetically keyed for deterministic signing).
+//  8. Sign document bytes with Ed25519 private key → base64. Inject server_signature.
+//  9. Set Content-Disposition header. Emit audit (never-raise, 500ms timeout). Return 200.
+func (h *ExportHandler) GetExport(w http.ResponseWriter, r *http.Request) {
+	// Step 1: Role gate — must be compliance_officer.
+	systemRole, _ := r.Context().Value(middleware.ContextKeySystemRole).(string)
+	if systemRole != "compliance_officer" {
+		writeComplianceError(w, http.StatusForbidden, "M_FORBIDDEN", "Compliance officer role required")
+		return
+	}
+	callerSub, _ := r.Context().Value(middleware.ContextKeySub).(string)
+
+	// Step 2: Extract X-Compliance-Token header.
+	tokenStr := r.Header.Get("X-Compliance-Token")
+	if tokenStr == "" {
+		writeComplianceError(w, http.StatusUnauthorized, "M_UNKNOWN_TOKEN", "Compliance token required")
+		return
+	}
+
+	// Step 3: Validate token (reuse ValidateComplianceToken from jwt.go).
+	claims, err := ValidateComplianceToken(tokenStr, h.PublicKey, callerSub)
+	if err != nil {
+		writeComplianceError(w, http.StatusUnauthorized, "M_UNKNOWN_TOKEN", "Invalid or expired compliance token")
+		return
+	}
+
+	// Step 4: Parse time range from claims (RFC 3339 → epoch milliseconds).
+	// A malformed claim must NOT silently degrade to a zero-time export — that would
+	// produce a 200 with empty events and no audit trail. Treat as 500 M_UNKNOWN
+	// (token validated structurally but its claims are corrupt) and log loudly.
+	startTime, err := time.Parse(time.RFC3339, claims.TimeRangeStart)
+	if err != nil {
+		slog.Error("compliance/export: malformed time_range_start claim",
+			"request_id", claims.ComplianceRequestID, "value", claims.TimeRangeStart, "err", err)
+		writeComplianceError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
+		return
+	}
+	endTime, err := time.Parse(time.RFC3339, claims.TimeRangeEnd)
+	if err != nil {
+		slog.Error("compliance/export: malformed time_range_end claim",
+			"request_id", claims.ComplianceRequestID, "value", claims.TimeRangeEnd, "err", err)
+		writeComplianceError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
+		return
+	}
+	startMs := startTime.UnixMilli()
+	endMs := endTime.UnixMilli()
+
+	// Step 5: Pre-flight — fetch requester + approver from compliance_requests.
+	// approver_user_id is nullable (JSONB without NOT NULL) — use sql.NullString.
+	var requesterUserID string
+	var approverNull sql.NullString
+	err = h.DB.QueryRowContext(r.Context(),
+		`SELECT requester_user_id, approver_user_id FROM compliance_requests WHERE id = $1`,
+		claims.ComplianceRequestID,
+	).Scan(&requesterUserID, &approverNull)
+	if err != nil {
+		// sql.ErrNoRows: token was valid but request deleted (data integrity issue).
+		// Any DB error: 500.
+		slog.Error("compliance/export: pre-flight compliance_requests query failed",
+			"request_id", claims.ComplianceRequestID, "err", err)
+		writeComplianceError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
+		return
+	}
+	approverUserID := ""
+	if approverNull.Valid {
+		approverUserID = approverNull.String
+	}
+
+	// Step 6: Fetch m.room.message events (strict scope: all scope from token claims).
+	// origin_server_ts is BIGINT (epoch ms) — convert RFC 3339 claims to ms above.
+	//
+	// LIMIT 10000 is a MVP DoS-guard sane default: a single export request loads all
+	// events into memory ([]exportEvent) and re-marshals them; without a cap a wide
+	// time range over a busy room could produce >>100 MB responses and OOM the gateway.
+	// Streaming/chunked export is tracked as FB-56-01 (Story 5.29 follow-up).
+	rows, err := h.DB.QueryContext(r.Context(),
+		`SELECT event_id, room_id, sender, event_type, content, origin_server_ts, signatures
+		   FROM events
+		  WHERE room_id = $1
+		    AND event_type = 'm.room.message'
+		    AND origin_server_ts BETWEEN $2 AND $3
+		  ORDER BY origin_server_ts ASC
+		  LIMIT 10000`,
+		claims.RoomID, startMs, endMs,
+	)
+	if err != nil {
+		slog.Error("compliance/export: events query failed", "room_id", claims.RoomID, "err", err)
+		writeComplianceError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
+		return
+	}
+	defer rows.Close()
+
+	events := make([]exportEvent, 0)
+	for rows.Next() {
+		var ev exportEvent
+		var signaturesRaw []byte
+		var contentRaw []byte
+		if err := rows.Scan(
+			&ev.EventID,
+			&ev.RoomID,
+			&ev.Sender,
+			&ev.Type,
+			&contentRaw,
+			&ev.OriginServerTS,
+			&signaturesRaw,
+		); err != nil {
+			slog.Error("compliance/export: scan event row failed", "err", err)
+			writeComplianceError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
+			return
+		}
+		ev.Content = json.RawMessage(contentRaw)
+		if signaturesRaw != nil {
+			ev.Signatures = json.RawMessage(signaturesRaw)
+		}
+		events = append(events, ev)
+	}
+	if err := rows.Err(); err != nil {
+		slog.Error("compliance/export: rows.Err on events", "err", err)
+		writeComplianceError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
+		return
+	}
+
+	// Step 7: Build export document as a map (Go map marshaling is alphabetically ordered —
+	// this ensures deterministic serialization for signing and matches test reconstruction).
+	// The signed bytes must be the same as: unmarshal response → delete server_signature → remarshal.
+	eventsJSON := make([]json.RawMessage, len(events))
+	for i, ev := range events {
+		b, _ := json.Marshal(ev)
+		eventsJSON[i] = json.RawMessage(b)
+	}
+
+	exportID := generateExportUUID()
+	generatedAt := time.Now().UTC().Format(time.RFC3339)
+
+	// Build the document map for signing (no server_signature yet).
+	// json.Marshal on a map produces alphabetically sorted keys.
+	docMap := map[string]json.RawMessage{}
+	approverJSON, _ := json.Marshal(approverUserID)
+	docMap["approver"] = approverJSON
+	compReqIDJSON, _ := json.Marshal(claims.ComplianceRequestID)
+	docMap["compliance_request_id"] = compReqIDJSON
+	eventsArrJSON, _ := json.Marshal(eventsJSON)
+	docMap["events"] = eventsArrJSON
+	exportIDJSON, _ := json.Marshal(exportID)
+	docMap["export_id"] = exportIDJSON
+	generatedAtJSON, _ := json.Marshal(generatedAt)
+	docMap["generated_at"] = generatedAtJSON
+	requesterJSON, _ := json.Marshal(requesterUserID)
+	docMap["requester"] = requesterJSON
+	roomIDJSON, _ := json.Marshal(claims.RoomID)
+	docMap["room_id"] = roomIDJSON
+	timeEndJSON, _ := json.Marshal(claims.TimeRangeEnd)
+	docMap["time_range_end"] = timeEndJSON
+	timeStartJSON, _ := json.Marshal(claims.TimeRangeStart)
+	docMap["time_range_start"] = timeStartJSON
+
+	// Step 8: Marshal doc WITHOUT server_signature → sign → base64-encode.
+	// Export document is signed over map-marshalled JSON (alphabetically sorted keys).
+	// Full Matrix Canonical JSON for export documents is deferred per Story 5.6 scope decision.
+	docBytes, _ := json.Marshal(docMap)
+	sig := ed25519.Sign(h.SigningKey, docBytes)
+	sigB64 := base64.StdEncoding.EncodeToString(sig)
+
+	// Inject server_signature into the map and marshal the full response.
+	sigB64JSON, _ := json.Marshal(sigB64)
+	docMap["server_signature"] = sigB64JSON
+	responseBytes, _ := json.Marshal(docMap)
+
+	// Step 9: Set response headers, emit audit (never-raise), write 200.
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition",
+		fmt.Sprintf(`attachment; filename="compliance-export-%s.json"`, claims.ComplianceRequestID))
+
+	// Audit — never-raise, 500ms timeout (AC8, AC9).
+	auditCtx, cancel := context.WithTimeout(context.Background(), auditTimeout)
+	defer cancel()
+	_ = auditpkg.LogEvent(auditCtx, h.CoreClient, callerSub,
+		"compliance_export_downloaded", "compliance_request", claims.ComplianceRequestID,
+		map[string]any{"event_count": len(events)},
+		"success", "")
+
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(responseBytes)
 }

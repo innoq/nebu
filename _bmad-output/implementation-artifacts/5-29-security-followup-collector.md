@@ -271,6 +271,31 @@ Cross-cutting Compose/K8s/Ops concern affecting every existing migration (18 of 
 
 ---
 
+### FB-56-01 — Compliance export: re-check `compliance_requests.status='approved'` + streaming for large exports
+
+**Source:** Story 5-6 Code-Review (DoS LIMIT) + Kassandra SEC Gate 1 (TOCTOU on status).
+**Severity:** MEDIUM (status TOCTOU — authorized-revoked-but-still-exports), MEDIUM (DoS limit hardcoded → can't export rooms with > 10k events in range).
+**Size estimate:** S–M.
+
+**Two related sub-items:**
+
+**(a) MEDIUM — TOCTOU on `compliance_requests.status`:**
+After approval, a compliance officer holds a 24h compliance session token. If the approval is later revoked (or `compliance_requests.status` is administratively flipped to `rejected`), the existing token still passes signature/exp/sub-binding validation and the export endpoint will happily emit data. Today: pre-flight SELECT only fetches `requester_user_id`, `approver_user_id` (`gateway/internal/compliance/handler.go:704-707`).
+
+**Fix:** Extend the pre-flight to also read `status` and reject with 403 `M_FORBIDDEN: "Compliance request is no longer approved"` when status != `'approved'`. Plus test: token issued for approved request → status manually flipped to `rejected` → export → 403.
+
+**(b) MEDIUM — Hardcoded `LIMIT 10000` blocks legitimate large exports:**
+Code-review added `LIMIT 10000` as a memory DoS guard. For a busy room with > 10k messages in the requested time range, the export silently truncates. No warning header, no audit metadata field indicating truncation. Compliance auditor would not know the export is incomplete.
+
+**Fix options:**
+1. Streaming response (`Transfer-Encoding: chunked`) writing one event JSON per line — eliminates RAM cap.
+2. Add `truncated: true` + `events_truncated_at: 10000` to export-doc + audit metadata when count would exceed limit.
+3. Pagination via `cursor` parameter — Compliance officer downloads multiple parts.
+
+**Why deferred:** Both fixes touch the same handler and the export-doc shape. Bundle in 5-29 alongside other compliance-API hardening.
+
+---
+
 ### FB-E5-03 — Elixir event_dispatcher: 23 pre-existing test failures (Nebu.Repo + FakeDB drift)
 
 **Source:** Discovered during Story 5-2 TEA Gate 2 (2026-04-23). Not a security issue — listed here so the collector captures all Epic-5 test-debt in one place for epic-close decision-making.
