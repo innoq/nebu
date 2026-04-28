@@ -1,5 +1,6 @@
 # generated: 2026-03-20
 # last_updated: 2026-04-23
+# story 5-9 created: 5-9 → ready-for-dev: 2026-04-23
 # story 5-8 done (pipeline: 2 TEA MAJOR fixed inline (production helper + vacuous query-capture), 1 CR MAJOR (path-traversal arbitrary-file-delete) + 1 MINOR fixed, Kassandra CLEAN; FB-58-01/02/03 deferred to 5-29): 2026-04-23
 # story 5-8 created: 5-8 → ready-for-dev: 2026-04-23
 # story 5-7 done (pipeline: dev committed early aa1cc89, 0 TEA MAJOR / 4 MINOR + 1 audit-shadowing bug fixed in CR 7180486, Kassandra CLEAN; FB-57-01 MEDIUM (TOCTOU on deletion_status) deferred to 5-29): 2026-04-23
@@ -464,7 +465,7 @@ development_status:
   5-6-compliance-data-export-ed25519-signatur: done
   5-7-atomare-dsgvo-deletion-key-loschung-audit-auch-bei-fehler: done
   5-8-operational-pii-anonymisierung-deleted-user: done
-  5-9-gherkin-compliance-flow-end-to-end: backlog
+  5-9-gherkin-compliance-flow-end-to-end: ready-for-dev
   # Security Hardening — Group A: Bootstrap Admin-Takeover Chain (CRITICAL)
   5-10-bootstrap-mode-guard-replay-prevention: done
   5-11-transactional-bootstrap-completion: done
