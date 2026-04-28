@@ -51,6 +51,11 @@ service CoreService {
   // WriteAuditLog — called by Go gateway for admin/compliance events that originate
   // in the Go layer (login, logout, bootstrap). Room events are logged directly by Elixir.
   rpc WriteAuditLog(WriteAuditLogRequest) returns (WriteAuditLogResponse);
+
+  // DeleteUserKeys — DSGVO key deletion: atomically soft-deletes private keys for a user.
+  // Story 5.7: instance_admin only. Returns keys_deleted_at (Unix ms) on success.
+  // Elixir Core handles the Ecto.Multi + failure-invariant audit emission.
+  rpc DeleteUserKeys(DeleteUserKeysRequest) returns (DeleteUserKeysResponse);
 }
 
 // Shared event type used across multiple RPCs
@@ -284,4 +289,17 @@ message WriteAuditLogRequest {
 }
 message WriteAuditLogResponse {
   bool ok = 1;
+}
+
+// DeleteUserKeys — Story 5.7: atomically soft-deletes private signing + encryption keys for a user.
+// Elixir Core runs a 5-step Ecto.Multi; on failure a separate Repo.transaction writes the
+// "user_keys_deletion_attempted" audit record (failure invariant, AC3).
+message DeleteUserKeysRequest {
+  string admin_user_id  = 1;  // caller (instance_admin) subject
+  string target_user_id = 2;  // user whose keys are to be deleted
+  string reason         = 3;  // DSGVO deletion reason (min 10 chars, already validated by Go)
+}
+message DeleteUserKeysResponse {
+  string status          = 1;  // "keys_deleted"
+  int64  keys_deleted_at = 2;  // Unix milliseconds — convert to ISO8601 in Go handler
 }

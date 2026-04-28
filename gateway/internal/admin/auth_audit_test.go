@@ -137,6 +137,10 @@ func (m *mockCoreClient) UpdateProfile(_ context.Context, _ *pb.UpdateProfileReq
 	return &pb.UpdateProfileResponse{}, nil
 }
 
+func (m *mockCoreClient) DeleteUserKeys(_ context.Context, _ *pb.DeleteUserKeysRequest, _ ...grpc.CallOption) (*pb.DeleteUserKeysResponse, error) {
+	return &pb.DeleteUserKeysResponse{}, nil
+}
+
 // lastReceived returns the most recently recorded request (nil if none).
 func (m *mockCoreClient) lastReceived() *pb.WriteAuditLogRequest {
 	m.mu.Lock()

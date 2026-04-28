@@ -149,6 +149,11 @@ func (m *mockCoreClient) UpdateProfile(_ context.Context, _ *pb.UpdateProfileReq
 	return &pb.UpdateProfileResponse{}, nil
 }
 
+// DeleteUserKeys no-op stub — real implementation in userDeletionMockCoreClient (user_deletion_test.go).
+func (m *mockCoreClient) DeleteUserKeys(_ context.Context, _ *pb.DeleteUserKeysRequest, _ ...grpc.CallOption) (*pb.DeleteUserKeysResponse, error) {
+	return &pb.DeleteUserKeysResponse{}, nil
+}
+
 // ─── fakeDB driver ────────────────────────────────────────────────────────────
 //
 // A minimal database/sql/driver implementation that returns scripted rows for

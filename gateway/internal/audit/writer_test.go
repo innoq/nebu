@@ -102,6 +102,9 @@ func (m *mockCoreClient) GetPresence(ctx context.Context, in *pb.GetPresenceRequ
 func (m *mockCoreClient) UpdateProfile(ctx context.Context, in *pb.UpdateProfileRequest, opts ...grpc.CallOption) (*pb.UpdateProfileResponse, error) {
 	panic("unexpected call: UpdateProfile")
 }
+func (m *mockCoreClient) DeleteUserKeys(_ context.Context, _ *pb.DeleteUserKeysRequest, _ ...grpc.CallOption) (*pb.DeleteUserKeysResponse, error) {
+	panic("unexpected call: DeleteUserKeys")
+}
 
 // ─── AC11 Test 5: LogEvent_Success ───────────────────────────────────────────
 //

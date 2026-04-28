@@ -39,6 +39,7 @@ const (
 	CoreService_GetPresence_FullMethodName      = "/core.CoreService/GetPresence"
 	CoreService_UpdateProfile_FullMethodName    = "/core.CoreService/UpdateProfile"
 	CoreService_WriteAuditLog_FullMethodName    = "/core.CoreService/WriteAuditLog"
+	CoreService_DeleteUserKeys_FullMethodName   = "/core.CoreService/DeleteUserKeys"
 )
 
 // CoreServiceClient is the client API for CoreService service.
@@ -81,6 +82,10 @@ type CoreServiceClient interface {
 	// WriteAuditLog — called by Go gateway for admin/compliance events that originate
 	// in the Go layer (login, logout, bootstrap). Room events are logged directly by Elixir.
 	WriteAuditLog(ctx context.Context, in *WriteAuditLogRequest, opts ...grpc.CallOption) (*WriteAuditLogResponse, error)
+	// DeleteUserKeys — DSGVO key deletion: atomically soft-deletes private keys for a user.
+	// Story 5.7: instance_admin only. Returns keys_deleted_at (Unix ms) on success.
+	// Elixir Core handles the Ecto.Multi + failure-invariant audit emission.
+	DeleteUserKeys(ctx context.Context, in *DeleteUserKeysRequest, opts ...grpc.CallOption) (*DeleteUserKeysResponse, error)
 }
 
 type coreServiceClient struct {
@@ -300,6 +305,16 @@ func (c *coreServiceClient) WriteAuditLog(ctx context.Context, in *WriteAuditLog
 	return out, nil
 }
 
+func (c *coreServiceClient) DeleteUserKeys(ctx context.Context, in *DeleteUserKeysRequest, opts ...grpc.CallOption) (*DeleteUserKeysResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteUserKeysResponse)
+	err := c.cc.Invoke(ctx, CoreService_DeleteUserKeys_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CoreServiceServer is the server API for CoreService service.
 // All implementations must embed UnimplementedCoreServiceServer
 // for forward compatibility.
@@ -340,6 +355,10 @@ type CoreServiceServer interface {
 	// WriteAuditLog — called by Go gateway for admin/compliance events that originate
 	// in the Go layer (login, logout, bootstrap). Room events are logged directly by Elixir.
 	WriteAuditLog(context.Context, *WriteAuditLogRequest) (*WriteAuditLogResponse, error)
+	// DeleteUserKeys — DSGVO key deletion: atomically soft-deletes private keys for a user.
+	// Story 5.7: instance_admin only. Returns keys_deleted_at (Unix ms) on success.
+	// Elixir Core handles the Ecto.Multi + failure-invariant audit emission.
+	DeleteUserKeys(context.Context, *DeleteUserKeysRequest) (*DeleteUserKeysResponse, error)
 	mustEmbedUnimplementedCoreServiceServer()
 }
 
@@ -409,6 +428,9 @@ func (UnimplementedCoreServiceServer) UpdateProfile(context.Context, *UpdateProf
 }
 func (UnimplementedCoreServiceServer) WriteAuditLog(context.Context, *WriteAuditLogRequest) (*WriteAuditLogResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method WriteAuditLog not implemented")
+}
+func (UnimplementedCoreServiceServer) DeleteUserKeys(context.Context, *DeleteUserKeysRequest) (*DeleteUserKeysResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteUserKeys not implemented")
 }
 func (UnimplementedCoreServiceServer) mustEmbedUnimplementedCoreServiceServer() {}
 func (UnimplementedCoreServiceServer) testEmbeddedByValue()                     {}
@@ -784,6 +806,24 @@ func _CoreService_WriteAuditLog_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_DeleteUserKeys_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteUserKeysRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).DeleteUserKeys(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_DeleteUserKeys_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).DeleteUserKeys(ctx, req.(*DeleteUserKeysRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CoreService_ServiceDesc is the grpc.ServiceDesc for CoreService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -866,6 +906,10 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "WriteAuditLog",
 			Handler:    _CoreService_WriteAuditLog_Handler,
+		},
+		{
+			MethodName: "DeleteUserKeys",
+			Handler:    _CoreService_DeleteUserKeys_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

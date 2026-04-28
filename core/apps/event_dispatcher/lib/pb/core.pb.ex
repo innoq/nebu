@@ -504,3 +504,28 @@ defmodule Core.WriteAuditLogResponse do
 
   field :ok, 1, type: :bool
 end
+
+defmodule Core.DeleteUserKeysRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.DeleteUserKeysRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :admin_user_id, 1, type: :string, json_name: "adminUserId"
+  field :target_user_id, 2, type: :string, json_name: "targetUserId"
+  field :reason, 3, type: :string
+end
+
+defmodule Core.DeleteUserKeysResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.DeleteUserKeysResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :status, 1, type: :string
+  field :keys_deleted_at, 2, type: :int64, json_name: "keysDeletedAt"
+end

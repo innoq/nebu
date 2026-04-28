@@ -591,6 +591,45 @@ defmodule Nebu.EventDispatcher.Server do
     end
   end
 
+  # ─── DeleteUserKeys — Story 5.7: DSGVO Key-Deletion ──────────────────────────
+  #
+  # Delegates to Compliance.UserDeletion.delete_user_keys/3.
+  # Maps Elixir result tuples to gRPC status codes (consumed by Go gateway for HTTP mapping):
+  #   {:ok, %{keys_deleted_at: ms}} → DeleteUserKeysResponse{status: "keys_deleted", keys_deleted_at: ms}
+  #   {:error, :user_not_found}     → GRPC.Status.not_found()
+  #   {:error, :conflict}           → GRPC.Status.already_exists()
+  #   {:error, reason}              → GRPC.Status.internal()
+  #
+  # The failure-invariant audit ("user_keys_deletion_attempted") is handled inside
+  # Compliance.UserDeletion — the gRPC handler does NOT need to emit it.
+
+  def delete_user_keys(%Core.DeleteUserKeysRequest{} = req, _stream) do
+    case Compliance.UserDeletion.delete_user_keys(req.admin_user_id, req.target_user_id, req.reason) do
+      {:ok, %{keys_deleted_at: keys_deleted_at_ms}} ->
+        %Core.DeleteUserKeysResponse{status: "keys_deleted", keys_deleted_at: keys_deleted_at_ms}
+
+      {:error, :user_not_found} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "user not found"
+
+      {:error, :conflict} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.already_exists(),
+          message: "deletion already in progress or completed"
+
+      {:error, reason} ->
+        Logger.error("delete_user_keys failed",
+          target_user_id: req.target_user_id,
+          reason: inspect(reason)
+        )
+
+        raise GRPC.RPCError,
+          status: GRPC.Status.internal(),
+          message: "deletion failed: #{inspect(reason)}"
+    end
+  end
+
   def get_pending_events(_request, _stream) do
     %Core.GetPendingEventsResponse{}
   end

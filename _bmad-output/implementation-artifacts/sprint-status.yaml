@@ -1,5 +1,6 @@
 # generated: 2026-03-20
 # last_updated: 2026-04-23
+# story 5-7 created: 5-7 → ready-for-dev: 2026-04-23
 # story 5-6 done (pipeline: 0 TEA MAJOR / 3 MINOR + DoS LIMIT-guard fixed by CR, Kassandra CLEAN; FB-56-01 MEDIUM (status TOCTOU + streaming) deferred to 5-29): 2026-04-23
 # story 5-6 created: 5-6 → ready-for-dev: 2026-04-23
 # story 5-5 done (pipeline: 3 TEA MAJOR + 2 MINOR fixed in-pipeline, 1 CR MAJOR (DO NOTHING+re-read race) + 1 MINOR fixed, Kassandra CLEAN; 1 functional bug (set_at NOT NULL) + iat-future-check fixed inline; FB-55-01 MEDIUM deferred to 5-29): 2026-04-23
@@ -458,7 +459,7 @@ development_status:
   5-4-four-eyes-approval-api-admin-dashboard-pending-badge: done
   5-5-compliance-session-handler-24h-jwt-sub-binding-expiry-audit: done
   5-6-compliance-data-export-ed25519-signatur: done
-  5-7-atomare-dsgvo-deletion-key-loschung-audit-auch-bei-fehler: backlog
+  5-7-atomare-dsgvo-deletion-key-loschung-audit-auch-bei-fehler: review
   5-8-operational-pii-anonymisierung-deleted-user: backlog
   5-9-gherkin-compliance-flow-end-to-end: backlog
   # Security Hardening — Group A: Bootstrap Admin-Takeover Chain (CRITICAL)

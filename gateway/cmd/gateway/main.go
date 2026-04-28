@@ -753,6 +753,15 @@ func main() {
 	mux.Handle("GET /api/v1/compliance/export",
 		jwtMiddleware(http.HandlerFunc(exportHandler.GetExport)))
 
+	// Story 5.7 — DSGVO User Key Deletion
+	// Route namespace: /api/v1/admin/* — instance_admin only, role gate inside handler.
+	// bodyLimit64KiB: small deletion request body (reason string + userId path param).
+	userKeyDeletionHandler := &compliance.UserKeyDeletionHandler{
+		CoreClient: coreClient.CoreServiceClient(),
+	}
+	mux.Handle("DELETE /api/v1/admin/users/{userId}/keys",
+		bodyLimit64KiB(jwtMiddleware(http.HandlerFunc(userKeyDeletionHandler.DeleteUserKeys))))
+
 	// POST /rooms/{roomId}/leave — leave a room (calls Elixir LeaveRoom gRPC)
 	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/leave",
 		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

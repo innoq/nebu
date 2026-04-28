@@ -2361,6 +2361,121 @@ func (x *WriteAuditLogResponse) GetOk() bool {
 	return false
 }
 
+// DeleteUserKeys — Story 5.7: atomically soft-deletes private signing + encryption keys for a user.
+// Elixir Core runs a 5-step Ecto.Multi; on failure a separate Repo.transaction writes the
+// "user_keys_deletion_attempted" audit record (failure invariant, AC3).
+type DeleteUserKeysRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AdminUserId   string                 `protobuf:"bytes,1,opt,name=admin_user_id,json=adminUserId,proto3" json:"admin_user_id,omitempty"`    // caller (instance_admin) subject
+	TargetUserId  string                 `protobuf:"bytes,2,opt,name=target_user_id,json=targetUserId,proto3" json:"target_user_id,omitempty"` // user whose keys are to be deleted
+	Reason        string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`                                   // DSGVO deletion reason (min 10 chars, already validated by Go)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteUserKeysRequest) Reset() {
+	*x = DeleteUserKeysRequest{}
+	mi := &file_core_proto_msgTypes[42]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteUserKeysRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteUserKeysRequest) ProtoMessage() {}
+
+func (x *DeleteUserKeysRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[42]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteUserKeysRequest.ProtoReflect.Descriptor instead.
+func (*DeleteUserKeysRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{42}
+}
+
+func (x *DeleteUserKeysRequest) GetAdminUserId() string {
+	if x != nil {
+		return x.AdminUserId
+	}
+	return ""
+}
+
+func (x *DeleteUserKeysRequest) GetTargetUserId() string {
+	if x != nil {
+		return x.TargetUserId
+	}
+	return ""
+}
+
+func (x *DeleteUserKeysRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type DeleteUserKeysResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Status        string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`                                       // "keys_deleted"
+	KeysDeletedAt int64                  `protobuf:"varint,2,opt,name=keys_deleted_at,json=keysDeletedAt,proto3" json:"keys_deleted_at,omitempty"` // Unix milliseconds — convert to ISO8601 in Go handler
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteUserKeysResponse) Reset() {
+	*x = DeleteUserKeysResponse{}
+	mi := &file_core_proto_msgTypes[43]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteUserKeysResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteUserKeysResponse) ProtoMessage() {}
+
+func (x *DeleteUserKeysResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[43]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteUserKeysResponse.ProtoReflect.Descriptor instead.
+func (*DeleteUserKeysResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{43}
+}
+
+func (x *DeleteUserKeysResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *DeleteUserKeysResponse) GetKeysDeletedAt() int64 {
+	if x != nil {
+		return x.KeysDeletedAt
+	}
+	return 0
+}
+
 var File_core_proto protoreflect.FileDescriptor
 
 const file_core_proto_rawDesc = "" +
@@ -2535,8 +2650,14 @@ const file_core_proto_rawDesc = "" +
 	"\aoutcome\x18\x06 \x01(\tR\aoutcome\x12!\n" +
 	"\ferror_detail\x18\a \x01(\tR\verrorDetail\"'\n" +
 	"\x15WriteAuditLogResponse\x12\x0e\n" +
-	"\x02ok\x18\x01 \x01(\bR\x02ok2\xe0\n" +
-	"\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\"y\n" +
+	"\x15DeleteUserKeysRequest\x12\"\n" +
+	"\radmin_user_id\x18\x01 \x01(\tR\vadminUserId\x12$\n" +
+	"\x0etarget_user_id\x18\x02 \x01(\tR\ftargetUserId\x12\x16\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\"X\n" +
+	"\x16DeleteUserKeysResponse\x12\x16\n" +
+	"\x06status\x18\x01 \x01(\tR\x06status\x12&\n" +
+	"\x0fkeys_deleted_at\x18\x02 \x01(\x03R\rkeysDeletedAt2\xad\v\n" +
 	"\vCoreService\x12<\n" +
 	"\tSendEvent\x12\x16.core.SendEventRequest\x1a\x17.core.SendEventResponse\x12?\n" +
 	"\n" +
@@ -2560,7 +2681,8 @@ const file_core_proto_rawDesc = "" +
 	"\fGetSyncDelta\x12\x19.core.GetSyncDeltaRequest\x1a\x1a.core.GetSyncDeltaResponse\x12B\n" +
 	"\vGetPresence\x12\x18.core.GetPresenceRequest\x1a\x19.core.GetPresenceResponse\x12H\n" +
 	"\rUpdateProfile\x12\x1a.core.UpdateProfileRequest\x1a\x1b.core.UpdateProfileResponse\x12H\n" +
-	"\rWriteAuditLog\x12\x1a.core.WriteAuditLogRequest\x1a\x1b.core.WriteAuditLogResponseB'Z%github.com/nebu/nebu/internal/grpc/pbb\x06proto3"
+	"\rWriteAuditLog\x12\x1a.core.WriteAuditLogRequest\x1a\x1b.core.WriteAuditLogResponse\x12K\n" +
+	"\x0eDeleteUserKeys\x12\x1b.core.DeleteUserKeysRequest\x1a\x1c.core.DeleteUserKeysResponseB'Z%github.com/nebu/nebu/internal/grpc/pbb\x06proto3"
 
 var (
 	file_core_proto_rawDescOnce sync.Once
@@ -2574,7 +2696,7 @@ func file_core_proto_rawDescGZIP() []byte {
 	return file_core_proto_rawDescData
 }
 
-var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 42)
+var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 44)
 var file_core_proto_goTypes = []any{
 	(*Event)(nil),                    // 0: core.Event
 	(*SendEventRequest)(nil),         // 1: core.SendEventRequest
@@ -2618,6 +2740,8 @@ var file_core_proto_goTypes = []any{
 	(*UpdateProfileResponse)(nil),    // 39: core.UpdateProfileResponse
 	(*WriteAuditLogRequest)(nil),     // 40: core.WriteAuditLogRequest
 	(*WriteAuditLogResponse)(nil),    // 41: core.WriteAuditLogResponse
+	(*DeleteUserKeysRequest)(nil),    // 42: core.DeleteUserKeysRequest
+	(*DeleteUserKeysResponse)(nil),   // 43: core.DeleteUserKeysResponse
 }
 var file_core_proto_depIdxs = []int32{
 	0,  // 0: core.GetMessagesResponse.events:type_name -> core.Event
@@ -2646,28 +2770,30 @@ var file_core_proto_depIdxs = []int32{
 	36, // 23: core.CoreService.GetPresence:input_type -> core.GetPresenceRequest
 	38, // 24: core.CoreService.UpdateProfile:input_type -> core.UpdateProfileRequest
 	40, // 25: core.CoreService.WriteAuditLog:input_type -> core.WriteAuditLogRequest
-	2,  // 26: core.CoreService.SendEvent:output_type -> core.SendEventResponse
-	4,  // 27: core.CoreService.CreateRoom:output_type -> core.CreateRoomResponse
-	6,  // 28: core.CoreService.JoinRoom:output_type -> core.JoinRoomResponse
-	8,  // 29: core.CoreService.LeaveRoom:output_type -> core.LeaveRoomResponse
-	10, // 30: core.CoreService.GetMessages:output_type -> core.GetMessagesResponse
-	12, // 31: core.CoreService.SetPresence:output_type -> core.SetPresenceResponse
-	14, // 32: core.CoreService.SetTyping:output_type -> core.SetTypingResponse
-	16, // 33: core.CoreService.ValidateToken:output_type -> core.ValidateTokenResponse
-	18, // 34: core.CoreService.GetPendingEvents:output_type -> core.GetPendingEventsResponse
-	0,  // 35: core.CoreService.EventBus:output_type -> core.Event
-	21, // 36: core.CoreService.GetMetrics:output_type -> core.GetMetricsResponse
-	25, // 37: core.CoreService.GetRoomState:output_type -> core.GetRoomStateResponse
-	23, // 38: core.CoreService.InviteUser:output_type -> core.InviteUserResponse
-	27, // 39: core.CoreService.SetPowerLevels:output_type -> core.SetPowerLevelsResponse
-	29, // 40: core.CoreService.SendReceipt:output_type -> core.SendReceiptResponse
-	31, // 41: core.CoreService.GetInitialSync:output_type -> core.GetInitialSyncResponse
-	34, // 42: core.CoreService.GetSyncDelta:output_type -> core.GetSyncDeltaResponse
-	37, // 43: core.CoreService.GetPresence:output_type -> core.GetPresenceResponse
-	39, // 44: core.CoreService.UpdateProfile:output_type -> core.UpdateProfileResponse
-	41, // 45: core.CoreService.WriteAuditLog:output_type -> core.WriteAuditLogResponse
-	26, // [26:46] is the sub-list for method output_type
-	6,  // [6:26] is the sub-list for method input_type
+	42, // 26: core.CoreService.DeleteUserKeys:input_type -> core.DeleteUserKeysRequest
+	2,  // 27: core.CoreService.SendEvent:output_type -> core.SendEventResponse
+	4,  // 28: core.CoreService.CreateRoom:output_type -> core.CreateRoomResponse
+	6,  // 29: core.CoreService.JoinRoom:output_type -> core.JoinRoomResponse
+	8,  // 30: core.CoreService.LeaveRoom:output_type -> core.LeaveRoomResponse
+	10, // 31: core.CoreService.GetMessages:output_type -> core.GetMessagesResponse
+	12, // 32: core.CoreService.SetPresence:output_type -> core.SetPresenceResponse
+	14, // 33: core.CoreService.SetTyping:output_type -> core.SetTypingResponse
+	16, // 34: core.CoreService.ValidateToken:output_type -> core.ValidateTokenResponse
+	18, // 35: core.CoreService.GetPendingEvents:output_type -> core.GetPendingEventsResponse
+	0,  // 36: core.CoreService.EventBus:output_type -> core.Event
+	21, // 37: core.CoreService.GetMetrics:output_type -> core.GetMetricsResponse
+	25, // 38: core.CoreService.GetRoomState:output_type -> core.GetRoomStateResponse
+	23, // 39: core.CoreService.InviteUser:output_type -> core.InviteUserResponse
+	27, // 40: core.CoreService.SetPowerLevels:output_type -> core.SetPowerLevelsResponse
+	29, // 41: core.CoreService.SendReceipt:output_type -> core.SendReceiptResponse
+	31, // 42: core.CoreService.GetInitialSync:output_type -> core.GetInitialSyncResponse
+	34, // 43: core.CoreService.GetSyncDelta:output_type -> core.GetSyncDeltaResponse
+	37, // 44: core.CoreService.GetPresence:output_type -> core.GetPresenceResponse
+	39, // 45: core.CoreService.UpdateProfile:output_type -> core.UpdateProfileResponse
+	41, // 46: core.CoreService.WriteAuditLog:output_type -> core.WriteAuditLogResponse
+	43, // 47: core.CoreService.DeleteUserKeys:output_type -> core.DeleteUserKeysResponse
+	27, // [27:48] is the sub-list for method output_type
+	6,  // [6:27] is the sub-list for method input_type
 	6,  // [6:6] is the sub-list for extension type_name
 	6,  // [6:6] is the sub-list for extension extendee
 	0,  // [0:6] is the sub-list for field type_name
@@ -2688,7 +2814,7 @@ func file_core_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_core_proto_rawDesc), len(file_core_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   42,
+			NumMessages:   44,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
