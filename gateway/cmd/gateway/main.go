@@ -93,7 +93,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := db.RunMigrations(cfg.DBURL); err != nil {
+	// Story 5.29a — AC3: migrations run as nebu_migrate (table owner).
+	// NEBU_DB_URL_MIGRATE is the privileged role; falls back to NEBU_DB_URL if unset.
+	if err := db.RunMigrations(cfg.DBURL, cfg.DBURLMigrate); err != nil {
 		slog.Error("database connection failed: " + err.Error())
 		os.Exit(1)
 	}
@@ -109,7 +111,17 @@ func main() {
 		slog.Info("Gateway using server name", "server_name", serverName)
 	}
 
-	coreClient, err := coregrpc.New(cfg.CoreGRPCAddr)
+	// Story 5.29a — AC10: gRPC client attaches PSK token to every call.
+	// internalSecret is read later in this function; read it now for gRPC init.
+	// Note: internalSecret is also used below for PSK middleware — reading once.
+	pskBytesEarly, errEarlyPSK := os.ReadFile(cfg.InternalSecretFile)
+	if errEarlyPSK != nil {
+		slog.Error("failed to read internal secret file for gRPC auth", "path", cfg.InternalSecretFile, "err", errEarlyPSK)
+		os.Exit(1)
+	}
+	internalSecretEarly := strings.TrimSpace(string(pskBytesEarly))
+
+	coreClient, err := coregrpc.New(cfg.CoreGRPCAddr, internalSecretEarly)
 	if err != nil {
 		slog.Error("failed to create gRPC client", "err", err)
 		os.Exit(1)
@@ -169,13 +181,9 @@ func main() {
 		}
 	}()
 
-	// Read PSK from file once at startup
-	pskBytes, err := os.ReadFile(cfg.InternalSecretFile)
-	if err != nil {
-		slog.Error("failed to read internal secret file", "path", cfg.InternalSecretFile, "err", err)
-		os.Exit(1)
-	}
-	internalSecret := strings.TrimSpace(string(pskBytes))
+	// PSK was already read above (internalSecretEarly) for gRPC client init.
+	// Reuse it here under the canonical name used by the rest of the function.
+	internalSecret := internalSecretEarly
 
 	// Set up HTTP mux with node registry behind PSK middleware
 	mux := http.NewServeMux()

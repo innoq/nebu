@@ -14,19 +14,23 @@ package audit_test
 //   go test -tags=integration ./internal/audit/... -v
 //
 // Environment variables:
-//   NEBU_TEST_DB_URL            — app role connection (nebu user); tests INSERT + DELETE via app role
-//   NEBU_TEST_MIGRATION_DB_URL  — privileged connection (postgres superuser or nebu owner);
+//   NEBU_TEST_DB_URL            — runtime app-role connection (nebu_app); tests INSERT + DELETE via app role
+//   NEBU_TEST_MIGRATION_DB_URL  — privileged connection (nebu_migrate, table owner);
 //                                  used for seeding/teardown that requires DELETE
 //
-// RLS role clarification:
-//   The nebu database user is the table OWNER. With FORCE ROW LEVEL SECURITY, even the
-//   owner is subject to the policy. The app role used in production is the same nebu user.
+// RLS role clarification (Story 5.29a — role split, FB-51-01):
+//   nebu_migrate is the table OWNER. nebu_app is the runtime role and is NOT
+//   the owner — therefore FORCE ROW LEVEL SECURITY actually applies to nebu_app
+//   (nebu_app is also NOSUPERUSER and NOBYPASSRLS).
+//   nebu_app has SELECT/INSERT only on audit_log (UPDATE/DELETE explicitly
+//   REVOKEd in migration 000024 as defense-in-depth alongside FORCE RLS).
 //   INSERT is allowed by the audit_log_insert policy (WITH CHECK (true)).
-//   DELETE is denied because no DELETE policy exists and FORCE RLS defaults to deny-all.
+//   DELETE is denied because no DELETE policy exists and FORCE RLS defaults to
+//   deny-all (and the privilege itself is revoked).
 //
 //   Therefore:
-//     AC2: INSERT as nebu → succeeds
-//     AC5: DELETE as nebu → fails with RLS policy violation (or permission denied)
+//     AC2: INSERT as nebu_app → succeeds
+//     AC5: DELETE as nebu_app → fails with RLS policy violation (or permission denied)
 
 import (
 	"context"

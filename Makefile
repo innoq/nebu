@@ -7,7 +7,7 @@ DOCKER_ELIXIR = docker run --rm -v $(PWD):/workspace -w /workspace elixir:1.19-a
 DOCKER_BUF    = docker run --rm -v $(PWD):/workspace -w /workspace bufbuild/buf
 DOCKER_NODE   = docker run --rm -v $(PWD):/workspace -w /workspace node:22-alpine
 
-.PHONY: build-gateway build-core build-admin-css download-fonts dev setup test-unit-go test-unit-elixir test-integration test-e2e test-matrix-compat test-load-silber build-element-e2e test-e2e-element build-fluffychat-e2e test-e2e-fluffychat proto gen-api
+.PHONY: build-gateway build-core build-admin-css download-fonts dev setup test-unit-go test-unit-elixir test-integration test-e2e test-matrix-compat test-load-silber build-element-e2e test-e2e-element build-fluffychat-e2e test-e2e-fluffychat proto gen-api test-compose-ports
 
 ## download-fonts: Download Inter + JetBrains Mono WOFF2 fonts (run once; commit results)
 download-fonts:
@@ -80,7 +80,9 @@ test-integration:
 		-e NEBU_TEST_CORE_URL=http://core:4000 \
 		-e NEBU_TEST_DEX_URL=http://dex:5556 \
 		-e NEBU_TEST_MATRIX_URL=http://gateway:8008 \
-		-e NEBU_TEST_DB_URL=postgresql://nebu:nebu_dev_password@postgres:5432/nebu \
+		-e NEBU_TEST_DB_URL=postgresql://nebu_app:nebu_app_dev_pw@postgres:5432/nebu \
+		-e NEBU_TEST_MIGRATION_DB_URL=postgresql://nebu_migrate:nebu_migrate_dev_pw@postgres:5432/nebu \
+		-e NEBU_TEST_CORE_GRPC_ADDR=core:9000 \
 		-e NEBU_TEST_INTERNAL_SECRET=$$(cat .secrets/internal_secret) \
 		golang:1.26-alpine \
 		sh -c "apk add -q --no-cache gcc musl-dev && cd gateway && go test -v -tags integration ./test/integration/..."; \
@@ -151,6 +153,21 @@ test-e2e-fluffychat:
 	npx playwright install chromium --with-deps --quiet && \
 	npx playwright test tests/fluffychat_e2e.spec.ts; \
 	EXIT=$$?; exit $$EXIT
+
+## test-compose-ports: CI smoke test — assert that port 9000 is NOT published by the core service.
+## Story 5.29a AC8: gRPC port must not be bound to the host.
+## Fallback for CI runners where the Go integration test cannot use Docker SDK.
+test-compose-ports:
+	@echo "Checking that core service does NOT publish port 9000 to the host..."
+	@if docker compose config --format json 2>/dev/null | python3 -c \
+		"import json,sys; cfg=json.load(sys.stdin); ports=cfg.get('services',{}).get('core',{}).get('ports',[]); \
+		bound=[p for p in ports if str(p.get('target',''))==str(9000) and str(p.get('published','')) not in ('','0')]; \
+		sys.exit(1) if bound else print('PASS: port 9000 not published on host')"; then \
+		true; \
+	else \
+		echo "FAIL: core service still publishes port 9000 to the host. Remove '- \"9000:9000\"' from docker-compose.yml."; \
+		exit 1; \
+	fi
 
 ## proto: Generate gRPC stubs from .proto definitions (via buf + protoc)
 ## Step 1: buf generates Go stubs using remote plugins

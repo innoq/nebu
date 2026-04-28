@@ -20,6 +20,9 @@ services:
       retries: 5
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # Story 5.29a — AC2: DB-init script provisions nebu_migrate and nebu_app roles
+      # on first container start (docker-entrypoint-initdb.d runs only on empty volumes).
+      - ./dev/postgres/init:/docker-entrypoint-initdb.d:ro
 
   gateway:
     build: ./gateway
@@ -30,7 +33,10 @@ services:
         condition: service_healthy
     secrets: [internal_secret]
     environment:
-      NEBU_DB_URL: "postgresql://nebu:nebu_dev_password@postgres:5432/nebu"
+      # Story 5.29a — AC3: runtime uses nebu_app (non-superuser, bound by RLS)
+      NEBU_DB_URL: "postgresql://nebu_app:nebu_app_dev_pw@postgres:5432/nebu"
+      # Story 5.29a — AC3: migrations run as nebu_migrate (table owner)
+      NEBU_DB_URL_MIGRATE: "postgresql://nebu_migrate:nebu_migrate_dev_pw@postgres:5432/nebu"
       NEBU_CORE_GRPC_ADDR: "core:9000"
       NEBU_INTERNAL_SECRET_FILE: "/run/secrets/internal_secret"
       NEBU_SERVER_NAME: "localhost"
@@ -55,13 +61,15 @@ services:
         condition: service_healthy
     secrets: [internal_secret]
     environment:
-      NEBU_DB_URL: "postgresql://nebu:nebu_dev_password@postgres:5432/nebu"
-      DATABASE_URL: "ecto://nebu:nebu_dev_password@postgres:5432/nebu"
+      # Story 5.29a — AC3: core also uses nebu_app at runtime (no DDL from core)
+      NEBU_DB_URL: "postgresql://nebu_app:nebu_app_dev_pw@postgres:5432/nebu"
+      DATABASE_URL: "ecto://nebu_app:nebu_app_dev_pw@postgres:5432/nebu"
       NEBU_INTERNAL_SECRET_FILE: "/run/secrets/internal_secret"
       NEBU_GATEWAY_INTERNAL_URL: "http://gateway:8008"
       NEBU_PII_ENCRYPTION_KEY: "${NEBU_PII_ENCRYPTION_KEY:-6465766b65793030303030303030303030303030303030303030303030303030}"
     ports:
-      - "9000:9000"
+      # Story 5.29a — AC8: gRPC port 9000 is NOT published to the host.
+      # Port 9000 is only reachable within the internal Compose network (core:9000).
       - "4000:4000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4000/health"]

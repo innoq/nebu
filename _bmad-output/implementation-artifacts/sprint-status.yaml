@@ -499,7 +499,7 @@ development_status:
   # Collector for deferred security findings from Epic 5 + manual-testing bugs.
   # Split into 5-29a..e on 2026-04-23 (23 items would exceed any reasonable size).
   5-29-security-followup-collector: done
-  5-29a-trust-model-tightening: ready-for-dev          # 2 HIGH (FB-51-01, FB-52-01)
+  5-29a-trust-model-tightening: review                 # 2 HIGH (FB-51-01, FB-52-01)
   5-29b-compliance-endpoint-hardening: ready-for-dev   # 8 MEDIUM/LOW
   5-29c-audit-crypto-lifecycle: ready-for-dev          # 2 HIGH + 5 MEDIUM
   5-29d-test-infra-and-dev-hardening: ready-for-dev    # 1 MEDIUM + 2 LOW + 1 INFO

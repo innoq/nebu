@@ -9,7 +9,8 @@ import (
 // Config holds all NEBU_ environment variable configuration for the gateway.
 type Config struct {
 	CoreGRPCAddr       string // NEBU_CORE_GRPC_ADDR (default: "core:9000")
-	DBURL              string // NEBU_DB_URL
+	DBURL              string // NEBU_DB_URL (runtime app role — nebu_app, non-superuser)
+	DBURLMigrate       string // NEBU_DB_URL_MIGRATE (migration role — nebu_migrate, table owner)
 	OIDCIssuer         string // NEBU_OIDC_ISSUER
 	OIDCClientID       string // NEBU_OIDC_CLIENT_ID
 	OIDCClientSecret   string // NEBU_OIDC_CLIENT_SECRET
@@ -31,6 +32,7 @@ func Load() Config {
 	return Config{
 		CoreGRPCAddr:       getEnvOrDefault("NEBU_CORE_GRPC_ADDR", "core:9000"),
 		DBURL:              os.Getenv("NEBU_DB_URL"),
+		DBURLMigrate:       os.Getenv("NEBU_DB_URL_MIGRATE"),
 		OIDCIssuer:         os.Getenv("NEBU_OIDC_ISSUER"),
 		OIDCClientID:       os.Getenv("NEBU_OIDC_CLIENT_ID"),
 		OIDCClientSecret:   os.Getenv("NEBU_OIDC_CLIENT_SECRET"),

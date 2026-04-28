@@ -28,13 +28,24 @@ func pgx5URL(dbURL string) string {
 // RunMigrations applies all pending migrations synchronously.
 // Returns nil if migrations succeed or there are no pending migrations.
 // Call before starting the HTTP listener.
-func RunMigrations(dbURL string) error {
+//
+// Story 5.29a — AC3: migrations run as nebu_migrate (table owner), not nebu_app
+// (runtime role). If migrateURL is empty, falls back to dbURL for backward
+// compatibility in test environments that pre-date the role split.
+func RunMigrations(dbURL string, migrateURL ...string) error {
 	src, err := iofs.New(migrations.FS, ".")
 	if err != nil {
 		return fmt.Errorf("creating migration source: %w", err)
 	}
 
-	m, err := migrate.NewWithSourceInstance("iofs", src, pgx5URL(dbURL))
+	// Use the dedicated migration URL if provided (nebu_migrate role).
+	// Fall back to the runtime URL for backward compatibility.
+	effectiveURL := dbURL
+	if len(migrateURL) > 0 && migrateURL[0] != "" {
+		effectiveURL = migrateURL[0]
+	}
+
+	m, err := migrate.NewWithSourceInstance("iofs", src, pgx5URL(effectiveURL))
 	if err != nil {
 		return fmt.Errorf("connecting to database: %w", err)
 	}

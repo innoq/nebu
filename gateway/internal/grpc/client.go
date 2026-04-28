@@ -8,9 +8,14 @@ import (
 	grpclib "google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 
 	pb "github.com/nebu/nebu/internal/grpc/pb"
 )
+
+// nodeTokenKey is the gRPC metadata key for the PSK node-registration token.
+// Must match the key read by the Elixir gRPC auth interceptor.
+const nodeTokenKey = "x-nebu-node-token"
 
 // Client wraps the generated CoreServiceClient with its underlying connection.
 type Client struct {
@@ -18,14 +23,71 @@ type Client struct {
 	core pb.CoreServiceClient
 }
 
+// newAuthUnaryInterceptor returns a UnaryClientInterceptor that injects the
+// PSK token into every outgoing unary gRPC call's metadata.
+// Story 5.29a — AC10 (FB-52-01).
+func newAuthUnaryInterceptor(secret string) grpclib.UnaryClientInterceptor {
+	return func(
+		ctx context.Context,
+		method string,
+		req, reply interface{},
+		cc *grpclib.ClientConn,
+		invoker grpclib.UnaryInvoker,
+		opts ...grpclib.CallOption,
+	) error {
+		md, ok := metadata.FromOutgoingContext(ctx)
+		if !ok {
+			md = metadata.New(nil)
+		}
+		md.Set(nodeTokenKey, secret)
+		ctx = metadata.NewOutgoingContext(ctx, md)
+		return invoker(ctx, method, req, reply, cc, opts...)
+	}
+}
+
+// newAuthStreamInterceptor returns a StreamClientInterceptor that injects the
+// PSK token into every outgoing streaming gRPC call's metadata.
+// Story 5.29a — AC10 (FB-52-01).
+func newAuthStreamInterceptor(secret string) grpclib.StreamClientInterceptor {
+	return func(
+		ctx context.Context,
+		desc *grpclib.StreamDesc,
+		cc *grpclib.ClientConn,
+		method string,
+		streamer grpclib.Streamer,
+		opts ...grpclib.CallOption,
+	) (grpclib.ClientStream, error) {
+		md, ok := metadata.FromOutgoingContext(ctx)
+		if !ok {
+			md = metadata.New(nil)
+		}
+		md.Set(nodeTokenKey, secret)
+		ctx = metadata.NewOutgoingContext(ctx, md)
+		return streamer(ctx, desc, cc, method, opts...)
+	}
+}
+
 // New creates a Client connected to addr using lazy (non-blocking) dial.
+// secret is the PSK loaded from NEBU_INTERNAL_SECRET_FILE; it is injected into
+// every outgoing gRPC call via interceptors (Story 5.29a AC10).
 // A background goroutine probes the connection for up to 5 seconds and logs
 // a warning if the core is unreachable — it does not block or exit.
-func New(addr string) (*Client, error) {
-	conn, err := grpclib.NewClient(
-		addr,
+func New(addr string, secret ...string) (*Client, error) {
+	// Build dial options; always include insecure transport (mTLS is Phase 2 / ADR-008).
+	dialOpts := []grpclib.DialOption{
 		grpclib.WithTransportCredentials(insecure.NewCredentials()),
-	)
+	}
+
+	// Attach PSK interceptors when a secret is provided.
+	if len(secret) > 0 && secret[0] != "" {
+		psk := secret[0]
+		dialOpts = append(dialOpts,
+			grpclib.WithUnaryInterceptor(newAuthUnaryInterceptor(psk)),
+			grpclib.WithStreamInterceptor(newAuthStreamInterceptor(psk)),
+		)
+	}
+
+	conn, err := grpclib.NewClient(addr, dialOpts...)
 	if err != nil {
 		return nil, err
 	}
