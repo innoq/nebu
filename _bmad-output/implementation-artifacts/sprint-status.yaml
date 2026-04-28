@@ -1,5 +1,6 @@
 # generated: 2026-03-20
 # last_updated: 2026-04-23
+# story 5-29a done (pipeline: 0 TEA MAJOR / 4 MINOR fixed by CR + 1 self-discovered MAJOR (function-ownership transfer) fixed; Kassandra HIGH-1 (silent purge under FORCE RLS) fixed inline via BYPASSRLS for nebu_migrate): 2026-04-23
 # story 5-29 split into 5-29a..e on user request (23 deferred items + 3 manual-testing bugs from tmp/test-findings.md): 2026-04-23
 # story 5-28 done (meta-story: pipeline gate already implemented in skills/bmad-pipeline + CLAUDE.md, retroactively validated by 10+ stories in this run): 2026-04-23
 # epic 5 SEC Gate 2 (Kassandra epic-wide review 267a4bf..HEAD, 189 files): HIGH non-blocking, 6 new findings appended to 5-29 (FB-E5-04..09): 2026-04-23
@@ -499,7 +500,7 @@ development_status:
   # Collector for deferred security findings from Epic 5 + manual-testing bugs.
   # Split into 5-29a..e on 2026-04-23 (23 items would exceed any reasonable size).
   5-29-security-followup-collector: done
-  5-29a-trust-model-tightening: review                 # 2 HIGH (FB-51-01, FB-52-01)
+  5-29a-trust-model-tightening: done                   # FB-51-01 + FB-52-01 closed
   5-29b-compliance-endpoint-hardening: ready-for-dev   # 8 MEDIUM/LOW
   5-29c-audit-crypto-lifecycle: ready-for-dev          # 2 HIGH + 5 MEDIUM
   5-29d-test-infra-and-dev-hardening: ready-for-dev    # 1 MEDIUM + 2 LOW + 1 INFO
