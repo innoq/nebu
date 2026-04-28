@@ -366,6 +366,90 @@ RETURNING id
 
 ---
 
+### FB-E5-04 — Compliance JWT not revocable at validation time (HIGH, cross-story 5-5/5-6)
+
+**Source:** Epic-5 SEC Gate 2 (2026-04-23).
+**Severity:** HIGH (compliance-trail integrity — leaked token = 24h access despite revoke).
+**Size estimate:** S (one DB lookup + index).
+
+**Observation:** Story 5-5 introduced `compliance_sessions.revoked_at`, and the SessionExpiryWorker sets it on expiry. `ValidateComplianceToken` (`gateway/internal/compliance/jwt.go:65-106`) verifies signature, `exp`, `iat`-future, `sub` — but never consults the DB. A leaked compliance token remains valid for the full 24h TTL even after an operator manually `UPDATE compliance_sessions SET revoked_at = NOW()`. The `token_hash` SHA-256 column was added in 5-5 specifically for this revocation lookup but is currently dead weight.
+
+**What to do:**
+1. Extend `ValidateComplianceToken` to compute `sha256(token)` and `SELECT 1 FROM compliance_sessions WHERE token_hash = $1 AND revoked_at IS NULL`. 0 rows → reject as `compliance/jwt: token revoked`.
+2. Add admin endpoint `POST /api/v1/admin/compliance/sessions/{id}/revoke` for explicit revocation (e.g. when an officer leaves the company).
+3. Tests: revoked token → 401 from `/api/v1/compliance/export`.
+
+**Why deferred:** Cross-story (touches 5-5 issuance + 5-6 export validation), and the DB lookup adds latency to every export call — performance review needed before landing.
+
+---
+
+### FB-E5-05 — Anonymized/key-deleted users still appear in user_directory search (HIGH, cross-story 5-7/5-8/5-26)
+
+**Source:** Epic-5 SEC Gate 2 (2026-04-23).
+**Severity:** HIGH (PII leak post-GDPR-anonymization — undermines DSGVO right-to-erasure).
+**Size estimate:** S.
+
+**Observation:** Stories 5-7 (key deletion) and 5-8 (anonymization) clear `private_key`, set `users.deletion_status='keys_deleted'` / `users.anonymized_at`, and overwrite `profiles.displayname → 'Deleted User'`. But `users.user_id` (e.g. `@alice.bauer:nebu.local`) is preserved (Matrix-spec: events reference user_id, not name). Story 5-26 (`SearchUsers`) filters by `displayname` and `user_id` substring — so `?term=alice.bauer` STILL returns the deleted user with `displayname="Deleted User"` but `user_id` intact. Real-name leakage.
+
+**What to do:**
+1. `SearchUsers` query: `... AND deletion_status IS DISTINCT FROM 'keys_deleted' AND anonymized_at IS NULL` (or both, depending on the policy).
+2. `GetProfile` already returns flat 404 for missing profiles (5-27) — verify it also flat-404s anonymized users (or returns `displayname="Deleted User"` as 5-8 implies; clarify the contract).
+3. Tests: search for anonymized user's localpart → 0 results.
+
+**Why deferred:** Cross-story (5-7/5-8 set state, 5-26 reads state). Needs a coherent "deleted user visibility" policy across all read endpoints (search, profile, presence, members in old rooms).
+
+---
+
+### FB-E5-06 — Compliance JWT missing `iss` and `aud` claims (MEDIUM)
+
+**Source:** Epic-5 SEC Gate 2 (2026-04-23).
+**Severity:** MEDIUM (defense-in-depth; small token scope).
+
+**Observation:** `ComplianceClaims` (jwt.go) has `sub`, `exp`, `iat`, `compliance_request_id`, `room_id`, `time_range_*` — no `iss` (issuer) or `aud` (audience). RFC 7519 best-practice: a token signed by the gateway should carry `iss=<gateway-id>` and `aud=<expected-consumer-id>`. Today, if any other gateway service starts using the same Ed25519 key for a different purpose, cross-token confusion is possible.
+
+**What to do:** add `iss="nebu-gateway"` and `aud="compliance-export"` claims at issue time, validate on consume.
+
+**Why deferred:** Defense-in-depth; current single-purpose key makes the risk theoretical.
+
+---
+
+### FB-E5-07 — `audit_log_purge` has no scheduler — dead retention path (MEDIUM)
+
+**Source:** Epic-5 SEC Gate 2 (2026-04-23).
+**Severity:** MEDIUM (compliance — retention policy not enforced).
+
+**Observation:** Story 5-1 introduced `audit_log_purge(retention_days INT)` SECURITY DEFINER function and the `audit_log_retention_days=2555` config. `gateway/internal/audit/audit.go::RunCleanup` wraps the call. **But no production code ever invokes `RunCleanup`** — no goroutine timer, no Elixir worker, no admin endpoint. Audit log grows unbounded.
+
+**What to do:**
+1. Either: gateway-side goroutine timer (every 24h) calling `RunCleanup(ctx, db, retentionDays)`.
+2. Or: Elixir worker analogous to `Compliance.SessionExpiryWorker` from 5-5.
+
+**Why deferred:** Out of scope for original 5-1 (Story-AC mentioned "pg_cron OR app scheduled task" — neither was implemented). Bundles cleanly into 5-29.
+
+---
+
+### FB-E5-08 — Dex dev config still has `password` grant_type enabled (LOW)
+
+**Source:** Epic-5 SEC Gate 2 (2026-04-23).
+**Severity:** LOW (dev only; not in prod path).
+
+**Observation:** `dev/dex/config.yaml` still has `oauth2.passwordConnector: local` and the `password` grant in the issuer config. This is convenient for ad-hoc test scripts but contradicts CLAUDE.md "OIDC / Auth Testing Standard: Authorization Code + PKCE only. Never use grant_type=password." A regression where a test script silently uses ROPC would not be caught.
+
+**What to do:** remove `passwordConnector` and `password` grant from Dex dev config; enforce Authorization Code + PKCE for all integration tests.
+
+**Why deferred:** Touches dev infra; verify all step-defs use authcode+PKCE first.
+
+---
+
+### FB-E5-09 — `DeleteUserKeys` gRPC subsumed by FB-52-01 (INFO)
+
+**Source:** Epic-5 SEC Gate 2 (2026-04-23).
+**Severity:** INFO (already tracked).
+
+**Observation:** Story 5-7's new gRPC method `CoreService.DeleteUserKeys` runs over the same unauthenticated gRPC channel as `WriteAuditLog`. Once FB-52-01 (mTLS/auth on port 9000) lands, both are protected. No separate fix.
+
+---
+
 ### FB-E5-03 — Elixir event_dispatcher: 23 pre-existing test failures (Nebu.Repo + FakeDB drift)
 
 **Source:** Discovered during Story 5-2 TEA Gate 2 (2026-04-23). Not a security issue — listed here so the collector captures all Epic-5 test-debt in one place for epic-close decision-making.
