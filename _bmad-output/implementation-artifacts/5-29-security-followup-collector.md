@@ -296,6 +296,29 @@ Code-review added `LIMIT 10000` as a memory DoS guard. For a busy room with > 10
 
 ---
 
+### FB-57-01 — Atomic guard for `users.deletion_status` transition
+
+**Source:** Story 5-7 Kassandra SEC Gate 1 (2026-04-23).
+**Severity:** MEDIUM (audit-trail integrity under concurrent admin actions).
+**Size estimate:** XS.
+
+**Observation:** `Compliance.UserDeletion.delete_user_keys/3` does pre-flight `SELECT users.deletion_status` (`check_user/1`) outside the transaction, then `UPDATE users SET deletion_status='deletion_in_progress'` inside. Two parallel admin calls can both pass the SELECT guard with `deletion_status='active'`, both set `deletion_in_progress`, both run the multi to completion, both emit `user_keys_deleted` audit entries. The second multi is a functional no-op (`private_key` is already NULL), but the audit log records two completed deletions for the same user — confusing for forensics.
+
+**What to do:**
+Replace the SELECT + UPDATE pair with a single conditional UPDATE inside the multi:
+```sql
+UPDATE users SET deletion_status='deletion_in_progress'
+WHERE id=$1 AND deletion_status IN (NULL, 'active')
+RETURNING id
+```
+0 rows → `:conflict`. The atomic UPDATE serialises both callers — only one wins; the other gets `:conflict`.
+
+**Test:** Concurrent-call simulation in ExUnit using `Task.async/Task.await` with two simultaneous `delete_user_keys` calls. Assert exactly one returns `{:ok, _}` and one `{:error, :conflict}`, exactly one audit entry `user_keys_deleted`.
+
+**Why deferred:** Pure refactor with one new test; bundles cleanly with FB-51-01 (role split changes the threat model anyway — RLS would help here once `nebu_app` is non-superuser).
+
+---
+
 ### FB-E5-03 — Elixir event_dispatcher: 23 pre-existing test failures (Nebu.Repo + FakeDB drift)
 
 **Source:** Discovered during Story 5-2 TEA Gate 2 (2026-04-23). Not a security issue — listed here so the collector captures all Epic-5 test-debt in one place for epic-close decision-making.
