@@ -548,3 +548,55 @@ func TestDownload_DBError(t *testing.T) {
 		t.Errorf("expected errcode M_UNKNOWN, got %q", errResp.ErrCode)
 	}
 }
+
+// ─── Test (Story 5.8): DeletedAvatar_Returns404 ───────────────────────────────
+//
+// AC7 (Story 5.8) — Media download for a soft-deleted avatar must return 404 M_NOT_FOUND.
+//
+// Story 5.8 adds a `deleted BOOLEAN NOT NULL DEFAULT false` column to media_files
+// (migration 000023). The pgMediaStore.GetMediaFile SQL query must add
+// `AND NOT deleted` to its WHERE clause. When the row is soft-deleted, the query
+// returns nil (not found) and the handler responds with 404 M_NOT_FOUND.
+//
+// Failing reason before implementation:
+//   The current GetMediaFile SQL does not filter on the deleted column.
+//   A row with deleted=true is currently returned to the handler and the file
+//   content would be served (wrong behaviour). The mock simulates the CORRECT
+//   post-implementation behaviour: GetMediaFile returns nil for a deleted row.
+//   The handler must produce 404 — this test documents the required contract.
+//
+// Strategy: mockDownloadStore returns nil, nil for the deleted row
+// (simulating the WHERE NOT deleted filter having excluded the row).
+// Handler must return 404 M_NOT_FOUND — same as the normal not-found case.
+// The test name makes the intent explicit.
+
+func TestMediaDownload_DeletedAvatar_Returns404(t *testing.T) {
+	dir := t.TempDir()
+
+	// Simulate: GetMediaFile returns nil, nil because WHERE NOT deleted filtered the row.
+	// This is what the pgMediaStore must do after migration 000023 + SQL fix.
+	store := &mockDownloadStore{row: nil}
+	mux := buildDownloadHandler(t, store, dir)
+
+	deletedMediaID := "deleted-avatar-media-id"
+	req := httptest.NewRequest(http.MethodGet,
+		"/_matrix/media/v3/download/"+testServerName+"/"+deletedMediaID, nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("deleted avatar must return 404 M_NOT_FOUND, got %d; body: %s",
+			w.Code, w.Body.String())
+	}
+
+	var errResp matrixErrorResp
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("failed to decode error response: %v — body: %s", err, w.Body.String())
+	}
+	if errResp.ErrCode != "M_NOT_FOUND" {
+		t.Errorf("expected errcode M_NOT_FOUND, got %q", errResp.ErrCode)
+	}
+	if errResp.Error == "" {
+		t.Error("expected non-empty error message in 404 response")
+	}
+}

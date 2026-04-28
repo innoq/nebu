@@ -319,6 +319,53 @@ RETURNING id
 
 ---
 
+### FB-58-01 — Anonymize multi-step DB ops are non-atomic
+
+**Source:** Story 5-8 Code-Review Gate 3 (2026-04-23).
+**Severity:** MINOR (recoverable via idempotent re-call).
+**Size estimate:** S.
+
+**Observation:** `AnonymizationHandler.AnonymizeUser` runs `UPDATE profiles` → `UPDATE users` → `UPDATE media_files` sequentially without a transaction. If `users.anonymized_at` UPDATE fails after `profiles.displayname='Deleted User'` commits, the user is half-anonymized. Recoverable via re-call (idempotent), but the half-state is observable until then.
+
+**Fix:** Wrap steps 4–6 in `BEGIN/COMMIT` (`db.BeginTx` + `tx.ExecContext` + `tx.Commit`). Pre-flight SELECT remains outside the TX.
+
+**Why deferred:** Recoverable risk; cleaner once FB-51-01 (non-superuser app role) defines clear TX-isolation boundaries.
+
+---
+
+### FB-58-02 — Avatar URL accepts unrestricted path-segments at PUT time
+
+**Source:** Story 5-8 Code-Review Gate 3 (2026-04-23) — root cause of the path-traversal MAJOR fixed in 5-8.
+**Severity:** MEDIUM (defense-in-depth — current handler now safe, but the underlying input gate is still loose).
+**Size estimate:** S.
+
+**Observation:** `PUT /_matrix/client/v3/profile/{userId}/avatar_url` only validates the `mxc://` prefix (`gateway/internal/matrix/profile.go:178`). A user can store `mxc://../../etc/passwd/x` even though it has no semantic meaning. Story 5-8 patched the consumer (anonymize handler) with `isSafePathSegment`, but every future media-handling code path is one bug away from re-introducing the same primitive. The proper fix is at the input boundary.
+
+**What to do:**
+1. Reuse / extend `isSafePathSegment` (from `gateway/internal/compliance/user_anonymization.go`) into the matrix profile package.
+2. `PUT /profile/{userId}/avatar_url` validates `mxc://<safe-server>/<safe-mediaId>` format; reject with 400 `M_BAD_JSON: "invalid avatar URL"`.
+3. Migration to scrub already-stored unsafe URIs from `profiles.avatar_url` (set NULL where format invalid + audit `avatar_sanitized`).
+
+**Why deferred:** Cross-cutting cleanup that re-validates Matrix profile semantics; better to land alongside 5-29's other input-validation hardening.
+
+---
+
+### FB-58-03 — Self-anonymize permitted for `instance_admin`
+
+**Source:** Story 5-8 Code-Review Gate 3 (2026-04-23).
+**Severity:** LOW (governance gap, not a security exploit).
+**Size estimate:** XS.
+
+**Observation:** Anonymize role-gate accepts any `instance_admin` for any `userId`. An admin could anonymize their own account and lock themselves out of subsequent admin actions. Audit log records the act, but the actor is the same as the target — auditors may want a four-eyes gate.
+
+**What to do:**
+1. Add `if userID == callerSub` check → 403 `M_FORBIDDEN: "self-anonymize requires four-eyes approval"`.
+2. (Optional) Require a separate compliance-officer approval (analog to 5-4 four-eyes), gated by a `confirm` query param signed by a second admin.
+
+**Why deferred:** Compliance-policy decision; touches Story 5-4 four-eyes pattern. Better to align with 5-29's broader compliance-policy review.
+
+---
+
 ### FB-E5-03 — Elixir event_dispatcher: 23 pre-existing test failures (Nebu.Repo + FakeDB drift)
 
 **Source:** Discovered during Story 5-2 TEA Gate 2 (2026-04-23). Not a security issue — listed here so the collector captures all Epic-5 test-debt in one place for epic-close decision-making.

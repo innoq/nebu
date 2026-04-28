@@ -762,6 +762,18 @@ func main() {
 	mux.Handle("DELETE /api/v1/admin/users/{userId}/keys",
 		bodyLimit64KiB(jwtMiddleware(http.HandlerFunc(userKeyDeletionHandler.DeleteUserKeys))))
 
+	// Story 5.8 — Operational PII Anonymization
+	// Route namespace: /api/v1/admin/* — instance_admin only, role gate inside handler.
+	// No body expected (POST without payload), so no bodyLimit needed.
+	// jwtMiddleware is required for authentication/role extraction.
+	anonymizationHandler := &compliance.AnonymizationHandler{
+		DB:          complianceDB,
+		CoreClient:  coreClient.CoreServiceClient(),
+		StoragePath: os.Getenv("NEBU_MEDIA_STORAGE_PATH"),
+	}
+	mux.Handle("POST /api/v1/admin/users/{userId}/anonymize",
+		jwtMiddleware(http.HandlerFunc(anonymizationHandler.AnonymizeUser)))
+
 	// POST /rooms/{roomId}/leave — leave a room (calls Elixir LeaveRoom gRPC)
 	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/leave",
 		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

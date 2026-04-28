@@ -36,6 +36,12 @@ func TestFS_ContainsExpectedMigrationFiles(t *testing.T) {
 		// Story 5.7: users.deletion_status + users.keys_deleted_at for DSGVO key deletion
 		"000021_users_deletion_status.up.sql",
 		"000021_users_deletion_status.down.sql",
+		// Story 5.8: users.anonymized_at for operational PII anonymization
+		"000022_users_anonymized.up.sql",
+		"000022_users_anonymized.down.sql",
+		// Story 5.8: media_files.deleted soft-delete flag for avatar cleanup
+		"000023_media_files_deleted.up.sql",
+		"000023_media_files_deleted.down.sql",
 	}
 
 	for _, name := range files {

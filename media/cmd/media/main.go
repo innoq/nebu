@@ -39,7 +39,7 @@ func (s *pgMediaStore) GetMediaFile(ctx context.Context, serverName, mediaID str
 	row := &download.MediaFileRow{}
 	err := s.pool.QueryRow(ctx,
 		`SELECT media_id, server_name, content_type, aes_key_hex, nonce_hex
-		 FROM media_files WHERE server_name = $1 AND media_id = $2`,
+		 FROM media_files WHERE server_name = $1 AND media_id = $2 AND NOT deleted`,
 		serverName, mediaID,
 	).Scan(&row.MediaID, &row.ServerName, &row.ContentType, &row.AESKeyHex, &row.NonceHex)
 	if err != nil {
