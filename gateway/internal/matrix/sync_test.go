@@ -31,6 +31,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -203,6 +204,11 @@ func TestGetSync_InitialSync_HappyPath(t *testing.T) {
 		t.Errorf("expected Content-Type application/json, got %s", ct)
 	}
 
+	// Capture raw body before decoding (json.NewDecoder consumes the buffer);
+	// later assertions for Story 5-29e Bug 4 device-field check inspect the
+	// raw JSON for null-vs-empty correctness.
+	rawBody := w.Body.String()
+
 	var resp struct {
 		NextBatch string `json:"next_batch"`
 		Rooms     struct {
@@ -214,7 +220,7 @@ func TestGetSync_InitialSync_HappyPath(t *testing.T) {
 			Events []interface{} `json:"events"`
 		} `json:"presence"`
 	}
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+	if err := json.NewDecoder(strings.NewReader(rawBody)).Decode(&resp); err != nil {
 		t.Fatalf("failed to decode response body: %v", err)
 	}
 
@@ -285,6 +291,31 @@ func TestGetSync_InitialSync_HappyPath(t *testing.T) {
 	}
 	if mock.capturedReq.UserId == "" {
 		t.Error("expected non-empty user_id in GetInitialSyncRequest")
+	}
+
+	// Story 5-29e Bug 4: every sync response must carry the three device fields
+	// as empty (NOT null) values. Element Web's matrix-js-sdk treats missing
+	// device_one_time_keys_count as 0, which triggers a keys/query polling loop.
+	body := rawBody
+	for _, want := range []string{
+		`"device_one_time_keys_count":{}`,
+		`"device_unused_fallback_key_types":[]`,
+		`"device_lists":{`,
+		`"changed":[]`,
+		`"left":[]`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("Bug 4 regression: response missing %q\nbody: %s", want, body)
+		}
+	}
+	for _, forbidden := range []string{
+		`"device_one_time_keys_count":null`,
+		`"device_unused_fallback_key_types":null`,
+		`"device_lists":null`,
+	} {
+		if strings.Contains(body, forbidden) {
+			t.Errorf("Bug 4 regression: response contains forbidden null %q (must be empty value)", forbidden)
+		}
 	}
 }
 

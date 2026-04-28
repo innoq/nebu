@@ -153,13 +153,26 @@ func (h *DashboardHandler) Handler(w http.ResponseWriter, r *http.Request) {
 }
 
 // mapCoreState translates a gRPC connectivity.State into a status string and label.
+//
+// Story 5-29e fix: TransientFailure reclassified from "red"/"Unreachable" to
+// "amber"/"Connecting…". TransientFailure is a transient gRPC state — the client
+// retries automatically. Only Shutdown (explicit stop) warrants a red alarm.
+//
+// Mapping table (5-29e authoritative):
+//   - Ready          → "green", "OK"
+//   - Idle           → "amber", "Degraded"
+//   - Connecting     → "amber", "Degraded"
+//   - TransientFailure → "amber", "Connecting…"  (was "red" — Bug 3 fix)
+//   - Shutdown       → "red",   "Unreachable"
 func mapCoreState(s connectivity.State) (status, label string) {
 	switch s {
 	case connectivity.Ready:
 		return "green", "OK"
 	case connectivity.Idle, connectivity.Connecting:
 		return "amber", "Degraded"
-	default: // TransientFailure, Shutdown
+	case connectivity.TransientFailure:
+		return "amber", "Connecting…"
+	default: // Shutdown
 		return "red", "Unreachable"
 	}
 }

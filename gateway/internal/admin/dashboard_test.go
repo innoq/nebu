@@ -115,7 +115,8 @@ func TestDashboardHandler_CoreDegraded(t *testing.T) {
 }
 
 // TestDashboardHandler_CoreDown asserts that when Core=TransientFailure,
-// the Core card shows "red".
+// the Core card shows "amber" (Story 5-29e fix: TransientFailure is transient,
+// gRPC retries automatically — only Shutdown warrants a red alarm).
 func TestDashboardHandler_CoreDown(t *testing.T) {
 	h := newTestDashboardHandler(t, connectivity.TransientFailure, nil)
 	w := httptest.NewRecorder()
@@ -127,8 +128,11 @@ func TestDashboardHandler_CoreDown(t *testing.T) {
 	}
 
 	body := w.Body.String()
-	if !strings.Contains(body, "status-card--red") {
-		t.Error("expected 'status-card--red' in body (Core card should be red for TransientFailure)")
+	if strings.Contains(body, "status-card--red") {
+		t.Error("Core card must NOT show 'status-card--red' for TransientFailure (Story 5-29e fix: amber instead)")
+	}
+	if !strings.Contains(body, "status-card--amber") {
+		t.Error("expected 'status-card--amber' in body (Core card should be amber for TransientFailure)")
 	}
 }
 
@@ -205,6 +209,7 @@ func TestWorstStatus(t *testing.T) {
 }
 
 // TestMapCoreState verifies the gRPC connectivity → status mapping.
+// Story 5-29e: TransientFailure reclassified from "red" to "amber".
 func TestMapCoreState(t *testing.T) {
 	cases := []struct {
 		state      connectivity.State
@@ -214,7 +219,7 @@ func TestMapCoreState(t *testing.T) {
 		{connectivity.Ready, "green", "OK"},
 		{connectivity.Idle, "amber", "Degraded"},
 		{connectivity.Connecting, "amber", "Degraded"},
-		{connectivity.TransientFailure, "red", "Unreachable"},
+		{connectivity.TransientFailure, "amber", "Connecting…"}, // Story 5-29e fix: was "red"/"Unreachable"
 		{connectivity.Shutdown, "red", "Unreachable"},
 	}
 	for _, tc := range cases {

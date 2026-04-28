@@ -565,11 +565,12 @@ func main() {
 		w.Write([]byte(`{"ice_servers":[]}`))
 	})))
 
+	// Story 5-29e: improved keys/query stub — returns device_keys entry for known users.
+	keysQueryHandler := matrix.NewKeysQueryHandler(matrix.KeysQueryConfig{
+		UserChecker: db.NewPostgresUserExistenceChecker(bootstrapDB),
+	})
 	mux.Handle("POST /_matrix/client/v3/keys/query",
-		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"device_keys":{},"failures":{}}`))
-		}))))
+		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(keysQueryHandler.PostKeysQuery))))
 
 	// keys/changes requires JWT auth per Matrix spec (AC7, story 5-27).
 	mux.Handle("GET /_matrix/client/v3/keys/changes", looseRL(jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -609,6 +610,15 @@ func main() {
 	})
 	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/invite",
 		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(inviteHandler.PostInviteUser))))
+
+	// Story 5-29e Bug 1: upgrade endpoint was missing, returning 404 from default mux fallback.
+	// This 501 stub prevents the 404 and signals the client that the server understands the
+	// endpoint but does not yet implement full room upgrade (tombstone + new room + state copy).
+	upgradeRoomHandler := matrix.NewUpgradeRoomHandler(matrix.UpgradeRoomConfig{
+		ServerName: serverName,
+	})
+	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/upgrade",
+		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(upgradeRoomHandler.PostUpgradeRoom))))
 
 	sendEventHandler := matrix.NewSendEventHandler(matrix.SendEventConfig{
 		CoreClient: coreClient,

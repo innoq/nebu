@@ -504,7 +504,7 @@ development_status:
   5-29b-compliance-endpoint-hardening: ready-for-dev   # 8 MEDIUM/LOW
   5-29c-audit-crypto-lifecycle: ready-for-dev          # 2 HIGH + 5 MEDIUM
   5-29d-test-infra-and-dev-hardening: ready-for-dev    # 1 MEDIUM + 2 LOW + 1 INFO
-  5-29e-manual-testing-bugs: ready-for-dev             # Production bugs from tmp/test-findings.md
+  5-29e-manual-testing-bugs: review                    # Production bugs from tmp/test-findings.md
   # Security Hardening — Group H: Pipeline / Process
   5-28-security-review-pipeline-gate: done
   epic-5-retrospective: optional

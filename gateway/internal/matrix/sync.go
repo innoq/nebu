@@ -226,6 +226,25 @@ type syncResponse struct {
 	NextBatch string       `json:"next_batch"`
 	Rooms     syncRooms    `json:"rooms"`
 	Presence  syncPresence `json:"presence"`
+	// Story 5-29e Bug 4: Element Web's matrix-js-sdk treats these three fields as
+	// mandatory. Missing device_one_time_keys_count is interpreted as 0, triggering
+	// an OTK-upload + keys/query polling loop. Always emit empty values (never nil
+	// — JSON-null breaks the SDK; only [] / {} are accepted).
+	DeviceOneTimeKeysCount   map[string]int  `json:"device_one_time_keys_count"`
+	DeviceUnusedFallbackKeys []string        `json:"device_unused_fallback_key_types"`
+	DeviceLists              syncDeviceLists `json:"device_lists"`
+}
+
+type syncDeviceLists struct {
+	Changed []string `json:"changed"`
+	Left    []string `json:"left"`
+}
+
+// emptySyncDeviceFields returns the empty default values for the three device
+// fields above. Every syncResponse construction site must set these — a missing
+// field encodes to JSON-null, which Element Web rejects.
+func emptySyncDeviceFields() (map[string]int, []string, syncDeviceLists) {
+	return map[string]int{}, []string{}, syncDeviceLists{Changed: []string{}, Left: []string{}}
 }
 
 type syncRooms struct {
@@ -312,6 +331,7 @@ func (h *GetSyncHandler) GetSync(w http.ResponseWriter, r *http.Request) {
 	// Build Matrix sync response
 	joinedRooms := buildJoinedRooms(resp.GetRooms())
 
+	otkCount, fallbackKeys, deviceLists := emptySyncDeviceFields()
 	syncResp := syncResponse{
 		NextBatch: resp.GetSinceToken(),
 		Rooms: syncRooms{
@@ -319,7 +339,10 @@ func (h *GetSyncHandler) GetSync(w http.ResponseWriter, r *http.Request) {
 			Invite: h.buildInviteRooms(r.Context(), userID),
 			Leave:  h.buildLeaveRooms(r.Context(), userID),
 		},
-		Presence: syncPresence{Events: []interface{}{}},
+		Presence:                 syncPresence{Events: []interface{}{}},
+		DeviceOneTimeKeysCount:   otkCount,
+		DeviceUnusedFallbackKeys: fallbackKeys,
+		DeviceLists:              deviceLists,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -419,6 +442,7 @@ func (h *GetSyncHandler) handleIncrementalSync(w http.ResponseWriter, r *http.Re
 			return
 		}
 		joinedRooms := buildJoinedRooms(initialResp.GetRooms())
+		otkCount, fallbackKeys, deviceLists := emptySyncDeviceFields()
 		syncResp := syncResponse{
 			NextBatch: initialResp.GetSinceToken(),
 			Rooms: syncRooms{
@@ -426,7 +450,10 @@ func (h *GetSyncHandler) handleIncrementalSync(w http.ResponseWriter, r *http.Re
 				Invite: h.buildInviteRooms(r.Context(), userID),
 				Leave:  h.buildLeaveRooms(r.Context(), userID),
 			},
-			Presence: syncPresence{Events: []interface{}{}},
+			Presence:                 syncPresence{Events: []interface{}{}},
+			DeviceOneTimeKeysCount:   otkCount,
+			DeviceUnusedFallbackKeys: fallbackKeys,
+			DeviceLists:              deviceLists,
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(syncResp)
@@ -444,6 +471,7 @@ func (h *GetSyncHandler) handleIncrementalSync(w http.ResponseWriter, r *http.Re
 	for roomID := range leaveRooms {
 		delete(joinedRooms, roomID)
 	}
+	otkCount, fallbackKeys, deviceLists := emptySyncDeviceFields()
 	syncResp := syncResponse{
 		NextBatch: deltaResp.GetSinceToken(),
 		Rooms: syncRooms{
@@ -451,7 +479,10 @@ func (h *GetSyncHandler) handleIncrementalSync(w http.ResponseWriter, r *http.Re
 			Invite: h.buildInviteRooms(r.Context(), userID),
 			Leave:  leaveRooms,
 		},
-		Presence: syncPresence{Events: []interface{}{}},
+		Presence:                 syncPresence{Events: []interface{}{}},
+		DeviceOneTimeKeysCount:   otkCount,
+		DeviceUnusedFallbackKeys: fallbackKeys,
+		DeviceLists:              deviceLists,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -476,6 +507,7 @@ func (h *GetSyncHandler) buildResponseFromBufferedEvents(events []*pb.Event, sin
 		joinedRooms[ev.RoomId] = room
 	}
 	// Buffer-based fast path: skip invite/leave queries (caller handles full sync).
+	otkCount, fallbackKeys, deviceLists := emptySyncDeviceFields()
 	return syncResponse{
 		NextBatch: sinceToken,
 		Rooms: syncRooms{
@@ -483,7 +515,10 @@ func (h *GetSyncHandler) buildResponseFromBufferedEvents(events []*pb.Event, sin
 			Invite: map[string]interface{}{},
 			Leave:  map[string]interface{}{},
 		},
-		Presence: syncPresence{Events: []interface{}{}},
+		Presence:                 syncPresence{Events: []interface{}{}},
+		DeviceOneTimeKeysCount:   otkCount,
+		DeviceUnusedFallbackKeys: fallbackKeys,
+		DeviceLists:              deviceLists,
 	}
 }
 
