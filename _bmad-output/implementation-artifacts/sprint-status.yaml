@@ -1,5 +1,6 @@
 # generated: 2026-03-20
 # last_updated: 2026-04-23
+# story 5-29e done (pipeline: 0 TEA MAJOR / 4 MINOR fixed by CR; +1 NEW bug 4 (Element /sync polling loop via missing device fields, tmp/snyc-bug.md) fixed inline; Kassandra skipped (security_review: optional)): 2026-04-23
 # story 5-29a done (pipeline: 0 TEA MAJOR / 4 MINOR fixed by CR + 1 self-discovered MAJOR (function-ownership transfer) fixed; Kassandra HIGH-1 (silent purge under FORCE RLS) fixed inline via BYPASSRLS for nebu_migrate): 2026-04-23
 # story 5-29 split into 5-29a..e on user request (23 deferred items + 3 manual-testing bugs from tmp/test-findings.md): 2026-04-23
 # story 5-28 done (meta-story: pipeline gate already implemented in skills/bmad-pipeline + CLAUDE.md, retroactively validated by 10+ stories in this run): 2026-04-23
@@ -504,7 +505,7 @@ development_status:
   5-29b-compliance-endpoint-hardening: ready-for-dev   # 8 MEDIUM/LOW
   5-29c-audit-crypto-lifecycle: ready-for-dev          # 2 HIGH + 5 MEDIUM
   5-29d-test-infra-and-dev-hardening: ready-for-dev    # 1 MEDIUM + 2 LOW + 1 INFO
-  5-29e-manual-testing-bugs: review                    # Production bugs from tmp/test-findings.md
+  5-29e-manual-testing-bugs: done                      # Bugs 1+2b+3+4 (sync device fields)
   # Security Hardening — Group H: Pipeline / Process
   5-28-security-review-pipeline-gate: done
   epic-5-retrospective: optional
