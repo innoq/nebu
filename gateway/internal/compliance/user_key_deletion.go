@@ -77,13 +77,19 @@ func (h *UserKeyDeletionHandler) DeleteUserKeys(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	// Step 5: reason validation
+	// Step 5: reason validation — required, min 10 chars, max 1000 chars
+	// (max guards against memory-amplification on the Go layer even though
+	// bodyLimit64KiB already caps the entire request; analog FB-54-01 note cap.)
 	if req.Reason == "" {
 		writeComplianceError(w, http.StatusBadRequest, "M_BAD_JSON", "reason is required")
 		return
 	}
 	if len(req.Reason) < 10 {
 		writeComplianceError(w, http.StatusBadRequest, "M_BAD_JSON", "reason must be at least 10 characters")
+		return
+	}
+	if len(req.Reason) > 1000 {
+		writeComplianceError(w, http.StatusBadRequest, "M_BAD_JSON", "reason must not exceed 1000 characters")
 		return
 	}
 

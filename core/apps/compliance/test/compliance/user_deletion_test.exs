@@ -223,6 +223,13 @@ defmodule Compliance.UserDeletionTest do
     assert Enum.any?(sql_strings, &(String.contains?(&1, "keys_deleted") and String.contains?(&1, "users"))),
            "expected SQL to update users.deletion_status = 'keys_deleted', got: #{inspect(sql_strings)}"
 
+    # AC4 negative invariant: NO physical DELETE on user_keys (only soft-delete via UPDATE).
+    # Public keys must remain — the row stays, only private_key is set NULL.
+    refute Enum.any?(sql_strings, &(String.contains?(&1, "DELETE FROM user_keys"))),
+           "expected NO physical DELETE on user_keys (AC4: public keys retained), got: #{inspect(sql_strings)}"
+    refute Enum.any?(sql_strings, &(String.contains?(&1, "DELETE FROM users"))),
+           "expected NO physical DELETE on users, got: #{inspect(sql_strings)}"
+
     # Verify audit: action='user_keys_deleted', outcome='success'
     audit_log = Agent.get(audit_bucket, & &1)
     assert length(audit_log) == 1, "expected exactly 1 audit entry, got #{length(audit_log)}"
@@ -313,6 +320,43 @@ defmodule Compliance.UserDeletionTest do
            "no audit must be emitted for conflict guard, got #{inspect(audit_log)}"
   end
 
+  # ─── Test 10b: User not found → {:error, :user_not_found} ──────────────────
+  #
+  # Given: target user_id does not exist in DB (FakeRepo returns 0 rows)
+  # When:  delete_user_keys/3 called
+  # Then:  {:error, :user_not_found}
+  #        No attempted-audit emitted (guard, not a transaction failure — AC3)
+  #        No UPDATE SQL is issued (early return from Step 1 guard)
+
+  test "user not found: returns {:error, :user_not_found} without attempted audit",
+       %{sql_bucket: sql_bucket, audit_bucket: audit_bucket} do
+    Application.put_env(:compliance, :__test_user_row__, %{exists: false})
+
+    result =
+      Compliance.UserDeletion.delete_user_keys(
+        "admin-sub-1",
+        "non-existent-user-99",
+        "DSGVO deletion request ref GDPR-2026-042"
+      )
+
+    assert result == {:error, :user_not_found},
+           "expected {:error, :user_not_found} for missing user, got #{inspect(result)}"
+
+    # No attempted audit must be emitted (guard, not a TX failure — AC3)
+    audit_log = Agent.get(audit_bucket, & &1)
+    assert audit_log == [],
+           "no audit must be emitted for :user_not_found guard, got #{inspect(audit_log)}"
+
+    # No UPDATE SQL was issued — early return from Step 1 guard
+    sql_log = Agent.get(sql_bucket, & &1)
+    sql_strings = Enum.map(sql_log, fn
+      {sql, _args} -> sql
+      other -> inspect(other)
+    end)
+    refute Enum.any?(sql_strings, &String.contains?(&1, "UPDATE")),
+           "expected NO UPDATE SQL when user not found, got: #{inspect(sql_strings)}"
+  end
+
   # ─── Test 11: Subsequent decrypt_sensitive_pii with nil private_key ──────────
   #
   # AC5 / Regression-Guard: after key deletion private_key = nil;
@@ -323,7 +367,7 @@ defmodule Compliance.UserDeletionTest do
   # It does NOT test UserDeletion directly — it proves the nil-guard at line 132 of
   # signature.ex is intact and will remain so.
 
-  test "subsequent encryption returns {:error, :user_keys_deleted} — nil private_key guard in Signature" do
+  test "subsequent decrypt returns {:error, :no_private_key} — nil private_key guard in Signature" do
     # After key deletion, private_key = nil.
     # decrypt_sensitive_pii/4 with nil private_key must return {:error, :no_private_key}.
     # (The guard at signature.ex line 132: def decrypt_sensitive_pii(_, _, _, nil))

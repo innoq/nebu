@@ -329,6 +329,78 @@ func TestDeleteUserKeys_ConcurrentDeletion_Returns409(t *testing.T) {
 	}
 }
 
+// ─── Test 6b: OversizedUserID → 400 ──────────────────────────────────────────
+//
+// AC1: defence-in-depth — userId path param > 255 chars → 400 M_BAD_JSON
+//
+// Given: instance_admin caller, valid body, userId is 256+ chars
+// When:  DELETE request
+// Then:  400 M_BAD_JSON "userId must not exceed 255 characters"
+
+func TestDeleteUserKeys_OversizedUserID_Returns400(t *testing.T) {
+	client := &userDeletionMockCoreClient{}
+	h := &compliance.UserKeyDeletionHandler{CoreClient: client}
+
+	oversized := strings.Repeat("a", 256) // 256 chars — one over the cap
+
+	w := httptest.NewRecorder()
+	r := newJSONDeletionRequest(t, oversized, validDeletionBody(), "instance_admin", "admin-sub-1")
+
+	h.DeleteUserKeys(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for oversized userId, got %d — body: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("response is not valid JSON: %v", err)
+	}
+	if resp["errcode"] != "M_BAD_JSON" {
+		t.Errorf("expected errcode=M_BAD_JSON, got %q", resp["errcode"])
+	}
+	if !strings.Contains(resp["error"], "255") {
+		t.Errorf("expected error to mention '255', got %q", resp["error"])
+	}
+}
+
+// ─── Test 6c: OversizedReason → 400 ──────────────────────────────────────────
+//
+// AC1: reason has both min (10) AND max (1000) length validation.
+// Body-limit (64 KiB) catches grossly oversized requests, but a dedicated
+// max prevents memory amplification on the audit/metadata path.
+//
+// Given: instance_admin caller, reason 1001+ chars
+// When:  DELETE request
+// Then:  400 M_BAD_JSON "reason must not exceed 1000 characters"
+
+func TestDeleteUserKeys_OversizedReason_Returns400(t *testing.T) {
+	client := &userDeletionMockCoreClient{}
+	h := &compliance.UserKeyDeletionHandler{CoreClient: client}
+
+	body := userKeyDeletionBody{Reason: strings.Repeat("x", 1001)} // 1001 chars — one over the cap
+
+	w := httptest.NewRecorder()
+	r := newJSONDeletionRequest(t, "user-42", body, "instance_admin", "admin-sub-1")
+
+	h.DeleteUserKeys(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for oversized reason, got %d — body: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("response is not valid JSON: %v", err)
+	}
+	if resp["errcode"] != "M_BAD_JSON" {
+		t.Errorf("expected errcode=M_BAD_JSON, got %q", resp["errcode"])
+	}
+	if !strings.Contains(resp["error"], "1000") {
+		t.Errorf("expected error to mention '1000', got %q", resp["error"])
+	}
+}
+
 // ─── Test 7: AuditFailure → Still 200 ────────────────────────────────────────
 //
 // AC1: never-raise audit policy — audit failure must NOT block the 200 response

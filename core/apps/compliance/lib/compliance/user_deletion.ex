@@ -53,10 +53,12 @@ defmodule Compliance.UserDeletion do
       {:error, :conflict} ->
         {:error, :conflict}
 
-      {:error, reason} ->
+      {:error, db_error} ->
         # DB error on the SELECT check itself — rare but treat as failure.
-        emit_attempted_audit(admin_user_id, target_user_id, reason, reason)
-        {:error, reason}
+        # NOTE: do NOT shadow `reason` (the deletion-reason string passed by the caller);
+        # the attempted-audit must record the original deletion reason AND the DB error.
+        emit_attempted_audit(admin_user_id, target_user_id, reason, db_error)
+        {:error, db_error}
 
       :ok ->
         # Steps 2–5 in a single Repo transaction.
