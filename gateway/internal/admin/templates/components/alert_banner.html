@@ -1,0 +1,17 @@
+{{ define "alert_banner" }}
+{{- /* C12 AlertBanner — Story 7.4
+     Data: AlertBannerData{Severity string, Message string, Dismissible bool}
+     Severity: "info" | "success" | "warning" | "error"
+     WCAG: role="alert" present; aria-live="assertive" for warning/error, "polite" for info/success.
+     When Dismissible is true, renders a dismiss button that removes the alert client-side.
+*/ -}}
+{{ $ariaLive := "polite" }}
+{{ if or (eq .Severity "warning") (eq .Severity "error") }}{{ $ariaLive = "assertive" }}{{ end -}}
+<div role="alert" aria-live="{{ $ariaLive }}" class="alert alert-{{ .Severity }} flex items-start gap-3">
+  <span>{{ .Message }}</span>
+  {{ if .Dismissible -}}
+  <button type="button" class="btn btn-ghost btn-xs ml-auto" aria-label="Dismiss"
+          onclick="this.closest('[role=alert]').remove()">&#215;</button>
+  {{- end }}
+</div>
+{{ end }}

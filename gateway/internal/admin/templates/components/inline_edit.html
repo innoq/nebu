@@ -1,0 +1,31 @@
+{{ define "inline_edit" }}
+{{- /* C11 InlineEdit — Story 7.4
+     Data: InlineEditData{ID, FieldName, Value, Label, FormAction, CSRFToken string}
+     Renders a text display with an edit icon button. Clicking the button adds the
+     "editing" CSS class to the outer wrapper, which shows the inline form and hides
+     the display span. Cancel removes the class; Save submits the form via POST.
+     The ID field makes each instance unique on the page (CSS selector scoped by ID).
+     WCAG: edit button has aria-label="Edit <Label>"; input has aria-label="<Label>".
+*/ -}}
+<div class="inline-edit-field" id="inline-edit-{{ .ID }}">
+  <span class="inline-edit-display">{{ .Value }}<button type="button" class="btn btn-ghost btn-xs ml-1" aria-label="Edit {{ .Label }}" onclick="document.getElementById('inline-edit-{{ .ID }}').classList.add('editing')">&#9998;</button></span>
+  <span class="inline-edit-form">
+    <form method="POST" action="{{ .FormAction }}" class="flex items-center gap-2">
+      <input type="hidden" name="_csrf" value="{{ .CSRFToken }}">
+      <input type="text" name="{{ .FieldName }}" value="{{ .Value }}"
+             aria-label="{{ .Label }}"
+             class="input input-bordered input-sm"
+             id="inline-edit-input-{{ .ID }}">
+      <button type="submit" class="btn btn-primary btn-sm">Save</button>
+      <button type="button" class="btn btn-ghost btn-sm"
+              onclick="document.getElementById('inline-edit-{{ .ID }}').classList.remove('editing')">Cancel</button>
+    </form>
+  </span>
+</div>
+<style>
+  #inline-edit-{{ .ID }} .inline-edit-display { display: inline; }
+  #inline-edit-{{ .ID }} .inline-edit-form { display: none; }
+  #inline-edit-{{ .ID }}.editing .inline-edit-display { display: none; }
+  #inline-edit-{{ .ID }}.editing .inline-edit-form { display: inline-flex; }
+</style>
+{{ end }}

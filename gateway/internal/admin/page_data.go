@@ -186,3 +186,43 @@ type FilterOption struct {
 	Options      []string
 	CurrentValue string
 }
+
+// InlineEditData is passed to the inline_edit component partial (C11, Story 7.4).
+// The component renders a text display with an edit icon button that reveals an
+// inline form on click. Save submits the form via POST; Cancel restores display mode.
+// CSRFToken must be populated from the page's PageData.CSRFToken by the caller.
+// ID must be unique on the page (used for CSS toggle and ARIA correlation).
+type InlineEditData struct {
+	ID         string // unique element identifier on the page (e.g. "display-name")
+	FieldName  string // <input name="..."> value (e.g. "display_name")
+	Value      string // current field value (pre-fills the input)
+	Label      string // human-readable label for ARIA attributes (e.g. "Display Name")
+	FormAction string // POST URL for the save form (e.g. "/admin/users/usr-001/display-name")
+	CSRFToken  string // CSRF double-submit token (from PageData.CSRFToken)
+}
+
+// AlertBannerData is passed to the alert_banner component partial (C12, Story 7.4).
+// Severity must be one of: "info", "success", "warning", "error".
+// When Dismissible is true, an X button is rendered that removes the alert client-side.
+// aria-live is set to "assertive" for warning/error and "polite" for info/success.
+type AlertBannerData struct {
+	Severity    string // "info" | "success" | "warning" | "error"
+	Message     string
+	Dismissible bool
+}
+
+// StatusBadgeData is passed to the status_badge component partial (C13, Story 7.4).
+// Status drives the DaisyUI badge colour class (active→success, inactive→error, pending→warning).
+// Label overrides the display text; if empty, Status is used as the display text.
+type StatusBadgeData struct {
+	Status string // "active" | "inactive" | "pending" (unknown → badge-ghost)
+	Label  string // optional display text override; if empty, uses Status
+}
+
+// EmptyStateData is passed to the empty_state component partial (C14, Story 7.4).
+// Heading is rendered as <h3>; Description is rendered as <p>.
+// Both are required — empty values render an empty heading/description.
+type EmptyStateData struct {
+	Heading     string
+	Description string
+}

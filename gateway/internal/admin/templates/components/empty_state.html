@@ -1,0 +1,11 @@
+{{ define "empty_state" }}
+{{- /* C14 EmptyState — Story 7.4
+     Data: EmptyStateData{Heading string, Description string}
+     Renders a centered container with <h3> heading and <p> description.
+     WCAG: uses semantic <h3> (page section heading is <h2>); no additional role needed.
+*/ -}}
+<div class="flex flex-col items-center justify-center py-12 text-center text-base-content/60">
+  <h3 class="text-lg font-semibold mb-2">{{ .Heading }}</h3>
+  <p class="text-sm max-w-sm">{{ .Description }}</p>
+</div>
+{{ end }}
