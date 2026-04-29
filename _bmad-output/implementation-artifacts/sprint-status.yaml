@@ -512,7 +512,7 @@ development_status:
   5-29e-manual-testing-bugs: done                      # Bugs 1+2b+3+4 (sync device fields)
   # Security Hardening — Group H: Pipeline / Process
   5-28-security-review-pipeline-gate: done
-  epic-5-retrospective: optional
+  epic-5-retrospective: ready                          # SEC Gate 2 closure CLEAN (2026-04-23): all 4 HIGH + 2 MEDIUM closed; 2 INFO + 6 Epic-6 backlog items, non-blocking
 
   # ─────────────────────────────────────────────────────────────────────────
   # Epic 6: Instance Admins Can Manage the Instance Programmatically via Admin API
