@@ -67,6 +67,16 @@ BEGIN
     JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE n.nspname = 'public'
       AND pg_get_userbyid(p.proowner) <> 'nebu_migrate'
+      -- Skip functions owned by extensions (pgcrypto, uuid-ossp) — their
+      -- ownership is managed by the extension and ALTER FUNCTION OWNER fails
+      -- with "must be owner of function". The functions we care about
+      -- (audit_log_purge etc.) are non-extension and pass this filter.
+      AND NOT EXISTS (
+        SELECT 1 FROM pg_depend d
+        WHERE d.classid = 'pg_proc'::regclass
+          AND d.objid = p.oid
+          AND d.deptype = 'e'
+      )
   ) LOOP
     EXECUTE format('ALTER FUNCTION public.%I(%s) OWNER TO nebu_migrate',
                    r.func_name, r.args);

@@ -6,11 +6,11 @@ package main
 // in a production environment. A zero-byte (all-zeroes) KEK is effectively no
 // encryption — acceptable for local dev but not for production deployments.
 //
-// Rules:
-//   1. env=="production" AND kekHex=="" AND allowInsecure!="true" → error (hard-fail)
-//   2. env!="production" AND kekHex=="" → no error (dev zero-default is fine)
-//   3. env=="production" AND allowInsecure=="true" → no error (explicit opt-in, warn)
-//   4. kekHex!="" → no error (key is set; always acceptable regardless of env)
+// Rules (fail-closed: unset NEBU_ENV is treated as production):
+//   1. kekHex!="" → no error (key is set; always acceptable regardless of env)
+//   2. env in {dev,development,test,staging} AND kekHex=="" → no error (warn)
+//   3. env not in dev-set AND kekHex=="" AND allowInsecure=="true" → no error (warn loudly)
+//   4. env not in dev-set AND kekHex=="" AND allowInsecure!="true" → error (hard-fail)
 //
 // Integration in main():
 //   After cfg.Load(), call validateKEKConfig(kekHex, cfg.Env, cfg.AllowInsecureKEK).
@@ -33,24 +33,26 @@ func validateKEKConfig(kekHex, env, allowInsecure string) error {
 		return nil
 	}
 
-	// kekHex is empty (not set).
-	if env == "production" {
-		if allowInsecure == "true" {
-			// Operator explicitly opted in — allow but warn loudly.
-			slog.Warn("NEBU_KEY_ENCRYPTION_KEY is not set in production — using insecure zero-byte default (NEBU_ALLOW_INSECURE_KEK=true opt-in active)")
-			return nil
-		}
-		// Hard-fail: production without a KEK and without the explicit opt-in.
-		return fmt.Errorf(
-			"NEBU_KEY_ENCRYPTION_KEY must be set in production (NEBU_ENV=production). " +
-				"Using the zero-byte default KEK is not acceptable in production because it " +
-				"provides no encryption protection for stored compliance signing keys. " +
-				"Set NEBU_KEY_ENCRYPTION_KEY to a 64-hex-char (32-byte) random value, or " +
-				"set NEBU_ALLOW_INSECURE_KEK=true to explicitly accept the risk (not recommended)",
-		)
+	// kekHex is empty (not set). Fail-closed: anything other than an explicit
+	// dev-class env is treated as production.
+	if env == "dev" || env == "development" || env == "test" || env == "staging" {
+		slog.Warn("NEBU_KEY_ENCRYPTION_KEY not set — using dev-only zero-byte default (NOT safe for production)", "env", env)
+		return nil
 	}
 
-	// Non-production environment — zero-default is acceptable; log a warning.
-	slog.Warn("NEBU_KEY_ENCRYPTION_KEY not set — using dev-only zero-byte default (NOT safe for production)")
-	return nil
+	if allowInsecure == "true" {
+		// Operator explicitly opted in — allow but warn loudly.
+		slog.Warn("NEBU_KEY_ENCRYPTION_KEY is not set and NEBU_ENV is not a dev-class env — using insecure zero-byte default (NEBU_ALLOW_INSECURE_KEK=true opt-in active)", "env", env)
+		return nil
+	}
+
+	// Hard-fail: missing KEK in a non-dev env without the explicit opt-in.
+	return fmt.Errorf(
+		"NEBU_KEY_ENCRYPTION_KEY must be set when NEBU_ENV is not one of "+
+			"dev|development|test|staging (got %q). Using the zero-byte default KEK "+
+			"provides no encryption protection for stored compliance signing keys. "+
+			"Set NEBU_KEY_ENCRYPTION_KEY to a 64-hex-char (32-byte) random value, or "+
+			"set NEBU_ALLOW_INSECURE_KEK=true to explicitly accept the risk (not recommended)",
+		env,
+	)
 }

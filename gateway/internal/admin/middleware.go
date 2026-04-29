@@ -180,10 +180,22 @@ func BootstrapGuard(checker BootstrapStatusChecker) func(http.Handler) http.Hand
 // SecurityHeadersMiddleware sets standard security headers on every response to
 // mitigate clickjacking, MIME-sniffing, and XSS. HSTS is only added when the
 // request is considered secure (direct TLS or trusted proxy with X-Forwarded-Proto: https).
-func SecurityHeadersMiddleware() func(http.Handler) http.Handler {
+//
+// oidcIssuerOrigin (e.g. "https://auth.example.com" or "http://dex:5556") is
+// appended to the form-action directive so the browser permits the bootstrap
+// step-2 form submission to redirect cross-origin to the OIDC provider. With
+// form-action 'self' alone the browser silently blocks the OIDC redirect — the
+// form POST returns 303 → 302 chain whose final hop is the issuer origin, and
+// CSP form-action is enforced on the entire redirect chain.
+func SecurityHeadersMiddleware(oidcIssuerOrigin string) func(http.Handler) http.Handler {
+	formAction := "'self'"
+	if oidcIssuerOrigin != "" {
+		formAction = "'self' " + oidcIssuerOrigin
+	}
+	csp := "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action " + formAction + "; object-src 'none'"
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'")
+			w.Header().Set("Content-Security-Policy", csp)
 			w.Header().Set("X-Frame-Options", "DENY")
 			w.Header().Set("X-Content-Type-Options", "nosniff")
 			w.Header().Set("Referrer-Policy", "no-referrer")

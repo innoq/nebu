@@ -97,6 +97,37 @@ func (r *postgresServerConfigReader) LoadOIDCConfig(ctx context.Context) (issuer
 	return issuer, clientID, plain, nil
 }
 
+// loadOIDCConfigFromDraft reads issuer, client ID and (decrypted) client secret
+// from the bootstrap_draft table — the wizard's holding area before bootstrap
+// completion writes the values into server_config. Returns ("", "", "", nil) if
+// the draft does not contain a complete OIDC config (caller falls back to
+// server_config).
+func (a *AdminAuth) loadOIDCConfigFromDraft(ctx context.Context) (issuer, clientID, clientSecret string, err error) {
+	if a.draftStore == nil {
+		return "", "", "", nil
+	}
+	issuer, ok1, err := a.draftStore.LoadDraft(ctx, "oidc_issuer")
+	if err != nil {
+		return "", "", "", fmt.Errorf("load draft oidc_issuer: %w", err)
+	}
+	clientID, ok2, err := a.draftStore.LoadDraft(ctx, "oidc_client_id")
+	if err != nil {
+		return "", "", "", fmt.Errorf("load draft oidc_client_id: %w", err)
+	}
+	encSecret, ok3, err := a.draftStore.LoadDraft(ctx, "oidc_client_secret")
+	if err != nil {
+		return "", "", "", fmt.Errorf("load draft oidc_client_secret: %w", err)
+	}
+	if !ok1 || !ok2 || !ok3 {
+		return "", "", "", nil
+	}
+	plain, err := decryptAES256GCM(a.secret, encSecret)
+	if err != nil {
+		return "", "", "", fmt.Errorf("decrypt draft oidc_client_secret: %w", err)
+	}
+	return issuer, clientID, plain, nil
+}
+
 // LoadAdminGroupClaim returns the configured admin group claim value from server_config.
 // Falls back to "instance_admin" if the key is not set.
 func (r *postgresServerConfigReader) LoadAdminGroupClaim(ctx context.Context) (string, error) {
@@ -251,8 +282,8 @@ func (a *AdminAuth) logAuditEvent(ctx context.Context, actorUserID, action, targ
 type oidcStateCookie struct {
 	State    string `json:"state"`
 	Verifier string `json:"verifier"`
-	Exp      int64  `json:"exp"`  // Unix timestamp (seconds)
-	Mode     string `json:"mode"` // "bootstrap" during initial setup, empty otherwise
+	Exp      int64  `json:"exp"`   // Unix timestamp (seconds)
+	Mode     string `json:"mode"`  // "bootstrap" during initial setup, empty otherwise
 	Nonce    string `json:"nonce"` // OIDC nonce claim (Story 5.16)
 }
 
@@ -329,15 +360,33 @@ func (a *AdminAuth) LoginStartHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	issuer, clientID, clientSecret, err := a.configReader.LoadOIDCConfig(r.Context())
-	if err != nil {
-		if errors.Is(err, ErrOIDCConfigMissing) {
+	mode := r.URL.Query().Get("mode") // "bootstrap" during initial setup
+
+	var issuer, clientID, clientSecret string
+	var err error
+
+	// Bootstrap mode: OIDC config lives in bootstrap_draft (not yet in server_config).
+	// Try draft first; only fall back to server_config if all draft keys are absent.
+	if mode == "bootstrap" && a.draftStore != nil {
+		issuer, clientID, clientSecret, err = a.loadOIDCConfigFromDraft(r.Context())
+		if err != nil {
+			slog.Error("failed to load bootstrap OIDC draft", "err", err)
 			http.Redirect(w, r, "/admin/bootstrap", http.StatusFound)
 			return
 		}
-		slog.Error("failed to load OIDC configuration", "err", err)
-		http.Error(w, "Server error: OIDC configuration unavailable. Try again later.", http.StatusServiceUnavailable)
-		return
+	}
+
+	if issuer == "" {
+		issuer, clientID, clientSecret, err = a.configReader.LoadOIDCConfig(r.Context())
+		if err != nil {
+			if errors.Is(err, ErrOIDCConfigMissing) {
+				http.Redirect(w, r, "/admin/bootstrap", http.StatusFound)
+				return
+			}
+			slog.Error("failed to load OIDC configuration", "err", err)
+			http.Error(w, "Server error: OIDC configuration unavailable. Try again later.", http.StatusServiceUnavailable)
+			return
+		}
 	}
 
 	if err := validateIssuerURL(issuer); err != nil {
@@ -386,8 +435,6 @@ func (a *AdminAuth) LoginStartHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	nonce := base64.RawURLEncoding.EncodeToString(nonceBytes)
-
-	mode := r.URL.Query().Get("mode") // "bootstrap" during initial setup
 
 	if mode == "bootstrap" && a.bootstrapChecker != nil {
 		active, err := a.bootstrapChecker.IsBootstrapActive(r.Context())
@@ -520,12 +567,26 @@ func (a *AdminAuth) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Load OIDC config from DB (set by bootstrap wizard — env-var config may be absent).
-	issuer, clientID, clientSecret, err := a.configReader.LoadOIDCConfig(r.Context())
-	if err != nil {
-		slog.Error("callback: failed to load OIDC config", "err", err)
-		http.Redirect(w, r, "/admin/login?error=auth_failed", http.StatusFound)
-		return
+	// Load OIDC config from DB. Bootstrap mode reads from bootstrap_draft (the wizard
+	// has not yet promoted config to server_config); regular login reads from
+	// server_config. The state cookie carries the mode set at login/start time.
+	var issuer, clientID, clientSecret string
+	if sc.Mode == "bootstrap" && a.draftStore != nil {
+		issuer, clientID, clientSecret, err = a.loadOIDCConfigFromDraft(r.Context())
+		if err != nil {
+			slog.Error("callback: failed to load bootstrap OIDC draft", "err", err)
+			http.Redirect(w, r, "/admin/login?error=auth_failed", http.StatusFound)
+			return
+		}
+	}
+
+	if issuer == "" {
+		issuer, clientID, clientSecret, err = a.configReader.LoadOIDCConfig(r.Context())
+		if err != nil {
+			slog.Error("callback: failed to load OIDC config", "err", err)
+			http.Redirect(w, r, "/admin/login?error=auth_failed", http.StatusFound)
+			return
+		}
 	}
 
 	if err := validateIssuerURL(issuer); err != nil {

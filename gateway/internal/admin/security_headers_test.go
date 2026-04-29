@@ -41,7 +41,7 @@ func TestSecurityHeaders_AllPresentOnAdminPages(t *testing.T) {
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	handler := SecurityHeadersMiddleware()(next)
+	handler := SecurityHeadersMiddleware("")(next)
 
 	for _, tc := range routes {
 		t.Run(tc.name, func(t *testing.T) {
@@ -79,7 +79,7 @@ func TestHSTS_OnlyOnHTTPS(t *testing.T) {
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	handler := SecurityHeadersMiddleware()(next)
+	handler := SecurityHeadersMiddleware("")(next)
 
 	t.Run("plain HTTP — HSTS absent", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/admin/dashboard", nil)
@@ -114,7 +114,7 @@ func TestHSTS_ViaForwardedProto(t *testing.T) {
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	handler := SecurityHeadersMiddleware()(next)
+	handler := SecurityHeadersMiddleware("")(next)
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/dashboard", nil)
 	// r.TLS is nil — TLS is terminated at a reverse proxy.
@@ -135,7 +135,7 @@ func TestHSTS_ForwardedProtoIgnoredWithoutTrust(t *testing.T) {
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	handler := SecurityHeadersMiddleware()(next)
+	handler := SecurityHeadersMiddleware("")(next)
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/dashboard", nil)
 	req.Header.Set("X-Forwarded-Proto", "https")

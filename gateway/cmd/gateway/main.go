@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -30,14 +31,14 @@ import (
 	coregrpc "github.com/nebu/nebu/internal/grpc"
 	pb "github.com/nebu/nebu/internal/grpc/pb"
 	"github.com/nebu/nebu/internal/health"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"github.com/nebu/nebu/internal/matrix"
 	"github.com/nebu/nebu/internal/middleware"
 	"github.com/nebu/nebu/internal/registry"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/time/rate"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // coreMetricsAdapter adapts *coregrpc.Client to satisfy the admin.MetricsReader interface.
@@ -203,8 +204,13 @@ func main() {
 	// SECURITY: the reverse proxy MUST strip any X-Forwarded-For header sent by external clients
 	// so that only the proxy-appended IP (rightmost-minus-1) is trusted for rate limiting.
 	trustedProxy := os.Getenv("NEBU_TRUSTED_PROXY") == "true"
-	// strictRL: login + admin auth endpoints — 5 req/min, burst 3.
-	strictRL := middleware.NewIPRateLimiter(middleware.RateLimitConfig{Rate: rate.Limit(5.0 / 60.0), Burst: 3}, trustedProxy, "strict")
+	// strictRL: Matrix /login (real brute-force risk: username+password) — 30 req/min, burst 10.
+	// (Compliance endpoints also use strictRL but are JWT-gated, so brute-force isn't a concern there.)
+	strictRL := middleware.NewIPRateLimiter(middleware.RateLimitConfig{Rate: rate.Limit(30.0 / 60.0), Burst: 10}, trustedProxy, "strict")
+	// adminRL: all rate-limited admin endpoints (login/start, callback, bootstrap, claim-select) —
+	// 60 req/min, burst 20. Sized so legit admin clicking never hits the limit; sustained
+	// hammering is still capped to ~1/sec which kills brute-force.
+	adminRL := middleware.NewIPRateLimiter(middleware.RateLimitConfig{Rate: rate.Limit(60.0 / 60.0), Burst: 20}, trustedProxy, "admin")
 	// mediumRL: SSO redirect/callback + public profile — 30 req/min, burst 10.
 	mediumRL := middleware.NewIPRateLimiter(middleware.RateLimitConfig{Rate: rate.Limit(30.0 / 60.0), Burst: 10}, trustedProxy, "medium")
 	// looseRL: remaining unauthenticated public endpoints — 300 req/min, burst 100.
@@ -280,10 +286,10 @@ func main() {
 	// New canonical routes (Story 3.9)
 	// strictRL wraps login/start/callback — these are unauthenticated endpoints that trigger
 	// OIDC flows and must be protected against brute-force / amplification attacks (Story 5.21).
-	mux.Handle("GET /admin/login", strictRL(http.HandlerFunc(adminAuth.LoginPageHandler)))
-	mux.Handle("GET /admin/login/start", strictRL(http.HandlerFunc(adminAuth.LoginStartHandler)))
+	mux.Handle("GET /admin/login", adminRL(http.HandlerFunc(adminAuth.LoginPageHandler)))
+	mux.Handle("GET /admin/login/start", adminRL(http.HandlerFunc(adminAuth.LoginStartHandler)))
 	// /admin/callback: CSRF middleware runs first to rotate the token after login (AC6).
-	mux.Handle("GET /admin/callback", strictRL(csrf(http.HandlerFunc(adminAuth.CallbackHandler))))
+	mux.Handle("GET /admin/callback", adminRL(csrf(http.HandlerFunc(adminAuth.CallbackHandler))))
 	// Protected routes — require a valid admin session cookie (Story 3.11)
 	// GET /admin/logout intentionally returns 405 to prevent CSRF-logout via <img src="/admin/logout">.
 	// All templates use a POST form (base.html). (MINOR-1 fix, Story 5.13)
@@ -314,12 +320,13 @@ func main() {
 	mux.Handle("GET /admin/sse/metrics", sessionGuard(http.HandlerFunc(sseMetricsHandler.Handler)))
 
 	// Bootstrap page — CSRF middleware issues cookie on GET; verifies token on POST.
-	// strictRL protects the unauthenticated bootstrap entry points (Story 5.21).
-	mux.Handle("GET /admin/bootstrap", strictRL(csrf(guard(http.HandlerFunc(bootstrapHandler.Handler)))))
-	mux.Handle("POST /admin/bootstrap", strictRL(bodyLimit64KiB(csrf(guard(http.HandlerFunc(bootstrapHandler.StepHandler))))))
+	// adminRL (60/min, burst 20) accommodates the multi-step wizard with comfortable
+	// headroom; legitimate admin clicking should never trip the limiter.
+	mux.Handle("GET /admin/bootstrap", adminRL(csrf(guard(http.HandlerFunc(bootstrapHandler.Handler)))))
+	mux.Handle("POST /admin/bootstrap", adminRL(bodyLimit64KiB(csrf(guard(http.HandlerFunc(bootstrapHandler.StepHandler))))))
 
 	// Claim selection — CSRF-protected (Story 5.13, AC3); also behind BootstrapGuard.
-	mux.Handle("POST /admin/bootstrap/select-claim", strictRL(bodyLimit64KiB(csrf(guard(http.HandlerFunc(adminAuth.ClaimSelectionHandler))))))
+	mux.Handle("POST /admin/bootstrap/select-claim", adminRL(bodyLimit64KiB(csrf(guard(http.HandlerFunc(adminAuth.ClaimSelectionHandler))))))
 
 	// Catch-all for unmatched /admin/* paths — redirect to bootstrap wizard if not yet set up,
 	// otherwise show 404 (Go 1.22+ mux: most specific route wins, so this only fires for unknown paths).
@@ -834,8 +841,8 @@ func main() {
 	exportHandler := &compliance.ExportHandler{
 		DB:         complianceDB,
 		CoreClient: coreClient.CoreServiceClient(),
-		SigningKey:  compSignKey,
-		PublicKey:   compPubKey,
+		SigningKey: compSignKey,
+		PublicKey:  compPubKey,
 	}
 	mux.Handle("GET /api/v1/compliance/export",
 		strictRL(jwtMiddleware(http.HandlerFunc(exportHandler.GetExport))))
@@ -853,7 +860,7 @@ func main() {
 		CoreClient: coreClient.CoreServiceClient(),
 	}
 	mux.Handle("POST /api/v1/admin/compliance/sessions/{sessionId}/revoke",
-		strictRL(bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(revokeSessionHandler.RevokeSession))))))
+		adminRL(bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(revokeSessionHandler.RevokeSession))))))
 
 	// Story 5.7 — DSGVO User Key Deletion
 	// Route namespace: /api/v1/admin/* — instance_admin only, role gate inside handler.
@@ -909,7 +916,12 @@ func main() {
 	// Story 5.14: Wrap the main mux so that every /admin/* response carries security headers.
 	// SecurityHeadersMiddleware is the outermost layer — even 302 redirects emitted by
 	// SessionGuard / BootstrapGuard will include the headers.
-	adminHandler := admin.SecurityHeadersMiddleware()(mux)
+	//
+	// CSP form-action allowlist must include the OIDC issuer origin so the bootstrap
+	// step-2 form (POST /admin/bootstrap → 303 → 302 → OIDC provider) can redirect
+	// cross-origin without being silently blocked.
+	oidcIssuerOrigin := extractOriginOrEmpty(cfg.OIDCIssuer)
+	adminHandler := admin.SecurityHeadersMiddleware(oidcIssuerOrigin)(mux)
 	mainHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/admin") {
 			adminHandler.ServeHTTP(w, r)
@@ -939,6 +951,22 @@ func main() {
 		slog.Error("HTTP server failed", "err", err)
 		os.Exit(1)
 	}
+}
+
+// extractOriginOrEmpty returns the scheme://host[:port] of issuer or "" if
+// issuer is empty / unparseable. Used to widen CSP form-action so the bootstrap
+// step-2 form may redirect the browser to the OIDC provider without a silent
+// CSP block. Trusted because NEBU_OIDC_ISSUER is operator-set and validated
+// elsewhere via validate.IssuerURL.
+func extractOriginOrEmpty(issuer string) string {
+	if issuer == "" {
+		return ""
+	}
+	u, err := url.Parse(issuer)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 // loadAuditRetentionDays reads audit_log_retention_days from server_config.
@@ -1009,8 +1037,9 @@ func newAES256GCMDecrypt(masterKey []byte) compliance.KeyDecryptFn {
 // If the rows do not exist, a new keypair is generated and persisted.
 //
 // Keys are stored as hex-encoded TEXT in server_config:
-//   key='compliance_signing_key_priv' — hex(64-byte Ed25519 private key seed||public)
-//   key='compliance_signing_key_pub'  — hex(32-byte Ed25519 public key)
+//
+//	key='compliance_signing_key_priv' — hex(64-byte Ed25519 private key seed||public)
+//	key='compliance_signing_key_pub'  — hex(32-byte Ed25519 public key)
 //
 // This key is separate from :nebu_signing_key (ephemeral in Elixir — regenerated on
 // every Application.start/2). Compliance JWTs must survive an Elixir restart.

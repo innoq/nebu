@@ -39,7 +39,9 @@
       "Bash(rtk tsc:*)",
       "Bash(rtk playwright:*)",
       "Bash(rtk docker:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "mcp__playwright__browser_close",
+      "mcp__playwright__browser_console_messages"
     ]
   }
 }

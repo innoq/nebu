@@ -44,6 +44,14 @@ services:
       NEBU_OIDC_CLIENT_ID: "nebu-gateway"
       NEBU_OIDC_CLIENT_SECRET: "nebu-dev-secret"
       NEBU_OIDC_CLAIM_ROLE: "groups"
+      # Fail-closed environment label. The gateway treats anything other than
+      # {dev,development,test,staging} as production, so dev-only escape hatches
+      # (NEBU_ALLOW_INSECURE_OIDC_ISSUER, NEBU_ALLOW_INSECURE_KEK) only apply
+      # when this is set.
+      NEBU_ENV: "dev"
+      # DEV-ONLY: allow http:// OIDC issuer for the Docker-internal Dex hostname.
+      # Requires NEBU_ENV=dev|development|test|staging — refused otherwise.
+      NEBU_ALLOW_INSECURE_OIDC_ISSUER: "true"
     ports:
       - "8008:8008"
       - "8080:8080"

@@ -49,11 +49,19 @@ GRANT CONNECT ON DATABASE nebu TO nebu_migrate;
 GRANT USAGE ON SCHEMA public TO nebu_app;
 GRANT USAGE ON SCHEMA public TO nebu_migrate;
 
+-- PostgreSQL 15+ revoked the default CREATE on schema public from non-owners.
+-- nebu_migrate runs golang-migrate at startup and must be able to CREATE
+-- the schema_migrations table and all migration-scoped objects.
+GRANT CREATE ON SCHEMA public TO nebu_migrate;
+
 -- Default privileges: tables/sequences/functions created by nebu_migrate
--- will automatically be accessible to nebu_app at SELECT/INSERT/UPDATE level.
--- nebu_app deliberately does NOT get DELETE (enforced via RLS on audit_log).
+-- will automatically be accessible to nebu_app at SELECT/INSERT/UPDATE/DELETE
+-- level. The append-only invariant on audit_log is enforced by FORCE RLS plus
+-- explicit REVOKE in migration 000024 — not by withholding DELETE globally,
+-- because many normal-operation flows (session cleanup, JWT denylist rollover,
+-- bootstrap_draft clear, etc.) need DELETE on other tables.
 ALTER DEFAULT PRIVILEGES FOR ROLE nebu_migrate IN SCHEMA public
-  GRANT SELECT, INSERT, UPDATE ON TABLES TO nebu_app;
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO nebu_app;
 ALTER DEFAULT PRIVILEGES FOR ROLE nebu_migrate IN SCHEMA public
   GRANT USAGE, SELECT ON SEQUENCES TO nebu_app;
 ALTER DEFAULT PRIVILEGES FOR ROLE nebu_migrate IN SCHEMA public

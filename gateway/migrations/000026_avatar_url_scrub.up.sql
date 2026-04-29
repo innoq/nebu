@@ -7,8 +7,12 @@
 -- Scrub patterns (TEA-MINOR-7, Story 5.29b code review):
 --   - dotdot traversal:  ".." or "/../"
 --   - backslash separator (Windows path): '\\'
---   - NUL byte (used to bypass naive prefix checks)
 --   - more than one '/' AFTER the mxc:// prefix (a safe URI is mxc://server/mediaId)
+--
+-- NUL-byte check intentionally omitted: PostgreSQL TEXT/VARCHAR columns reject
+-- 0x00 at the type-system level, so an avatar_url containing NUL cannot exist
+-- in the database in the first place. The PutAvatarURL handler still rejects
+-- NUL at write time as defense-in-depth.
 --
 -- Irreversible: down-migration is a no-op (NULL is the safe default).
 UPDATE profiles
@@ -19,7 +23,6 @@ WHERE avatar_url IS NOT NULL
         avatar_url LIKE '%..%'
      OR avatar_url LIKE '%/../%'
      OR avatar_url LIKE E'%\\\\%'      -- backslash anywhere (raw \ in literal needs E'\\\\')
-     OR position(E'\x00' IN avatar_url) > 0  -- NUL byte
      OR (length(avatar_url) - length(replace(avatar_url, '/', ''))) > 3
         -- a safe mxc URI has exactly 3 forward slashes: "mxc://server/mediaId"
         --                                                     ^^      ^

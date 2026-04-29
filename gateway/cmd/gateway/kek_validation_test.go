@@ -65,13 +65,28 @@ func TestKEK_ZeroDefault_FailsInProduction(t *testing.T) {
 //
 // RED-PHASE: FAILS because validateKEKConfig does not exist.
 func TestKEK_ZeroDefault_AllowedInDev(t *testing.T) {
-	for _, env := range []string{"dev", "development", "test", "staging", ""} {
+	for _, env := range []string{"dev", "development", "test", "staging"} {
 		err := validateKEKConfig("", env, "")
 		if err != nil {
 			t.Errorf(
 				"AC5 FAIL: validateKEKConfig(kekHex=\"\", env=%q, allowInsecure=\"\") "+
-					"returned error %v — zero-KEK should be allowed in non-production env",
+					"returned error %v — zero-KEK should be allowed in dev-class env",
 				env, err,
+			)
+		}
+	}
+}
+
+// TestKEK_ZeroDefault_FailsOnUnsetEnv — fail-closed: an unset NEBU_ENV is treated
+// as production. Without an explicit opt-in, validation must reject.
+func TestKEK_ZeroDefault_FailsOnUnsetEnv(t *testing.T) {
+	for _, env := range []string{"", "production", "prod", "anything-else"} {
+		err := validateKEKConfig("", env, "")
+		if err == nil {
+			t.Errorf(
+				"FAIL: validateKEKConfig(kekHex=\"\", env=%q, allowInsecure=\"\") "+
+					"returned nil — fail-closed: only dev-class env may run with zero KEK",
+				env,
 			)
 		}
 	}
