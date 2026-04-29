@@ -8,8 +8,8 @@
 # All uses: steps are pinned to full 40-char commit SHAs (supply-chain hardening).
 #
 # SHA pin reference:
-#   actions/checkout      v4.1.1  → b4ffde65f46336ab88eb53be808477a3936bae11
-#   actions/setup-go      v5.0.1  → cdcb36043654635271a94b9a6d1392de5bb323a7
+#   actions/checkout      v4.1.1  → v6
+#   actions/setup-go      v5.0.1  → v6
 #   erlef/setup-beam      v1.16.0 → 61e01a43a562a89bfc54c7f9a378ff67b03e4a21
 #   actions/cache         v4.0.2  → 0c45773b623bea8c8e75f6c82b208c3cf94ea4f9
 #   actions/upload-artifact v4.3.1 → 5d5d22a31266ced268874388b861e4b58bb5c2f3
@@ -48,9 +48,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        uses: actions/checkout@v6 # v4.1.1
       - name: Set up Go
-        uses: actions/setup-go@cdcb36043654635271a94b9a6d1392de5bb323a7 # v5.0.1
+        uses: actions/setup-go@v6 # v5.0.1
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -62,9 +62,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        uses: actions/checkout@v6 # v4.1.1
       - name: Set up Go
-        uses: actions/setup-go@cdcb36043654635271a94b9a6d1392de5bb323a7 # v5.0.1
+        uses: actions/setup-go@v6 # v5.0.1
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -76,14 +76,14 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        uses: actions/checkout@v6 # v4.1.1
       - name: Set up Elixir/OTP
-        uses: erlef/setup-beam@61e01a43a562a89bfc54c7f9a378ff67b03e4a21 # v1.16.0
+        uses: erlef/setup-beam@v1 # v1.16.0
         with:
           elixir-version: ${{ env.ELIXIR_VERSION }}
           otp-version: ${{ env.OTP_VERSION }}
       - name: Cache mix deps
-        uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
+        uses: actions/cache@v6 # v4.0.2
         with:
           path: |
             core/deps
@@ -100,7 +100,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout (full history for gitleaks)
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        uses: actions/checkout@v6 # v4.1.1
         with:
           fetch-depth: 0
       - name: Install gitleaks (with checksum verification)
@@ -129,7 +129,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        uses: actions/checkout@v6 # v4.1.1
       - name: Verify README attribution
         run: scripts/verify-readme-attribution.sh
       - name: Verify CONTRIBUTING.md
