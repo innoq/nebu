@@ -46,3 +46,21 @@ func findStubRoom(id string) *StubRoom {
 	}
 	return nil
 }
+
+// StubConfig holds server-wide configuration settings for the Config page (Story 7.10).
+// Used until Epic 6 (Admin API) provides PATCH /api/v1/admin/config.
+type StubConfig struct {
+	InstanceName      string
+	AllowRegistration bool
+	MaxRoomsPerUser   int
+	RetentionDays     int
+}
+
+// stubConfig is the in-memory server config, mutated by UpdateConfigHandler (Story 7.10).
+// Changes are lost on gateway restart — acceptable for stub phase.
+var stubConfig = StubConfig{
+	InstanceName:      "Nebu Dev",
+	AllowRegistration: true,
+	MaxRoomsPerUser:   10,
+	RetentionDays:     90,
+}

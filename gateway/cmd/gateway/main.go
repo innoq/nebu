@@ -320,6 +320,11 @@ func main() {
 	// Story 7.9: Room name update and archive — no csrf() wrapper (stub phase; see TODO in handler).
 	mux.Handle("POST /admin/rooms/{roomId}/name", sessionGuard(http.HandlerFunc(roomsHandler.UpdateRoomNameHandler)))
 	mux.Handle("POST /admin/rooms/{roomId}/archive", sessionGuard(http.HandlerFunc(roomsHandler.ArchiveRoomHandler)))
+	// Story 7.10: Server Configuration page.
+	configHandler := admin.NewConfigHandler(tmplHandler)
+	mux.Handle("GET /admin/config", csrf(sessionGuard(http.HandlerFunc(configHandler.Handler))))
+	// POST /admin/config — no csrf() wrapper (stub phase; see TODO in handler); sessionGuard still applies.
+	mux.Handle("POST /admin/config", sessionGuard(http.HandlerFunc(configHandler.UpdateConfigHandler)))
 
 	checker := admin.NewPostgresBootstrapChecker(bootstrapDB)
 	bootstrapHandler := admin.NewBootstrapHandler(checker, tmplHandler, bootstrapDB, []byte(internalSecret))

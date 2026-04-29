@@ -212,6 +212,16 @@ type RoomsPageData struct {
 	ActiveRoomInitial string
 }
 
+// ConfigPageData holds data for the Server Configuration page (Story 7.10).
+// Embeds PageData for ActiveNav, topbar status, and CSRF token.
+// Config is populated from stubConfig by ConfigHandler.Handler.
+// Flash is populated when ?flash= query param is present (PRG pattern).
+type ConfigPageData struct {
+	PageData
+	Config StubConfig
+	Flash  AlertBannerData
+}
+
 // WizardStepperData is passed to the wizard_stepper component partial (C6, Story 7.3).
 // Steps is a slice of step labels (e.g. []string{"Request", "Approved", "Download"}).
 // CurrentStep is 0-indexed; steps before it are "completed", the current one is "active",
