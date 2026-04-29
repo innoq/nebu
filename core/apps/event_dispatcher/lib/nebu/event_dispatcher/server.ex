@@ -294,6 +294,12 @@ defmodule Nebu.EventDispatcher.Server do
 
         case db_module_invite().insert_invitation(room_id, inviter, invitee) do
           :ok ->
+            # Wake the invitee's long-polling sync task immediately (Bug 4-29f fix).
+            # The invitee subscribed to "user:#{invitee}" in do_incremental_sync before
+            # entering the receive loop. Without this broadcast the long-poll sleeps 30 s.
+            :pg.get_local_members("user:#{invitee}")
+            |> Enum.each(&send(&1, {:new_invite, room_id}))
+
             %Core.InviteUserResponse{}
 
           {:error, reason} ->
@@ -570,6 +576,18 @@ defmodule Nebu.EventDispatcher.Server do
            request.email
          ) do
       {:ok, user} ->
+        # Upsert profile row on every successful login so GET /profile/{userId} returns
+        # 200 for OIDC-provisioned users (Bug 2a fix). Non-fatal: profile write failure
+        # must not block login — the provisioned user session is already valid.
+        display_name_for_profile =
+          if request.display_name == "", do: nil, else: request.display_name
+
+        case profile_db_module().upsert_profile(user_id, display_name_for_profile, nil) do
+          :ok -> :ok
+          {:error, reason} ->
+            Logger.warning("validate_token: profile upsert failed for #{user_id}: #{inspect(reason)}")
+        end
+
         %Core.ValidateTokenResponse{
           user_id: user.user_id,
           system_role: user.system_role,
@@ -899,7 +917,12 @@ defmodule Nebu.EventDispatcher.Server do
 
     room_ids = room_ids ++ invited_room_ids ++ declined_room_ids
 
-    # Step 5: Subscribe to :pg groups BEFORE DB check (race prevention)
+    # Step 5a: Subscribe to user-level :pg group BEFORE DB check.
+    # Receives {:new_invite, room_id} when invite_user/2 sends an invitation — this
+    # wakes the long-poll immediately instead of sleeping the full 30 s (Bug 4-29f fix).
+    :pg.join("user:#{user_id}", self())
+
+    # Step 5b: Subscribe to room-level :pg groups BEFORE DB check (race prevention).
     Enum.each(room_ids, fn room_id ->
       :pg.join("room:#{room_id}", self())
     end)
@@ -908,13 +931,15 @@ defmodule Nebu.EventDispatcher.Server do
     # Pass last_event_id (string) directly — the DB module resolves the ts internally.
     delta_rooms = fetch_delta_rooms(room_ids, last_event_id)
 
+    leave_all_groups = fn ->
+      :pg.leave("user:#{user_id}", self())
+      Enum.each(room_ids, fn room_id -> :pg.leave("room:#{room_id}", self()) end)
+    end
+
     result_rooms =
       if delta_rooms != [] do
         # Step 7: Events found — leave :pg groups and return immediately
-        Enum.each(room_ids, fn room_id ->
-          :pg.leave("room:#{room_id}", self())
-        end)
-
+        leave_all_groups.()
         delta_rooms
       else
         # Step 8: No events — enter long-poll if timeout_ms > 0
@@ -929,6 +954,14 @@ defmodule Nebu.EventDispatcher.Server do
                 flush_long_poll_timeout()
                 fetch_delta_rooms(room_ids, last_event_id)
 
+              {:new_invite, _room_id} ->
+                # New invitation for this user — cancel timer and return empty delta.
+                # The Go gateway's buildInviteRooms queries the DB for invite data,
+                # so returning [] here is sufficient to unblock the client.
+                Process.cancel_timer(timer_ref)
+                flush_long_poll_timeout()
+                []
+
               :sync_long_poll_timeout ->
                 []
             end
@@ -936,11 +969,9 @@ defmodule Nebu.EventDispatcher.Server do
             []
           end
 
-        # Unsubscribe from :pg groups before returning (belt-and-suspenders;
+        # Unsubscribe from all :pg groups before returning (belt-and-suspenders;
         # :pg auto-removes dead processes, but explicit leave is cleaner)
-        Enum.each(room_ids, fn room_id ->
-          :pg.leave("room:#{room_id}", self())
-        end)
+        leave_all_groups.()
 
         wait_result
       end
