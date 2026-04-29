@@ -8,7 +8,7 @@ require (
 	github.com/go-jose/go-jose/v4 v4.1.3
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/hashicorp/golang-lru v0.5.4
-	github.com/jackc/pgx/v5 v5.8.0
+	github.com/jackc/pgx/v5 v5.9.2
 	github.com/prometheus/client_golang v1.23.2
 	golang.org/x/oauth2 v0.34.0
 	golang.org/x/time v0.15.0
