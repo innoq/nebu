@@ -6,26 +6,44 @@
 {{ end }}
 
 {{ define "master_list" }}
-<div class="p-2">
-  <ul role="listbox" aria-label="Rooms">
-    {{ range .StubRooms }}
-    <li>
-      <a href="/admin/rooms/{{ .ID }}"
-         role="option"
-         aria-selected="{{ if eq .ID $.ActiveItemID }}true{{ else }}false{{ end }}"
-         class="flex items-center gap-3 px-3 py-3 rounded text-sm
-                {{ if eq .ID $.ActiveItemID }}active bg-primary text-primary-content border-l-[3px] border-primary{{ else }}text-base-content hover:bg-base-300{{ end }}
-                focus:outline-none focus:ring-2 focus:ring-primary">
-        <span class="font-medium">{{ .Name }}</span>
-        <span class="ml-auto badge badge-sm
-                     {{ if eq .Status "active" }}badge-success{{ else }}badge-warning{{ end }}">
-          {{ .Status }}
-        </span>
-      </a>
-    </li>
+<main class="flex flex-col h-full">
+  <div class="p-4 border-b border-base-300">
+    <h1 class="text-lg font-semibold mb-3">Rooms</h1>
+    <form method="GET" action="/admin/rooms" class="flex flex-col gap-2">
+      {{ template "search_input" .SearchInput }}
+      {{ template "filter_bar" .FilterBar }}
+    </form>
+  </div>
+
+  <div class="flex-1 overflow-y-auto">
+    {{ if .Rooms }}
+    <ul role="listbox" aria-label="Rooms" data-loading-skeleton class="p-2">
+      {{ range .Rooms }}
+      <li>
+        <a href="/admin/rooms/{{ .ID }}"
+           role="option"
+           aria-selected="{{ if eq .ID $.ActiveItemID }}true{{ else }}false{{ end }}"
+           class="flex items-center gap-3 px-3 py-3 rounded text-sm
+                  {{ if eq .ID $.ActiveItemID }}active bg-primary text-primary-content border-l-[3px] border-primary{{ else }}text-base-content hover:bg-base-300{{ end }}
+                  focus:outline-none focus:ring-2 focus:ring-primary">
+          <span class="font-medium flex-1 truncate">{{ .Name }}</span>
+          {{ template "status_badge" .Badge }}
+        </a>
+      </li>
+      {{ end }}
+    </ul>
+    {{ else }}
+    {{ template "empty_state" .EmptyState }}
     {{ end }}
-  </ul>
-</div>
+  </div>
+
+  {{ if .HasMore }}
+  <nav aria-label="pagination" class="p-3 border-t border-base-300 text-center">
+    <a href="/admin/rooms?q={{ .SearchInput.Value }}&visibility={{ (index .FilterBar 0).CurrentValue }}&page={{ .NextPage }}"
+       class="btn btn-ghost btn-sm">Load more</a>
+  </nav>
+  {{ end }}
+</main>
 {{ end }}
 
 {{ define "detail_title" }}

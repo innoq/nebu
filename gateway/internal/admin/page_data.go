@@ -167,11 +167,30 @@ type StubRoom struct {
 	Status      string // "active" | "archived"
 }
 
-// RoomsPageData holds data for the Rooms master-detail page (Story 7.2).
-// Same pattern as UsersPageData but for rooms.
+// RoomRowData is used in the Rooms list template (Story 7.8).
+// Embeds StubRoom and adds a pre-computed Badge for the status_badge component,
+// normalising StubRoom.Status "archived" → StatusBadgeData{Status: "inactive"}.
+// This avoids template FuncMap helpers — the handler populates Badge directly.
+type RoomRowData struct {
+	StubRoom
+	Badge StatusBadgeData
+}
+
+// RoomsPageData holds data for the Rooms master-detail page (Story 7.8).
+// Rooms is the filtered+paginated slice (replaces StubRooms from Story 7.2).
+// SearchInput, FilterBar, TotalCount, CurrentPage, HasMore, NextPage support search/filter/pagination.
+// EmptyState is populated by the handler and rendered when Rooms is empty.
+// ActiveItemID, ActiveRoom, CloseURL remain for the MasterDetail detail panel (Story 7.2/7.9).
 type RoomsPageData struct {
 	PageData
-	StubRooms    []StubRoom
+	Rooms        []RoomRowData
+	SearchInput  SearchInputData
+	FilterBar    []FilterOption
+	TotalCount   int
+	CurrentPage  int
+	HasMore      bool
+	NextPage     int
+	EmptyState   EmptyStateData
 	ActiveItemID string
 	ActiveRoom   *StubRoom // nil = list view or not found
 	CloseURL     string    // e.g. "/admin/rooms"

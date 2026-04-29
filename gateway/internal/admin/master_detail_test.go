@@ -162,7 +162,7 @@ func TestRoomsDetailActiveClass(t *testing.T) {
 	activeRoom := &stubRooms[0] // room-001 = General
 	data := RoomsPageData{
 		PageData:     PageData{ActiveNav: "rooms"},
-		StubRooms:    stubRooms,
+		Rooms:        toRoomRowDataSlice(stubRooms),
 		ActiveItemID: "room-001",
 		ActiveRoom:   activeRoom,
 		CloseURL:     "/admin/rooms",
@@ -212,7 +212,7 @@ func TestRoomsDetailNotFound(t *testing.T) {
 
 	data := RoomsPageData{
 		PageData:     PageData{ActiveNav: "rooms"},
-		StubRooms:    stubRooms,
+		Rooms:        toRoomRowDataSlice(stubRooms),
 		ActiveItemID: "nonexistent",
 		ActiveRoom:   nil,
 		CloseURL:     "/admin/rooms",
