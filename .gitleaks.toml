@@ -1,0 +1,100 @@
+# .gitleaks.toml
+# gitleaks configuration for nebu-chat
+# See: https://github.com/zricethezav/gitleaks#configuration
+#
+# This config extends the gitleaks default rule-set with additional custom
+# rules required for this repository and a documented allow-list for every
+# known false-positive found in this codebase.
+#
+# Every allow-list entry MUST have an inline comment explaining:
+#   (a) what the pattern matches
+#   (b) why the matched value is not a real secret
+#   (c) which file or path it lives in
+
+title = "nebu-chat gitleaks config"
+
+# ---------------------------------------------------------------------------
+# Extend with built-in default rules
+# ---------------------------------------------------------------------------
+[extend]
+useDefault = true
+
+# ---------------------------------------------------------------------------
+# Additional custom rules
+# ---------------------------------------------------------------------------
+
+# Rule: AWS Access Key ID
+# The built-in default rule requires entropy in addition to the format match.
+# The documentation example AKIAIOSFODNN7EXAMPLE has low entropy and is not
+# flagged by the default ruleset.  This custom rule catches the format
+# regardless of entropy to ensure test fixtures that use the official AWS
+# example value are also detected in non-allow-listed paths.
+[[rules]]
+description = "AWS Access Key ID (custom — low-entropy examples included)"
+id           = "aws-access-key-id-custom"
+regex        = '''(?:^|[^A-Z0-9])((?:A3T[A-Z0-9]|AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16})'''
+secretGroup  = 1
+tags         = ["aws", "credentials"]
+
+# ---------------------------------------------------------------------------
+# Global allow-list for known false-positives in this repository.
+#
+# Each entry is path-scoped to the minimum required set of files.
+# See scripts/SECRET_SCAN_RUNBOOK.md for the procedure to add new entries.
+# ---------------------------------------------------------------------------
+
+[allowlist]
+description = "Repository-wide allow-list for known false-positives"
+
+paths = [
+  # (a) Matches any token-like string in BMAD agent configuration and
+  #     knowledge-base files (e.g. files-manifest.csv, api-testing-patterns).
+  # (b) These are BMAD framework files containing documentation patterns and
+  #     file references — no real credentials are stored here.
+  # (c) _bmad/ directory (BMAD agent framework config + knowledge base).
+  '''_bmad/.*''',
+
+  # (a) Matches any token-like string in BMAD output and planning files.
+  # (b) These are placeholder / example values written in story descriptions
+  #     and architecture documents — not real credentials.
+  # (c) _bmad-output/ directory (planning artifacts + implementation notes).
+  '''_bmad-output/.*''',
+
+  # (a) Matches private key PEM blocks and other secret-shaped strings in
+  #     gateway auth test fixture files.
+  # (b) These are self-signed test certificates generated for unit tests only;
+  #     they are not issued by any real CA and have no real authority.
+  # (c) gateway/internal/auth/testdata/
+  '''gateway/internal/auth/testdata/.*''',
+
+  # (a) Matches placeholder client_secret values in Gherkin feature files
+  #     used for OIDC integration tests.
+  # (b) These are synthetic values used against a local Dex test instance
+  #     only — never a real OIDC provider.
+  # (c) gateway/features/ (Godog Gherkin feature files)
+  '''gateway/features/.*''',
+
+  # (a) Matches fake secrets inside Go unit test files (package _test).
+  # (b) These are in-process test values and never leave the test process.
+  # (c) Any *_test.go file throughout gateway/
+  '''gateway/.*_test\.go''',
+
+  # (a) Matches ExUnit test fixture files inside Elixir application test dirs.
+  # (b) These are mock secrets used only within ExUnit sandboxes.
+  # (c) core/apps/*/test/**/*.exs
+  '''core/apps/.*/test/.*\.exs$''',
+
+  # (a) Generic Go testdata directories — matches any testdata sub-path.
+  # (b) Testdata directories contain static fixtures, not real credentials.
+  # (c) Any */testdata/* path in the repository.
+  '''.*testdata/.*''',
+]
+
+# Example of a regex-based false-positive suppression (currently not needed).
+# Uncomment and extend if a specific pattern generates false positives that
+# cannot be handled by path allowlisting alone.
+#
+# regexes = [
+#   # Example: suppress the literal string "example-token" used in docs
+#   # '''example-token''',
+# ]

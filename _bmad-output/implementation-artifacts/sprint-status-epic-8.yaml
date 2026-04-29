@@ -1,5 +1,7 @@
 # generated: 2026-04-28
 # last_updated: 2026-04-28
+# strategic pivot (2026-04-28): dual-host publication — github.com/innoq/nebu (GitHub Actions) + gitlab.opencode.de/nebu/nebu-server (GitLab CI). 8-6 NOT skipped. 8-7 expanded to .github/ + .gitlab/ templates. 8-10 pushes to both remotes. Retro-fix for GitHub-only references in 8-1/8-3/8-4 deferred to dedicated chore commit before 8-10.
+# story 8-5 done (pipeline: ATDD+Dev+Test-Review (0 MAJOR + 4 MINOR fixed inline: F1 null-JSON false-pass, F2 runbook AC test added, F3 dead sandbox copies removed, F4 secretGroup=1)+Code-Review (1 MINOR fixed: test-count 8→9)+Kassandra CLEAN (2 MEDIUM, MEDIUM-2 pre-push hook bug fixed inline)): 2026-04-28
 # story 8-4 done (pipeline: ATDD+Dev+Test-Review (0 MAJOR + 2 MINOR fixed inline: F1 weak prohibition sub-assert, F3 Security tab link)+Code-Review CLEAN+Security skipped (optional → heuristic not-needed)): 2026-04-28
 # story 8-3 done (pipeline: ATDD (via create-story)+Dev+Test-Review (0 MAJOR + 2 MINOR fixed inline: AC10 npx absolute-path false-negative)+Code-Review (1 MINOR + 2 INFO fixed inline: CoC contradiction, AC8b prohibition phrase, AC5b OpenAPI mention, AC4 anchored heading)+Security skipped (not-needed)): 2026-04-28
 # story 8-2 done (pipeline: ATDD+Dev+Test-Review (1 MAJOR + 3 MINOR fixed inline: AC6 BSD-grep emoji false-positive, AC3/AC4 section-scoping, link-syntax)+Code-Review (tempfile trap added)+Security skipped (not-needed)): 2026-04-29
@@ -58,7 +60,7 @@ development_status:
   8-2-readme-bmad-claude-attribution-development-methodology: done  # Development Methodology section added to README.md, attribution to Claude + BMAD methodology, link to CONTRIBUTING.md (8-3). Verify tool: scripts/verify-readme-attribution.sh.
   8-3-contributing-md-bmad-workflow-und-conventions: done  # CONTRIBUTING.md expanded with Reporting Bugs, PR workflow (Conventional Commits + branch naming), BMAD section with external-contributor escape hatch, Testing, License/DCO, no-CoAuthored-By rule. Verify tool: scripts/verify-contributing.sh.
   8-4-security-md-vulnerability-disclosure-policy: done  # SECURITY.md rewritten with 8 sections (Supported Versions, Reporting via GitHub Security Advisories, 72h/7d/14d Response SLA, 90-day Disclosure, 7-category Scope, 5-category Out-of-Scope, honest no-bounty Recognition, References). Verify tool: scripts/verify-security-policy.sh.
-  8-5-secret-scan-gate-gitleaks-history-ci-integration: backlog
+  8-5-secret-scan-gate-gitleaks-history-ci-integration: done  # gitleaks integration: scan-secrets.sh (history/staged/ci) + .gitleaks.toml + SECRET_SCAN_RUNBOOK.md + .gitignore. 9/9 tests, Kassandra CLEAN. Tool is platform-agnostic (works on GitHub Actions + GitLab CI per Story 8.6).
   8-6-ci-migration-gitlab-ci-github-actions: backlog
   8-7-github-issue-pr-templates-github-infrastructure: backlog
   8-8-repo-metadaten-license-check-topics-description-badges: backlog
