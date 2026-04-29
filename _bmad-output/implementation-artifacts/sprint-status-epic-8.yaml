@@ -1,5 +1,7 @@
 # generated: 2026-04-28
-# last_updated: 2026-04-28
+# last_updated: 2026-04-29
+# story 8-10a done (pipeline: ATDD+Dev+Test-Review (2 MAJOR fixed inline: AC4b sync wakeup test + AC5b E2E-only note, 2 MINOR fixed: pg.leave on_exit + ollama unstage)+Code-Review CLEAN (1 MINOR inline: unrelated script unstaged)+Kassandra CLEAN (0 MEDIUM, 2 INFO)): 2026-04-29
+# story 8-10a created (pre-release bug fixes: invite :pg notification + profile upsert on login): 2026-04-29
 # strategic pivot (2026-04-28): dual-host publication — github.com/innoq/nebu (GitHub Actions) + gitlab.opencode.de/nebu/nebu-server (GitLab CI). 8-6 NOT skipped. 8-7 expanded to .github/ + .gitlab/ templates. 8-10 pushes to both remotes. Retro-fix for GitHub-only references in 8-1/8-3/8-4 deferred to dedicated chore commit before 8-10.
 # story 8-9 done (pipeline: ATDD+Dev+Test-Review (0 MAJOR + 3 MINOR; M-1 mode-field assertion + INFO-2 umlaut fixed inline)+Code-Review (3 MINOR markdownlint fixed inline)+Kassandra CLEAN (2 MEDIUM, M-1 --quick warning banner fixed inline)): 2026-04-28 — pipeline stops here per maintainer instruction; 8-10 (Initial Public Push) requires manual go-ahead.
 # story 8-8 done (pipeline: ATDD+Dev+Test-Review (0 MAJOR + 4 MINOR; 2 fixed inline: 10d/e topics+description checks, 11d fallback section)+Code-Review CLEAN (2 MINOR maintainer-decision)+Security skipped (optional → heuristic not-needed)): 2026-04-28
@@ -50,7 +52,7 @@
 # - Story file naming: _bmad-output/implementation-artifacts/8-{n}-<kebab-title>.md
 
 generated: 2026-04-28
-last_updated: 2026-04-28
+last_updated: 2026-04-29
 # story 8-6 ready-for-dev (dual CI: GitHub Actions + GitLab CI for Sovereign OSS — strategic pivot from migration to bidirectional publication): 2026-04-28
 project: open-chat
 project_key: NOKEY
@@ -70,5 +72,6 @@ development_status:
   8-7-github-issue-pr-templates-github-infrastructure: done  # .github/ISSUE_TEMPLATE/{bug_report,feature_request,config}.yml + pull_request_template.md + CODEOWNERS + dependabot.yml (4 ecosystems, weekly) + .gitlab/issue_templates/{Bug,Feature}.md + .gitlab/merge_request_templates/Default.md. Verify tool: scripts/verify-issue-pr-templates.sh (13/13 pass).
   8-8-repo-metadaten-license-check-topics-description-badges: done  # README.md badge block (15 badges, scope-limited markdownlint-disable, correct gitlab.opencode.de URLs) + scripts/setup-repo-metadata.sh (--github/--gitlab/--all via gh/glab CLIs, 10 topics, description) + scripts/REPO_METADATA_RUNBOOK.md (4 sections: when, install, run, fallback). Verify tool: scripts/verify-repo-metadata.sh (12/12 pass). LICENSE preserved (Apache-2.0 already existed).
   8-9-release-readiness-gate-full-stack-test-epic-weiter-security-review: done  # Master gate: scripts/release-readiness-gate.sh (--all/--quick/--report, pre-flight on 7 sub-scripts, JSON report with date+mode+overall_status+suites, --quick warning banner) + scripts/PUBLIC_PUSH_CHECKLIST.md (6 steps with --force-with-lease) + security-reports/INDEX.md (3 Kassandra reports + epic-end gate note) + .gitignore. Verify tool: scripts/verify-release-readiness.sh (12/12 pass). Live-fire --quick: 6 sub-suites PASS. Kassandra CLEAN (2 MEDIUM: M-1 --quick warning fixed inline, M-2 TOCTOU window deferred — not exploitable in trust model).
+  8-10a-pre-release-bugfixes-invite-notification-profile-provisioning: done  # invite :pg broadcast (invite_user/2) + user-level :pg wakeup (do_incremental_sync) + profile upsert (validate_token/2) + E2E timeout 35s→10s
   8-10-initial-public-push-branch-protection-required-reviews: backlog
   epic-8-retrospective: optional
