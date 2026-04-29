@@ -51,8 +51,26 @@
 {{ end }}
 
 {{ define "detail_content" }}
+  {{ if .Flash.Message }}
+  {{ template "alert_banner" .Flash }}
+  {{ end }}
   {{ if .ActiveUser }}
+    {{/* Avatar placeholder with user initials (rune-safe, pre-computed by handler) */}}
+    <div class="flex justify-center mb-4">
+      <div class="avatar placeholder">
+        <div class="bg-neutral text-neutral-content rounded-full w-16">
+          <span class="text-2xl">{{ .ActiveUserInitial }}</span>
+        </div>
+      </div>
+    </div>
+
     <dl class="divide-y divide-base-300">
+      <div class="py-3">
+        <dt class="text-base-content/60 text-xs uppercase tracking-wide mb-1">Display Name</dt>
+        <dd>
+          {{ template "inline_edit" .ActiveUserInlineEdit }}
+        </dd>
+      </div>
       <div class="flex justify-between py-3">
         <dt class="text-base-content/60 text-sm">Email</dt>
         <dd class="text-sm font-medium">{{ .ActiveUser.Email }}</dd>
@@ -63,11 +81,11 @@
       </div>
       <div class="flex justify-between py-3">
         <dt class="text-base-content/60 text-sm">Status</dt>
-        <dd class="text-sm font-medium">{{ .ActiveUser.Status }}</dd>
+        <dd>
+          {{ template "status_badge" .ActiveUserStatusBadge }}
+        </dd>
       </div>
     </dl>
-  {{ else if .ActiveItemID }}
-    <div class="text-base-content/50 text-sm">User not found.</div>
   {{ end }}
 {{ end }}
 

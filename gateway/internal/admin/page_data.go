@@ -120,6 +120,8 @@ type UserRowData struct {
 // SearchInput, FilterBar, TotalCount, CurrentPage, HasMore, NextPage support search/filter/pagination.
 // EmptyState is populated by the handler and rendered when Users is empty.
 // ActiveItemID, ActiveUser, CloseURL remain for the MasterDetail detail panel (Stories 7.2/7.6).
+// Flash is populated when ?flash= query param is present (Story 7.6).
+// ActiveUserInlineEdit and ActiveUserStatusBadge are pre-computed by DetailHandler (Story 7.6).
 type UsersPageData struct {
 	PageData
 	Users        []UserRowData
@@ -133,6 +135,19 @@ type UsersPageData struct {
 	ActiveItemID string
 	ActiveUser   *StubUser // nil = list view or not found
 	CloseURL     string    // e.g. "/admin/users"
+	// Flash is populated when ?flash= query param is present (Story 7.6).
+	// Zero-valued in list mode — no template rendering side-effects.
+	Flash AlertBannerData
+	// ActiveUserInlineEdit is pre-computed by DetailHandler for the inline_edit component (Story 7.6).
+	// Only meaningful when ActiveUser != nil.
+	ActiveUserInlineEdit InlineEditData
+	// ActiveUserStatusBadge is pre-computed by DetailHandler for the status_badge component (Story 7.6).
+	// Only meaningful when ActiveUser != nil.
+	ActiveUserStatusBadge StatusBadgeData
+	// ActiveUserInitial holds the first rune of DisplayName as a string (rune-safe).
+	// Pre-computed by DetailHandler to avoid UTF-8 byte-slice edge cases in templates.
+	// TODO: use rune-aware initials helper in production when multi-char initials are needed.
+	ActiveUserInitial string
 }
 
 // StubRoom is a fake room record used for the Rooms master-detail page until

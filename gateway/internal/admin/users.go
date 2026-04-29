@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // UsersHandler serves the /admin/users master-detail page (Story 7.2, extended Story 7.5).
@@ -77,10 +78,22 @@ func (h *UsersHandler) ListHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // DetailHandler handles GET /admin/users/{userId} — renders the user list with the
-// selected user pre-loaded in the detail panel. Always returns HTTP 200; a missing
-// user renders a "not found" message inside the panel (AC5: no full-page 404).
+// selected user pre-loaded in the detail panel.
+// Returns HTTP 404 when no user matches (Story 7.6 behaviour change from Story 7.2).
+// Reads the ?flash= query param and populates Flash with an AlertBanner on success.
 func (h *UsersHandler) DetailHandler(w http.ResponseWriter, r *http.Request) {
 	userID := r.PathValue("userId")
+	user := findStubUser(userID)
+	if user == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	// Read flash query param; populate AlertBannerData if present (Story 7.6 AC1).
+	var flash AlertBannerData
+	if msg := r.URL.Query().Get("flash"); msg != "" {
+		flash = AlertBannerData{Severity: "success", Message: msg, Dismissible: true}
+	}
 
 	// Build UserRowData slice for the sidebar list (all users, unfiltered).
 	rows := make([]UserRowData, len(stubUsers))
@@ -88,14 +101,68 @@ func (h *UsersHandler) DetailHandler(w http.ResponseWriter, r *http.Request) {
 		rows[i] = toUserRowData(u)
 	}
 
+	// Pre-compute InlineEditData for the inline_edit component (Story 7.6 AC3).
+	csrfToken := CSRFTokenFromContext(r.Context())
+	inlineEdit := InlineEditData{
+		ID:         "display-name",
+		FieldName:  "display_name",
+		Value:      user.DisplayName,
+		Label:      "Display Name",
+		FormAction: "/admin/users/" + userID + "/display-name",
+		CSRFToken:  csrfToken,
+	}
+
+	// Pre-compute StatusBadgeData; normalise "deactivated" → "inactive" (Story 7.6 AC3).
+	badgeStatus := user.Status
+	if badgeStatus == "deactivated" {
+		badgeStatus = "inactive"
+	}
+	statusBadge := StatusBadgeData{Status: badgeStatus}
+
+	// Pre-compute user initials using rune-safe slice (Story 7.6 Dev Notes).
+	// TODO: use rune-aware initials helper in production when multi-char initials are needed.
+	initial := ""
+	if runes := []rune(user.DisplayName); len(runes) > 0 {
+		initial = string(runes[0:1])
+	}
+
 	data := UsersPageData{
-		PageData:     PageData{ActiveNav: "users", CSRFToken: CSRFTokenFromContext(r.Context())},
-		Users:        rows,
-		ActiveItemID: userID,
-		ActiveUser:   findStubUser(userID), // nil if not found → template renders "not found"
-		CloseURL:     "/admin/users",
+		PageData:              PageData{ActiveNav: "users", CSRFToken: csrfToken},
+		Users:                 rows,
+		ActiveItemID:          userID,
+		ActiveUser:            user,
+		CloseURL:              "/admin/users",
+		Flash:                 flash,
+		ActiveUserInlineEdit:  inlineEdit,
+		ActiveUserStatusBadge: statusBadge,
+		ActiveUserInitial:     initial,
 	}
 	h.tmpl.render(w, "users", data)
+}
+
+// UpdateDisplayNameHandler handles POST /admin/users/{userId}/display-name.
+// Validates and updates the user's display name in-memory (stub phase).
+// TODO(epic-6): replace stub mutation with Admin API call when Epic 6 is implemented.
+func (h *UsersHandler) UpdateDisplayNameHandler(w http.ResponseWriter, r *http.Request) {
+	userID := r.PathValue("userId")
+	// TODO(story-7-csrf): enforce CSRF middleware when wiring in production
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	displayName := strings.TrimSpace(r.FormValue("display_name"))
+	if displayName == "" || utf8.RuneCountInString(displayName) > 100 {
+		http.Error(w, "display_name must be 1–100 characters", http.StatusBadRequest)
+		return
+	}
+	// Mutate stub data in-memory (changes lost on restart — acceptable for stub phase).
+	for i := range stubUsers {
+		if stubUsers[i].ID == userID {
+			stubUsers[i].DisplayName = displayName
+			break
+		}
+	}
+	http.Redirect(w, r, "/admin/users/"+userID+"?flash=Display+name+updated", http.StatusFound)
 }
 
 // toUserRowData converts a StubUser to a UserRowData with a pre-computed Badge.

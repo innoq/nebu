@@ -1,5 +1,7 @@
 # generated: 2026-03-20
 # last_updated: 2026-04-29
+# story 7-6 done (CR: 2 MINOR fixed inline — rune-count fix + dead template branch removed; 0 decision-needed, 0 deferred): 2026-04-29
+# story 7-6 created: 7-6 → ready-for-dev: 2026-04-29
 # story 7-5 done (CR: 1 MINOR fixed inline — badge normalization extracted to toUserRowData helper; 0 decision-needed, 0 deferred): 2026-04-29
 # story 7-5 created: 7-5 → ready-for-dev: 2026-04-29
 # story 7-4 created: 7-4 → ready-for-dev: 2026-04-29
@@ -548,7 +550,7 @@ development_status:
   7-3-interaction-components-c6-wizardstepper-c7-c10: done  # ~380k tokens
   7-4-display-components-c11-c14-inkl-inlineedit-alertbanner: done  # ~340k tokens
   7-5-user-list-page-suche-debounced-load-more-skeleton-wcag-landmarks: done
-  7-6-user-detail-panel-inlineedit-displayname-status-bookmarkbare-url: backlog
+  7-6-user-detail-panel-inlineedit-displayname-status-bookmarkbare-url: done
   7-7-user-role-ui-deactivation-confirmation-dialog: backlog
   7-8-room-list-page-suche-filter-pagination: backlog
   7-9-room-detail-panel-settings-edit-archive-ui-confirmation-pattern: backlog
