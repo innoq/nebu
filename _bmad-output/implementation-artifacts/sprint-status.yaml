@@ -555,8 +555,8 @@ development_status:
   7-8-room-list-page-suche-filter-pagination: done  # ~280k tokens
   7-9-room-detail-panel-settings-edit-archive-ui-confirmation-pattern: done  # ~310k tokens
   7-10-server-config-ui-get-patch-api-v1-admin-config: done  # ~290k tokens
-  7-11-compliance-access-request-list-four-eyes-approval-ui: backlog
-  7-12-audit-log-view-atlas-pattern-zeitraum-filter-read-only: backlog
+  7-11-compliance-access-request-list-four-eyes-approval-ui: done  # ~250k tokens
+  7-12-audit-log-view-atlas-pattern-zeitraum-filter-read-only: done
   7-13-wcag-audit-axe-core-report-automatisierter-scan-aller-admin-seiten: backlog
   7-14-gherkin-admin-ui-smoke-flows-user-deactivate-room-archive-via-ui: backlog
   7-15-bootstrap-wizard-claim-role-mapping-instance-admin-compliance-user: backlog

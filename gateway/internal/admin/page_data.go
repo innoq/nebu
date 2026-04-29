@@ -237,6 +237,21 @@ type CompliancePageData struct {
 	EmptyState   EmptyStateData // populated when Requests is empty
 }
 
+// AuditLogPageData holds data for the Audit Log page (Story 7.12).
+// Embeds PageData for ActiveNav, topbar status, and CSRF token.
+// Entries is the filtered slice of audit log entries (from stubAuditLog for MVP).
+// From and To hold the current date-range filter values (YYYY-MM-DD strings).
+// Flash is reserved for future flash messages (always zero-valued in read-only MVP).
+// EmptyState is rendered when Entries is empty.
+type AuditLogPageData struct {
+	PageData
+	Entries    []StubAuditEntry
+	From       string // query param "from", e.g. "2026-04-29"
+	To         string // query param "to", e.g. "2026-04-29"
+	Flash      AlertBannerData
+	EmptyState EmptyStateData
+}
+
 // WizardStepperData is passed to the wizard_stepper component partial (C6, Story 7.3).
 // Steps is a slice of step labels (e.g. []string{"Request", "Approved", "Download"}).
 // CurrentStep is 0-indexed; steps before it are "completed", the current one is "active",

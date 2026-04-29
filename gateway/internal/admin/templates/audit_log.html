@@ -1,0 +1,59 @@
+{{ template "base" . }}
+{{ define "title" }}Audit Log — Nebu Admin{{ end }}
+
+{{ define "content" }}
+<main class="max-w-5xl mx-auto flex flex-col gap-6 p-6">
+  <h1 class="text-2xl font-bold">Audit Log</h1>
+
+  {{ if .Flash.Message }}{{ template "alert_banner" .Flash }}{{ end }}
+
+  {{/* Date-range filter form */}}
+  <form method="GET" action="/admin/audit-log" class="flex flex-wrap items-end gap-4">
+    <div class="flex flex-col gap-1">
+      <label for="from-date" class="label-text text-sm font-medium">From</label>
+      <input id="from-date" type="date" name="from" value="{{ .From }}"
+             class="input input-bordered input-sm">
+    </div>
+    <div class="flex flex-col gap-1">
+      <label for="to-date" class="label-text text-sm font-medium">To</label>
+      <input id="to-date" type="date" name="to" value="{{ .To }}"
+             class="input input-bordered input-sm">
+    </div>
+    <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+    {{ if and .From .To }}
+    <a href="/admin/audit-log" class="btn btn-ghost btn-sm">Clear</a>
+    {{ end }}
+  </form>
+
+  {{/* Audit log table */}}
+  {{ if .Entries }}
+  <div class="overflow-x-auto">
+    <table class="table table-zebra w-full">
+      <thead>
+        <tr>
+          <th>Actor</th>
+          <th>Action</th>
+          <th>Target</th>
+          <th>Timestamp</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{ range .Entries }}
+        <tr>
+          <td class="font-medium">{{ .Actor }}</td>
+          <td><code class="text-sm bg-base-200 px-1 rounded">{{ .Action }}</code></td>
+          <td class="text-sm">
+            {{ if .TargetName }}{{ .TargetName }}{{ end }}
+            {{ if .TargetID }}<span class="text-base-content/50 text-xs ml-1">({{ .TargetID }})</span>{{ end }}
+          </td>
+          <td class="text-sm text-base-content/70 tabular-nums">{{ .Timestamp }}</td>
+        </tr>
+        {{ end }}
+      </tbody>
+    </table>
+  </div>
+  {{ else }}
+  {{ template "empty_state" .EmptyState }}
+  {{ end }}
+</main>
+{{ end }}

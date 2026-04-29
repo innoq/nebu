@@ -78,6 +78,29 @@ func findStubComplianceRequest(id string) *StubComplianceRequest {
 	return nil
 }
 
+// StubAuditEntry is a fake audit log entry for the Audit Log page (Story 7.12).
+// Used until a real audit log API is available. Timestamps are ISO-8601-like strings
+// so that date-range filtering can use simple string-prefix comparison.
+type StubAuditEntry struct {
+	ID         string
+	Timestamp  string // ISO-8601-like, e.g. "2026-04-29T14:30:00Z"
+	Actor      string // email, e.g. "kai@example.com"
+	Action     string // dot-notation verb, e.g. "user.deactivate"
+	TargetID   string // e.g. "usr-003"
+	TargetName string // human-readable, e.g. "Carla Reiter"
+}
+
+// stubAuditLog holds fake audit log entries for the Audit Log page (Story 7.12).
+// 6 entries spanning 2026-04-28..2026-04-30 to exercise date-range filtering.
+var stubAuditLog = []StubAuditEntry{
+	{ID: "al-001", Timestamp: "2026-04-28T09:15:00Z", Actor: "kai@example.com", Action: "user.deactivate", TargetID: "usr-004", TargetName: "Dieter Krause"},
+	{ID: "al-002", Timestamp: "2026-04-28T14:42:00Z", Actor: "kai@example.com", Action: "room.archive", TargetID: "room-004", TargetName: "Old Project X"},
+	{ID: "al-003", Timestamp: "2026-04-29T10:05:00Z", Actor: "kai@example.com", Action: "config.update", TargetID: "config", TargetName: "InstanceName"},
+	{ID: "al-004", Timestamp: "2026-04-29T14:30:00Z", Actor: "admin@example.com", Action: "user.role_change", TargetID: "usr-002", TargetName: "Bob Wagner"},
+	{ID: "al-005", Timestamp: "2026-04-30T08:00:00Z", Actor: "kai@example.com", Action: "compliance.approve", TargetID: "cr-003", TargetName: "Bob Wagner"},
+	{ID: "al-006", Timestamp: "2026-04-30T11:20:00Z", Actor: "admin@example.com", Action: "room.archive", TargetID: "room-002", TargetName: "Engineering"},
+}
+
 // StubConfig holds server-wide configuration settings for the Config page (Story 7.10).
 // Used until Epic 6 (Admin API) provides PATCH /api/v1/admin/config.
 type StubConfig struct {

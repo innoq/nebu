@@ -333,6 +333,10 @@ func main() {
 	mux.Handle("POST /admin/compliance/{id}/approve", sessionGuard(http.HandlerFunc(complianceHandler.ApproveHandler)))
 	mux.Handle("POST /admin/compliance/{id}/reject", sessionGuard(http.HandlerFunc(complianceHandler.RejectHandler)))
 
+	// Story 7.12: Audit Log page — read-only, no POST handlers.
+	auditLogHandler := admin.NewAuditLogHandler(tmplHandler)
+	mux.Handle("GET /admin/audit-log", csrf(sessionGuard(http.HandlerFunc(auditLogHandler.ListHandler))))
+
 	checker := admin.NewPostgresBootstrapChecker(bootstrapDB)
 	bootstrapHandler := admin.NewBootstrapHandler(checker, tmplHandler, bootstrapDB, []byte(internalSecret))
 	guard := admin.BootstrapGuard(checker)
