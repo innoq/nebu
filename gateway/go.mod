@@ -5,7 +5,7 @@ go 1.26
 require (
 	github.com/coreos/go-oidc/v3 v3.17.0
 	github.com/cucumber/godog v0.15.1
-	github.com/go-jose/go-jose/v4 v4.1.3
+	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/jackc/pgx/v5 v5.8.0
