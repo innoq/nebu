@@ -289,4 +289,84 @@ defmodule Compliance.AuditWriterTest do
     assert result == {:error, :audit_write_invalid}
     assert Agent.get(bucket, & &1) == []
   end
+
+  # ─── Story 5.29c: FB-52-02 — Action Allowlist (AC8) ─────────────────────────
+  #
+  # RED-phase: these tests FAIL until Compliance.AuditWriter is extended with a
+  # @known_actions allowlist check. Currently, any non-nil action string passes
+  # the changeset validation (validates only presence, not vocabulary).
+  #
+  # Fix required: add an allowlist check in AuditWriter.log/6+7 (or in the
+  # AuditLogEntry changeset) that rejects unknown action strings with
+  # {:error, :audit_unknown_action}.
+  #
+  # AC8 coverage:
+  #   - "log/6 — rejects unknown action via allowlist"
+  #   - "log/6+7 — all known Epic-5 actions pass allowlist"
+
+  test "log/6 — rejects unknown action via allowlist", %{bucket: bucket} do
+    # "rogue_event" is not in the @known_actions list — must be rejected.
+    result =
+      Compliance.AuditWriter.log(
+        "user-1",
+        "rogue_event",
+        "user",
+        "user-1",
+        %{},
+        "success"
+      )
+
+    assert result == {:error, :audit_unknown_action},
+           "expected {:error, :audit_unknown_action} for unknown action, got #{inspect(result)}"
+
+    assert Agent.get(bucket, & &1) == [],
+           "no row must be inserted for unknown action"
+  end
+
+  test "log/6 — all known Epic-5 actions pass allowlist", %{bucket: bucket} do
+    # All actions that Epic 5 stories emit must be in the allowlist.
+    # compliance_session_revoked is new in Story 5.29c (AC2).
+    known_actions = [
+      "admin_login",
+      "admin_login_failed",
+      "admin_logout",
+      "bootstrap_completed",
+      "bootstrap_failed",
+      "room_created",
+      "room_joined",
+      "compliance_access_requested",
+      "compliance_access_approved",
+      "compliance_access_rejected",
+      "compliance_session_issued",
+      "compliance_session_expired",
+      "compliance_session_revoked",
+      "compliance_export_downloaded",
+      "user_keys_deleted",
+      "user_keys_deletion_attempted",
+      "user_anonymized"
+    ]
+
+    Enum.each(known_actions, fn action ->
+      # Reset bucket between calls to keep counts clean.
+      Agent.update(bucket, fn _ -> [] end)
+
+      result =
+        Compliance.AuditWriter.log(
+          "user-1",
+          action,
+          "user",
+          "user-1",
+          %{},
+          "success"
+        )
+
+      assert result == :ok,
+             "Expected :ok for known action #{inspect(action)}, got #{inspect(result)}"
+
+      rows = Agent.get(bucket, & &1)
+
+      assert length(rows) == 1,
+             "Expected 1 row inserted for action #{inspect(action)}, got #{length(rows)}"
+    end)
+  end
 end

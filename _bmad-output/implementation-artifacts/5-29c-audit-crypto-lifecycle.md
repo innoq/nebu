@@ -4,7 +4,7 @@ security_review: required
 
 # Story 5.29c: Audit & Crypto Lifecycle — JWT Revocation, Search Filter, Retention Scheduler, Key At-Rest
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -101,6 +101,34 @@ Per finding (RED-phase first):
 
 ---
 
+## Dev Agent Record
+
+**Agent:** Amelia (Dev)
+**Completed:** 2026-04-28
+**make test-unit-go:** exit 0 (all packages pass)
+**make test-unit-elixir:** exit 0 (all tests pass)
+
+### File List
+
+**New files:**
+- `gateway/internal/compliance/signing_key.go` — AC9: EnsureComplianceSigningKey / LoadComplianceSigningKey with enc: prefix scheme
+- `gateway/internal/compliance/session_revoke.go` — AC1+AC2: SQLSessionLookupDB + RevokeSessionHandler
+- `gateway/internal/audit/scheduler.go` — AC5: PurgeScheduler goroutine (injectable tick channel)
+- `gateway/migrations/000025_audit_log_event_time_trigger.up.sql` — AC6+AC7: BEFORE INSERT trigger + purge upper-bound
+- `gateway/migrations/000025_audit_log_event_time_trigger.down.sql` — rollback
+
+**Modified files:**
+- `gateway/internal/compliance/jwt.go` — AC1+AC4: SessionLookupDB interface, ValidateComplianceToken 4-arg signature, iss/aud claims check, revocation DB check
+- `gateway/internal/compliance/handler.go` — AC4: set Iss/Aud explicitly in claims (IssueComplianceToken no longer auto-fills)
+- `gateway/internal/audit/audit.go` — AC7: RunCleanup rejects retentionDays > 36500
+- `gateway/internal/db/user_directory_store.go` — AC3: SearchUsers excludes anonymized/key-deleted users
+- `gateway/cmd/gateway/main.go` — AC5+AC9: PurgeScheduler goroutine, AES-256-GCM encrypt/decrypt helpers, EnsureComplianceSigningKey call, RevokeSession route
+- `core/apps/compliance/lib/compliance/audit_writer.ex` — AC8: @known_actions allowlist
+- `gateway/internal/compliance/jwt_test.go` — updated legacy tests to set Iss/Aud explicitly
+- `gateway/internal/compliance/export_test.go` — updated token creation helpers + fake DB for compliance_sessions
+- `gateway/internal/compliance/signing_key_test.go` — fixed fake driver Exec to store args[0] for priv key
+
 ## Change Log
 
 - 2026-04-23: Story split out from 5-29 master collector. Bundles FB-E5-04, FB-E5-05, FB-E5-06, FB-E5-07, FB-51-02, FB-52-02, FB-55-01.
+- 2026-04-28: Implementation complete. All 9 ACs green. Status → review.

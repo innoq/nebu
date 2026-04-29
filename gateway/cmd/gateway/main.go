@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/tls"
@@ -13,11 +15,13 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/nebu/nebu/internal/admin"
+	"github.com/nebu/nebu/internal/audit"
 	"github.com/nebu/nebu/internal/auth"
 	"github.com/nebu/nebu/internal/buffer"
 	"github.com/nebu/nebu/internal/compliance"
@@ -244,6 +248,26 @@ func main() {
 				return
 			}
 		}
+	}()
+
+	// Story 5.29c AC5 (FB-E5-07): Audit log retention purge scheduler — runs every 24h.
+	// Reads retention_days from server_config (default 2555 = 7 years).
+	// Uses a goroutine-based ticker so no external cron/queue is needed.
+	go func() {
+		retentionDays := loadAuditRetentionDays(bootstrapDB)
+		auditDB, err := sql.Open("pgx", cfg.DBURL)
+		if err != nil {
+			slog.Error("audit scheduler: failed to open DB", "err", err)
+			return
+		}
+		defer auditDB.Close()
+		cleanupFn := func(ctx context.Context) (int64, error) {
+			return audit.RunCleanup(ctx, auditDB, retentionDays)
+		}
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		scheduler := audit.NewPurgeScheduler(retentionDays, cleanupFn, ticker.C)
+		scheduler.Start(ctx)
 	}()
 
 	// Legacy routes (backward compatibility — Story 3.10 will supersede)
@@ -745,7 +769,44 @@ func main() {
 	// Seed / load the compliance signing Ed25519 keypair from server_config.
 	// This key is persisted (unlike :nebu_signing_key in Elixir, which is ephemeral).
 	// The key is read once at startup; it lives in process memory during runtime.
-	compSignKey, compPubKey, err := ensureComplianceSigningKey(complianceDB)
+	//
+	// Story 5.29c AC9: key is stored encrypted via AES-256-GCM.
+	// NEBU_KEY_ENCRYPTION_KEY: 32-byte hex master key from env (or dev default).
+	kekHex := os.Getenv("NEBU_KEY_ENCRYPTION_KEY")
+	if kekHex == "" {
+		// Dev-only default: all-zeros 32 bytes. NOT suitable for production.
+		slog.Warn("NEBU_KEY_ENCRYPTION_KEY not set — using dev-only key (NOT safe for production)")
+		kekHex = "0000000000000000000000000000000000000000000000000000000000000000"
+	}
+	kekBytes, err := hex.DecodeString(kekHex)
+	if err != nil || len(kekBytes) != 32 {
+		slog.Error("NEBU_KEY_ENCRYPTION_KEY must be 64 hex chars (32 bytes)", "err", err)
+		os.Exit(1)
+	}
+	keyEncFn := newAES256GCMEncrypt(kekBytes)
+	keyDecFn := newAES256GCMDecrypt(kekBytes)
+
+	// One-time legacy migration: pre-5.29c deployments stored the compliance
+	// signing key as plaintext hex in server_config. server_config has only
+	// INSERT and SELECT policies under FORCE RLS so the runtime nebu_app role
+	// cannot UPDATE it — we use the migration role (NEBU_DB_URL_MIGRATE,
+	// nebu_migrate has BYPASSRLS) to rewrite the row to the new "enc:" format.
+	// Idempotent: no-op for fresh deployments and for already-encrypted rows.
+	if cfg.DBURLMigrate != "" {
+		migrateDB, mErr := sql.Open("pgx", cfg.DBURLMigrate)
+		if mErr != nil {
+			slog.Error("failed to open migrate DB for compliance key migration", "err", mErr)
+			os.Exit(1)
+		}
+		if mErr := compliance.MigrateLegacyPlaintextKey(ctx, migrateDB, keyEncFn); mErr != nil {
+			slog.Error("MigrateLegacyPlaintextKey failed", "err", mErr)
+			_ = migrateDB.Close()
+			os.Exit(1)
+		}
+		_ = migrateDB.Close()
+	}
+
+	compSignKey, compPubKey, err := compliance.EnsureComplianceSigningKey(ctx, complianceDB, keyEncFn, keyDecFn)
 	if err != nil {
 		slog.Error("failed to seed/load compliance signing key", "err", err)
 		os.Exit(1)
@@ -770,6 +831,21 @@ func main() {
 	}
 	mux.Handle("GET /api/v1/compliance/export",
 		jwtMiddleware(http.HandlerFunc(exportHandler.GetExport)))
+
+	// Story 5.29c AC2 — Compliance session revoke endpoint.
+	// POST /api/v1/admin/compliance/sessions/{sessionId}/revoke
+	// Auth: sessionGuard (admin session, not JWT) — analogous to pending-count (Story 5.4).
+	// Role gate: instance_admin only (enforced inside handler).
+	// CSRF: state-changing cookie-authenticated POST — must be wrapped in csrf
+	// like every other admin POST (Logout, Bootstrap, Select-Claim). Without
+	// this, a lure-attack would let an attacker revoke compliance sessions
+	// via a forged form post. Kassandra HIGH-1 fix (2026-04-29).
+	revokeSessionHandler := &compliance.RevokeSessionHandler{
+		DB:         complianceDB,
+		CoreClient: coreClient.CoreServiceClient(),
+	}
+	mux.Handle("POST /api/v1/admin/compliance/sessions/{sessionId}/revoke",
+		bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(revokeSessionHandler.RevokeSession)))))
 
 	// Story 5.7 — DSGVO User Key Deletion
 	// Route namespace: /api/v1/admin/* — instance_admin only, role gate inside handler.
@@ -854,6 +930,70 @@ func main() {
 	if err := srv.ListenAndServe(); err != nil {
 		slog.Error("HTTP server failed", "err", err)
 		os.Exit(1)
+	}
+}
+
+// loadAuditRetentionDays reads audit_log_retention_days from server_config.
+// Falls back to 2555 (7 years) if the key is missing or unparseable.
+func loadAuditRetentionDays(db *sql.DB) int {
+	const defaultDays = 2555
+	var val string
+	err := db.QueryRowContext(context.Background(),
+		`SELECT value FROM server_config WHERE key = 'audit_log_retention_days'`,
+	).Scan(&val)
+	if err != nil {
+		return defaultDays
+	}
+	days, err := strconv.Atoi(val)
+	if err != nil || days < 1 || days > 36500 {
+		slog.Warn("audit: invalid audit_log_retention_days in server_config — using default",
+			"raw_value", val, "default", defaultDays)
+		return defaultDays
+	}
+	return days
+}
+
+// newAES256GCMEncrypt returns a KeyEncryptFn backed by AES-256-GCM with the given master key.
+// The ciphertext format is: nonce (12 bytes) || ciphertext (plaintext + 16-byte tag).
+func newAES256GCMEncrypt(masterKey []byte) compliance.KeyEncryptFn {
+	return func(plaintext []byte) ([]byte, error) {
+		block, err := aes.NewCipher(masterKey)
+		if err != nil {
+			return nil, fmt.Errorf("AES cipher: %w", err)
+		}
+		gcm, err := cipher.NewGCM(block)
+		if err != nil {
+			return nil, fmt.Errorf("GCM: %w", err)
+		}
+		nonce := make([]byte, gcm.NonceSize())
+		if _, err := rand.Read(nonce); err != nil {
+			return nil, fmt.Errorf("nonce: %w", err)
+		}
+		ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
+		return ciphertext, nil
+	}
+}
+
+// newAES256GCMDecrypt returns a KeyDecryptFn backed by AES-256-GCM with the given master key.
+func newAES256GCMDecrypt(masterKey []byte) compliance.KeyDecryptFn {
+	return func(ciphertext []byte) ([]byte, error) {
+		block, err := aes.NewCipher(masterKey)
+		if err != nil {
+			return nil, fmt.Errorf("AES cipher: %w", err)
+		}
+		gcm, err := cipher.NewGCM(block)
+		if err != nil {
+			return nil, fmt.Errorf("GCM: %w", err)
+		}
+		if len(ciphertext) < gcm.NonceSize() {
+			return nil, fmt.Errorf("ciphertext too short")
+		}
+		nonce, ciphertextBody := ciphertext[:gcm.NonceSize()], ciphertext[gcm.NonceSize():]
+		plaintext, err := gcm.Open(nil, nonce, ciphertextBody, nil)
+		if err != nil {
+			return nil, fmt.Errorf("GCM decrypt: %w", err)
+		}
+		return plaintext, nil
 	}
 }
 

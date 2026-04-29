@@ -39,6 +39,70 @@ Four findings cluster as "fix the test/dev infrastructure that the production wo
 - Source: 5-3 Kassandra (paired with FB-54-01, but FB-54-01 length-cap landed in 5-29b).
 - Fix: Playwright test in 5-4 admin-pending-list rendering: submit a request with `justification = "<script>alert(1)</script>"`, render in admin pending-list, assert no script execution. Server-side check: confirm Go html/template auto-escape (no `template.HTML` raw escape, no innerHTML in client-side JS).
 
+### FB-29c-1 — `NEBU_KEY_ENCRYPTION_KEY` zero-default also boots in production (MEDIUM)
+
+**Source:** Story 5-29c Kassandra SEC Gate 1 (2026-04-29).
+**Severity:** MEDIUM (deployment safety).
+**Size estimate:** XS.
+
+**Observation:** When `NEBU_KEY_ENCRYPTION_KEY` is unset, the gateway logs a warning and continues with a zero-byte default KEK. This is the right behaviour in dev but unacceptable in production — a zero KEK is effectively no encryption.
+
+**Fix:** Hard-fail (`os.Exit(1)`) when KEK is missing, unless `cfg.Env != "production"` OR a new `NEBU_ALLOW_INSECURE_KEK=true` opt-in env is set. Tests: assert startup-fail on production env without KEK.
+
+**Why deferred:** ops-policy decision; bundles cleanly with 5-29d's dev-vs-prod separation work.
+
+---
+
+### FB-29c-2 — Compliance signing-key KEK rotation requires manual migration (MEDIUM)
+
+**Source:** Story 5-29c Kassandra SEC Gate 1 (2026-04-29).
+**Severity:** MEDIUM (key-management hygiene).
+**Size estimate:** S.
+
+**Observation:** Encrypted envelope `enc:<hex(ciphertext)>` carries no `key_version`. KEK rotation requires the operator to manually:
+1. Stop gateway
+2. Decrypt all stored values with old KEK (using a dump of the env)
+3. Re-encrypt with new KEK
+4. UPDATE rows
+5. Set new KEK env and restart
+
+**Fix:** Bake `key_version` into the envelope (`enc:v1:<hex>`) and document a `make rotate-kek` operational target. Tests: rotate-and-decrypt smoke.
+
+**Why deferred:** Architectural — needs an ADR for key-versioning convention; bundle with 5-29d's KEK hardening work.
+
+---
+
+### FB-29c-3 — Purge scheduler runs on every gateway instance without jitter (MEDIUM)
+
+**Source:** Story 5-29c Kassandra SEC Gate 1 (2026-04-29).
+**Severity:** MEDIUM (resource contention, not correctness).
+**Size estimate:** XS.
+
+**Observation:** `PurgeScheduler.Run` ticks every 24h. Multiple gateway instances all tick simultaneously and call `audit_log_purge` in parallel. The function is atomic in a single SQL TX so correctness is preserved, but:
+- Lock contention on `audit_log` during purge.
+- Audit log records of "scheduler ran" multiply by instance count.
+
+**Fix options:**
+1. Random-jitter on tick (`24h ± 1h`) so instances don't all hit at the same minute.
+2. Leader-election via Postgres advisory lock (`pg_try_advisory_lock`).
+3. Move scheduler to Elixir core (single-instance domain).
+
+**Why deferred:** MVP single-instance assumption is acceptable; multi-instance is Phase 2.
+
+---
+
+### FB-29c-4 — `MigrateLegacyPlaintextKey` legacy detection only by exact length (LOW)
+
+**Source:** Story 5-29c Kassandra SEC Gate 1 (2026-04-29).
+**Severity:** LOW (edge case, low impact).
+**Size estimate:** XS.
+
+**Observation:** Legacy detection requires exactly 128 hex chars. A row that is e.g. 127 chars due to corruption returns an error instead of triggering re-encryption. Acceptable today (no known way to produce such a row), but a stricter "looks like hex of any length" check would be more robust.
+
+**Why deferred:** Edge case; bundle with 5-29d.
+
+---
+
 ### FB-E5-09 — `DeleteUserKeys` gRPC subsumed by FB-52-01 (INFO — close-out only)
 - Source: Epic-5 SEC Gate 2.
 - Action: no separate fix needed. Once 5-29a Block B (gRPC mTLS/auth) lands, `DeleteUserKeys` is protected by the same interceptor as every other RPC. This block exists only to close the audit trail.

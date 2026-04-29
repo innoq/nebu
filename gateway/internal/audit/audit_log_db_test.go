@@ -297,6 +297,96 @@ func TestAuditLogMigration_RLSAllowsSelect(t *testing.T) {
 	}
 }
 
+// ─── Story 5.29c: FB-51-02 — event_time BEFORE INSERT trigger (AC6) ──────────
+//
+// RED-phase: this test FAILS until migration 000025 adds a BEFORE INSERT trigger
+// that sets NEW.event_time := NOW(), overriding any caller-supplied value.
+//
+// Without the trigger, explicit event_time values in INSERT statements are
+// persisted as-is — a potential audit backdating attack. After the trigger is
+// applied, the row's event_time must reflect the server's clock, not the caller's.
+//
+// Dependency note: this test only verifies enforcement meaningfully AFTER Story
+// 5-29a's role split (nebu_app is no longer a superuser and cannot bypass RLS).
+
+// TestAuditLog_EventTimeTrigger_OverridesCallerValue — AC6
+//
+// Given: INSERT into audit_log with explicit event_time='2000-01-01'
+// When:  row is fetched back
+// Then:  stored event_time is approximately NOW() (not 2000-01-01)
+//        (trigger must override caller-supplied value)
+func TestAuditLog_EventTimeTrigger_OverridesCallerValue(t *testing.T) {
+	db := openPrivilegedDB(t)
+	ctx := context.Background()
+
+	// Insert with a backdated event_time. Without the trigger, this would persist.
+	var rowID int64
+	if err := db.QueryRowContext(ctx,
+		`INSERT INTO audit_log (event_time, actor_user_id, action, outcome)
+		 VALUES ('2000-01-01T00:00:00Z', 'sys-trigger-test', 'trigger_override_test', 'success')
+		 RETURNING id`,
+	).Scan(&rowID); err != nil {
+		t.Fatalf("AC6 setup: INSERT failed: %v — migration 000018 not applied", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(ctx, "DELETE FROM audit_log WHERE id = $1", rowID)
+	})
+
+	// Fetch the stored event_time.
+	var storedEventTime time.Time
+	if err := db.QueryRowContext(ctx,
+		"SELECT event_time FROM audit_log WHERE id = $1", rowID,
+	).Scan(&storedEventTime); err != nil {
+		t.Fatalf("AC6: SELECT event_time failed: %v", err)
+	}
+
+	// The trigger must have overridden the caller's 2000-01-01 with NOW().
+	// Accept ±60s clock skew. The year 2000 is obviously wrong.
+	if storedEventTime.Year() < 2020 {
+		t.Errorf("AC6 FAIL: event_time was NOT overridden by trigger — "+
+			"stored event_time is %v (expected approximately NOW()) — "+
+			"BEFORE INSERT trigger setting NEW.event_time := NOW() is missing",
+			storedEventTime)
+		return
+	}
+
+	// Also verify it is within 60 seconds of now (not future-dated or stale).
+	diff := time.Since(storedEventTime)
+	if diff < -60*time.Second || diff > 60*time.Second {
+		t.Errorf("AC6 FAIL: trigger-set event_time=%v is not within 60s of NOW() (diff=%v)",
+			storedEventTime, diff)
+	} else {
+		t.Logf("AC6 PASS: event_time=%v correctly set by trigger (diff=%v)", storedEventTime, diff)
+	}
+}
+
+// TestAuditLogPurge_RaisesOnExtremeRetentionDays — AC7 (SQL function guard)
+//
+// Given: audit_log_purge PostgreSQL function
+// When:  called with retention_days=36501 (> 36500)
+// Then:  raises a PostgreSQL RAISE EXCEPTION (SQL error propagated to Go)
+//
+// This complements TestRunCleanup_RejectsExtremeRetentionDays (Go-side guard)
+// by testing that the SECURITY DEFINER function itself also rejects the extreme value.
+// Defense-in-depth: both the Go layer and SQL layer must guard the upper bound.
+func TestAuditLogPurge_RaisesOnExtremeRetentionDays(t *testing.T) {
+	db := openPrivilegedDB(t)
+	ctx := context.Background()
+
+	var deleted int64
+	err := db.QueryRowContext(ctx,
+		"SELECT audit_log_purge($1)", 36501,
+	).Scan(&deleted)
+
+	if err == nil {
+		t.Errorf("AC7 FAIL: audit_log_purge(36501) succeeded — "+
+			"SQL function must RAISE EXCEPTION for retention_days > 36500 "+
+			"to prevent make_interval integer overflow")
+	} else {
+		t.Logf("AC7 PASS: audit_log_purge(36501) raised error: %v", err)
+	}
+}
+
 // TestAuditLogPurge_SecurityDefinerElevatesAppRole — AC2/AC4 contrast test
 //
 // Proves the security claim of the SECURITY DEFINER function audit_log_purge():
@@ -311,7 +401,11 @@ func TestAuditLogMigration_RLSAllowsSelect(t *testing.T) {
 // code to silently no-op the day the connection role changes — and every
 // other test would still pass.
 func TestAuditLogPurge_SecurityDefinerElevatesAppRole(t *testing.T) {
-	privilegedDB := openPrivilegedDB(t)
+	// openSeedDB bypasses the BEFORE INSERT trigger via session_replication_role
+	// = replica so the historical event_time below survives into the row. Without
+	// this the new event_time-trigger from Story 5.29c (migration 000025) would
+	// rewrite the seed timestamp to NOW() and the purge would never fire.
+	privilegedDB := openSeedDB(t)
 	ctx := context.Background()
 
 	// Seed one row dated 3000 days ago (far past any reasonable retention).

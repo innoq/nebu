@@ -38,6 +38,24 @@ func openPrivilegedDB(t *testing.T) *sql.DB {
 	return db
 }
 
+// openSeedDB opens a privileged DB connection AND disables triggers on the
+// session via `SET session_replication_role = replica`. Use this for seeding
+// historical audit_log rows with an explicit event_time value — the BEFORE
+// INSERT trigger added by Story 5.29c (migration 000025) would otherwise
+// override caller-supplied event_time with NOW(), breaking retention tests.
+//
+// Only the migration role (nebu_migrate / superuser) can change
+// session_replication_role; with NEBU_TEST_MIGRATION_DB_URL configured for
+// nebu_migrate (post Story 5.29a) this works as expected.
+func openSeedDB(t *testing.T) *sql.DB {
+	t.Helper()
+	db := openPrivilegedDB(t)
+	if _, err := db.Exec("SET session_replication_role = replica"); err != nil {
+		t.Fatalf("openSeedDB: cannot disable triggers (need migration role / superuser): %v", err)
+	}
+	return db
+}
+
 // openAppRoleDB opens a connection as the application role (nebu user) to test RLS.
 // NEBU_TEST_DB_URL must point to a connection authenticated as the nebu role.
 func openAppRoleDB(t *testing.T) *sql.DB {

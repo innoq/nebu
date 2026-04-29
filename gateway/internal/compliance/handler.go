@@ -553,6 +553,8 @@ func (h *SessionHandler) PostSession(w http.ResponseWriter, r *http.Request) {
 		TimeRangeEnd:        timeRangeEnd,
 		Iat:                 now.Unix(),
 		Exp:                 now.Add(86400 * time.Second).Unix(),
+		Iss:                 JWTIssuer,   // AC4: must be set explicitly (Story 5.29c)
+		Aud:                 JWTAudience, // AC4: must be set explicitly (Story 5.29c)
 	}
 
 	tokenStr, err := IssueComplianceToken(h.SigningKey, claims)
@@ -670,7 +672,9 @@ func (h *ExportHandler) GetExport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Step 3: Validate token (reuse ValidateComplianceToken from jwt.go).
-	claims, err := ValidateComplianceToken(tokenStr, h.PublicKey, callerSub)
+	// Pass h.DB as the SessionLookupDB — it implements IsTokenActive via SQLSessionLookupDB (AC1, Story 5.29c).
+	sessionDB := &SQLSessionLookupDB{DB: h.DB}
+	claims, err := ValidateComplianceToken(r.Context(), tokenStr, h.PublicKey, callerSub, sessionDB)
 	if err != nil {
 		writeComplianceError(w, http.StatusUnauthorized, "M_UNKNOWN_TOKEN", "Invalid or expired compliance token")
 		return

@@ -28,6 +28,10 @@ func RunCleanup(ctx context.Context, db *sql.DB, retentionDays int) (int64, erro
 	if retentionDays < 1 {
 		return 0, ErrInvalidRetentionDays
 	}
+	// AC7 (Story 5.29c): cap at 36500 days (~100 years) to prevent make_interval overflow in SQL.
+	if retentionDays > 36500 {
+		return 0, ErrInvalidRetentionDays
+	}
 	var deleted int64
 	err := db.QueryRowContext(ctx,
 		"SELECT audit_log_purge($1)", retentionDays,

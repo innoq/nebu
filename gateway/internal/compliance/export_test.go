@@ -155,6 +155,16 @@ func (s *exportFakeStmt) Exec(args []driver.Value) (driver.Result, error) {
 }
 
 func (s *exportFakeStmt) Query(args []driver.Value) (driver.Rows, error) {
+	// Pattern 0: compliance_sessions token-hash revocation check (AC1, Story 5.29c)
+	// SELECT 1 FROM compliance_sessions WHERE token_hash=$1 AND revoked_at IS NULL
+	// Return a row with value 1 to indicate the session is active (not revoked).
+	if strings.Contains(s.query, "compliance_sessions") && strings.Contains(s.query, "token_hash") {
+		return &exportFakeRows{
+			cols: []string{"?column?"},
+			data: [][]driver.Value{{int64(1)}}, // active session
+		}, nil
+	}
+
 	// Pattern 1: compliance_requests pre-flight
 	// SELECT requester_user_id, approver_user_id FROM compliance_requests WHERE id = $1
 	if strings.Contains(s.query, "compliance_requests") &&
@@ -281,6 +291,8 @@ func issueTestComplianceToken(t *testing.T, sub, requestID, roomID, start, end s
 		TimeRangeEnd:        end,
 		Iat:                 now,
 		Exp:                 now + expOffset,
+		Iss:                 compliance.JWTIssuer,   // AC4: required for ValidateComplianceToken
+		Aud:                 compliance.JWTAudience, // AC4: required for ValidateComplianceToken
 	}
 	tok, err := compliance.IssueComplianceToken(testExportPriv, claims)
 	if err != nil {
@@ -707,6 +719,8 @@ func TestGetExport_TamperedToken(t *testing.T) {
 		TimeRangeEnd:        exportTestEnd,
 		Iat:                 now,
 		Exp:                 now + exportTokenTTL,
+		Iss:                 compliance.JWTIssuer,
+		Aud:                 compliance.JWTAudience,
 	}
 	tamperedTok, err := compliance.IssueComplianceToken(attackerPriv, attackerClaims)
 	if err != nil {
@@ -1097,6 +1111,8 @@ func TestGetExport_MalformedTimeRangeClaim_Returns500(t *testing.T) {
 		TimeRangeEnd:        exportTestEnd,
 		Iat:                 now,
 		Exp:                 now + exportTokenTTL,
+		Iss:                 compliance.JWTIssuer,
+		Aud:                 compliance.JWTAudience,
 	}
 	tok, err := compliance.IssueComplianceToken(testExportPriv, badClaims)
 	if err != nil {

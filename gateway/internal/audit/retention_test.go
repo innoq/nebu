@@ -42,7 +42,12 @@ import (
 //
 // This test FAILS until audit.RunCleanup is implemented in retention.go.
 func TestAuditLogRetentionCleanup_DeletesOldRows(t *testing.T) {
-	db := openPrivilegedDB(t)
+	// openSeedDB disables triggers via session_replication_role=replica so the
+	// historical event_time we INSERT survives the BEFORE INSERT trigger from
+	// migration 000025 (Story 5.29c AC6). Without this the trigger would
+	// silently overwrite event_time to NOW() and the retention test would
+	// observe 0 rows removed.
+	db := openSeedDB(t)
 	ctx := context.Background()
 
 	// Insert a row that is older than the retention window.
@@ -114,7 +119,8 @@ func TestAuditLogRetentionCleanup_DeletesOldRows(t *testing.T) {
 // When:  RunCleanup is called with that retention_days value
 // Then:  the boundary row is deleted (event_time < NOW() - INTERVAL, not <=)
 func TestAuditLogRetentionCleanup_RespectsRetentionDays(t *testing.T) {
-	db := openPrivilegedDB(t)
+	// openSeedDB: see DeletesOldRows above — same trigger-bypass requirement.
+	db := openSeedDB(t)
 	ctx := context.Background()
 
 	const retentionDays = 2555

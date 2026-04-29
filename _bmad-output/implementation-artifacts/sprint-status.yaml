@@ -503,7 +503,7 @@ development_status:
   5-29-security-followup-collector: done
   5-29a-trust-model-tightening: done                   # FB-51-01 + FB-52-01 closed
   5-29b-compliance-endpoint-hardening: ready-for-dev   # 8 MEDIUM/LOW
-  5-29c-audit-crypto-lifecycle: ready-for-dev          # 2 HIGH + 5 MEDIUM
+  5-29c-audit-crypto-lifecycle: review                  # 2 HIGH + 5 MEDIUM
   5-29d-test-infra-and-dev-hardening: ready-for-dev    # 1 MEDIUM + 2 LOW + 1 INFO
   5-29e-manual-testing-bugs: done                      # Bugs 1+2b+3+4 (sync device fields)
   # Security Hardening — Group H: Pipeline / Process

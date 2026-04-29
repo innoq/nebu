@@ -17,11 +17,13 @@ package compliance_test
 //   AC8 — ValidateComplianceToken (all six tests below)
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -46,6 +48,8 @@ func TestValidateComplianceToken_Valid(t *testing.T) {
 		TimeRangeEnd:        "2026-03-31T23:59:59Z",
 		Iat:                 time.Now().Unix(),
 		Exp:                 time.Now().Add(3600 * time.Second).Unix(),
+		Iss:                 compliance.JWTIssuer,   // AC4: required
+		Aud:                 compliance.JWTAudience, // AC4: required
 	}
 
 	tokenStr, err := compliance.IssueComplianceToken(testSessionPriv, claims)
@@ -53,7 +57,8 @@ func TestValidateComplianceToken_Valid(t *testing.T) {
 		t.Fatalf("IssueComplianceToken failed: %v", err)
 	}
 
-	got, err := compliance.ValidateComplianceToken(tokenStr, testSessionPub, "@alice:server.example")
+	activeDB := &mockSessionLookupDB{tokenHashFound: true, revoked: false}
+	got, err := compliance.ValidateComplianceToken(context.Background(), tokenStr, testSessionPub, "@alice:server.example", activeDB)
 	if err != nil {
 		t.Fatalf("ValidateComplianceToken returned error for valid token: %v", err)
 	}
@@ -89,6 +94,8 @@ func TestValidateComplianceToken_Expired(t *testing.T) {
 		TimeRangeEnd:        "2026-03-31T23:59:59Z",
 		Iat:                 time.Now().Add(-7200 * time.Second).Unix(),
 		Exp:                 time.Now().Add(-1 * time.Second).Unix(), // 1 second in the past
+		Iss:                 compliance.JWTIssuer,
+		Aud:                 compliance.JWTAudience,
 	}
 
 	tokenStr, err := compliance.IssueComplianceToken(testSessionPriv, claims)
@@ -96,7 +103,8 @@ func TestValidateComplianceToken_Expired(t *testing.T) {
 		t.Fatalf("IssueComplianceToken failed: %v", err)
 	}
 
-	got, err := compliance.ValidateComplianceToken(tokenStr, testSessionPub, "@alice:server.example")
+	activeDB := &mockSessionLookupDB{tokenHashFound: true, revoked: false}
+	got, err := compliance.ValidateComplianceToken(context.Background(), tokenStr, testSessionPub, "@alice:server.example", activeDB)
 	if err == nil {
 		t.Fatal("ValidateComplianceToken must return error for expired token, got nil error")
 	}
@@ -121,6 +129,8 @@ func TestValidateComplianceToken_IatInFuture(t *testing.T) {
 		TimeRangeEnd:        "2026-03-31T23:59:59Z",
 		Iat:                 time.Now().Add(2 * time.Hour).Unix(), // far in the future
 		Exp:                 time.Now().Add(26 * time.Hour).Unix(),
+		Iss:                 compliance.JWTIssuer,
+		Aud:                 compliance.JWTAudience,
 	}
 
 	tokenStr, err := compliance.IssueComplianceToken(testSessionPriv, claims)
@@ -128,7 +138,8 @@ func TestValidateComplianceToken_IatInFuture(t *testing.T) {
 		t.Fatalf("IssueComplianceToken failed: %v", err)
 	}
 
-	got, err := compliance.ValidateComplianceToken(tokenStr, testSessionPub, "@alice:server.example")
+	activeDB := &mockSessionLookupDB{tokenHashFound: true, revoked: false}
+	got, err := compliance.ValidateComplianceToken(context.Background(), tokenStr, testSessionPub, "@alice:server.example", activeDB)
 	if err == nil {
 		t.Fatal("ValidateComplianceToken must return error for future-iat token, got nil error")
 	}
@@ -152,6 +163,8 @@ func TestValidateComplianceToken_SubMismatch(t *testing.T) {
 		TimeRangeEnd:        "2026-03-31T23:59:59Z",
 		Iat:                 time.Now().Unix(),
 		Exp:                 time.Now().Add(3600 * time.Second).Unix(),
+		Iss:                 compliance.JWTIssuer,
+		Aud:                 compliance.JWTAudience,
 	}
 
 	tokenStr, err := compliance.IssueComplianceToken(testSessionPriv, claims)
@@ -159,7 +172,8 @@ func TestValidateComplianceToken_SubMismatch(t *testing.T) {
 		t.Fatalf("IssueComplianceToken failed: %v", err)
 	}
 
-	got, err := compliance.ValidateComplianceToken(tokenStr, testSessionPub, "@bob:server.example") // different sub
+	activeDB := &mockSessionLookupDB{tokenHashFound: true, revoked: false}
+	got, err := compliance.ValidateComplianceToken(context.Background(), tokenStr, testSessionPub, "@bob:server.example", activeDB) // different sub
 	if err == nil {
 		t.Fatal("ValidateComplianceToken must return error when sub mismatches, got nil error")
 	}
@@ -190,6 +204,8 @@ func TestValidateComplianceToken_InvalidSignature(t *testing.T) {
 		TimeRangeEnd:        "2026-03-31T23:59:59Z",
 		Iat:                 time.Now().Unix(),
 		Exp:                 time.Now().Add(3600 * time.Second).Unix(),
+		Iss:                 compliance.JWTIssuer,
+		Aud:                 compliance.JWTAudience,
 	}
 
 	// Sign with the OTHER private key
@@ -199,7 +215,8 @@ func TestValidateComplianceToken_InvalidSignature(t *testing.T) {
 	}
 
 	// Verify with the TEST public key — must fail
-	got, err := compliance.ValidateComplianceToken(tokenStr, testSessionPub, "@alice:server.example")
+	activeDB := &mockSessionLookupDB{tokenHashFound: true, revoked: false}
+	got, err := compliance.ValidateComplianceToken(context.Background(), tokenStr, testSessionPub, "@alice:server.example", activeDB)
 	if err == nil {
 		t.Fatal("ValidateComplianceToken must return error for mismatched signature, got nil error")
 	}
@@ -258,7 +275,8 @@ func TestValidateComplianceToken_AlgConfusion(t *testing.T) {
 	tokenStr := jws.FullSerialize()
 
 	// ValidateComplianceToken must reject this — alg is HS256, not EdDSA
-	got, err := compliance.ValidateComplianceToken(tokenStr, testSessionPub, "@alice:server.example")
+	activeDB := &mockSessionLookupDB{tokenHashFound: true, revoked: false}
+	got, err := compliance.ValidateComplianceToken(context.Background(), tokenStr, testSessionPub, "@alice:server.example", activeDB)
 	if err == nil {
 		t.Fatal("ValidateComplianceToken must reject HS256-signed token (algorithm confusion), got nil error")
 	}
@@ -284,12 +302,299 @@ func TestValidateComplianceToken_AlgConfusion(t *testing.T) {
 func TestValidateComplianceToken_MalformedToken(t *testing.T) {
 	initTestSessionKey()
 
-	got, err := compliance.ValidateComplianceToken("not.a.valid.jwt.string", testSessionPub, "@alice:server.example")
+	activeDB := &mockSessionLookupDB{tokenHashFound: true, revoked: false}
+	got, err := compliance.ValidateComplianceToken(context.Background(), "not.a.valid.jwt.string", testSessionPub, "@alice:server.example", activeDB)
 	if err == nil {
 		t.Fatal("ValidateComplianceToken must return error for malformed token, got nil error")
 	}
 	if got != nil {
 		t.Error("ValidateComplianceToken must return nil claims for malformed token")
+	}
+}
+
+// ─── Story 5.29c: FB-E5-04 — JWT revocation DB checks (AC1) ─────────────────
+//
+// These tests are RED-phase: they FAIL until ValidateComplianceToken is extended
+// to perform a SHA-256 token_hash lookup in compliance_sessions.
+//
+// ValidateComplianceToken's current signature (tokenStr, pubKey, expectedSub)
+// does not accept a DB handle. The new signature must be:
+//   ValidateComplianceToken(tokenStr string, pubKey ed25519.PublicKey, expectedSub string, db SessionLookupDB) (*ComplianceClaims, error)
+// where SessionLookupDB is a new interface defined in compliance package.
+// Until the signature changes, these tests fail to compile — the intended red state.
+//
+// The mockSessionLookupDB below implements the expected interface contract.
+
+// mockSessionLookupDB implements compliance.SessionLookupDB (interface to be defined in jwt.go).
+// TokenHashFound: false → 0 rows (token never issued or forged)
+// TokenHashFound: true, Revoked: true → revoked_at IS NOT NULL
+// TokenHashFound: true, Revoked: false → active session (revoked_at IS NULL)
+type mockSessionLookupDB struct {
+	tokenHashFound bool
+	revoked        bool
+}
+
+// IsTokenActive checks whether token_hash exists and revoked_at IS NULL.
+// This is the interface method that compliance.ValidateComplianceToken will call.
+// Returns (true, nil) for active sessions, (false, nil) for missing/revoked tokens.
+func (m *mockSessionLookupDB) IsTokenActive(_ context.Context, _ []byte) (bool, error) {
+	if !m.tokenHashFound {
+		return false, nil // 0 rows
+	}
+	if m.revoked {
+		return false, nil // revoked_at IS NOT NULL
+	}
+	return true, nil // active
+}
+
+// TestValidateComplianceToken_Revoked_Rejected — AC1
+// token_hash exists in compliance_sessions with revoked_at IS NOT NULL → reject
+// with error containing "token revoked".
+func TestValidateComplianceToken_Revoked_Rejected(t *testing.T) {
+	initTestSessionKey()
+
+	claims := compliance.ComplianceClaims{
+		Sub:                 "@alice:server.example",
+		ComplianceRequestID: "req-revoked",
+		RoomID:              "!room:server.example",
+		TimeRangeStart:      "2026-01-01T00:00:00Z",
+		TimeRangeEnd:        "2026-03-31T23:59:59Z",
+		Iat:                 time.Now().Unix(),
+		Exp:                 time.Now().Add(3600 * time.Second).Unix(),
+		Iss:                 compliance.JWTIssuer,
+		Aud:                 compliance.JWTAudience,
+	}
+
+	tokenStr, err := compliance.IssueComplianceToken(testSessionPriv, claims)
+	if err != nil {
+		t.Fatalf("IssueComplianceToken failed: %v", err)
+	}
+
+	db := &mockSessionLookupDB{tokenHashFound: true, revoked: true}
+	got, err := compliance.ValidateComplianceToken(context.Background(), tokenStr, testSessionPub, "@alice:server.example", db)
+	if err == nil {
+		t.Fatal("ValidateComplianceToken must return error for revoked token, got nil error")
+	}
+	if got != nil {
+		t.Error("ValidateComplianceToken must return nil claims for revoked token")
+	}
+	if !strings.Contains(err.Error(), "token revoked") {
+		t.Errorf("error must mention 'token revoked', got: %v", err)
+	}
+}
+
+// TestValidateComplianceToken_NoSessionRow_Rejected — AC1
+// token_hash absent from compliance_sessions (token never issued or forged) → reject.
+func TestValidateComplianceToken_NoSessionRow_Rejected(t *testing.T) {
+	initTestSessionKey()
+
+	claims := compliance.ComplianceClaims{
+		Sub:                 "@alice:server.example",
+		ComplianceRequestID: "req-phantom",
+		RoomID:              "!room:server.example",
+		TimeRangeStart:      "2026-01-01T00:00:00Z",
+		TimeRangeEnd:        "2026-03-31T23:59:59Z",
+		Iat:                 time.Now().Unix(),
+		Exp:                 time.Now().Add(3600 * time.Second).Unix(),
+		Iss:                 compliance.JWTIssuer,
+		Aud:                 compliance.JWTAudience,
+	}
+
+	tokenStr, err := compliance.IssueComplianceToken(testSessionPriv, claims)
+	if err != nil {
+		t.Fatalf("IssueComplianceToken failed: %v", err)
+	}
+
+	db := &mockSessionLookupDB{tokenHashFound: false}
+	got, err := compliance.ValidateComplianceToken(context.Background(), tokenStr, testSessionPub, "@alice:server.example", db)
+	if err == nil {
+		t.Fatal("ValidateComplianceToken must return error for unknown token hash, got nil error")
+	}
+	if got != nil {
+		t.Error("ValidateComplianceToken must return nil claims for unknown token hash")
+	}
+	if !strings.Contains(err.Error(), "token revoked") {
+		t.Errorf("error must mention 'token revoked', got: %v", err)
+	}
+}
+
+// TestValidateComplianceToken_ActiveSession_Accepted — AC1 (happy path with DB)
+// token_hash found + revoked_at IS NULL → accept.
+func TestValidateComplianceToken_ActiveSession_Accepted(t *testing.T) {
+	initTestSessionKey()
+
+	claims := compliance.ComplianceClaims{
+		Sub:                 "@alice:server.example",
+		ComplianceRequestID: "req-active",
+		RoomID:              "!room:server.example",
+		TimeRangeStart:      "2026-01-01T00:00:00Z",
+		TimeRangeEnd:        "2026-03-31T23:59:59Z",
+		Iat:                 time.Now().Unix(),
+		Exp:                 time.Now().Add(3600 * time.Second).Unix(),
+		Iss:                 compliance.JWTIssuer,
+		Aud:                 compliance.JWTAudience,
+	}
+
+	tokenStr, err := compliance.IssueComplianceToken(testSessionPriv, claims)
+	if err != nil {
+		t.Fatalf("IssueComplianceToken failed: %v", err)
+	}
+
+	db := &mockSessionLookupDB{tokenHashFound: true, revoked: false}
+	got, err := compliance.ValidateComplianceToken(context.Background(), tokenStr, testSessionPub, "@alice:server.example", db)
+	if err != nil {
+		t.Fatalf("ValidateComplianceToken must accept active session token, got error: %v", err)
+	}
+	if got == nil {
+		t.Fatal("ValidateComplianceToken must return claims for active session token")
+	}
+	if got.Sub != "@alice:server.example" {
+		t.Errorf("claims.Sub: expected @alice:server.example, got %q", got.Sub)
+	}
+}
+
+// ─── Story 5.29c: FB-E5-06 — iss/aud claims validation (AC4) ────────────────
+//
+// These tests are RED-phase: they FAIL until:
+//   1. ComplianceClaims struct gains Iss string and Aud string fields.
+//   2. IssueComplianceToken embeds iss/aud in the JWT when set.
+//   3. ValidateComplianceToken checks iss == "nebu-gateway" and aud == "compliance-export".
+//
+// Until ComplianceClaims.Iss and ComplianceClaims.Aud fields exist, these tests
+// fail to compile — the intended red state.
+
+// TestComplianceJWT_MissingIss_Rejected — AC4
+// Token with iss="" (zero value, not set) → reject.
+func TestComplianceJWT_MissingIss_Rejected(t *testing.T) {
+	initTestSessionKey()
+
+	// ComplianceClaims.Iss does not exist yet → compile error = red phase.
+	claims := compliance.ComplianceClaims{
+		Sub:                 "@alice:server.example",
+		ComplianceRequestID: "req-no-iss",
+		RoomID:              "!room:server.example",
+		TimeRangeStart:      "2026-01-01T00:00:00Z",
+		TimeRangeEnd:        "2026-03-31T23:59:59Z",
+		Iat:                 time.Now().Unix(),
+		Exp:                 time.Now().Add(3600 * time.Second).Unix(),
+		Iss:                 "", // missing — zero value
+		Aud:                 "compliance-export",
+	}
+
+	tokenStr, err := compliance.IssueComplianceToken(testSessionPriv, claims)
+	if err != nil {
+		t.Fatalf("IssueComplianceToken failed: %v", err)
+	}
+
+	db := &mockSessionLookupDB{tokenHashFound: true, revoked: false}
+	got, err := compliance.ValidateComplianceToken(context.Background(), tokenStr, testSessionPub, "@alice:server.example", db)
+	if err == nil {
+		t.Fatal("ValidateComplianceToken must return error for token missing iss, got nil error")
+	}
+	if got != nil {
+		t.Error("ValidateComplianceToken must return nil claims for missing iss")
+	}
+}
+
+// TestComplianceJWT_WrongIss_Rejected — AC4
+// Token with iss="other-issuer" → reject.
+func TestComplianceJWT_WrongIss_Rejected(t *testing.T) {
+	initTestSessionKey()
+
+	claims := compliance.ComplianceClaims{
+		Sub:                 "@alice:server.example",
+		ComplianceRequestID: "req-wrong-iss",
+		RoomID:              "!room:server.example",
+		TimeRangeStart:      "2026-01-01T00:00:00Z",
+		TimeRangeEnd:        "2026-03-31T23:59:59Z",
+		Iat:                 time.Now().Unix(),
+		Exp:                 time.Now().Add(3600 * time.Second).Unix(),
+		Iss:                 "other-issuer",
+		Aud:                 "compliance-export",
+	}
+
+	tokenStr, err := compliance.IssueComplianceToken(testSessionPriv, claims)
+	if err != nil {
+		t.Fatalf("IssueComplianceToken failed: %v", err)
+	}
+
+	db := &mockSessionLookupDB{tokenHashFound: true, revoked: false}
+	got, err := compliance.ValidateComplianceToken(context.Background(), tokenStr, testSessionPub, "@alice:server.example", db)
+	if err == nil {
+		t.Fatal("ValidateComplianceToken must return error for wrong iss, got nil error")
+	}
+	if got != nil {
+		t.Error("ValidateComplianceToken must return nil claims for wrong iss")
+	}
+}
+
+// TestComplianceJWT_MismatchedAud_Rejected — AC4
+// Token with aud="wrong-audience" → reject.
+func TestComplianceJWT_MismatchedAud_Rejected(t *testing.T) {
+	initTestSessionKey()
+
+	claims := compliance.ComplianceClaims{
+		Sub:                 "@alice:server.example",
+		ComplianceRequestID: "req-wrong-aud",
+		RoomID:              "!room:server.example",
+		TimeRangeStart:      "2026-01-01T00:00:00Z",
+		TimeRangeEnd:        "2026-03-31T23:59:59Z",
+		Iat:                 time.Now().Unix(),
+		Exp:                 time.Now().Add(3600 * time.Second).Unix(),
+		Iss:                 "nebu-gateway",
+		Aud:                 "wrong-audience",
+	}
+
+	tokenStr, err := compliance.IssueComplianceToken(testSessionPriv, claims)
+	if err != nil {
+		t.Fatalf("IssueComplianceToken failed: %v", err)
+	}
+
+	db := &mockSessionLookupDB{tokenHashFound: true, revoked: false}
+	got, err := compliance.ValidateComplianceToken(context.Background(), tokenStr, testSessionPub, "@alice:server.example", db)
+	if err == nil {
+		t.Fatal("ValidateComplianceToken must return error for wrong aud, got nil error")
+	}
+	if got != nil {
+		t.Error("ValidateComplianceToken must return nil claims for wrong aud")
+	}
+}
+
+// TestComplianceJWT_ValidIssAud_Accepted — AC4 (happy path with iss+aud)
+// Token with iss="nebu-gateway" and aud="compliance-export" → accept.
+func TestComplianceJWT_ValidIssAud_Accepted(t *testing.T) {
+	initTestSessionKey()
+
+	claims := compliance.ComplianceClaims{
+		Sub:                 "@alice:server.example",
+		ComplianceRequestID: "req-valid-issaud",
+		RoomID:              "!room:server.example",
+		TimeRangeStart:      "2026-01-01T00:00:00Z",
+		TimeRangeEnd:        "2026-03-31T23:59:59Z",
+		Iat:                 time.Now().Unix(),
+		Exp:                 time.Now().Add(3600 * time.Second).Unix(),
+		Iss:                 "nebu-gateway",
+		Aud:                 "compliance-export",
+	}
+
+	tokenStr, err := compliance.IssueComplianceToken(testSessionPriv, claims)
+	if err != nil {
+		t.Fatalf("IssueComplianceToken failed: %v", err)
+	}
+
+	db := &mockSessionLookupDB{tokenHashFound: true, revoked: false}
+	got, err := compliance.ValidateComplianceToken(context.Background(), tokenStr, testSessionPub, "@alice:server.example", db)
+	if err != nil {
+		t.Fatalf("ValidateComplianceToken must accept token with valid iss+aud, got error: %v", err)
+	}
+	if got == nil {
+		t.Fatal("ValidateComplianceToken must return claims for valid iss+aud token")
+	}
+	if got.Iss != "nebu-gateway" {
+		t.Errorf("claims.Iss: expected nebu-gateway, got %q", got.Iss)
+	}
+	if got.Aud != "compliance-export" {
+		t.Errorf("claims.Aud: expected compliance-export, got %q", got.Aud)
 	}
 }
 
