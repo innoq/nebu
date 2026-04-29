@@ -30,6 +30,7 @@ type CreateRoomRequest struct {
 	Visibility    string   `json:"visibility,omitempty"`
 	Invite        []string `json:"invite,omitempty"`
 	Preset        string   `json:"preset,omitempty"`
+	IsDirect      bool     `json:"is_direct,omitempty"`
 }
 
 // CreateRoomResponse is the JSON response for a successful room creation.
