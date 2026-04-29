@@ -14,10 +14,22 @@ variables:
   DOCKER_DRIVER: overlay2
   CI_GO_IMAGE: $CI_REGISTRY_IMAGE/ci-go:1.26
   CI_ELIXIR_IMAGE: $CI_REGISTRY_IMAGE/ci-elixir:1.19
+  GITLEAKS_VERSION: "8.24.3"
+
+# Defaults applied to every job unless overridden.
+# - `timeout: 30 minutes` bounds runaway jobs (Kassandra 8.6 review M-3).
+# - `interruptible: true` cancels superseded pipelines on the same ref so a
+#   public OSS repo cannot be DoS'd by rapid pushes.
+default:
+  timeout: 30 minutes
+  interruptible: true
 
 stages:
   - build-ci-images
+  - lint
   - unit
+  - scan
+  - verify
   - integration
 
 # ─── CI Image Builds ──────────────────────────────────────────────────────────
@@ -56,25 +68,97 @@ build-ci-elixir:
     - when: manual
       allow_failure: true
 
+# ─── Lint ─────────────────────────────────────────────────────────────────────
+
+lint-go:
+  stage: lint
+  image: $CI_REGISTRY_IMAGE/ci-go:1.26
+  script:
+    - cd gateway && go vet ./...
+  cache:
+    key: "go-${CI_COMMIT_REF_SLUG}"
+    paths:
+      - /root/go/pkg/mod
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH =~ /^feature\//'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
 # ─── Unit Tests ───────────────────────────────────────────────────────────────
 # Run directly in custom images — no DinD, no make overhead.
 
-unit-tests-go:
+test-unit-go:
   stage: unit
   image: $CI_REGISTRY_IMAGE/ci-go:1.26
   script:
     - cd gateway && go test -race ./...
+  cache:
+    key: "go-${CI_COMMIT_REF_SLUG}"
+    paths:
+      - /root/go/pkg/mod
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH =~ /^feature\//'
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
 
-unit-tests-elixir:
+test-unit-elixir:
   stage: unit
   image: $CI_REGISTRY_IMAGE/ci-elixir:1.19
   script:
     - cd core && mix deps.get && mix test --warnings-as-errors
+  cache:
+    key: "mix-${CI_COMMIT_REF_SLUG}"
+    paths:
+      - core/deps
+      - core/_build
+      - ~/.hex
+      - ~/.mix
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH =~ /^feature\//'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+# ─── Secret Scan ──────────────────────────────────────────────────────────────
+
+secret-scan:
+  stage: scan
+  image: $CI_REGISTRY_IMAGE/ci-go:1.26
+  timeout: 30 minutes
+  interruptible: true
+  before_script:
+    # Verify gitleaks tarball SHA256 against the upstream checksums file
+    # before extracting (Kassandra 8.6 review H-1, CWE-494/829).
+    - set -euo pipefail
+    - BASE="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+    - TARBALL="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+    - curl -sSfL -o "${TARBALL}" "${BASE}/${TARBALL}"
+    - curl -sSfL -o gitleaks_checksums.txt "${BASE}/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+    - grep "  ${TARBALL}\$" gitleaks_checksums.txt | sha256sum -c -
+    - tar -xzf "${TARBALL}" -C /usr/local/bin gitleaks
+    - rm -f "${TARBALL}" gitleaks_checksums.txt
+  script:
+    - scripts/scan-secrets.sh --ci
+  artifacts:
+    when: always
+    paths:
+      - gitleaks-report.json
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH =~ /^feature\//'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+# ─── Verify Docs ──────────────────────────────────────────────────────────────
+
+verify-docs:
+  stage: verify
+  image: $CI_REGISTRY_IMAGE/ci-go:1.26
+  script:
+    - scripts/verify-readme-attribution.sh
+    - scripts/verify-contributing.sh
+    - scripts/verify-security-policy.sh
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH =~ /^feature\//'
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
 
 # ─── Integration Test ─────────────────────────────────────────────────────────
