@@ -1,0 +1,23 @@
+{{ define "filter_bar" }}
+{{- /* C9/C10 FilterBar — Story 7.3
+     Data: []FilterOption — a slice of FilterOption{Label, ParamName, Options []string, CurrentValue}.
+     NO <form> tag — the page template owns the form. Dropdowns auto-submit on change.
+     CRITICAL: Uses named range variables ($filter, $opt) to avoid Go template scope confusion.
+     Inside {{ range $filter := . }}, "." is the FilterOption; use $filter.CurrentValue
+     (NOT $.CurrentValue which would reference the outer context, not the current FilterOption).
+*/ -}}
+<div class="flex items-center gap-4 flex-wrap">
+  {{ range $filter := . }}
+  <label class="flex items-center gap-2 text-sm text-base-content/70">
+    {{ $filter.Label }}
+    <select name="{{ $filter.ParamName }}"
+            class="select select-bordered select-sm"
+            onchange="this.form.submit()">
+      {{ range $opt := $filter.Options -}}
+      <option value="{{ $opt }}"{{ if eq $opt $filter.CurrentValue }} selected{{ end }}>{{ $opt }}</option>
+      {{ end -}}
+    </select>
+  </label>
+  {{ end }}
+</div>
+{{ end }}

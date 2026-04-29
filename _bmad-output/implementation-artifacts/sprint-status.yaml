@@ -1,6 +1,7 @@
 # generated: 2026-03-20
 # last_updated: 2026-04-29
-# story 7-2 done (code review: 1 MINOR fixed inline — not-found title casing): 2026-04-29
+# story 7-2 done (pipeline: 3 TEA MAJOR fixed inline + 2 MINOR fixed, CR 1 MINOR fixed — not-found title casing; tokens: ~304k create+dev+tea+cr): 2026-04-29
+# story 7-1 done (pipeline: 2 TEA MINOR fixed inline, CR CLEAN; tokens: ~267k create+dev+tea+cr): 2026-04-29
 # story 7-2 review: 2026-04-29
 # story 7-2 ready-for-dev: 2026-04-29
 # story 5-29d review (AC1: event_dispatcher 23→8 failures, remaining 8 split to 5-29d.1; AC5 KEK hard-fail; AC6 enc:v1: envelope; AC7 jitter scheduler; AC3 deferred to 7-11): 2026-04-23
@@ -541,7 +542,7 @@ development_status:
   epic-7: in-progress
   7-1-obsidian-color-system-vollstandig-typography-ux-dr1-ux-dr2: done
   7-2-masterdetaillayout-detailpanel-c4-c5-bookmarkbare-url-routen: done
-  7-3-interaction-components-c6-wizardstepper-c7-c10: backlog
+  7-3-interaction-components-c6-wizardstepper-c7-c10: review
   7-4-display-components-c11-c14-inkl-inlineedit-alertbanner: backlog
   7-5-user-list-page-suche-debounced-load-more-skeleton-wcag-landmarks: backlog
   7-6-user-detail-panel-inlineedit-displayname-status-bookmarkbare-url: backlog

@@ -137,3 +137,52 @@ type RoomsPageData struct {
 	ActiveRoom   *StubRoom // nil = list view or not found
 	CloseURL     string    // e.g. "/admin/rooms"
 }
+
+// WizardStepperData is passed to the wizard_stepper component partial (C6, Story 7.3).
+// Steps is a slice of step labels (e.g. []string{"Request", "Approved", "Download"}).
+// CurrentStep is 0-indexed; steps before it are "completed", the current one is "active",
+// and the rest are "upcoming".
+type WizardStepperData struct {
+	Steps       []string
+	CurrentStep int
+}
+
+// ConfirmDialogData is passed to the confirm_dialog component partial (C7, Story 7.3).
+// HiddenFields map is rendered as <input type="hidden" name="k" value="v"> inside the form.
+// CSRFToken must be populated from the page's PageData.CSRFToken by the caller; the dialog
+// form is a POST form and requires the CSRF double-submit token. Stories 7.7 and 7.9 populate
+// this when embedding the dialog.
+//
+// NOTE: The <dialog> element uses id="confirm_dialog". If multiple dialogs are needed on one
+// page, each needs a unique ID — a future ID field will be added in Stories 7.7/7.9.
+type ConfirmDialogData struct {
+	Title        string
+	Message      string
+	ConfirmLabel string
+	ConfirmClass string            // DaisyUI btn modifier, e.g. "btn-error"
+	FormAction   string            // POST URL for the confirm form
+	HiddenFields map[string]string // extra hidden inputs
+	CSRFToken    string            // CSRF double-submit token (from PageData.CSRFToken)
+}
+
+// SearchInputData is passed to the search_input component partial (C8, Story 7.3).
+// The component renders a plain <input> without a surrounding <form> — the page template
+// owns the form. The inline debounce script calls form.requestSubmit() after 300ms.
+type SearchInputData struct {
+	Placeholder string
+	Value       string
+	ParamName   string // query param key, e.g. "q"
+}
+
+// FilterOption represents one <select> dropdown in the FilterBar component (C9/C10, Story 7.3).
+// Each option in Options is rendered as an <option> element; the one matching CurrentValue
+// receives the selected attribute. The <select> auto-submits its parent form on change.
+//
+// NOTE: There is intentionally no FilterBarData wrapper struct. Page data structs for Stories
+// 7.5 and 7.8 will embed Filters []FilterOption directly, and pass the slice to the template.
+type FilterOption struct {
+	Label        string
+	ParamName    string
+	Options      []string
+	CurrentValue string
+}
