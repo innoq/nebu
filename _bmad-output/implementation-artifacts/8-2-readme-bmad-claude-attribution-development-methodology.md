@@ -20,7 +20,7 @@ Status: ready-for-dev
 
 Story 8.1 removes all `Co-Authored-By: Claude ...` trailers from the Git history. That removal strips the only current attribution signal for Claude's structural role in development. Before the repository goes public, the README must carry that attribution explicitly — as a first-class, readable statement of methodology, not as noise in commit messages.
 
-**What BMAD is:** BMAD (Brain Model Agile Development) is a structured agent pipeline used throughout this project. It sequences work through dedicated AI roles: Story Creator (SM/Bob), Test Architect (TEA), Developer (Amelia), Code Reviewer, and Security Reviewer. Each story passes through a defined gate sequence: Story Creation → ATDD → Dev → Test Review → Code Review → (conditional) Security Review. This methodology is documented fully in `CONTRIBUTING.md` (Story 8.3).
+**What BMAD is:** the BMad Method (BMAD — Build More Architect Dreams) is a structured agent pipeline used throughout this project. It sequences work through dedicated AI roles: Story Creator (SM/Bob), Test Architect (TEA), Developer (Amelia), Code Reviewer, and Security Reviewer. Each story passes through a defined gate sequence: Story Creation → ATDD → Dev → Test Review → Code Review → (conditional) Security Review. This methodology is documented fully in `CONTRIBUTING.md` (Story 8.3).
 
 **What Claude's role was:** Claude (via Claude Code, Anthropic's CLI) served as the AI backend for all BMAD agent roles. Model versions used across the development history: Claude Opus 4.6, Claude Opus 4.7 (1M context), Claude Sonnet 4.5, Claude Sonnet 4.6. The code was reviewed, tested, and accepted by the human maintainer at each gate.
 
@@ -119,7 +119,7 @@ Die folgende Vorlage ist ein Ausgangspunkt für die Implementierung. Ton und Lä
 ```markdown
 ## Development Methodology
 
-Nebu is developed using **BMAD** (Brain Model Agile Development), a structured agent-driven pipeline where each story passes through defined gates: Story Creation → Acceptance-Test Scaffold (ATDD) → Implementation → Test Review → Code Review → conditional Security Review. Each gate is executed by a dedicated AI agent role (SM, TEA, Dev, Reviewer), with the human maintainer as the final decision-maker at every merge.
+Nebu is developed using the **[BMad Method](https://docs.bmad-method.org/)** (BMAD — *Build More Architect Dreams*), an agent-driven framework where each story passes through defined gates: Story Creation → Acceptance-Test Scaffold (ATDD) → Implementation → Test Review → Code Review → conditional Security Review. Each gate is executed by a dedicated AI agent role (SM, TEA, Dev, Reviewer), with the human maintainer as the final decision-maker at every merge.
 
 **AI assistance:** This project was developed with AI assistance via Claude (Opus 4.6/4.7, Sonnet 4.5/4.6) through [Claude Code](https://claude.ai/code), Anthropic's CLI. Claude served as the AI backend for all BMAD agent roles. All generated code was reviewed, tested against acceptance criteria, and accepted by the maintainer.
 

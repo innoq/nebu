@@ -59,12 +59,13 @@ Deep dives: [`docs/architecture/`](docs/architecture/) · ADRs: [`docs/architect
 
 ## Development Methodology
 
-Nebu is developed using **BMAD** (Brain Model Agile Development), a
-structured agent-driven pipeline where each story passes through defined
-gates: Story Creation → Acceptance-Test Scaffold (ATDD) → Implementation
-→ Test Review → Code Review → conditional Security Review. Each gate is
-executed by a dedicated AI agent role (SM, TEA, Dev, Reviewer), with the
-human maintainer as the final decision-maker at every merge.
+Nebu is developed using the **[BMad Method](https://docs.bmad-method.org/)**
+(BMAD — _Build More Architect Dreams_), an agent-driven framework where
+each story passes through defined gates: Story Creation → Acceptance-Test
+Scaffold (ATDD) → Implementation → Test Review → Code Review → conditional
+Security Review. Each gate is executed by a dedicated AI agent role
+(SM, TEA, Dev, Reviewer), with the human maintainer as the final
+decision-maker at every merge.
 
 **AI assistance:** This project was developed with AI assistance via Claude
 (Opus 4.6/4.7, Sonnet 4.5/4.6) through [Claude Code](https://claude.ai/code),
