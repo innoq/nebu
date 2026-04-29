@@ -1,0 +1,64 @@
+{{ template "base" . }}
+{{ define "title" }}Users — Nebu Admin{{ end }}
+
+{{ define "content" }}
+{{ template "master_detail" . }}
+{{ end }}
+
+{{ define "master_list" }}
+<div class="p-2">
+  <ul role="listbox" aria-label="Users">
+    {{ range .StubUsers }}
+    <li>
+      <a href="/admin/users/{{ .ID }}"
+         role="option"
+         aria-selected="{{ if eq .ID $.ActiveItemID }}true{{ else }}false{{ end }}"
+         class="flex items-center gap-3 px-3 py-3 rounded text-sm
+                {{ if eq .ID $.ActiveItemID }}active bg-primary text-primary-content border-l-[3px] border-primary{{ else }}text-base-content hover:bg-base-300{{ end }}
+                focus:outline-none focus:ring-2 focus:ring-primary">
+        <span class="font-medium">{{ .DisplayName }}</span>
+        <span class="ml-auto badge badge-sm
+                     {{ if eq .Status "active" }}badge-success{{ else }}badge-error{{ end }}">
+          {{ .Status }}
+        </span>
+      </a>
+    </li>
+    {{ end }}
+  </ul>
+</div>
+{{ end }}
+
+{{ define "detail_title" }}
+  {{ if .ActiveUser }}{{ .ActiveUser.DisplayName }}{{ else }}User not found{{ end }}
+{{ end }}
+
+{{ define "detail_content" }}
+  {{ if .ActiveUser }}
+    <dl class="divide-y divide-base-300">
+      <div class="flex justify-between py-3">
+        <dt class="text-base-content/60 text-sm">Email</dt>
+        <dd class="text-sm font-medium">{{ .ActiveUser.Email }}</dd>
+      </div>
+      <div class="flex justify-between py-3">
+        <dt class="text-base-content/60 text-sm">Role</dt>
+        <dd class="text-sm font-medium">{{ .ActiveUser.Role }}</dd>
+      </div>
+      <div class="flex justify-between py-3">
+        <dt class="text-base-content/60 text-sm">Status</dt>
+        <dd class="text-sm font-medium">{{ .ActiveUser.Status }}</dd>
+      </div>
+    </dl>
+  {{ else if .ActiveItemID }}
+    <div class="text-base-content/50 text-sm">User not found.</div>
+  {{ end }}
+{{ end }}
+
+{{ define "detail_footer" }}
+  {{ if .ActiveUser }}
+    {{ if eq .ActiveUser.Status "active" }}
+    <button type="button" class="btn btn-sm btn-warning">Deactivate</button>
+    {{ else }}
+    <button type="button" class="btn btn-sm btn-success">Reactivate</button>
+    {{ end }}
+  {{ end }}
+{{ end }}

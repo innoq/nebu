@@ -52,14 +52,22 @@ func NewTemplateHandler() (*TemplateHandler, error) {
 		return nil, err
 	}
 
-	// Collect page templates (all .html files NOT under templates/layouts/)
+	// Collect page templates and component partials separately.
+	// Components (templates/components/*.html) are included in every page's template set
+	// so that {{ template "master_detail" . }} and {{ template "detail_panel" . }} resolve
+	// correctly in any page template. Page files are all other non-layout .html files.
 	var pageFiles []string
+	var componentFiles []string
 	err = fs.WalkDir(adminFS, "templates", func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if !d.IsDir() && path.Ext(p) == ".html" && !strings.HasPrefix(p, "templates/layouts/") {
-			pageFiles = append(pageFiles, p)
+			if strings.HasPrefix(p, "templates/components/") {
+				componentFiles = append(componentFiles, p)
+			} else {
+				pageFiles = append(pageFiles, p)
+			}
 		}
 		return nil
 	})
@@ -67,12 +75,15 @@ func NewTemplateHandler() (*TemplateHandler, error) {
 		return nil, err
 	}
 
-	// For each page file, create an isolated template set: layouts + that single page
+	// For each page file, create an isolated template set: layouts + components + that single page.
+	// Components are shared partials (e.g. master_detail, detail_panel) required by multiple pages.
 	pageTmpls := make(map[string]*template.Template, len(pageFiles))
 	for _, pageFile := range pageFiles {
-		patterns := make([]string, len(layoutPatterns)+1)
-		copy(patterns, layoutPatterns)
-		patterns[len(layoutPatterns)] = pageFile
+		// layouts + all components + this page file
+		patterns := make([]string, 0, len(layoutPatterns)+len(componentFiles)+1)
+		patterns = append(patterns, layoutPatterns...)
+		patterns = append(patterns, componentFiles...)
+		patterns = append(patterns, pageFile)
 		tmpl, err := template.ParseFS(adminFS, patterns...)
 		if err != nil {
 			return nil, err

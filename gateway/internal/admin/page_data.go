@@ -94,3 +94,46 @@ type ErrorPageData struct {
 	PageData
 	RequestID string
 }
+
+// StubUser is a fake user record used for the Users master-detail page until
+// Epic 6 implements the real User Management API. Replaced by API data in Epic 7 API integration.
+type StubUser struct {
+	ID          string
+	DisplayName string
+	Email       string // masked, e.g. "a***@example.com"
+	Role        string // "instance_admin" | "compliance_officer" | "user"
+	Status      string // "active" | "deactivated"
+}
+
+// UsersPageData holds data for the Users master-detail page (Story 7.2).
+// Embeds PageData for nav, topbar, and CSRF token.
+// ActiveItemID is the URL path parameter (e.g. "usr-001"); empty string means list view.
+// ActiveUser is nil when no item is selected or the ID is not found.
+// CloseURL is the back-link URL used by the detail panel's close button.
+type UsersPageData struct {
+	PageData
+	StubUsers    []StubUser
+	ActiveItemID string
+	ActiveUser   *StubUser // nil = list view or not found
+	CloseURL     string    // e.g. "/admin/users"
+}
+
+// StubRoom is a fake room record used for the Rooms master-detail page until
+// Epic 6 implements the real Room Management API.
+type StubRoom struct {
+	ID          string
+	Name        string
+	Visibility  string // "public" | "private"
+	MemberCount int
+	Status      string // "active" | "archived"
+}
+
+// RoomsPageData holds data for the Rooms master-detail page (Story 7.2).
+// Same pattern as UsersPageData but for rooms.
+type RoomsPageData struct {
+	PageData
+	StubRooms    []StubRoom
+	ActiveItemID string
+	ActiveRoom   *StubRoom // nil = list view or not found
+	CloseURL     string    // e.g. "/admin/rooms"
+}

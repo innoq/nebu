@@ -80,6 +80,26 @@
           </a>
         </li>
         <li>
+          <a href="/admin/users"
+             data-navkey="users"
+             {{ if eq .ActiveNav "users" }}aria-current="page"{{ end }}
+             class="flex items-center gap-2 px-3 py-3 rounded text-sm
+                    {{ if eq .ActiveNav "users" }}active bg-primary text-primary-content font-semibold{{ else }}font-medium text-base-content hover:bg-base-300{{ end }}
+                    focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-base-200">
+            Users
+          </a>
+        </li>
+        <li>
+          <a href="/admin/rooms"
+             data-navkey="rooms"
+             {{ if eq .ActiveNav "rooms" }}aria-current="page"{{ end }}
+             class="flex items-center gap-2 px-3 py-3 rounded text-sm
+                    {{ if eq .ActiveNav "rooms" }}active bg-primary text-primary-content font-semibold{{ else }}font-medium text-base-content hover:bg-base-300{{ end }}
+                    focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-base-200">
+            Rooms
+          </a>
+        </li>
+        <li>
           <form method="POST" action="/admin/logout" class="m-0 p-0">
             <input type="hidden" name="_csrf" value="{{ .CSRFToken }}">
             <button type="submit"

@@ -1,0 +1,36 @@
+{{ define "master_detail" }}
+<div class="flex flex-col md:flex-row flex-1 overflow-hidden min-h-0">
+
+  <!-- Master List Column (full width on mobile, 320px fixed on desktop ≥768px) -->
+  {{ if .ActiveItemID }}
+  <nav role="navigation" aria-label="Item list"
+       class="hidden md:flex w-full md:w-80 md:shrink-0 border-r border-base-300 bg-base-200
+              overflow-y-auto flex-col">
+  {{ else }}
+  <nav role="navigation" aria-label="Item list"
+       class="flex w-full md:w-80 md:shrink-0 border-r border-base-300 bg-base-200
+              overflow-y-auto flex-col">
+  {{ end }}
+    {{ block "master_list" . }}{{ end }}
+  </nav>
+
+  <!-- Detail Column
+       Mobile: fixed full-screen overlay when item is selected, hidden otherwise
+       Desktop (≥768px): always visible in the flex row -->
+  {{ if .ActiveItemID }}
+  <div class="fixed inset-0 z-10 md:relative md:inset-auto md:z-auto flex-1 overflow-y-auto bg-base-100">
+  {{ else }}
+  <div class="hidden md:flex flex-1 overflow-y-auto bg-base-100">
+  {{ end }}
+    {{ if .ActiveItemID }}
+      {{ template "detail_panel" . }}
+    {{ else }}
+      <div role="status" aria-label="No item selected"
+           class="flex items-center justify-center h-full text-base-content/50 text-sm">
+        Select an item from the list
+      </div>
+    {{ end }}
+  </div>
+
+</div>
+{{ end }}

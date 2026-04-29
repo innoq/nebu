@@ -304,6 +304,14 @@ func main() {
 	dashboardHandler := admin.NewDashboardHandler(tmplHandler, coreClient, bootstrapDB)
 	mux.Handle("GET /admin/dashboard", csrf(sessionGuard(http.HandlerFunc(dashboardHandler.Handler))))
 
+	// Story 7.2: Users + Rooms master-detail routes — registered BEFORE catch-all
+	usersHandler := admin.NewUsersHandler(tmplHandler)
+	mux.Handle("GET /admin/users", csrf(sessionGuard(http.HandlerFunc(usersHandler.ListHandler))))
+	mux.Handle("GET /admin/users/{userId}", csrf(sessionGuard(http.HandlerFunc(usersHandler.DetailHandler))))
+	roomsHandler := admin.NewRoomsHandler(tmplHandler)
+	mux.Handle("GET /admin/rooms", csrf(sessionGuard(http.HandlerFunc(roomsHandler.ListHandler))))
+	mux.Handle("GET /admin/rooms/{roomId}", csrf(sessionGuard(http.HandlerFunc(roomsHandler.DetailHandler))))
+
 	checker := admin.NewPostgresBootstrapChecker(bootstrapDB)
 	bootstrapHandler := admin.NewBootstrapHandler(checker, tmplHandler, bootstrapDB, []byte(internalSecret))
 	guard := admin.BootstrapGuard(checker)

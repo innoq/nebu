@@ -1,0 +1,28 @@
+{{ define "detail_panel" }}
+<section role="region" aria-label="Item details"
+         class="flex flex-col h-full">
+
+  <!-- Header: title + close button -->
+  <div class="flex items-center justify-between px-6 py-4 border-b border-base-300 bg-base-200 shrink-0">
+    <h2 class="text-heading font-semibold text-base-content">
+      {{ block "detail_title" . }}Details{{ end }}
+    </h2>
+    <a href="{{ .CloseURL }}"
+       aria-label="Close detail panel"
+       class="btn btn-ghost btn-sm text-base-content/60 hover:text-base-content">
+      &times;
+    </a>
+  </div>
+
+  <!-- Content area (scrollable) -->
+  <div class="flex-1 overflow-y-auto px-6 py-4">
+    {{ block "detail_content" . }}{{ end }}
+  </div>
+
+  <!-- Footer: action buttons -->
+  <div class="shrink-0 px-6 py-3 border-t border-base-300 bg-base-200 flex gap-3">
+    {{ block "detail_footer" . }}{{ end }}
+  </div>
+
+</section>
+{{ end }}

@@ -1,5 +1,8 @@
 # generated: 2026-03-20
 # last_updated: 2026-04-29
+# story 7-2 done (code review: 1 MINOR fixed inline — not-found title casing): 2026-04-29
+# story 7-2 review: 2026-04-29
+# story 7-2 ready-for-dev: 2026-04-29
 # story 5-29d review (AC1: event_dispatcher 23→8 failures, remaining 8 split to 5-29d.1; AC5 KEK hard-fail; AC6 enc:v1: envelope; AC7 jitter scheduler; AC3 deferred to 7-11): 2026-04-23
 # story 5-29d in-progress: 2026-04-23
 # story 5-29b done (pipeline: 0 TEA MAJOR / 7 MINOR fixed by CR; Kassandra CLEAN — URL-encoded path-traversal verified non-exploitable, 4 INFO no-blocker): 2026-04-29
@@ -71,7 +74,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-20
-last_updated: 2026-04-23
+last_updated: 2026-04-29
 # story 5-1 review: 2026-04-23 (audit-log schema + RLS + retention cleanup)
 # story 5-29 created as follow-up of 5-27 scope reduction (code-review MAJOR-B): 2026-04-23
 # story 5-27 done (pipeline: 1 MAJOR-A fixed, 1 MAJOR-B deferred to 5-29, 8 MINOR fixed, Kassandra CLEAN): 2026-04-23
@@ -536,8 +539,8 @@ development_status:
   # Epic 7: Instance Admins Have a Full Admin UI for Day-to-Day Operations
   # ─────────────────────────────────────────────────────────────────────────
   epic-7: in-progress
-  7-1-obsidian-color-system-vollstandig-typography-ux-dr1-ux-dr2: review
-  7-2-masterdetaillayout-detailpanel-c4-c5-bookmarkbare-url-routen: backlog
+  7-1-obsidian-color-system-vollstandig-typography-ux-dr1-ux-dr2: done
+  7-2-masterdetaillayout-detailpanel-c4-c5-bookmarkbare-url-routen: done
   7-3-interaction-components-c6-wizardstepper-c7-c10: backlog
   7-4-display-components-c11-c14-inkl-inlineedit-alertbanner: backlog
   7-5-user-list-page-suche-debounced-load-more-skeleton-wcag-landmarks: backlog
