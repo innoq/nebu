@@ -1,5 +1,6 @@
 # generated: 2026-04-28
 # last_updated: 2026-04-28
+# story 8-4 done (pipeline: ATDD+Dev+Test-Review (0 MAJOR + 2 MINOR fixed inline: F1 weak prohibition sub-assert, F3 Security tab link)+Code-Review CLEAN+Security skipped (optional → heuristic not-needed)): 2026-04-28
 # story 8-3 done (pipeline: ATDD (via create-story)+Dev+Test-Review (0 MAJOR + 2 MINOR fixed inline: AC10 npx absolute-path false-negative)+Code-Review (1 MINOR + 2 INFO fixed inline: CoC contradiction, AC8b prohibition phrase, AC5b OpenAPI mention, AC4 anchored heading)+Security skipped (not-needed)): 2026-04-28
 # story 8-2 done (pipeline: ATDD+Dev+Test-Review (1 MAJOR + 3 MINOR fixed inline: AC6 BSD-grep emoji false-positive, AC3/AC4 section-scoping, link-syntax)+Code-Review (tempfile trap added)+Security skipped (not-needed)): 2026-04-29
 # story 8-1 done (pipeline: ATDD+Dev (1 fix-iteration: 3 MAJOR)+Test-Review CLEAN+Code-Review (5 MINOR fixed inline + F6 detached-HEAD added)+Kassandra CLEAN, force-with-lease in runbook): 2026-04-28
@@ -56,7 +57,7 @@ development_status:
   8-1-commit-history-rewrite-co-authored-by-trailer-entfernen: done  # Tooling delivered (scripts/rewrite-coauthored-trailer.sh + REWRITE_HISTORY_RUNBOOK.md). Rewrite-Execution is manual, after Epic 5 done on main.
   8-2-readme-bmad-claude-attribution-development-methodology: done  # Development Methodology section added to README.md, attribution to Claude + BMAD methodology, link to CONTRIBUTING.md (8-3). Verify tool: scripts/verify-readme-attribution.sh.
   8-3-contributing-md-bmad-workflow-und-conventions: done  # CONTRIBUTING.md expanded with Reporting Bugs, PR workflow (Conventional Commits + branch naming), BMAD section with external-contributor escape hatch, Testing, License/DCO, no-CoAuthored-By rule. Verify tool: scripts/verify-contributing.sh.
-  8-4-security-md-vulnerability-disclosure-policy: backlog
+  8-4-security-md-vulnerability-disclosure-policy: done  # SECURITY.md rewritten with 8 sections (Supported Versions, Reporting via GitHub Security Advisories, 72h/7d/14d Response SLA, 90-day Disclosure, 7-category Scope, 5-category Out-of-Scope, honest no-bounty Recognition, References). Verify tool: scripts/verify-security-policy.sh.
   8-5-secret-scan-gate-gitleaks-history-ci-integration: backlog
   8-6-ci-migration-gitlab-ci-github-actions: backlog
   8-7-github-issue-pr-templates-github-infrastructure: backlog
