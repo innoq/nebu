@@ -1,0 +1,7 @@
+# CODEOWNERS — initial global ownership
+# All files are owned by the primary maintainer.
+# Ownership can be narrowed by path as the contributor base grows.
+# Update the handle below if the maintainer GitHub username changes.
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+* @philippbeyerlein
