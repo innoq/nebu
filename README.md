@@ -1,5 +1,33 @@
 # Nebu
 
+<!-- markdownlint-disable MD013 MD042 MD051 -->
+<!-- Repo status -->
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square&color=185FA5)](LICENSE)
+[![Status](https://img.shields.io/badge/status-pre--alpha-BA7517?style=flat-square)](#)
+
+<!-- Build status -->
+[![GitHub Actions](https://github.com/innoq/nebu/actions/workflows/ci.yml/badge.svg)](https://github.com/innoq/nebu/actions)
+[![GitLab CI](https://gitlab.opencode.de/nebu/nebu-server/badges/main/pipeline.svg)](https://gitlab.opencode.de/nebu/nebu-server/-/pipelines)
+
+<!-- Tech stack -->
+[![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev)
+[![Erlang/OTP](https://img.shields.io/badge/Erlang%2FOTP-27+-A90533?style=flat-square&logo=erlang&logoColor=white)](https://www.erlang.org)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16+-336791?style=flat-square&logo=postgresql&logoColor=white)](https://postgresql.org)
+[![Docker](https://img.shields.io/badge/Docker-compose-2496ED?style=flat-square&logo=docker&logoColor=white)](docker-compose.yml)
+
+<!-- Protocol -->
+[![Matrix](https://img.shields.io/badge/Matrix-Client--Server%20API-0DBD8B?style=flat-square&logo=matrix&logoColor=white)](https://spec.matrix.org/latest/client-server-api/)
+[![OIDC](https://img.shields.io/badge/OIDC-Keycloak%20ready-E8572A?style=flat-square)](#authentication)
+
+<!-- Repos -->
+[![GitHub](https://img.shields.io/badge/GitHub-innoq%2Fnebu-181717?style=flat-square&logo=github&logoColor=white)](https://github.com/innoq/nebu)
+[![OpenCode](https://img.shields.io/badge/OpenCode-nebu%2Fnebu--server-2a6fff?style=flat-square)](https://gitlab.opencode.de/nebu/nebu-server)
+[![Contributions welcome](https://img.shields.io/badge/contributions-welcome-0DBD8B?style=flat-square)](CONTRIBUTING.md)
+
+<!-- Sovereign -->
+[![Sovereign](https://img.shields.io/badge/deployment-sovereign%20self--hosted-0F6E56?style=flat-square)](#deployment)
+<!-- markdownlint-enable MD013 MD042 MD051 -->
+
 > An enterprise-grade, Matrix-compatible chat server — Apache 2.0, no federation, horizontally scalable.
 >
 > _Named after Nebuchadnezzar, the ship of the free from The Matrix._
