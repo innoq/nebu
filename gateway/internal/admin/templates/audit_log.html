@@ -2,7 +2,7 @@
 {{ define "title" }}Audit Log — Nebu Admin{{ end }}
 
 {{ define "content" }}
-<main class="max-w-5xl mx-auto flex flex-col gap-6 p-6">
+<div class="max-w-5xl mx-auto flex flex-col gap-6 p-6">
   <h1 class="text-2xl font-bold">Audit Log</h1>
 
   {{ if .Flash.Message }}{{ template "alert_banner" .Flash }}{{ end }}
@@ -55,5 +55,5 @@
   {{ else }}
   {{ template "empty_state" .EmptyState }}
   {{ end }}
-</main>
+</div>
 {{ end }}

@@ -6,7 +6,7 @@
 {{ end }}
 
 {{ define "master_list" }}
-<main class="flex flex-col h-full">
+<div class="flex flex-col h-full">
   <div class="p-4 border-b border-base-300">
     <h1 class="text-lg font-semibold mb-3">Users</h1>
     <form method="GET" action="/admin/users" class="flex flex-col gap-2">
@@ -43,7 +43,7 @@
        class="btn btn-ghost btn-sm">Load more</a>
   </nav>
   {{ end }}
-</main>
+</div>
 {{ end }}
 
 {{ define "detail_title" }}
@@ -80,7 +80,8 @@
         <dd>
           <form method="POST" action="/admin/users/{{ .ActiveUser.ID }}/role">
             <input type="hidden" name="_csrf" value="{{ .CSRFToken }}">
-            <select name="role" onchange="this.form.submit()" class="select select-sm select-bordered">
+            <label for="user-role-select" class="sr-only">Role</label>
+            <select id="user-role-select" name="role" onchange="this.form.submit()" class="select select-sm select-bordered">
               {{ range .ActiveUserRoleOptions }}
               <option value="{{ . }}"{{ if eq . $.ActiveUserRoleValue }} selected{{ end }}>{{ . }}</option>
               {{ end }}

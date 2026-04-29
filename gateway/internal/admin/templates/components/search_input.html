@@ -6,11 +6,13 @@
      The input ID uses ParamName to avoid collisions: id="search_input_{{ .ParamName }}".
      Browser support for requestSubmit(): Chrome 76+, Firefox 75+, Safari 15.4+.
 */ -}}
+<label for="search_input_{{ .ParamName }}" class="sr-only">{{ .Placeholder }}</label>
 <input type="text"
        id="search_input_{{ .ParamName }}"
        name="{{ .ParamName }}"
        value="{{ .Value }}"
        placeholder="{{ .Placeholder }}"
+       aria-label="{{ .Placeholder }}"
        class="input input-bordered input-sm w-full max-w-xs">
 <script>
 (function() {

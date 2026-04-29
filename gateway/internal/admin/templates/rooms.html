@@ -6,7 +6,7 @@
 {{ end }}
 
 {{ define "master_list" }}
-<main class="flex flex-col h-full">
+<div class="flex flex-col h-full">
   <div class="p-4 border-b border-base-300">
     <h1 class="text-lg font-semibold mb-3">Rooms</h1>
     <form method="GET" action="/admin/rooms" class="flex flex-col gap-2">
@@ -43,7 +43,7 @@
        class="btn btn-ghost btn-sm">Load more</a>
   </nav>
   {{ end }}
-</main>
+</div>
 {{ end }}
 
 {{ define "detail_title" }}

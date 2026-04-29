@@ -64,11 +64,8 @@ func TestAuditLogDateFilter(t *testing.T) {
 	if strings.Contains(body, "user.deactivate") {
 		t.Error("expected 'user.deactivate' (2026-04-28 entry) to be absent in filtered body")
 	}
-	if strings.Contains(body, "room.archive") {
-		// al-006 (2026-04-30) also has room.archive — we check the al-002 TargetName instead
-		// This check is not reliable since al-006 also has room.archive; skip the naive check.
-		// Instead verify that "Old Project X" (al-002 TargetName, 2026-04-28) is absent.
-	}
+	// room.archive appears on both 2026-04-28 (al-002) and 2026-04-30 (al-006), so checking
+	// it by action string alone would be unreliable. Check the al-002 TargetName instead.
 	if strings.Contains(body, "Old Project X") {
 		t.Error("expected 'Old Project X' (al-002, 2026-04-28) to be absent in filtered body")
 	}
