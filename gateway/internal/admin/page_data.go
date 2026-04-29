@@ -222,6 +222,21 @@ type ConfigPageData struct {
 	Flash  AlertBannerData
 }
 
+// CompliancePageData holds data for the Compliance Access Requests page (Story 7.11).
+// Embeds PageData for ActiveNav, topbar status, and CSRF token.
+// Requests is the filtered slice of compliance requests.
+// StatusFilter holds the current ?status= filter value (default "pending").
+// Flash is populated when ?flash= query param is present (PRG pattern).
+// Stepper is pre-computed for the wizard_stepper component (always CurrentStep=1).
+type CompliancePageData struct {
+	PageData
+	Requests     []StubComplianceRequest
+	StatusFilter string
+	Flash        AlertBannerData
+	Stepper      WizardStepperData
+	EmptyState   EmptyStateData // populated when Requests is empty
+}
+
 // WizardStepperData is passed to the wizard_stepper component partial (C6, Story 7.3).
 // Steps is a slice of step labels (e.g. []string{"Request", "Approved", "Download"}).
 // CurrentStep is 0-indexed; steps before it are "completed", the current one is "active",

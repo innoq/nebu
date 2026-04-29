@@ -1,0 +1,86 @@
+{{ template "base" . }}
+{{ define "title" }}Compliance Requests — Nebu Admin{{ end }}
+
+{{ define "content" }}
+<main class="max-w-4xl mx-auto flex flex-col gap-6 p-6">
+  <h1 class="text-2xl font-bold">Compliance Requests</h1>
+
+  {{/* Four-eyes approval flow stepper */}}
+  <div class="card bg-base-100 shadow-sm p-4">
+    <p class="text-xs text-base-content/60 uppercase tracking-wide mb-3">Approval Flow</p>
+    {{ template "wizard_stepper" .Stepper }}
+  </div>
+
+  {{ if .Flash.Message }}{{ template "alert_banner" .Flash }}{{ end }}
+
+  {{/* Status filter */}}
+  <form method="GET" action="/admin/compliance" class="flex items-center gap-3">
+    <label for="status-filter" class="label-text text-sm font-medium">Filter by status:</label>
+    <select id="status-filter" name="status"
+            class="select select-bordered select-sm"
+            onchange="this.form.submit()">
+      <option value="all"      {{ if eq .StatusFilter "all"      }}selected{{ end }}>All</option>
+      <option value="pending"  {{ if eq .StatusFilter "pending"  }}selected{{ end }}>Pending</option>
+      <option value="approved" {{ if eq .StatusFilter "approved" }}selected{{ end }}>Approved</option>
+      <option value="rejected" {{ if eq .StatusFilter "rejected" }}selected{{ end }}>Rejected</option>
+    </select>
+  </form>
+
+  {{/* Request list */}}
+  {{ if .Requests }}
+  <div class="overflow-x-auto">
+    <table class="table table-zebra w-full">
+      <thead>
+        <tr>
+          <th>User</th>
+          <th>Request Type</th>
+          <th>Requested At</th>
+          <th>Status</th>
+          <th>Reviewed By</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{ range .Requests }}
+        <tr>
+          <td class="font-medium">{{ .UserName }}</td>
+          <td>{{ .RequestType }}</td>
+          <td>{{ .RequestedAt }}</td>
+          <td>
+            {{ if eq .Status "pending" }}
+            <span class="badge badge-warning">pending</span>
+            {{ else if eq .Status "approved" }}
+            <span class="badge badge-success">approved</span>
+            {{ else if eq .Status "rejected" }}
+            <span class="badge badge-error">rejected</span>
+            {{ else }}
+            <span class="badge badge-ghost">{{ .Status }}</span>
+            {{ end }}
+          </td>
+          <td class="text-sm text-base-content/60">{{ if .ReviewedBy }}{{ .ReviewedBy }}{{ else }}—{{ end }}</td>
+          <td>
+            {{ if eq .Status "pending" }}
+            <div class="flex gap-2">
+              <form method="POST" action="/admin/compliance/{{ .ID }}/approve" class="inline">
+                <input type="hidden" name="_csrf" value="{{ $.CSRFToken }}">
+                <button type="submit" class="btn btn-xs btn-success">Approve</button>
+              </form>
+              <form method="POST" action="/admin/compliance/{{ .ID }}/reject" class="inline">
+                <input type="hidden" name="_csrf" value="{{ $.CSRFToken }}">
+                <button type="submit" class="btn btn-xs btn-error">Reject</button>
+              </form>
+            </div>
+            {{ else }}
+            <span class="text-sm text-base-content/40">—</span>
+            {{ end }}
+          </td>
+        </tr>
+        {{ end }}
+      </tbody>
+    </table>
+  </div>
+  {{ else }}
+  {{ template "empty_state" .EmptyState }}
+  {{ end }}
+</main>
+{{ end }}

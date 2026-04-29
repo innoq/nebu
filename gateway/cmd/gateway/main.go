@@ -326,6 +326,13 @@ func main() {
 	// POST /admin/config — no csrf() wrapper (stub phase; see TODO in handler); sessionGuard still applies.
 	mux.Handle("POST /admin/config", sessionGuard(http.HandlerFunc(configHandler.UpdateConfigHandler)))
 
+	// Story 7.11: Compliance Access Requests page (four-eyes approval UI).
+	complianceHandler := admin.NewComplianceHandler(tmplHandler)
+	mux.Handle("GET /admin/compliance", csrf(sessionGuard(http.HandlerFunc(complianceHandler.ListHandler))))
+	// POST approve/reject — no csrf() wrapper (stub phase; see TODO in handler); sessionGuard still applies.
+	mux.Handle("POST /admin/compliance/{id}/approve", sessionGuard(http.HandlerFunc(complianceHandler.ApproveHandler)))
+	mux.Handle("POST /admin/compliance/{id}/reject", sessionGuard(http.HandlerFunc(complianceHandler.RejectHandler)))
+
 	checker := admin.NewPostgresBootstrapChecker(bootstrapDB)
 	bootstrapHandler := admin.NewBootstrapHandler(checker, tmplHandler, bootstrapDB, []byte(internalSecret))
 	guard := admin.BootstrapGuard(checker)
