@@ -311,6 +311,9 @@ func main() {
 	// Story 7.6: Display name update — intentionally NO csrf() wrapper (stub phase; see TODO in handler).
 	// sessionGuard still applies — the admin must be logged in.
 	mux.Handle("POST /admin/users/{userId}/display-name", sessionGuard(http.HandlerFunc(usersHandler.UpdateDisplayNameHandler)))
+	// Story 7.7: Role update and deactivation — no csrf() wrapper (stub phase, same pattern as display-name).
+	mux.Handle("POST /admin/users/{userId}/role", sessionGuard(http.HandlerFunc(usersHandler.UpdateRoleHandler)))
+	mux.Handle("POST /admin/users/{userId}/deactivate", sessionGuard(http.HandlerFunc(usersHandler.DeactivateUserHandler)))
 	roomsHandler := admin.NewRoomsHandler(tmplHandler)
 	mux.Handle("GET /admin/rooms", csrf(sessionGuard(http.HandlerFunc(roomsHandler.ListHandler))))
 	mux.Handle("GET /admin/rooms/{roomId}", csrf(sessionGuard(http.HandlerFunc(roomsHandler.DetailHandler))))

@@ -148,6 +148,13 @@ type UsersPageData struct {
 	// Pre-computed by DetailHandler to avoid UTF-8 byte-slice edge cases in templates.
 	// TODO: use rune-aware initials helper in production when multi-char initials are needed.
 	ActiveUserInitial string
+	// ActiveUserConfirmDialog is populated by DetailHandler for the confirm_dialog component (Story 7.7).
+	// Only meaningful when ActiveUser != nil and ActiveUser.Status == "active".
+	ActiveUserConfirmDialog ConfirmDialogData
+	// ActiveUserRoleOptions lists the valid role values for the role <select> (Story 7.7).
+	ActiveUserRoleOptions []string
+	// ActiveUserRoleValue holds the current role for the pre-selected <option> (Story 7.7).
+	ActiveUserRoleValue string
 }
 
 // StubRoom is a fake room record used for the Rooms master-detail page until

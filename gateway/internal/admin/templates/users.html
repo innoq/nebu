@@ -75,9 +75,18 @@
         <dt class="text-base-content/60 text-sm">Email</dt>
         <dd class="text-sm font-medium">{{ .ActiveUser.Email }}</dd>
       </div>
-      <div class="flex justify-between py-3">
+      <div class="flex justify-between items-center py-3">
         <dt class="text-base-content/60 text-sm">Role</dt>
-        <dd class="text-sm font-medium">{{ .ActiveUser.Role }}</dd>
+        <dd>
+          <form method="POST" action="/admin/users/{{ .ActiveUser.ID }}/role">
+            <input type="hidden" name="_csrf" value="{{ .CSRFToken }}">
+            <select name="role" onchange="this.form.submit()" class="select select-sm select-bordered">
+              {{ range .ActiveUserRoleOptions }}
+              <option value="{{ . }}"{{ if eq . $.ActiveUserRoleValue }} selected{{ end }}>{{ . }}</option>
+              {{ end }}
+            </select>
+          </form>
+        </dd>
       </div>
       <div class="flex justify-between py-3">
         <dt class="text-base-content/60 text-sm">Status</dt>
@@ -86,13 +95,15 @@
         </dd>
       </div>
     </dl>
+    {{ template "confirm_dialog" .ActiveUserConfirmDialog }}
   {{ end }}
 {{ end }}
 
 {{ define "detail_footer" }}
   {{ if .ActiveUser }}
     {{ if eq .ActiveUser.Status "active" }}
-    <button type="button" class="btn btn-sm btn-warning">Deactivate</button>
+    <button type="button" class="btn btn-sm btn-warning"
+            onclick="confirm_dialog.showModal()">Deactivate</button>
     {{ else }}
     <button type="button" class="btn btn-sm btn-success">Reactivate</button>
     {{ end }}

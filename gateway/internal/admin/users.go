@@ -126,18 +126,72 @@ func (h *UsersHandler) DetailHandler(w http.ResponseWriter, r *http.Request) {
 		initial = string(runes[0:1])
 	}
 
+	// Pre-compute ConfirmDialogData for the deactivation confirm_dialog (Story 7.7).
+	confirmDialog := ConfirmDialogData{
+		Title:        "Deactivate user",
+		Message:      "This will immediately invalidate all active sessions for " + user.DisplayName + ". Are you sure?",
+		ConfirmLabel: "Deactivate",
+		ConfirmClass: "btn-error",
+		FormAction:   "/admin/users/" + userID + "/deactivate",
+		HiddenFields: nil,
+		CSRFToken:    csrfToken,
+	}
+
 	data := UsersPageData{
-		PageData:              PageData{ActiveNav: "users", CSRFToken: csrfToken},
-		Users:                 rows,
-		ActiveItemID:          userID,
-		ActiveUser:            user,
-		CloseURL:              "/admin/users",
-		Flash:                 flash,
-		ActiveUserInlineEdit:  inlineEdit,
-		ActiveUserStatusBadge: statusBadge,
-		ActiveUserInitial:     initial,
+		PageData:                PageData{ActiveNav: "users", CSRFToken: csrfToken},
+		Users:                   rows,
+		ActiveItemID:            userID,
+		ActiveUser:              user,
+		CloseURL:                "/admin/users",
+		Flash:                   flash,
+		ActiveUserInlineEdit:    inlineEdit,
+		ActiveUserStatusBadge:   statusBadge,
+		ActiveUserInitial:       initial,
+		ActiveUserConfirmDialog: confirmDialog,
+		ActiveUserRoleOptions:   []string{"instance_admin", "compliance_officer", "user"},
+		ActiveUserRoleValue:     user.Role,
 	}
 	h.tmpl.render(w, "users", data)
+}
+
+// UpdateRoleHandler handles POST /admin/users/{userId}/role.
+// Validates and updates the user's role in-memory (stub phase).
+// TODO(epic-6): replace stub mutation with Admin API call when Epic 6 is implemented.
+// TODO(story-7-csrf): enforce CSRF middleware when wiring in production.
+func (h *UsersHandler) UpdateRoleHandler(w http.ResponseWriter, r *http.Request) {
+	userID := r.PathValue("userId")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	role := r.FormValue("role")
+	validRoles := map[string]bool{"instance_admin": true, "compliance_officer": true, "user": true}
+	if !validRoles[role] {
+		http.Error(w, "invalid role value", http.StatusBadRequest)
+		return
+	}
+	for i := range stubUsers {
+		if stubUsers[i].ID == userID {
+			stubUsers[i].Role = role
+			break
+		}
+	}
+	http.Redirect(w, r, "/admin/users/"+userID+"?flash=Role+updated", http.StatusFound)
+}
+
+// DeactivateUserHandler handles POST /admin/users/{userId}/deactivate.
+// Sets Status = "deactivated" in-memory (stub phase).
+// TODO(epic-6): replace stub mutation with Admin API call (POST /api/v1/admin/users/{userId}/deactivate).
+// TODO(story-7-csrf): enforce CSRF middleware when wiring in production.
+func (h *UsersHandler) DeactivateUserHandler(w http.ResponseWriter, r *http.Request) {
+	userID := r.PathValue("userId")
+	for i := range stubUsers {
+		if stubUsers[i].ID == userID {
+			stubUsers[i].Status = "deactivated"
+			break
+		}
+	}
+	http.Redirect(w, r, "/admin/users/"+userID+"?flash=User+deactivated", http.StatusFound)
 }
 
 // UpdateDisplayNameHandler handles POST /admin/users/{userId}/display-name.

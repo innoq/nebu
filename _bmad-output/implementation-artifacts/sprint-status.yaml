@@ -551,7 +551,7 @@ development_status:
   7-4-display-components-c11-c14-inkl-inlineedit-alertbanner: done  # ~340k tokens
   7-5-user-list-page-suche-debounced-load-more-skeleton-wcag-landmarks: done
   7-6-user-detail-panel-inlineedit-displayname-status-bookmarkbare-url: done
-  7-7-user-role-ui-deactivation-confirmation-dialog: backlog
+  7-7-user-role-ui-deactivation-confirmation-dialog: ready-for-dev
   7-8-room-list-page-suche-filter-pagination: backlog
   7-9-room-detail-panel-settings-edit-archive-ui-confirmation-pattern: backlog
   7-10-server-config-ui-get-patch-api-v1-admin-config: backlog
