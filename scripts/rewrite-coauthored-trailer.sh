@@ -75,7 +75,14 @@ preflight_named_branch() {
 # Using git log without --all avoids counting backup-branch history.
 # ---------------------------------------------------------------------------
 count_claude_commits() {
-    git log HEAD --grep="Co-Authored-By: Claude" --format="%H" | wc -l | tr -d ' '
+    local count=0
+    while read -r commit; do
+        # Check for actual trailer in commit metadata (not just text in body)
+        if git cat-file -p "$commit" 2>/dev/null | grep -qE "^Co-Authored-By: Claude"; then
+            ((count++)) || true
+        fi
+    done < <(git log HEAD --format="%H")
+    echo "$count"
 }
 
 # ---------------------------------------------------------------------------
