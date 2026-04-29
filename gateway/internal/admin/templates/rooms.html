@@ -51,8 +51,26 @@
 {{ end }}
 
 {{ define "detail_content" }}
+  {{ if .Flash.Message }}
+  {{ template "alert_banner" .Flash }}
+  {{ end }}
   {{ if .ActiveRoom }}
+    {{/* Avatar placeholder with room initial (rune-safe, pre-computed by handler) */}}
+    <div class="flex justify-center mb-4">
+      <div class="avatar placeholder">
+        <div class="bg-neutral text-neutral-content rounded-full w-16">
+          <span class="text-2xl">{{ .ActiveRoomInitial }}</span>
+        </div>
+      </div>
+    </div>
+
     <dl class="divide-y divide-base-300">
+      <div class="py-3">
+        <dt class="text-base-content/60 text-xs uppercase tracking-wide mb-1">Name</dt>
+        <dd>
+          {{ template "inline_edit" .ActiveRoomInlineEdit }}
+        </dd>
+      </div>
       <div class="flex justify-between py-3">
         <dt class="text-base-content/60 text-sm">Visibility</dt>
         <dd class="text-sm font-medium">{{ .ActiveRoom.Visibility }}</dd>
@@ -63,20 +81,21 @@
       </div>
       <div class="flex justify-between py-3">
         <dt class="text-base-content/60 text-sm">Status</dt>
-        <dd class="text-sm font-medium">{{ .ActiveRoom.Status }}</dd>
+        <dd>
+          {{ template "status_badge" .ActiveRoomStatusBadge }}
+        </dd>
       </div>
     </dl>
-  {{ else if .ActiveItemID }}
-    <div class="text-base-content/50 text-sm">Room not found.</div>
+    {{ template "confirm_dialog" .ActiveRoomConfirmDialog }}
   {{ end }}
 {{ end }}
 
 {{ define "detail_footer" }}
   {{ if .ActiveRoom }}
     {{ if eq .ActiveRoom.Status "active" }}
-    <button type="button" class="btn btn-sm btn-warning">Archive</button>
+    <button type="button" onclick="confirm_dialog.showModal()" class="btn btn-sm btn-warning">Archive room</button>
     {{ else }}
-    <button type="button" class="btn btn-sm btn-success">Restore</button>
+    <span class="badge badge-ghost">Archived</span>
     {{ end }}
   {{ end }}
 {{ end }}

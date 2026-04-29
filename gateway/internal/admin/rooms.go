@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // RoomsHandler serves the /admin/rooms master-detail page (Story 7.2, extended Story 7.8).
@@ -75,18 +76,123 @@ func (h *RoomsHandler) ListHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // DetailHandler handles GET /admin/rooms/{roomId} — renders the room list with the
-// selected room pre-loaded in the detail panel. Always returns HTTP 200; a missing
-// room renders a "not found" message inside the panel (AC5: no full-page 404).
+// selected room pre-loaded in the detail panel.
+// Returns HTTP 404 when no room matches roomId (Story 7.9 behaviour change from Story 7.2).
+// Reads the ?flash= query param and populates Flash with an AlertBanner on success.
 func (h *RoomsHandler) DetailHandler(w http.ResponseWriter, r *http.Request) {
 	roomID := r.PathValue("roomId")
+	room := findStubRoom(roomID)
+	if room == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	// Read flash query param; populate AlertBannerData if present (Story 7.9 AC1).
+	var flash AlertBannerData
+	if msg := r.URL.Query().Get("flash"); msg != "" {
+		flash = AlertBannerData{Severity: "success", Message: msg, Dismissible: true}
+	}
+
+	// Pre-compute InlineEditData for the inline_edit component (Story 7.9 AC1).
+	csrfToken := CSRFTokenFromContext(r.Context())
+	inlineEdit := InlineEditData{
+		ID:         "room-name",
+		FieldName:  "name",
+		Value:      room.Name,
+		Label:      "Room Name",
+		FormAction: "/admin/rooms/" + roomID + "/name",
+		CSRFToken:  csrfToken,
+	}
+
+	// Pre-compute StatusBadgeData; normalise "archived" → "inactive" (Story 7.9 AC1).
+	badgeStatus := room.Status
+	if badgeStatus == "archived" {
+		badgeStatus = "inactive"
+	}
+	statusBadge := StatusBadgeData{Status: badgeStatus}
+
+	// Pre-compute ConfirmDialogData for the archive confirm_dialog (Story 7.9 AC1).
+	confirmDialog := ConfirmDialogData{
+		Title:        "Archive room",
+		Message:      "This will archive " + room.Name + ". Are you sure?",
+		ConfirmLabel: "Archive",
+		ConfirmClass: "btn-error",
+		FormAction:   "/admin/rooms/" + roomID + "/archive",
+		CSRFToken:    csrfToken,
+	}
+
+	// Pre-compute room initial using rune-safe slice (Story 7.9 Dev Notes).
+	// TODO: use rune-aware initials helper in production when multi-char initials are needed.
+	initial := ""
+	if runes := []rune(room.Name); len(runes) > 0 {
+		initial = string(runes[0:1])
+	}
+
 	data := RoomsPageData{
-		PageData:     PageData{ActiveNav: "rooms", CSRFToken: CSRFTokenFromContext(r.Context())},
-		Rooms:        toRoomRowDataSlice(stubRooms),
-		ActiveItemID: roomID,
-		ActiveRoom:   findStubRoom(roomID), // nil if not found → template renders "not found"
-		CloseURL:     "/admin/rooms",
+		PageData:                PageData{ActiveNav: "rooms", CSRFToken: csrfToken},
+		Rooms:                   toRoomRowDataSlice(stubRooms),
+		ActiveItemID:            roomID,
+		ActiveRoom:              room,
+		CloseURL:                "/admin/rooms",
+		Flash:                   flash,
+		ActiveRoomInlineEdit:    inlineEdit,
+		ActiveRoomStatusBadge:   statusBadge,
+		ActiveRoomConfirmDialog: confirmDialog,
+		ActiveRoomInitial:       initial,
 	}
 	h.tmpl.render(w, "rooms", data)
+}
+
+// UpdateRoomNameHandler handles POST /admin/rooms/{roomId}/name.
+// Validates and updates the room's name in-memory (stub phase).
+// TODO(epic-6): replace stub mutation with Admin API call when Epic 6 is implemented.
+func (h *RoomsHandler) UpdateRoomNameHandler(w http.ResponseWriter, r *http.Request) {
+	roomID := r.PathValue("roomId")
+	// TODO(story-7-csrf): enforce CSRF middleware when wiring in production
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" || utf8.RuneCountInString(name) > 100 {
+		http.Error(w, "name must be 1–100 characters", http.StatusBadRequest)
+		return
+	}
+	// Mutate stub data in-memory (changes lost on restart — acceptable for stub phase).
+	found := false
+	for i := range stubRooms {
+		if stubRooms[i].ID == roomID {
+			stubRooms[i].Name = name
+			found = true
+			break
+		}
+	}
+	if !found {
+		http.NotFound(w, r)
+		return
+	}
+	http.Redirect(w, r, "/admin/rooms/"+roomID+"?flash=Name+updated", http.StatusFound)
+}
+
+// ArchiveRoomHandler handles POST /admin/rooms/{roomId}/archive.
+// Sets Status = "archived" in-memory (stub phase).
+// TODO(epic-6): replace stub mutation with Admin API call (POST /api/v1/admin/rooms/{roomId}/archive).
+// TODO(story-7-csrf): enforce CSRF middleware when wiring in production.
+func (h *RoomsHandler) ArchiveRoomHandler(w http.ResponseWriter, r *http.Request) {
+	roomID := r.PathValue("roomId")
+	found := false
+	for i := range stubRooms {
+		if stubRooms[i].ID == roomID {
+			stubRooms[i].Status = "archived"
+			found = true
+			break
+		}
+	}
+	if !found {
+		http.NotFound(w, r)
+		return
+	}
+	http.Redirect(w, r, "/admin/rooms/"+roomID+"?flash=Room+archived", http.StatusFound)
 }
 
 // toRoomRowData converts a StubRoom to a RoomRowData with a pre-computed Badge.

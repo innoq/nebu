@@ -176,7 +176,7 @@ type RoomRowData struct {
 	Badge StatusBadgeData
 }
 
-// RoomsPageData holds data for the Rooms master-detail page (Story 7.8).
+// RoomsPageData holds data for the Rooms master-detail page (Story 7.8, extended Story 7.9).
 // Rooms is the filtered+paginated slice (replaces StubRooms from Story 7.2).
 // SearchInput, FilterBar, TotalCount, CurrentPage, HasMore, NextPage support search/filter/pagination.
 // EmptyState is populated by the handler and rendered when Rooms is empty.
@@ -194,6 +194,22 @@ type RoomsPageData struct {
 	ActiveItemID string
 	ActiveRoom   *StubRoom // nil = list view or not found
 	CloseURL     string    // e.g. "/admin/rooms"
+	// Flash is populated when ?flash= query param is present (Story 7.9).
+	// Zero-valued in list mode — no template rendering side-effects.
+	Flash AlertBannerData
+	// ActiveRoomInlineEdit is pre-computed by DetailHandler for the inline_edit component (Story 7.9).
+	// Only meaningful when ActiveRoom != nil.
+	ActiveRoomInlineEdit InlineEditData
+	// ActiveRoomStatusBadge is pre-computed by DetailHandler for the status_badge component (Story 7.9).
+	// Only meaningful when ActiveRoom != nil.
+	ActiveRoomStatusBadge StatusBadgeData
+	// ActiveRoomConfirmDialog is pre-computed by DetailHandler for the confirm_dialog component (Story 7.9).
+	// Only meaningful when ActiveRoom != nil and ActiveRoom.Status == "active".
+	ActiveRoomConfirmDialog ConfirmDialogData
+	// ActiveRoomInitial holds the first rune of Name as a string (rune-safe).
+	// Pre-computed by DetailHandler to avoid UTF-8 byte-slice edge cases in templates.
+	// TODO: use rune-aware initials helper in production when multi-char initials are needed.
+	ActiveRoomInitial string
 }
 
 // WizardStepperData is passed to the wizard_stepper component partial (C6, Story 7.3).
