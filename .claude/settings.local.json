@@ -41,7 +41,8 @@
       "Bash(rtk docker:*)",
       "Bash(node:*)",
       "mcp__playwright__browser_close",
-      "mcp__playwright__browser_console_messages"
+      "mcp__playwright__browser_console_messages",
+      "Bash(bash *)"
     ]
   }
 }
