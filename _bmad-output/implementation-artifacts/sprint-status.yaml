@@ -1,5 +1,5 @@
 # generated: 2026-03-20
-# last_updated: 2026-04-23
+# last_updated: 2026-04-29
 # story 5-29d review (AC1: event_dispatcher 23→8 failures, remaining 8 split to 5-29d.1; AC5 KEK hard-fail; AC6 enc:v1: envelope; AC7 jitter scheduler; AC3 deferred to 7-11): 2026-04-23
 # story 5-29d in-progress: 2026-04-23
 # story 5-29b done (pipeline: 0 TEA MAJOR / 7 MINOR fixed by CR; Kassandra CLEAN — URL-encoded path-traversal verified non-exploitable, 4 INFO no-blocker): 2026-04-29
@@ -512,10 +512,11 @@ development_status:
   5-29e-manual-testing-bugs: done                      # Bugs 1+2b+3+4 (sync device fields)
   # Security Hardening — Group H: Pipeline / Process
   5-28-security-review-pipeline-gate: done
-  epic-5-retrospective: ready                          # SEC Gate 2 closure CLEAN (2026-04-23): all 4 HIGH + 2 MEDIUM closed; 2 INFO + 6 Epic-6 backlog items, non-blocking
+  epic-5-retrospective: skipped                        # skipped by user decision 2026-04-29: jumping to Epic 7 (MVP priority); SEC Gate 2 was CLEAN
 
   # ─────────────────────────────────────────────────────────────────────────
   # Epic 6: Instance Admins Can Manage the Instance Programmatically via Admin API
+  # (skipped by user decision 2026-04-29 — Epic 7 UI is MVP priority; Epic 6 API stays backlog)
   # ─────────────────────────────────────────────────────────────────────────
   epic-6: backlog
   6-1-openapi-spec-first-setup-codegen-pipeline-strictserverinterface-live-endpoint: backlog
@@ -534,8 +535,8 @@ development_status:
   # ─────────────────────────────────────────────────────────────────────────
   # Epic 7: Instance Admins Have a Full Admin UI for Day-to-Day Operations
   # ─────────────────────────────────────────────────────────────────────────
-  epic-7: backlog
-  7-1-obsidian-color-system-vollstandig-typography-ux-dr1-ux-dr2: backlog
+  epic-7: in-progress
+  7-1-obsidian-color-system-vollstandig-typography-ux-dr1-ux-dr2: review
   7-2-masterdetaillayout-detailpanel-c4-c5-bookmarkbare-url-routen: backlog
   7-3-interaction-components-c6-wizardstepper-c7-c10: backlog
   7-4-display-components-c11-c14-inkl-inlineedit-alertbanner: backlog
