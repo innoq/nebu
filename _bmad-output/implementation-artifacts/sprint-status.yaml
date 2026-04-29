@@ -1,5 +1,7 @@
 # generated: 2026-03-20
 # last_updated: 2026-04-23
+# story 5-29d review (AC1: event_dispatcher 23→8 failures, remaining 8 split to 5-29d.1; AC5 KEK hard-fail; AC6 enc:v1: envelope; AC7 jitter scheduler; AC3 deferred to 7-11): 2026-04-23
+# story 5-29d in-progress: 2026-04-23
 # story 5-29b done (pipeline: 0 TEA MAJOR / 7 MINOR fixed by CR; Kassandra CLEAN — URL-encoded path-traversal verified non-exploitable, 4 INFO no-blocker): 2026-04-29
 # story 5-29c done (pipeline: 2 TEA MAJOR (event_time trigger seed-bypass + plaintext-key migration) + 2 MINOR fixed inline; Kassandra HIGH-1 (CSRF on revoke endpoint) fixed inline; FB-29c-1..4 deferred to 5-29d): 2026-04-29
 # story 5-29e done (pipeline: 0 TEA MAJOR / 4 MINOR fixed by CR; +1 NEW bug 4 (Element /sync polling loop via missing device fields, tmp/snyc-bug.md) fixed inline; Kassandra skipped (security_review: optional)): 2026-04-23
@@ -506,7 +508,7 @@ development_status:
   5-29a-trust-model-tightening: done                   # FB-51-01 + FB-52-01 closed
   5-29b-compliance-endpoint-hardening: done             # FB-53-01/03, FB-54-01, FB-56-01, FB-57-01, FB-58-01/02/03 closed
   5-29c-audit-crypto-lifecycle: done                    # FB-E5-04/05 + FB-E5-06/07 + FB-51-02 + FB-52-02 + FB-55-01
-  5-29d-test-infra-and-dev-hardening: ready-for-dev    # 1 MEDIUM + 2 LOW + 1 INFO
+  5-29d-test-infra-and-dev-hardening: done              # CLEAN: 1 MEDIUM (enc:v1 not AAD-bound — precondition for key-rotation story) + 2 LOW + 1 INFO
   5-29e-manual-testing-bugs: done                      # Bugs 1+2b+3+4 (sync device fields)
   # Security Hardening — Group H: Pipeline / Process
   5-28-security-review-pipeline-gate: done

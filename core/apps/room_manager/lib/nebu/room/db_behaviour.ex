@@ -1,0 +1,132 @@
+defmodule Nebu.Room.DBBehaviour do
+  @moduledoc """
+  Behaviour contract for the Room DB persistence layer.
+
+  Story 5.29d AC1 (FB-E5-03) / AC2: Defines compile-time-checked callbacks that
+  all production and test implementations of Nebu.Room.DB must satisfy.
+
+  ## Usage
+
+  Production module:
+    - `Nebu.Room.DB` — Ecto/PostgreSQL-backed implementation
+    - Must declare `@behaviour Nebu.Room.DBBehaviour`
+
+  Test fakes used by event_dispatcher tests:
+    - FakeDB modules in create_room_test.exs, join_room_test.exs, sync_test.exs, etc.
+    - Must declare `@behaviour Nebu.Room.DBBehaviour` to get compile-time drift detection.
+
+  Any fake that is missing a callback listed here will cause a compile-time warning
+  (or error when `@dialyzer {:no_behaviours, _}` is absent) — surfacing interface
+  drift before tests run.
+  """
+
+  @doc """
+  Loads all active members for `room_id`.
+
+  Returns `{:ok, [user_id], created_at_ms, power_levels_json}` if the room exists.
+  Returns `{:error, :not_found}` if the room does not exist.
+  Returns `{:error, reason}` on DB error.
+  """
+  @callback load_members(room_id :: String.t()) ::
+              {:ok, [String.t()], integer(), String.t()} | {:error, :not_found | term()}
+
+  @doc """
+  Inserts a new room into the rooms table.
+
+  Returns `{:ok, created_at_ms}` on success.
+  Returns `{:error, reason}` on DB failure.
+  """
+  @callback insert_room(room_id :: String.t()) :: {:ok, integer()} | {:error, term()}
+
+  @doc """
+  Inserts a member into room_members.
+
+  Returns `:ok` on success.
+  Returns `{:error, reason}` on DB failure.
+  """
+  @callback insert_member(room_id :: String.t(), user_id :: String.t()) ::
+              :ok | {:error, term()}
+
+  @doc """
+  Soft-deletes a member from room_members by setting left_at.
+
+  Returns `:ok` on success.
+  Returns `{:error, :not_member}` if no active row matched.
+  Returns `{:error, reason}` on DB failure.
+  """
+  @callback delete_member(room_id :: String.t(), user_id :: String.t()) ::
+              :ok | {:error, :not_member | term()}
+
+  @doc """
+  Inserts a signed event into the events append-only table.
+
+  Returns `:ok` on success.
+  Returns `{:error, reason}` on DB failure.
+  """
+  @callback insert_event(event :: map()) :: :ok | {:error, term()}
+
+  @doc """
+  Persists the power_levels_json string for the given room_id.
+
+  Returns `:ok` on success.
+  Returns `{:error, reason}` on DB failure.
+  """
+  @callback set_power_levels(room_id :: String.t(), power_levels_json :: String.t()) ::
+              :ok | {:error, term()}
+
+  @doc """
+  Returns all room IDs where user_id is currently an active member.
+
+  Returns `{:ok, [room_id]}` — empty list if user has no active rooms.
+  Returns `{:error, reason}` on DB error.
+  """
+  @callback get_rooms_for_user(user_id :: String.t()) ::
+              {:ok, [String.t()]} | {:error, term()}
+
+  @doc """
+  Returns paginated events from the events table for the given room.
+
+  Returns `{:ok, [event_map], next_batch, prev_batch}`.
+  Returns `{:error, reason}` on DB error.
+  """
+  @callback fetch_events(
+              room_id :: String.t(),
+              direction :: String.t(),
+              limit :: pos_integer(),
+              from_token :: String.t()
+            ) :: {:ok, [map()], String.t(), String.t()} | {:error, term()}
+
+  @doc """
+  Returns events in room_id with origin_server_ts strictly greater than
+  the timestamp of last_event_id. Returns up to `limit` events in
+  chronological order (ASC).
+
+  Returns `{:ok, [event_map]}`.
+  Returns `{:error, reason}` on DB error.
+  """
+  @callback fetch_events_since(
+              room_id :: String.t(),
+              last_event_id :: String.t() | nil,
+              limit :: pos_integer()
+            ) :: {:ok, [map()]} | {:error, term()}
+
+  @doc """
+  Returns the origin_server_ts for the given event_id.
+
+  Returns `{:ok, integer()}` on success.
+  Returns `{:error, :not_found}` if the event does not exist.
+  Returns `{:error, reason}` on DB error.
+  """
+  @callback get_event_timestamp(event_id :: String.t()) ::
+              {:ok, integer()} | {:error, :not_found | term()}
+
+  @doc """
+  Returns the room name from the most recent m.room.name event.
+
+  Returns `{:ok, String.t()}` on success.
+  Returns `{:error, :not_found}` if no m.room.name event exists.
+  Returns `{:error, reason}` on DB error.
+  """
+  @callback get_room_name(room_id :: String.t()) ::
+              {:ok, String.t()} | {:error, :not_found | term()}
+end

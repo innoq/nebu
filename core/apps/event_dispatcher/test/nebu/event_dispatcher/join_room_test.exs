@@ -95,6 +95,12 @@ defmodule Nebu.EventDispatcher.JoinRoomTest do
       :ets.insert(:join_room_test_invitations, {room_id, inviter_id, invitee_id})
       :ok
     end
+
+    # Story 5.29d AC1 (FB-E5-03): accept_invitation/2 was missing — added to
+    # satisfy the Nebu.Room.InviteDB interface used by Server.join_room/2 when
+    # joining an invited room. In join_room_test, tests focus on direct join
+    # (not accept-invite path), so we return :ok unconditionally.
+    def accept_invitation(_room_id, _invitee_id), do: :ok
   end
 
   # ─── Setup / Teardown ────────────────────────────────────────────────────────
@@ -119,6 +125,10 @@ defmodule Nebu.EventDispatcher.JoinRoomTest do
     Application.put_env(:room_manager, :db_module, FakeDB)
     Application.put_env(:event_dispatcher, :invite_db_module, FakeInviteDB)
 
+    # Story 5.29d AC1 (FB-E5-03): also inject FakeDB as the messages_db_module so
+    # Server.join_room/2's insert_event call does not hit Nebu.Repo.
+    Application.put_env(:event_dispatcher, :messages_db_module, FakeDB)
+
     # Story 5-2: Server.join_room/2 now calls Compliance.AuditWriter.log/6
     # on the :ok branch. Inject NoOpAuditWriter here so this test does not
     # depend on Nebu.Repo being started in the :test env.
@@ -138,6 +148,7 @@ defmodule Nebu.EventDispatcher.JoinRoomTest do
     on_exit(fn ->
       Application.delete_env(:room_manager, :db_module)
       Application.delete_env(:event_dispatcher, :invite_db_module)
+      Application.delete_env(:event_dispatcher, :messages_db_module)
       Application.delete_env(:compliance, :audit_writer)
 
       if :ets.info(:join_room_test_db) != :undefined do

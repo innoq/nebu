@@ -71,7 +71,13 @@ defmodule Nebu.EventDispatcher.SyncTest do
           members =
             :ets.match(:sync_test_db, {{:member, room_id, :"$1"}, :active})
 
-          {:ok, Enum.map(members, fn [uid] -> uid end), created_at_ms}
+          pl_json =
+            case :ets.lookup(:sync_test_db, {:power_levels, room_id}) do
+              [{_, json}] -> json
+              [] -> "{}"
+            end
+
+          {:ok, Enum.map(members, fn [uid] -> uid end), created_at_ms, pl_json}
       end
     end
 
@@ -93,6 +99,11 @@ defmodule Nebu.EventDispatcher.SyncTest do
 
     def insert_event(event) do
       :ets.insert(:sync_test_db, {{:event, event["event_id"]}, event})
+      :ok
+    end
+
+    def set_power_levels(room_id, power_levels_json) do
+      :ets.insert(:sync_test_db, {{:power_levels, room_id}, power_levels_json})
       :ok
     end
 
@@ -129,6 +140,58 @@ defmodule Nebu.EventDispatcher.SyncTest do
         |> Enum.take(limit)
 
       {:ok, all_events, "", ""}
+    end
+
+    # ── fetch_events_since/3 (Story 4-15 / 5.29d AC1) ────────────────────────
+    def fetch_events_since(room_id, last_event_id, limit) do
+      cutoff_ts =
+        case last_event_id do
+          nil -> 0
+          "" -> 0
+          id ->
+            case get_event_timestamp(id) do
+              {:ok, ts} -> ts
+              {:error, _} -> 0
+            end
+        end
+
+      events =
+        :ets.match(:sync_test_db, {{:event, :"$1"}, :"$2"})
+        |> Enum.map(fn [_id, ev] -> ev end)
+        |> Enum.filter(fn ev ->
+          ev["room_id"] == room_id and ev["origin_server_ts"] > cutoff_ts
+        end)
+        |> Enum.sort_by(fn ev -> ev["origin_server_ts"] end, :asc)
+        |> Enum.take(limit)
+
+      {:ok, events}
+    end
+
+    # ── get_event_timestamp/1 (Story 4-15 / 5.29d AC1) ───────────────────────
+    def get_event_timestamp(event_id) do
+      case :ets.lookup(:sync_test_db, {:event, event_id}) do
+        [{_, event_map}] -> {:ok, event_map["origin_server_ts"]}
+        [] -> {:error, :not_found}
+      end
+    end
+
+    # ── get_room_name/1 (Story 5.29d AC1 — interface sync with Nebu.Room.DB) ──
+    def get_room_name(room_id) do
+      events =
+        :ets.match(:sync_test_db, {{:event, :"$1"}, :"$2"})
+        |> Enum.map(fn [_id, ev] -> ev end)
+        |> Enum.filter(fn ev ->
+          ev["room_id"] == room_id and ev["type"] == "m.room.name"
+        end)
+        |> Enum.sort_by(fn ev -> ev["origin_server_ts"] end, :desc)
+
+      case events do
+        [ev | _] ->
+          name = get_in(ev, ["content", "name"])
+          if name, do: {:ok, name}, else: {:error, :not_found}
+        [] ->
+          {:error, :not_found}
+      end
     end
   end
 
@@ -658,8 +721,10 @@ defmodule Nebu.EventDispatcher.SyncTest do
     defdelegate insert_member(room_id, user_id), to: SyncTestFakeDB
     defdelegate delete_member(room_id, user_id), to: SyncTestFakeDB
     defdelegate insert_event(event), to: SyncTestFakeDB
+    defdelegate set_power_levels(room_id, power_levels_json), to: SyncTestFakeDB
     defdelegate get_rooms_for_user(user_id), to: SyncTestFakeDB
     defdelegate fetch_events(room_id, direction, limit, from_token), to: SyncTestFakeDB
+    defdelegate get_room_name(room_id), to: SyncTestFakeDB
 
     # ── New: fetch_events_since/3 (Story 4-15) ────────────────────────────────
     #

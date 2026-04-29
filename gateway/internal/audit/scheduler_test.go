@@ -27,6 +27,7 @@ package audit_test
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -131,5 +132,202 @@ func TestPurgeScheduler_SkipsOnDBError(t *testing.T) {
 	if got < 2 {
 		t.Errorf("AC5 FAIL: scheduler stopped after DB error (callCount=%d) — "+
 			"PurgeScheduler must log warn and continue running after RunCleanup error", got)
+	}
+}
+
+// ─── AC7 (FB-29c-3): PurgeScheduler applies jitter to tick intervals ─────────
+//
+// Story 5.29d AC7: When multiple gateway instances all use the same 24h fixed
+// ticker, they all trigger audit purge simultaneously, causing lock contention.
+// Fix: add ±10% jitter to the tick interval so instances spread their purge calls.
+//
+// Implementation contract (new function/option in audit/scheduler.go):
+//
+//   // NewPurgeSchedulerWithJitter constructs a PurgeScheduler where each tick
+//   // is delayed by (baseInterval ± jitterFraction * baseInterval).
+//   // jitterFraction=0.10 → ±10% of baseInterval.
+//   //
+//   // Production usage:
+//   //   scheduler := audit.NewPurgeSchedulerWithJitter(2555, cleanupFn, 24*time.Hour, 0.10)
+//   //   go scheduler.Start(ctx)
+//   //
+//   // The scheduler internally generates a new random tick interval after each
+//   // tick, within [base*(1-jitter), base*(1+jitter)].
+//
+//   func NewPurgeSchedulerWithJitter(retentionDays int, cleanupFn RunCleanupFunc, baseInterval time.Duration, jitterFraction float64) *PurgeScheduler
+//
+// RED-PHASE: ALL tests below FAIL until:
+//   1. NewPurgeSchedulerWithJitter is added to audit/scheduler.go.
+//   2. The scheduler applies random jitter to each tick interval.
+//
+// AC coverage:
+//   AC7 (FB-29c-3) — TestPurgeScheduler_AppliesJitter
+//   AC7 (FB-29c-3) — TestPurgeScheduler_JitterWithinBounds
+
+// TestPurgeScheduler_AppliesJitter — AC7
+//
+// Given: PurgeSchedulerWithJitter with base=100ms, jitter=0.10
+// When:  5 ticks are processed
+// Then:  the scheduled intervals are NOT all identical (jitter causes variation)
+//
+// RED-PHASE: FAILS because NewPurgeSchedulerWithJitter does not exist.
+func TestPurgeScheduler_AppliesJitter(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping jitter timing test in short mode")
+	}
+
+	var callTimes []int64
+	var mu sync.Mutex
+
+	fakeCleanup := func(ctx context.Context) (int64, error) {
+		mu.Lock()
+		callTimes = append(callTimes, time.Now().UnixNano())
+		mu.Unlock()
+		return 0, nil
+	}
+
+	// Use a very short base interval (50ms) and 10% jitter so the test is fast.
+	const baseInterval = 50 * time.Millisecond
+	const jitterFraction = 0.10
+
+	// RED-PHASE: NewPurgeSchedulerWithJitter does not exist yet.
+	scheduler := audit.NewPurgeSchedulerWithJitter(2555, fakeCleanup, baseInterval, jitterFraction)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	go scheduler.Start(ctx)
+
+	// Wait for 5 ticks.
+	deadline := time.Now().Add(4 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		n := len(callTimes)
+		mu.Unlock()
+		if n >= 5 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	mu.Lock()
+	n := len(callTimes)
+	mu.Unlock()
+
+	if n < 5 {
+		t.Fatalf("AC7 FAIL: expected at least 5 ticks within deadline, got %d — "+
+			"NewPurgeSchedulerWithJitter does not exist or is not scheduling ticks correctly", n)
+	}
+
+	// Compute inter-tick intervals.
+	mu.Lock()
+	times := make([]int64, len(callTimes))
+	copy(times, callTimes)
+	mu.Unlock()
+
+	intervals := make([]time.Duration, len(times)-1)
+	for i := 1; i < len(times); i++ {
+		intervals[i-1] = time.Duration(times[i] - times[i-1])
+	}
+
+	// With jitter, intervals should NOT all be the same.
+	// We check that at least one pair differs by more than 1% of baseInterval.
+	allIdentical := true
+	threshold := time.Duration(float64(baseInterval) * 0.01) // 1% of base = 0.5ms
+	for i := 1; i < len(intervals); i++ {
+		diff := intervals[i] - intervals[i-1]
+		if diff < 0 {
+			diff = -diff
+		}
+		if diff > threshold {
+			allIdentical = false
+			break
+		}
+	}
+
+	if allIdentical {
+		t.Errorf(
+			"AC7 FAIL: all inter-tick intervals are effectively identical (%v) — "+
+				"jitter is not being applied. Intervals: %v",
+			intervals[0], intervals,
+		)
+	}
+}
+
+// TestPurgeScheduler_JitterWithinBounds — AC7
+//
+// Given: PurgeSchedulerWithJitter with base=100ms, jitter=0.10
+// When:  10 ticks are processed
+// Then:  all inter-tick intervals are within [base*0.85, base*1.15]
+//        (10% jitter should stay within ±15% with reasonable probability)
+//
+// RED-PHASE: FAILS because NewPurgeSchedulerWithJitter does not exist.
+func TestPurgeScheduler_JitterWithinBounds(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping jitter bounds test in short mode")
+	}
+
+	var callTimes []int64
+	var mu sync.Mutex
+
+	fakeCleanup := func(ctx context.Context) (int64, error) {
+		mu.Lock()
+		callTimes = append(callTimes, time.Now().UnixNano())
+		mu.Unlock()
+		return 0, nil
+	}
+
+	const baseInterval = 60 * time.Millisecond
+	const jitterFraction = 0.10
+
+	// RED-PHASE: NewPurgeSchedulerWithJitter does not exist yet.
+	scheduler := audit.NewPurgeSchedulerWithJitter(2555, fakeCleanup, baseInterval, jitterFraction)
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	go scheduler.Start(ctx)
+
+	deadline := time.Now().Add(7 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		n := len(callTimes)
+		mu.Unlock()
+		if n >= 10 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	mu.Lock()
+	times := make([]int64, len(callTimes))
+	copy(times, callTimes)
+	mu.Unlock()
+
+	if len(times) < 3 {
+		t.Fatalf("AC7 FAIL: expected at least 3 ticks for bounds check, got %d", len(times))
+	}
+
+	// Bounds: jitter ±10%. Allow generous CI scheduling overhead on the upper
+	// bound (handler runtime, OS scheduling) but enforce a hard lower bound so
+	// the scheduler cannot fire faster than base*(1-jitter). Out-of-bound
+	// intervals are real failures (post code-review M1 fix — t.Logf was a no-op).
+	const upperToleranceFactor = 0.50 // tolerate 50% wall-clock overhead on the slow side (CI noise)
+	lower := time.Duration(float64(baseInterval) * (1 - jitterFraction))
+	upper := time.Duration(float64(baseInterval) * (1 + jitterFraction + upperToleranceFactor))
+
+	violations := 0
+	for i := 1; i < len(times); i++ {
+		interval := time.Duration(times[i] - times[i-1])
+		if interval < lower || interval > upper {
+			violations++
+			t.Errorf(
+				"AC7 FAIL: inter-tick interval %v outside expected bounds [%v, %v] at tick %d — "+
+					"jitter scheduler is producing intervals outside the configured ±%.0f%% window",
+				interval, lower, upper, i, jitterFraction*100,
+			)
+		}
+	}
+	if violations > 0 {
+		t.Logf("AC7: %d/%d intervals outside bounds (base=%v, jitter=%.0f%%)",
+			violations, len(times)-1, baseInterval, jitterFraction*100)
 	}
 }

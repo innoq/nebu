@@ -24,6 +24,8 @@ type Config struct {
 	SSORedirectSchemes    []string // NEBU_SSO_REDIRECT_SCHEMES (comma-separated extra deep-link schemes)
 	BufferCapacity        int      // NEBU_BUFFER_CAPACITY (default: 500)
 	BufferBaseRate        float64  // NEBU_BUFFER_BASE_RATE (default: 100.0)
+	Env                   string   // NEBU_ENV ("production", "dev", "staging", etc.)
+	AllowInsecureKEK      string   // NEBU_ALLOW_INSECURE_KEK ("true" = opt-in for zero KEK in production)
 }
 
 // Load reads configuration from environment variables.
@@ -46,6 +48,8 @@ func Load() Config {
 		SSORedirectSchemes:    getEnvStringSlice("NEBU_SSO_REDIRECT_SCHEMES"),
 		BufferCapacity:        getEnvInt("NEBU_BUFFER_CAPACITY", 500),
 		BufferBaseRate:        getEnvFloat("NEBU_BUFFER_BASE_RATE", 100.0),
+		Env:                   os.Getenv("NEBU_ENV"),
+		AllowInsecureKEK:      os.Getenv("NEBU_ALLOW_INSECURE_KEK"),
 	}
 }
 

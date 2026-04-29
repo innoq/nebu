@@ -13,7 +13,6 @@ oauth2:
   skipApprovalScreen: true
   grantTypes:
     - authorization_code
-    - password
 
 expiry:
   idTokens: 24h        # JWT ID token valid 24h (dev convenience — was 1h default)

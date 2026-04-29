@@ -1,6 +1,7 @@
 package compliance
 
 // signing_key.go — Story 5.29c: FB-55-01 — Compliance signing key encrypted at rest (AC9)
+// Story 5.29d: AC6 (FB-29c-2) — enc:v1: versioned envelope for KEK rotation support.
 //
 // EnsureComplianceSigningKey: generates or loads an Ed25519 keypair from server_config.
 //   - If no row exists, generates a new keypair, encrypts the private key using encryptFn,
@@ -9,22 +10,28 @@ package compliance
 //   - Returns the in-memory Ed25519 key pair for immediate use.
 //
 // LoadComplianceSigningKey: reads the encrypted private key from server_config and
-//   decrypts it via decryptFn. Rejects plaintext keys (any value that is a valid
-//   hex-encoded 64-byte Ed25519 key) to enforce the encrypted-at-rest invariant
-//   after migration 000025_encrypt_compliance_signing_key has run.
+//   decrypts it via decryptFn. Rejects plaintext keys and unversioned "enc:" envelopes.
+//   Only accepts "enc:v1:<hex>" format — other versions return an error containing
+//   "unknown key version".
 //
 // KeyEncryptFn / KeyDecryptFn: injectable function types (production: AES-256-GCM;
 // tests: simple XOR). The ciphertext format is opaque to this package — the caller
 // is responsible for using a matching encrypt/decrypt pair.
 //
-// Storage format:
-//   server_config key='compliance_signing_key_priv' → "enc:" + hex(encryptFn(privKey bytes))
+// Storage format (5.29d+):
+//   server_config key='compliance_signing_key_priv' → "enc:v1:" + hex(encryptFn(privKey bytes))
 //   server_config key='compliance_signing_key_pub'  → hex.EncodeToString(pubKey bytes)
 //   (public key is stored as plain hex — it is not a secret)
 //
-// The "enc:" prefix distinguishes encrypted values from legacy plaintext hex strings.
-// LoadComplianceSigningKey rejects any stored value that does not start with "enc:",
-// enforcing the encrypted-at-rest invariant after migration.
+// The "enc:v1:" prefix distinguishes encrypted values from legacy plaintext hex strings.
+// The version token ("v1") allows future KEK rotation: when rotating to a new KEK, the
+// operator can update the version (e.g., "enc:v2:") so LoadComplianceSigningKey knows
+// which KEK version was used for encryption.
+//
+// LoadComplianceSigningKey rejects:
+//   - Values with no "enc:" prefix (plaintext — ErrPlaintextKey)
+//   - Values with "enc:" but no version (unversioned — ErrUnknownKeyVersion)
+//   - Values with an unrecognised version ("enc:v99:" — ErrUnknownKeyVersion)
 
 import (
 	"context"
@@ -34,6 +41,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -50,14 +58,29 @@ type KeyEncryptFn = KeyCryptoFn
 type KeyDecryptFn = KeyCryptoFn
 
 // ErrPlaintextKey is returned by LoadComplianceSigningKey when the stored value
-// does not start with the "enc:" prefix — indicating it is a legacy plaintext
+// does not start with any "enc:" prefix — indicating it is a legacy plaintext
 // hex-encoded private key (pre-migration state). After migration, this must
 // never appear — it indicates the migration was not applied or was rolled back.
 var ErrPlaintextKey = errors.New("compliance/signing_key: stored key appears to be plaintext; run migration to encrypt")
 
-// encPrefix is prepended to all encrypted private key values in server_config.
-// It distinguishes encrypted values from legacy plaintext hex strings.
-const encPrefix = "enc:"
+// ErrUnknownKeyVersion is returned by LoadComplianceSigningKey when the stored value
+// starts with "enc:" but has an unrecognised or absent version token (e.g. bare "enc:"
+// without a version, or "enc:v99:"). Operators must re-run EnsureComplianceSigningKey
+// or the key rotation procedure to upgrade the stored value to the current format.
+var ErrUnknownKeyVersion = errors.New("compliance/signing_key: unknown or unsupported key version in stored envelope")
+
+// encBasePrefix is the minimal prefix that marks any encrypted value.
+// All encrypted values start with this — used only for plaintext detection.
+const encBasePrefix = "enc:"
+
+// encV1Prefix is the versioned prefix written by EnsureComplianceSigningKey (5.29d+).
+// LoadComplianceSigningKey accepts only this prefix; bare "enc:" and other versions are rejected.
+const encV1Prefix = "enc:v1:"
+
+// encPrefix is an alias for encV1Prefix used in EnsureComplianceSigningKey and
+// MigrateLegacyPlaintextKey to keep write paths consistent.
+// MigrateLegacyPlaintextKey always writes enc:v1: (not the legacy bare enc:).
+const encPrefix = encV1Prefix
 
 // EnsureComplianceSigningKey reads the Ed25519 keypair from server_config.
 // If no private key row exists, a new keypair is generated, encrypted via encryptFn,
@@ -126,8 +149,15 @@ func EnsureComplianceSigningKey(ctx context.Context, db *sql.DB, encryptFn KeyEn
 }
 
 // LoadComplianceSigningKey reads and decrypts the compliance Ed25519 private key from
-// server_config. Returns ErrPlaintextKey if the stored value appears to be a plain
-// hex-encoded key (64 bytes = 128 hex chars), enforcing the encrypted-at-rest invariant.
+// server_config.
+//
+// Accepted formats:
+//   - "enc:v1:<hex(ciphertext)>" — the current format (5.29d+); decrypts via decryptFn.
+//
+// Rejected formats (return error):
+//   - Any value without an "enc:" prefix → ErrPlaintextKey (pre-migration plaintext)
+//   - "enc:" without a recognised version (bare "enc:") → ErrUnknownKeyVersion
+//   - "enc:v<N>:" where N is not a recognised version → ErrUnknownKeyVersion
 func LoadComplianceSigningKey(ctx context.Context, db *sql.DB, decryptFn KeyDecryptFn) (ed25519.PrivateKey, ed25519.PublicKey, error) {
 	// Load the private key ciphertext (stored as hex of ciphertext bytes).
 	storedPriv, err := loadStoredValue(ctx, db, "compliance_signing_key_priv")
@@ -135,15 +165,21 @@ func LoadComplianceSigningKey(ctx context.Context, db *sql.DB, decryptFn KeyDecr
 		return nil, nil, fmt.Errorf("LoadComplianceSigningKey: query priv: %w", err)
 	}
 
-	// Reject plaintext: encrypted values must start with the "enc:" prefix.
-	// Any stored value without this prefix is assumed to be a legacy plaintext
-	// hex-encoded key (pre-migration state) and is refused.
-	if len(storedPriv) < len(encPrefix) || storedPriv[:len(encPrefix)] != encPrefix {
+	// Step 1: reject plaintext — encrypted values must start with "enc:".
+	if !strings.HasPrefix(storedPriv, encBasePrefix) {
 		return nil, nil, ErrPlaintextKey
 	}
 
-	// Strip the "enc:" prefix, then decode hex → ciphertext bytes.
-	ciphertext, err := hex.DecodeString(storedPriv[len(encPrefix):])
+	// Step 2: require a recognised version token. Only "enc:v1:" is accepted.
+	// Bare "enc:" (no version) and unknown versions (enc:v99:, etc.) are rejected.
+	if !strings.HasPrefix(storedPriv, encV1Prefix) {
+		// The value starts with "enc:" but is not "enc:v1:..." — unknown version.
+		return nil, nil, fmt.Errorf("%w: stored value starts with %q but only %q is supported",
+			ErrUnknownKeyVersion, storedPriv[:min(len(storedPriv), 12)], encV1Prefix)
+	}
+
+	// Strip the "enc:v1:" prefix, then decode hex → ciphertext bytes.
+	ciphertext, err := hex.DecodeString(storedPriv[len(encV1Prefix):])
 	if err != nil {
 		return nil, nil, fmt.Errorf("LoadComplianceSigningKey: decode ciphertext hex: %w", err)
 	}
@@ -200,8 +236,10 @@ func MigrateLegacyPlaintextKey(ctx context.Context, migrateDB *sql.DB, encryptFn
 		return fmt.Errorf("MigrateLegacyPlaintextKey: query: %w", err)
 	}
 
-	// Already encrypted — nothing to do.
-	if len(stored) >= len(encPrefix) && stored[:len(encPrefix)] == encPrefix {
+	// Already encrypted — nothing to do. Check for both old bare "enc:" rows and
+	// new "enc:v1:" rows so MigrateLegacyPlaintextKey is idempotent across all
+	// post-5.29c deployments regardless of whether they have been upgraded to v1 format.
+	if strings.HasPrefix(stored, encBasePrefix) {
 		return nil
 	}
 

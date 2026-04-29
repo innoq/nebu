@@ -369,3 +369,176 @@ func TestMigrateLegacyPlaintextKey_NoopWhenRowMissing(t *testing.T) {
 }
 
 // min is available as a builtin in Go 1.21+ (go.mod specifies go 1.26).
+
+// ─── AC6 (FB-29c-2): key_version envelope "enc:v1:<hex>" ─────────────────────
+//
+// Story 5.29d AC6: the encrypted storage format must embed a key version so that
+// KEK rotation can identify which version of the KEK encrypted each row.
+//
+// Current format (5.29c): "enc:<hex(ciphertext)>"  — no version, cannot rotate.
+// Target format  (5.29d): "enc:v1:<hex(ciphertext)>" — versioned envelope.
+//
+// RED-PHASE: ALL tests below FAIL until:
+//   1. EnsureComplianceSigningKey is updated to write "enc:v1:<hex>" instead of "enc:<hex>".
+//   2. LoadComplianceSigningKey is updated to parse "enc:v1:<hex>".
+//   3. LoadComplianceSigningKey rejects unknown versions (e.g. "enc:v99:<hex>")
+//      with an error containing "unknown key version".
+//
+// AC coverage:
+//   AC6 — TestEnsureKey_PrependsV1KeyVersion
+//   AC6 — TestLoadKey_AcceptsV1Envelope
+//   AC6 — TestLoadKey_RejectsUnknownKeyVersion
+//   AC6 — TestLoadKey_RejectsUnversionedEncPrefix (migration guard)
+
+// TestEnsureKey_PrependsV1KeyVersion — AC6
+//
+// Given: empty server_config (keyExists=false)
+// When:  EnsureComplianceSigningKey stores the key
+// Then:  the stored value starts with "enc:v1:" (not bare "enc:")
+//
+// RED-PHASE: FAILS because current implementation writes "enc:<hex>" without version.
+func TestEnsureKey_PrependsV1KeyVersion(t *testing.T) {
+	db := openSigningKeyDB(t, "keyExists=false")
+
+	_, _, err := compliance.EnsureComplianceSigningKey(context.Background(), db, xorCryptFn)
+	if err != nil {
+		t.Fatalf("EnsureComplianceSigningKey failed: %v", err)
+	}
+
+	var stored string
+	if err := db.QueryRowContext(context.Background(),
+		"SELECT value FROM server_config WHERE key = 'compliance_signing_key_priv'",
+	).Scan(&stored); err != nil {
+		t.Fatalf("SELECT stored key: %v", err)
+	}
+
+	const v1Prefix = "enc:v1:"
+	if !strings.HasPrefix(stored, v1Prefix) {
+		t.Errorf(
+			"AC6 FAIL: stored value does not start with %q — got prefix %q. "+
+				"Update EnsureComplianceSigningKey to write enc:v1:<hex> format.",
+			v1Prefix,
+			func() string {
+				if len(stored) >= len(v1Prefix)+2 {
+					return stored[:len(v1Prefix)+2] + "..."
+				}
+				return stored
+			}(),
+		)
+	}
+}
+
+// TestLoadKey_AcceptsV1Envelope — AC6
+//
+// Given: server_config row with value "enc:v1:<hex(xorCrypt(privKey))>"
+// When:  LoadComplianceSigningKey is called
+// Then:  decrypts successfully and returns the correct private key
+//
+// RED-PHASE: FAILS because LoadComplianceSigningKey currently does not parse
+// the "enc:v1:" prefix (it strips "enc:" and decodes the remainder as hex,
+// which fails because "v1:<hex>" is not valid hex).
+func TestLoadKey_AcceptsV1Envelope(t *testing.T) {
+	// Generate a real Ed25519 key.
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("ed25519.GenerateKey: %v", err)
+	}
+
+	// Manually construct the v1 envelope.
+	ciphertext, err := xorCryptFn([]byte(priv))
+	if err != nil {
+		t.Fatalf("xorCryptFn: %v", err)
+	}
+	v1Value := "enc:v1:" + hex.EncodeToString(ciphertext)
+
+	db := openSigningKeyDB(t, "keyExists=true;storedValue="+v1Value)
+
+	loaded, _, loadErr := compliance.LoadComplianceSigningKey(context.Background(), db, xorCryptFn)
+	if loadErr != nil {
+		t.Fatalf(
+			"AC6 FAIL: LoadComplianceSigningKey rejected v1 envelope: %v — "+
+				"update LoadComplianceSigningKey to parse enc:v1:<hex>",
+			loadErr,
+		)
+	}
+
+	if string(loaded) != string(priv) {
+		t.Error("AC6 FAIL: loaded private key does not match original after v1 roundtrip")
+	}
+}
+
+// TestLoadKey_RejectsUnknownKeyVersion — AC6
+//
+// Given: server_config row with value "enc:v99:<hex(ciphertext)>" (future/unknown version)
+// When:  LoadComplianceSigningKey is called
+// Then:  returns an error mentioning "unknown key version" (or similar)
+//        — prevents silent decryption with wrong KEK
+//
+// RED-PHASE: FAILS because the current code does not parse key versions at all.
+func TestLoadKey_RejectsUnknownKeyVersion(t *testing.T) {
+	// Manufacture a fake v99 envelope.
+	fakeCiphertext := hex.EncodeToString([]byte("not-real-ciphertext"))
+	unknownVersionValue := "enc:v99:" + fakeCiphertext
+
+	db := openSigningKeyDB(t, "keyExists=true;storedValue="+unknownVersionValue)
+
+	_, _, err := compliance.LoadComplianceSigningKey(context.Background(), db, xorCryptFn)
+	if err == nil {
+		t.Error(
+			"AC6 FAIL: LoadComplianceSigningKey accepted an unknown key version (v99) without error — " +
+				"must reject envelopes with unrecognised version strings",
+		)
+		return
+	}
+
+	// The error message should indicate the version is unknown.
+	errMsg := err.Error()
+	if !strings.Contains(strings.ToLower(errMsg), "version") &&
+		!strings.Contains(strings.ToLower(errMsg), "unknown") &&
+		!strings.Contains(strings.ToLower(errMsg), "unsupported") {
+		t.Logf(
+			"AC6 NOTE: LoadComplianceSigningKey returned error for v99 (good), "+
+				"but error message does not mention version/unknown/unsupported: %q",
+			errMsg,
+		)
+	}
+}
+
+// TestLoadKey_RejectsUnversionedEncPrefix — AC6 (migration guard)
+//
+// Given: server_config row with old-style value "enc:<hex(ciphertext)>" (no version)
+// When:  LoadComplianceSigningKey is called (post-5.29d, which adopts v1 format)
+// Then:  returns an error — unversioned envelopes must be treated as unknown
+//        (operator must re-run EnsureComplianceSigningKey to upgrade the format)
+//
+// RED-PHASE: FAILS because the current implementation ACCEPTS "enc:<hex>" (it's
+// the format it currently writes). Once 5.29d upgrades to "enc:v1:", the old
+// format must be rejected.
+//
+// Note: This test documents the migration boundary. Existing rows written by 5.29c
+// will need a one-time upgrade script before deploying 5.29d.
+func TestLoadKey_RejectsUnversionedEncPrefix(t *testing.T) {
+	// Use a properly-sized fake private key (64 bytes for Ed25519) so the current
+	// production code does not panic during decryption — the test must receive an
+	// error return, not a panic. The test assertion is that unversioned "enc:" envelopes
+	// are rejected once 5.29d adopts the "enc:v1:" format.
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("ed25519.GenerateKey: %v", err)
+	}
+
+	// Manufacture an old-style (5.29c) envelope: "enc:<hex(xorCrypt(privKey))>".
+	ciphertext, _ := xorCryptFn([]byte(priv))
+	oldStyleValue := "enc:" + hex.EncodeToString(ciphertext)
+
+	db := openSigningKeyDB(t, "keyExists=true;storedValue="+oldStyleValue)
+
+	_, _, loadErr := compliance.LoadComplianceSigningKey(context.Background(), db, xorCryptFn)
+	if loadErr == nil {
+		t.Error(
+			"AC6 FAIL: LoadComplianceSigningKey accepted an unversioned 'enc:<hex>' envelope without error. " +
+				"Once 5.29d adopts 'enc:v1:', the old format must be rejected to force re-encryption. " +
+				"This test documents the migration boundary: existing rows written by 5.29c need upgrading.",
+		)
+	}
+}

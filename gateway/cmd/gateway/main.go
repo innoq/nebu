@@ -773,10 +773,17 @@ func main() {
 	//
 	// Story 5.29c AC9: key is stored encrypted via AES-256-GCM.
 	// NEBU_KEY_ENCRYPTION_KEY: 32-byte hex master key from env (or dev default).
+	//
+	// Story 5.29d AC5 (FB-29c-1): Hard-fail in production when KEK is missing,
+	// unless NEBU_ALLOW_INSECURE_KEK=true is explicitly set.
 	kekHex := os.Getenv("NEBU_KEY_ENCRYPTION_KEY")
+	if err := validateKEKConfig(kekHex, cfg.Env, cfg.AllowInsecureKEK); err != nil {
+		slog.Error("KEK configuration rejected: " + err.Error())
+		os.Exit(1)
+	}
 	if kekHex == "" {
 		// Dev-only default: all-zeros 32 bytes. NOT suitable for production.
-		slog.Warn("NEBU_KEY_ENCRYPTION_KEY not set — using dev-only key (NOT safe for production)")
+		// validateKEKConfig already warned above; this branch is only reached in non-production.
 		kekHex = "0000000000000000000000000000000000000000000000000000000000000000"
 	}
 	kekBytes, err := hex.DecodeString(kekHex)

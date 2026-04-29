@@ -6,6 +6,8 @@ defmodule Nebu.Room.DB do
   All timestamps stored as BIGINT milliseconds per architecture enforcement rule #1.
   """
 
+  @behaviour Nebu.Room.DBBehaviour
+
   @sql_load_members """
   SELECT user_id FROM room_members
   WHERE room_id = $1 AND left_at IS NULL
