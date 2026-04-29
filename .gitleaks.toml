@@ -88,6 +88,8 @@ paths = [
   # (b) Testdata directories contain static fixtures, not real credentials.
   # (c) Any */testdata/* path in the repository.
   '''.*testdata/.*''',
+
+  '''scripts/scan-secrets.test.sh''',
 ]
 
 # Example of a regex-based false-positive suppression (currently not needed).
