@@ -6,6 +6,16 @@ import (
 	"testing"
 )
 
+// stubUserRows converts stubUsers to []UserRowData with pre-computed Badge fields.
+// Used by Story 7.2 tests that directly construct UsersPageData.
+func stubUserRows() []UserRowData {
+	rows := make([]UserRowData, len(stubUsers))
+	for i, u := range stubUsers {
+		rows[i] = toUserRowData(u)
+	}
+	return rows
+}
+
 // TestUsersListRendersStubUsers verifies that the users list template renders
 // all stub users when no active item is selected.
 // AC: 1, 3 (Story 7.2)
@@ -16,15 +26,15 @@ func TestUsersListRendersStubUsers(t *testing.T) {
 	}
 
 	// Use a trimmed slice of 3 users for a focused test
-	threeUsers := []StubUser{
-		{ID: "usr-001", DisplayName: "Alice Müller", Email: "a***@example.com", Role: "instance_admin", Status: "active"},
-		{ID: "usr-002", DisplayName: "Bob Wagner", Email: "b***@example.com", Role: "compliance_officer", Status: "active"},
-		{ID: "usr-003", DisplayName: "Carla Reiter", Email: "c***@example.com", Role: "user", Status: "active"},
+	threeRows := []UserRowData{
+		{StubUser: StubUser{ID: "usr-001", DisplayName: "Alice Müller", Email: "a***@example.com", Role: "instance_admin", Status: "active"}, Badge: StatusBadgeData{Status: "active"}},
+		{StubUser: StubUser{ID: "usr-002", DisplayName: "Bob Wagner", Email: "b***@example.com", Role: "compliance_officer", Status: "active"}, Badge: StatusBadgeData{Status: "active"}},
+		{StubUser: StubUser{ID: "usr-003", DisplayName: "Carla Reiter", Email: "c***@example.com", Role: "user", Status: "active"}, Badge: StatusBadgeData{Status: "active"}},
 	}
 
 	data := UsersPageData{
 		PageData:     PageData{ActiveNav: "users"},
-		StubUsers:    threeUsers,
+		Users:        threeRows,
 		ActiveItemID: "", // list view — no active item
 		ActiveUser:   nil,
 		CloseURL:     "/admin/users",
@@ -58,7 +68,7 @@ func TestUsersDetailActiveClass(t *testing.T) {
 	activeUser := &stubUsers[0] // usr-001 = Alice Müller
 	data := UsersPageData{
 		PageData:     PageData{ActiveNav: "users"},
-		StubUsers:    stubUsers,
+		Users:        stubUserRows(),
 		ActiveItemID: "usr-001",
 		ActiveUser:   activeUser,
 		CloseURL:     "/admin/users",
@@ -117,7 +127,7 @@ func TestUsersDetailNotFound(t *testing.T) {
 
 	data := UsersPageData{
 		PageData:     PageData{ActiveNav: "users"},
-		StubUsers:    stubUsers,
+		Users:        stubUserRows(),
 		ActiveItemID: "nonexistent",
 		ActiveUser:   nil, // not found — handler sets nil
 		CloseURL:     "/admin/users",

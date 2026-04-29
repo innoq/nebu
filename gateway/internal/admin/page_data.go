@@ -105,14 +105,31 @@ type StubUser struct {
 	Status      string // "active" | "deactivated"
 }
 
-// UsersPageData holds data for the Users master-detail page (Story 7.2).
+// UserRowData is used in the Users list template (Story 7.5).
+// Embeds StubUser and adds a pre-computed Badge for the status_badge component,
+// normalising StubUser.Status "deactivated" → StatusBadgeData{Status: "inactive"}.
+// This avoids template FuncMap helpers — the handler populates Badge directly.
+type UserRowData struct {
+	StubUser
+	Badge StatusBadgeData
+}
+
+// UsersPageData holds data for the Users master-detail page (Story 7.5).
 // Embeds PageData for nav, topbar, and CSRF token.
-// ActiveItemID is the URL path parameter (e.g. "usr-001"); empty string means list view.
-// ActiveUser is nil when no item is selected or the ID is not found.
-// CloseURL is the back-link URL used by the detail panel's close button.
+// Users is the filtered+paginated slice (replaces StubUsers from Story 7.2).
+// SearchInput, FilterBar, TotalCount, CurrentPage, HasMore, NextPage support search/filter/pagination.
+// EmptyState is populated by the handler and rendered when Users is empty.
+// ActiveItemID, ActiveUser, CloseURL remain for the MasterDetail detail panel (Stories 7.2/7.6).
 type UsersPageData struct {
 	PageData
-	StubUsers    []StubUser
+	Users        []UserRowData
+	SearchInput  SearchInputData
+	FilterBar    []FilterOption
+	TotalCount   int
+	CurrentPage  int
+	HasMore      bool
+	NextPage     int
+	EmptyState   EmptyStateData // populated when Users is empty
 	ActiveItemID string
 	ActiveUser   *StubUser // nil = list view or not found
 	CloseURL     string    // e.g. "/admin/users"

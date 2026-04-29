@@ -1,5 +1,7 @@
 # generated: 2026-03-20
 # last_updated: 2026-04-29
+# story 7-5 done (CR: 1 MINOR fixed inline — badge normalization extracted to toUserRowData helper; 0 decision-needed, 0 deferred): 2026-04-29
+# story 7-5 created: 7-5 → ready-for-dev: 2026-04-29
 # story 7-4 created: 7-4 → ready-for-dev: 2026-04-29
 # story 7-2 done (pipeline: 3 TEA MAJOR fixed inline + 2 MINOR fixed, CR 1 MINOR fixed — not-found title casing; tokens: ~304k create+dev+tea+cr): 2026-04-29
 # story 7-1 done (pipeline: 2 TEA MINOR fixed inline, CR CLEAN; tokens: ~267k create+dev+tea+cr): 2026-04-29
@@ -544,8 +546,8 @@ development_status:
   7-1-obsidian-color-system-vollstandig-typography-ux-dr1-ux-dr2: done
   7-2-masterdetaillayout-detailpanel-c4-c5-bookmarkbare-url-routen: done
   7-3-interaction-components-c6-wizardstepper-c7-c10: done  # ~380k tokens
-  7-4-display-components-c11-c14-inkl-inlineedit-alertbanner: review
-  7-5-user-list-page-suche-debounced-load-more-skeleton-wcag-landmarks: backlog
+  7-4-display-components-c11-c14-inkl-inlineedit-alertbanner: done  # ~340k tokens
+  7-5-user-list-page-suche-debounced-load-more-skeleton-wcag-landmarks: done
   7-6-user-detail-panel-inlineedit-displayname-status-bookmarkbare-url: backlog
   7-7-user-role-ui-deactivation-confirmation-dialog: backlog
   7-8-room-list-page-suche-filter-pagination: backlog
