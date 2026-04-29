@@ -558,6 +558,6 @@ development_status:
   7-11-compliance-access-request-list-four-eyes-approval-ui: done  # ~250k tokens
   7-12-audit-log-view-atlas-pattern-zeitraum-filter-read-only: done
   7-13-wcag-audit-axe-core-report-automatisierter-scan-aller-admin-seiten: done  # nested <main> fixed in 4 templates, sr-only labels added, axe WCAG 2.1 AA spec for 8 pages
-  7-14-gherkin-admin-ui-smoke-flows-user-deactivate-room-archive-via-ui: backlog
+  7-14-gherkin-admin-ui-smoke-flows-user-deactivate-room-archive-via-ui: done  # smoke-flows spec, reactivate+unarchive handlers added
   7-15-bootstrap-wizard-claim-role-mapping-instance-admin-compliance-user: backlog
   epic-7-retrospective: optional

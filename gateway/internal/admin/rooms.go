@@ -195,6 +195,28 @@ func (h *RoomsHandler) ArchiveRoomHandler(w http.ResponseWriter, r *http.Request
 	http.Redirect(w, r, "/admin/rooms/"+roomID+"?flash=Room+archived", http.StatusFound)
 }
 
+// UnarchiveRoomHandler handles POST /admin/rooms/{roomId}/unarchive.
+// Restores Status = "active" in-memory (stub phase — inverse of ArchiveRoomHandler).
+// Used by Playwright smoke-flow specs (Story 7.14) to restore stub state in afterEach.
+// TODO(epic-6): replace stub mutation with Admin API call when Epic 6 is implemented.
+// TODO(story-7-csrf): enforce CSRF middleware when wiring in production.
+func (h *RoomsHandler) UnarchiveRoomHandler(w http.ResponseWriter, r *http.Request) {
+	roomID := r.PathValue("roomId")
+	found := false
+	for i := range stubRooms {
+		if stubRooms[i].ID == roomID {
+			stubRooms[i].Status = "active"
+			found = true
+			break
+		}
+	}
+	if !found {
+		http.NotFound(w, r)
+		return
+	}
+	http.Redirect(w, r, "/admin/rooms/"+roomID+"?flash=Room+unarchived", http.StatusFound)
+}
+
 // toRoomRowData converts a StubRoom to a RoomRowData with a pre-computed Badge.
 // Normalises StubRoom.Status "archived" → StatusBadgeData{Status: "inactive"}.
 // Single source of truth for the status mapping used by ListHandler and DetailHandler.

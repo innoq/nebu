@@ -314,12 +314,16 @@ func main() {
 	// Story 7.7: Role update and deactivation — no csrf() wrapper (stub phase, same pattern as display-name).
 	mux.Handle("POST /admin/users/{userId}/role", sessionGuard(http.HandlerFunc(usersHandler.UpdateRoleHandler)))
 	mux.Handle("POST /admin/users/{userId}/deactivate", sessionGuard(http.HandlerFunc(usersHandler.DeactivateUserHandler)))
+	// Story 7.14: Reactivation — inverse of DeactivateUserHandler; used by smoke-flow afterEach cleanup.
+	mux.Handle("POST /admin/users/{userId}/reactivate", sessionGuard(http.HandlerFunc(usersHandler.ReactivateUserHandler)))
 	roomsHandler := admin.NewRoomsHandler(tmplHandler)
 	mux.Handle("GET /admin/rooms", csrf(sessionGuard(http.HandlerFunc(roomsHandler.ListHandler))))
 	mux.Handle("GET /admin/rooms/{roomId}", csrf(sessionGuard(http.HandlerFunc(roomsHandler.DetailHandler))))
 	// Story 7.9: Room name update and archive — no csrf() wrapper (stub phase; see TODO in handler).
 	mux.Handle("POST /admin/rooms/{roomId}/name", sessionGuard(http.HandlerFunc(roomsHandler.UpdateRoomNameHandler)))
 	mux.Handle("POST /admin/rooms/{roomId}/archive", sessionGuard(http.HandlerFunc(roomsHandler.ArchiveRoomHandler)))
+	// Story 7.14: Unarchive — inverse of ArchiveRoomHandler; used by smoke-flow afterEach cleanup.
+	mux.Handle("POST /admin/rooms/{roomId}/unarchive", sessionGuard(http.HandlerFunc(roomsHandler.UnarchiveRoomHandler)))
 	// Story 7.10: Server Configuration page.
 	configHandler := admin.NewConfigHandler(tmplHandler)
 	mux.Handle("GET /admin/config", csrf(sessionGuard(http.HandlerFunc(configHandler.Handler))))

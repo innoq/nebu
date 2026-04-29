@@ -194,6 +194,22 @@ func (h *UsersHandler) DeactivateUserHandler(w http.ResponseWriter, r *http.Requ
 	http.Redirect(w, r, "/admin/users/"+userID+"?flash=User+deactivated", http.StatusFound)
 }
 
+// ReactivateUserHandler handles POST /admin/users/{userId}/reactivate.
+// Restores Status = "active" in-memory (stub phase — inverse of DeactivateUserHandler).
+// Used by Playwright smoke-flow specs (Story 7.14) to restore stub state in afterEach.
+// TODO(epic-6): replace stub mutation with Admin API call when Epic 6 is implemented.
+// TODO(story-7-csrf): enforce CSRF middleware when wiring in production.
+func (h *UsersHandler) ReactivateUserHandler(w http.ResponseWriter, r *http.Request) {
+	userID := r.PathValue("userId")
+	for i := range stubUsers {
+		if stubUsers[i].ID == userID {
+			stubUsers[i].Status = "active"
+			break
+		}
+	}
+	http.Redirect(w, r, "/admin/users/"+userID+"?flash=User+reactivated", http.StatusFound)
+}
+
 // UpdateDisplayNameHandler handles POST /admin/users/{userId}/display-name.
 // Validates and updates the user's display name in-memory (stub phase).
 // TODO(epic-6): replace stub mutation with Admin API call when Epic 6 is implemented.
