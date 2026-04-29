@@ -503,7 +503,7 @@ development_status:
   # Split into 5-29a..e on 2026-04-23 (23 items would exceed any reasonable size).
   5-29-security-followup-collector: done
   5-29a-trust-model-tightening: done                   # FB-51-01 + FB-52-01 closed
-  5-29b-compliance-endpoint-hardening: ready-for-dev   # 8 MEDIUM/LOW
+  5-29b-compliance-endpoint-hardening: review           # 8 MEDIUM/LOW
   5-29c-audit-crypto-lifecycle: done                    # FB-E5-04/05 + FB-E5-06/07 + FB-51-02 + FB-52-02 + FB-55-01
   5-29d-test-infra-and-dev-hardening: ready-for-dev    # 1 MEDIUM + 2 LOW + 1 INFO
   5-29e-manual-testing-bugs: done                      # Bugs 1+2b+3+4 (sync device fields)

@@ -852,3 +852,137 @@ func TestPostAccessRequest_AuditFailure_Still201(t *testing.T) {
 		t.Errorf("expected audit WriteAuditLog to be attempted once, got %d", got)
 	}
 }
+
+// ─── Story 5.29b — AC2 (FB-53-03): time_range cap tests ─────────────────────
+//
+// ALL three tests below are expected to FAIL until Story 5.29b is implemented.
+// Failing reason: PostAccessRequest does NOT yet enforce (end-start) ≤ 365 days
+// nor start ≥ NOW() - 7 years. The handler currently only checks end > start.
+//
+// AC2 spec:
+//   - time_range_end - time_range_start > 365 days → 400 M_BAD_JSON
+//   - time_range_start < NOW() - 7 years          → 400 M_BAD_JSON
+//   - exactly 365 days window                      → 201 (boundary allowed)
+
+// TestPostAccessRequest_TimeRangeTooLarge_Returns400 verifies that a time_range
+// window exceeding 365 days is rejected with 400 M_BAD_JSON.
+//
+// Given: compliance_officer role, valid room, (end - start) = 366 days
+// When:  POST /api/v1/compliance/access-requests
+// Then:  400 M_BAD_JSON — "time_range window exceeds 365 days" (or similar)
+//
+// RED: handler currently only checks end > start, accepts any window width.
+func TestPostAccessRequest_TimeRangeTooLarge_Returns400(t *testing.T) {
+	db := openFakeDB(t, true /* roomFound */)
+	h := &compliance.AccessRequestHandler{DB: db, CoreClient: &mockCoreClient{}}
+
+	// start=2026-01-01, end = start + 366 days (one day over the cap).
+	body := complianceRequest{
+		RoomID:         "!abc123:server.example",
+		TimeRangeStart: "2025-01-01T00:00:00Z",
+		TimeRangeEnd:   "2026-01-02T00:00:00Z", // 366 days later (2025 is not a leap year: 365d + 1d)
+		Justification:  "Investigating policy violation under reference ABC-2026-001",
+	}
+
+	w := httptest.NewRecorder()
+	r := newJSONRequest(t, body, "compliance_officer", "sub-officer-timerange-1")
+
+	h.PostAccessRequest(w, r)
+
+	// RED-PHASE ASSERTION: will fail until 365-day cap is enforced.
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for time_range > 365 days, got %d — body: %s"+
+			" — Story 5.29b AC2 not yet implemented", w.Code, w.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("response is not valid JSON: %v — body: %s", err, w.Body.String())
+	}
+	if resp["errcode"] != "M_BAD_JSON" {
+		t.Errorf("expected errcode=M_BAD_JSON, got %q", resp["errcode"])
+	}
+}
+
+// TestPostAccessRequest_TimeRangeTooOld_Returns400 verifies that a time_range_start
+// more than 7 years before NOW() is rejected with 400 M_BAD_JSON.
+//
+// Given: compliance_officer role, valid room, start = NOW() - 8 years
+// When:  POST /api/v1/compliance/access-requests
+// Then:  400 M_BAD_JSON — "time_range_start too far in the past" (or similar)
+//
+// RED: handler currently accepts any past timestamp.
+func TestPostAccessRequest_TimeRangeTooOld_Returns400(t *testing.T) {
+	db := openFakeDB(t, true /* roomFound */)
+	h := &compliance.AccessRequestHandler{DB: db, CoreClient: &mockCoreClient{}}
+
+	// 8 years ago — safely beyond the 7-year minimum.
+	// currentDate from memory context: 2026-04-23, so 8 years ago = 2018-04-23.
+	body := complianceRequest{
+		RoomID:         "!abc123:server.example",
+		TimeRangeStart: "2018-04-23T00:00:00Z", // 8 years before 2026-04-23
+		TimeRangeEnd:   "2018-04-24T00:00:00Z", // 1 day window — small, but start is too old
+		Justification:  "Investigating policy violation under reference ABC-2026-001",
+	}
+
+	w := httptest.NewRecorder()
+	r := newJSONRequest(t, body, "compliance_officer", "sub-officer-timerange-2")
+
+	h.PostAccessRequest(w, r)
+
+	// RED-PHASE ASSERTION: will fail until the 7-year minimum is enforced.
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for time_range_start older than 7 years, got %d — body: %s"+
+			" — Story 5.29b AC2 not yet implemented", w.Code, w.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("response is not valid JSON: %v — body: %s", err, w.Body.String())
+	}
+	if resp["errcode"] != "M_BAD_JSON" {
+		t.Errorf("expected errcode=M_BAD_JSON, got %q", resp["errcode"])
+	}
+}
+
+// TestPostAccessRequest_TimeRangeAtExact365Days_Returns201 verifies that a
+// time_range window of exactly 365 days is ACCEPTED (boundary is inclusive).
+//
+// Given: compliance_officer role, valid room, (end - start) = exactly 365 days
+// When:  POST /api/v1/compliance/access-requests
+// Then:  201 Created (boundary allowed)
+//
+// RED: this test will PASS once AC2 is implemented because the boundary is ≤ 365d.
+// However until AC2 is implemented, any window is accepted — this test passes vacuously.
+// It is included to lock in the boundary semantics and prevent off-by-one regressions.
+func TestPostAccessRequest_TimeRangeAtExact365Days_Returns201(t *testing.T) {
+	db := openFakeDB(t, true /* roomFound */)
+	h := &compliance.AccessRequestHandler{DB: db, CoreClient: &mockCoreClient{}}
+
+	// start=2025-01-01, end=2026-01-01 = exactly 365 days (2025 is not a leap year).
+	body := complianceRequest{
+		RoomID:         "!abc123:server.example",
+		TimeRangeStart: "2025-01-01T00:00:00Z",
+		TimeRangeEnd:   "2026-01-01T00:00:00Z", // exactly 365 days
+		Justification:  "Investigating policy violation under reference ABC-2026-001",
+	}
+
+	w := httptest.NewRecorder()
+	r := newJSONRequest(t, body, "compliance_officer", "sub-officer-timerange-3")
+
+	h.PostAccessRequest(w, r)
+
+	// Boundary: exactly 365 days must be accepted.
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created for exactly 365-day window (boundary inclusive), got %d — body: %s",
+			w.Code, w.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("response is not valid JSON: %v — body: %s", err, w.Body.String())
+	}
+	if resp["status"] != "pending" {
+		t.Errorf("expected status=pending, got %q", resp["status"])
+	}
+}

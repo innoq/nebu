@@ -180,6 +180,15 @@ func (h *ProfileHandler) PutAvatarURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// FB-58-02: enforce safe mxc:// format — both server and mediaId must be safe path segments.
+	// This prevents path-traversal attacks: if a malicious user sets avatar_url to
+	// "mxc://../../etc/passwd/x", the parsed components are later used in filesystem paths
+	// (anonymization disk cleanup). Validate here at write time before storing.
+	if !isValidMxcURI(body.AvatarURL) {
+		writeMatrixError(w, http.StatusBadRequest, "M_BAD_JSON", "invalid avatar URL")
+		return
+	}
+
 	grpcCtx := coregrpc.WithUserMetadata(r.Context(), authedUserID, systemRole)
 	_, err := h.coreClient.UpdateProfile(grpcCtx, &pb.UpdateProfileRequest{
 		UserId:      authedUserID,
@@ -193,4 +202,35 @@ func (h *ProfileHandler) PutAvatarURL(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{})
+}
+
+// isValidMxcURI validates that uri is a safe mxc:// URI with no path-traversal segments.
+// Mirrors the parseMxcURI / isSafePathSegment logic from compliance/user_anonymization.go.
+// Both serverName and mediaId must be non-empty and free of path-separator chars, "..", ".".
+//
+// FB-58-02: avatar_url is user-controlled. If a malicious user stores
+// "mxc://../../etc/passwd/x", the parsed components later end up in os.Remove paths
+// during admin-triggered anonymization. Validating at write time prevents that.
+func isValidMxcURI(uri string) bool {
+	if !strings.HasPrefix(uri, "mxc://") {
+		return false
+	}
+	rest := strings.TrimPrefix(uri, "mxc://")
+	parts := strings.SplitN(rest, "/", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return false
+	}
+	return isSafeMxcSegment(parts[0]) && isSafeMxcSegment(parts[1])
+}
+
+// isSafeMxcSegment returns true if s is safe to use as a single path component
+// (no path traversal markers, no embedded separators, no NUL bytes).
+func isSafeMxcSegment(s string) bool {
+	if s == "" || s == "." || s == ".." {
+		return false
+	}
+	if strings.ContainsAny(s, "/\\\x00") {
+		return false
+	}
+	return true
 }

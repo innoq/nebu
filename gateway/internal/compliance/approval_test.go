@@ -1181,3 +1181,140 @@ func TestDashboardPendingBadge_ShowsCount(t *testing.T) {
 		t.Errorf("expected pending_count=7, got %d — DashboardHandler uses this value for badge", resp["pending_count"])
 	}
 }
+
+// ─── Story 5.29b — AC3 (FB-54-01): note max-length 4096 chars ───────────────
+//
+// ALL two tests below are expected to FAIL until Story 5.29b is implemented.
+// Failing reason: PostApprove and PostReject do NOT yet enforce len(note) ≤ 4096.
+// A note exceeding 4096 characters is currently accepted (200/204 returned instead
+// of 400 M_BAD_JSON).
+//
+// AC3 spec:
+//   - len(note) > 4096 in approve body → 400 M_BAD_JSON
+//   - len(note) > 4096 in reject body  → 400 M_BAD_JSON
+
+// TestApproveRequest_NoteTooLong_Returns400 verifies that a note exceeding 4096
+// characters in POST /approve is rejected with 400 M_BAD_JSON.
+//
+// Given: compliance_officer B, request submitted by officer A (no self-approval),
+//        body.note = 4097 characters (one over the cap)
+// When:  POST /api/v1/compliance/access-requests/{id}/approve
+// Then:  400 M_BAD_JSON — "note exceeds maximum length" (or similar)
+//
+// RED: handler currently has no note length check — will return 200 until 5.29b.
+func TestApproveRequest_NoteTooLong_Returns400(t *testing.T) {
+	db := openApprovalDB(t, approvalDBOpts{
+		requesterSub: officerASub,
+		updateHits:   true,
+	})
+	h := &compliance.AccessRequestHandler{DB: db, CoreClient: &mockCoreClient{}}
+
+	// Build a note that is 4097 chars long (one over the 4096 cap).
+	tooLongNote := strings.Repeat("x", 4097)
+
+	body := map[string]string{"note": tooLongNote}
+
+	w := httptest.NewRecorder()
+	r := newApprovalRequest(t, http.MethodPost,
+		"/api/v1/compliance/access-requests/"+fakeReqID+"/approve",
+		body, "compliance_officer", officerBSub)
+	r = withPathValue(r, "requestId", fakeReqID)
+
+	h.PostApprove(w, r)
+
+	// RED-PHASE ASSERTION: will fail until the 4096-char cap is enforced.
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for note > 4096 chars in approve, got %d — body: %s"+
+			" — Story 5.29b AC3 not yet implemented", w.Code, w.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("response is not valid JSON: %v — body: %s", err, w.Body.String())
+	}
+	if resp["errcode"] != "M_BAD_JSON" {
+		t.Errorf("expected errcode=M_BAD_JSON, got %q", resp["errcode"])
+	}
+}
+
+// TestApproveRequest_NoteAtExact4096_Returns200 verifies that a note of EXACTLY
+// 4096 characters is ACCEPTED (boundary is inclusive). Closes the off-by-one
+// gap noted by TEA-MINOR-3 (Story 5.29b code review).
+//
+// Given: compliance_officer B, request submitted by officer A,
+//        body.note = 4096 characters (exactly at the cap)
+// When:  POST /api/v1/compliance/access-requests/{id}/approve
+// Then:  200 OK — boundary is inclusive (`len(note) > 4096` rejects, == is fine)
+func TestApproveRequest_NoteAtExact4096_Returns200(t *testing.T) {
+	db := openApprovalDB(t, approvalDBOpts{
+		requesterSub: officerASub,
+		updateHits:   true,
+	})
+	h := &compliance.AccessRequestHandler{DB: db, CoreClient: &mockCoreClient{}}
+
+	exactNote := strings.Repeat("z", 4096) // exactly 4096 chars — boundary
+	body := map[string]string{"note": exactNote}
+
+	w := httptest.NewRecorder()
+	r := newApprovalRequest(t, http.MethodPost,
+		"/api/v1/compliance/access-requests/"+fakeReqID+"/approve",
+		body, "compliance_officer", officerBSub)
+	r = withPathValue(r, "requestId", fakeReqID)
+
+	h.PostApprove(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for note of EXACTLY 4096 chars (boundary inclusive), got %d — body: %s",
+			w.Code, w.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("response is not valid JSON: %v — body: %s", err, w.Body.String())
+	}
+	if resp["status"] != "approved" {
+		t.Errorf("expected status=approved at 4096-char boundary, got %q", resp["status"])
+	}
+}
+
+// TestRejectRequest_NoteTooLong_Returns400 verifies that a note exceeding 4096
+// characters in POST /reject is rejected with 400 M_BAD_JSON.
+//
+// Given: compliance_officer B, request submitted by officer A (no self-rejection),
+//        body.note = 4097 characters
+// When:  POST /api/v1/compliance/access-requests/{id}/reject
+// Then:  400 M_BAD_JSON — "note exceeds maximum length" (or similar)
+//
+// RED: handler currently has no note length check — will return 200 until 5.29b.
+func TestRejectRequest_NoteTooLong_Returns400(t *testing.T) {
+	db := openApprovalDB(t, approvalDBOpts{
+		requesterSub: officerASub,
+		updateHits:   true,
+	})
+	h := &compliance.AccessRequestHandler{DB: db, CoreClient: &mockCoreClient{}}
+
+	tooLongNote := strings.Repeat("y", 4097)
+	body := map[string]string{"note": tooLongNote}
+
+	w := httptest.NewRecorder()
+	r := newApprovalRequest(t, http.MethodPost,
+		"/api/v1/compliance/access-requests/"+fakeReqID+"/reject",
+		body, "compliance_officer", officerBSub)
+	r = withPathValue(r, "requestId", fakeReqID)
+
+	h.PostReject(w, r)
+
+	// RED-PHASE ASSERTION: will fail until the 4096-char cap is enforced.
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for note > 4096 chars in reject, got %d — body: %s"+
+			" — Story 5.29b AC3 not yet implemented", w.Code, w.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("response is not valid JSON: %v — body: %s", err, w.Body.String())
+	}
+	if resp["errcode"] != "M_BAD_JSON" {
+		t.Errorf("expected errcode=M_BAD_JSON, got %q", resp["errcode"])
+	}
+}

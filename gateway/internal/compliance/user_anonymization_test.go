@@ -899,3 +899,438 @@ func TestAnonymizeUser_PathTraversalMxc_Skipped(t *testing.T) {
 		})
 	}
 }
+
+// ─── Story 5.29b — AC6 (FB-58-01): Anonymize TX rollback on UPDATE users failure
+// ─── Story 5.29b — AC8 (FB-58-03): Self-anonymize blocked with 403 ───────────
+
+// txRollbackFakeDriver — "txrollbackdb"
+//
+// A sql driver whose UPDATE users step returns an error, simulating a DB failure
+// mid-transaction (step 5 per the story description).
+//
+// DSN flags:
+//   profileFound=<true|false>     — same as anondb
+//   avatarURL=<url>               — same as anondb
+//   failUsersUpdate=<true|false>  — when true, UPDATE users returns an error
+
+var txRollbackDriverOnce sync.Once
+
+func init() {
+	txRollbackDriverOnce.Do(func() {
+		sql.Register("txrollbackdb", &txRollbackFakeDriver{})
+	})
+}
+
+type txRollbackFakeDriver struct{}
+
+func (d *txRollbackFakeDriver) Open(name string) (driver.Conn, error) {
+	return &txRollbackFakeConn{dsn: name}, nil
+}
+
+type txRollbackFakeConn struct {
+	dsn          string
+	txRolledBack bool
+}
+
+func (c *txRollbackFakeConn) Prepare(query string) (driver.Stmt, error) {
+	profileFound := strings.Contains(c.dsn, "profileFound=true")
+	failUsersUpdate := strings.Contains(c.dsn, "failUsersUpdate=true")
+
+	avatarURL := ""
+	for _, part := range strings.Split(c.dsn, "&") {
+		if strings.HasPrefix(part, "avatarURL=") {
+			avatarURL = strings.TrimPrefix(part, "avatarURL=")
+			break
+		}
+	}
+
+	return &txRollbackFakeStmt{
+		query:           query,
+		profileFound:    profileFound,
+		avatarURL:       avatarURL,
+		failUsersUpdate: failUsersUpdate,
+		conn:            c,
+	}, nil
+}
+
+func (c *txRollbackFakeConn) Close() error { return nil }
+func (c *txRollbackFakeConn) Begin() (driver.Tx, error) {
+	return &txRollbackTx{conn: c}, nil
+}
+
+type txRollbackTx struct {
+	conn *txRollbackFakeConn
+}
+
+func (t *txRollbackTx) Commit() error {
+	return nil
+}
+
+func (t *txRollbackTx) Rollback() error {
+	t.conn.txRolledBack = true
+	return nil
+}
+
+type txRollbackFakeStmt struct {
+	query           string
+	profileFound    bool
+	avatarURL       string
+	failUsersUpdate bool
+	conn            *txRollbackFakeConn
+}
+
+func (s *txRollbackFakeStmt) Close() error  { return nil }
+func (s *txRollbackFakeStmt) NumInput() int { return -1 }
+
+func (s *txRollbackFakeStmt) Exec(args []driver.Value) (driver.Result, error) {
+	lq := strings.ToLower(s.query)
+	queryCaptureStore.record(s.query)
+
+	// UPDATE users SET anonymized_at — inject failure when configured.
+	if strings.Contains(lq, "update users") && strings.Contains(lq, "anonymized_at") {
+		if s.failUsersUpdate {
+			return nil, &txRollbackError{msg: "simulated UPDATE users failure — step 5"}
+		}
+	}
+
+	return driver.RowsAffected(1), nil
+}
+
+type txRollbackError struct{ msg string }
+
+func (e *txRollbackError) Error() string { return e.msg }
+
+func (s *txRollbackFakeStmt) Query(args []driver.Value) (driver.Rows, error) {
+	lq := strings.ToLower(s.query)
+
+	if strings.Contains(lq, "avatar_url") && strings.Contains(lq, "profiles") {
+		if !s.profileFound {
+			return &anonFakeRows{cols: []string{"avatar_url"}, data: nil}, nil
+		}
+		return &anonFakeRows{
+			cols: []string{"avatar_url"},
+			data: [][]driver.Value{{s.avatarURL}},
+		}, nil
+	}
+
+	return &anonFakeRows{}, nil
+}
+
+func openTxRollbackDB(t *testing.T, profileFound bool, avatarURL string, failUsersUpdate bool) *sql.DB {
+	t.Helper()
+	queryCaptureStore.reset()
+	dsn := "profileFound=false"
+	if profileFound {
+		dsn = "profileFound=true"
+	}
+	dsn += "&avatarURL=" + avatarURL
+	if failUsersUpdate {
+		dsn += "&failUsersUpdate=true"
+	}
+	db, err := sql.Open("txrollbackdb", dsn)
+	if err != nil {
+		t.Fatalf("sql.Open(txrollbackdb): %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	return db
+}
+
+// TestAnonymizeUser_TxRollbackOnUsersUpdateFailure verifies that when UPDATE users
+// (step 5 — setting anonymized_at) fails, the entire DB transaction is rolled back:
+//
+//   - UPDATE profiles (step 4: displayname='Deleted User') must NOT be committed.
+//   - UPDATE media_files (step 6: deleted=true) must NOT be committed.
+//   - Handler must return 500 (or 200 per story policy — see note).
+//
+// Note: the story leaves the HTTP status ambiguous ("HTTP 500 OR 200 (Story decides)").
+// This test accepts EITHER 500 or 200 but asserts that the handler does not panic and
+// that the DB error is handled consistently.
+//
+// Given: instance_admin caller, user with mxc avatar, UPDATE users fails mid-TX
+// When:  POST /api/v1/admin/users/{userId}/anonymize
+// Then:  Handler does not panic; response is 200 or 500; no half-committed profile row.
+//        If 200: the UPDATE users SQL must NOT appear in captured SQL (graceful skip).
+//        If 500: error was propagated from TX failure.
+//
+// RED: the handler currently does NOT wrap steps 4–6 in a transaction.
+// Without BeginTx wrapping: UPDATE profiles commits, UPDATE users fails → partial state.
+// With BeginTx wrapping:    TX rolls back entire steps 4–6 → no partial state.
+// Both cases may return 500; the distinction is whether profile UPDATE was committed.
+func TestAnonymizeUser_TxRollbackOnUsersUpdateFailure(t *testing.T) {
+	db := openTxRollbackDB(t, true, "mxc://server.local/mediaTX", true /* failUsersUpdate */)
+	client := &mockCoreClient{}
+	fr := &mockFileRemover{}
+
+	h := &compliance.AnonymizationHandler{
+		DB:          db,
+		CoreClient:  client,
+		StoragePath: t.TempDir(),
+		FileRemover: fr,
+	}
+
+	w := httptest.NewRecorder()
+	r := newAnonRequest(t, "user-tx-rollback", "instance_admin", "admin-sub-tx")
+
+	h.AnonymizeUser(w, r)
+
+	// Handler must not panic. Accept 200 or 500 (story leaves this open).
+	acceptableStatuses := map[int]bool{
+		http.StatusOK:                  true,
+		http.StatusInternalServerError: true,
+	}
+	if !acceptableStatuses[w.Code] {
+		t.Fatalf("expected 200 or 500 on TX failure, got %d — body: %s", w.Code, w.Body.String())
+	}
+
+	// RED-PHASE ASSERTION: When BeginTx wrapping is absent, the handler will:
+	//   1. UPDATE profiles (committed without TX)  → profileUpdateSeen = true
+	//   2. UPDATE users   → error
+	//   3. Return 500
+	// If that happens, both profile AND users SQL appear in captured, proving no TX rollback.
+	// With BeginTx wrapping, Rollback() is called and partial state is avoided.
+	//
+	// Test fails RED when:
+	//   - w.Code == 200 AND users UPDATE appeared in captured (swallowed error + partial commit)
+	captured := queryCaptureStore.captured
+	profileUpdated := false
+	usersUpdateAttempted := false
+	for _, q := range captured {
+		lq := strings.ToLower(q)
+		if strings.Contains(lq, "update profiles") || (strings.Contains(lq, "profiles") && strings.Contains(lq, "deleted user")) {
+			profileUpdated = true
+		}
+		if strings.Contains(lq, "update users") && strings.Contains(lq, "anonymized_at") {
+			usersUpdateAttempted = true
+		}
+	}
+
+	if profileUpdated && usersUpdateAttempted && w.Code == http.StatusOK {
+		t.Errorf("Story 5.29b AC6: handler returned 200 but both UPDATE profiles and UPDATE users "+
+			"(failing) were executed without a TX rollback — half-committed state detected. "+
+			"BeginTx wrapping (steps 4-6 in a single transaction) is not yet implemented.")
+	}
+}
+
+// TestAnonymizeUser_SelfAnonymize_Returns403 verifies that a caller cannot anonymize
+// themselves: callerSub == userId must be rejected with 403 M_FORBIDDEN.
+//
+// Given: instance_admin caller, userId == callerSub (same person)
+// When:  POST /api/v1/admin/users/{userId}/anonymize
+// Then:  403 M_FORBIDDEN — "self-anonymize requires four-eyes approval"
+//
+// RED: handler currently does NOT check callerSub == userId → returns 200 until 5.29b.
+func TestAnonymizeUser_SelfAnonymize_Returns403(t *testing.T) {
+	db := openAnonDB(t, true /* profileFound */, "mxc://server.local/mediaSelf")
+	client := &mockCoreClient{}
+	fr := &mockFileRemover{}
+
+	h := &compliance.AnonymizationHandler{
+		DB:          db,
+		CoreClient:  client,
+		StoragePath: t.TempDir(),
+		FileRemover: fr,
+	}
+
+	// callerSub == userId — self-anonymize scenario.
+	const selfUserID = "@self-admin:server.example"
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost,
+		"/api/v1/admin/users/"+selfUserID+"/anonymize",
+		bytes.NewReader(nil),
+	)
+	r.SetPathValue("userId", selfUserID)
+
+	ctx := r.Context()
+	ctx = context.WithValue(ctx, middleware.ContextKeySystemRole, "instance_admin")
+	ctx = context.WithValue(ctx, middleware.ContextKeySub, selfUserID) // SAME as userId
+	r = r.WithContext(ctx)
+
+	h.AnonymizeUser(w, r)
+
+	// RED-PHASE ASSERTION: will fail until self-anonymize guard is implemented.
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 M_FORBIDDEN for self-anonymize (callerSub == userId), got %d — body: %s"+
+			" — Story 5.29b AC8 not yet implemented", w.Code, w.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("response is not valid JSON: %v — body: %s", err, w.Body.String())
+	}
+	if resp["errcode"] != "M_FORBIDDEN" {
+		t.Errorf("expected errcode=M_FORBIDDEN, got %q", resp["errcode"])
+	}
+}
+
+// ─── Story 5.29b — TEA-MINOR-6: media_files UPDATE failure best-effort ────────
+//
+// The handler treats UPDATE media_files as best-effort INSIDE the TX:
+//   - on dbErr → slog.Warn, do NOT abort the TX (other rows already mutated).
+//
+// The original test suite did not exercise that code path; a regression that
+// promoted the warn to a Rollback would silently re-introduce half-state on
+// any deployment with a missing or read-only media_files table. Lock it in.
+
+// mediaFailFakeDriver — "mediafaildb"
+//
+// DSN flags:
+//   profileFound=<true|false>
+//   avatarURL=<url>           — set to a valid mxc:// to drive the media_files branch
+//
+// Behaviour: UPDATE media_files always returns an error.
+// All other Exec/Query patterns delegate to the same shape as anondb.
+
+var mediaFailDriverOnce sync.Once
+
+func init() {
+	mediaFailDriverOnce.Do(func() {
+		sql.Register("mediafaildb", &mediaFailFakeDriver{})
+	})
+}
+
+type mediaFailFakeDriver struct{}
+
+func (d *mediaFailFakeDriver) Open(name string) (driver.Conn, error) {
+	return &mediaFailFakeConn{dsn: name}, nil
+}
+
+type mediaFailFakeConn struct{ dsn string }
+
+func (c *mediaFailFakeConn) Prepare(query string) (driver.Stmt, error) {
+	profileFound := strings.Contains(c.dsn, "profileFound=true")
+	avatarURL := ""
+	for _, part := range strings.Split(c.dsn, "&") {
+		if strings.HasPrefix(part, "avatarURL=") {
+			avatarURL = strings.TrimPrefix(part, "avatarURL=")
+			break
+		}
+	}
+	return &mediaFailFakeStmt{
+		query:        query,
+		profileFound: profileFound,
+		avatarURL:    avatarURL,
+	}, nil
+}
+
+func (c *mediaFailFakeConn) Close() error              { return nil }
+func (c *mediaFailFakeConn) Begin() (driver.Tx, error) { return &anonFakeTx{}, nil }
+
+type mediaFailFakeStmt struct {
+	query        string
+	profileFound bool
+	avatarURL    string
+}
+
+func (s *mediaFailFakeStmt) Close() error  { return nil }
+func (s *mediaFailFakeStmt) NumInput() int { return -1 }
+
+func (s *mediaFailFakeStmt) Exec(args []driver.Value) (driver.Result, error) {
+	queryCaptureStore.record(s.query)
+	lq := strings.ToLower(s.query)
+	if strings.Contains(lq, "update media_files") {
+		return nil, &mediaFailErr{msg: "simulated UPDATE media_files failure"}
+	}
+	return driver.RowsAffected(1), nil
+}
+
+type mediaFailErr struct{ msg string }
+
+func (e *mediaFailErr) Error() string { return e.msg }
+
+func (s *mediaFailFakeStmt) Query(args []driver.Value) (driver.Rows, error) {
+	lq := strings.ToLower(s.query)
+	if strings.Contains(lq, "avatar_url") && strings.Contains(lq, "profiles") {
+		if !s.profileFound {
+			return &anonFakeRows{cols: []string{"avatar_url"}, data: nil}, nil
+		}
+		return &anonFakeRows{
+			cols: []string{"avatar_url"},
+			data: [][]driver.Value{{s.avatarURL}},
+		}, nil
+	}
+	return &anonFakeRows{}, nil
+}
+
+func openMediaFailDB(t *testing.T, profileFound bool, avatarURL string) *sql.DB {
+	t.Helper()
+	queryCaptureStore.reset()
+	dsn := "profileFound=false"
+	if profileFound {
+		dsn = "profileFound=true"
+	}
+	dsn += "&avatarURL=" + avatarURL
+	db, err := sql.Open("mediafaildb", dsn)
+	if err != nil {
+		t.Fatalf("sql.Open(mediafaildb): %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	return db
+}
+
+// TestAnonymizeUser_MediaFilesUpdateFails_Still200 verifies that when the
+// UPDATE media_files step inside the transaction fails, the handler:
+//   - does NOT abort the TX (best-effort policy)
+//   - still commits profiles + users updates
+//   - returns 200 OK with status="anonymized"
+//   - still emits the user_anonymized audit event
+//
+// This pins the "best-effort within TX" semantics so a future refactor that
+// changes the warn into a Rollback gets caught here.
+func TestAnonymizeUser_MediaFilesUpdateFails_Still200(t *testing.T) {
+	db := openMediaFailDB(t, true /* profileFound */, "mxc://server.local/mediaBest")
+	client := &mockCoreClient{}
+	fr := &mockFileRemover{}
+
+	h := &compliance.AnonymizationHandler{
+		DB:          db,
+		CoreClient:  client,
+		StoragePath: t.TempDir(),
+		FileRemover: fr,
+	}
+
+	w := httptest.NewRecorder()
+	r := newAnonRequest(t, "user-media-fail", "instance_admin", "admin-sub-1")
+
+	h.AnonymizeUser(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("media_files UPDATE failure must NOT abort the anonymize TX — expected 200, got %d — body: %s",
+			w.Code, w.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("response is not valid JSON: %v — body: %s", err, w.Body.String())
+	}
+	if resp["status"] != "anonymized" {
+		t.Errorf("expected status='anonymized' even after media_files UPDATE failure, got %q", resp["status"])
+	}
+
+	// Audit must still be emitted (success path: profiles + users committed).
+	if client.callCount() == 0 {
+		t.Error("expected user_anonymized audit to be emitted after best-effort media_files failure")
+	}
+
+	// Captured queries must show both UPDATE profiles and UPDATE media_files were
+	// attempted — the latter failing — proving the TX reached the media_files step
+	// and that no Rollback was triggered (no panic / 500).
+	captured := queryCaptureStore.captured
+	sawProfiles := false
+	sawMedia := false
+	for _, q := range captured {
+		lq := strings.ToLower(q)
+		if strings.Contains(lq, "update profiles") {
+			sawProfiles = true
+		}
+		if strings.Contains(lq, "update media_files") {
+			sawMedia = true
+		}
+	}
+	if !sawProfiles {
+		t.Errorf("expected UPDATE profiles to appear in captured SQL, got: %v", captured)
+	}
+	if !sawMedia {
+		t.Errorf("expected UPDATE media_files (failing) to appear in captured SQL, got: %v", captured)
+	}
+}

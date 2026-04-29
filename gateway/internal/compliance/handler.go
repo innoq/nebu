@@ -121,6 +121,18 @@ func (h *AccessRequestHandler) PostAccessRequest(w http.ResponseWriter, r *http.
 		return
 	}
 
+	// FB-53-03: enforce window cap (≤ 365 days) and retention horizon (≥ NOW() - 7 years).
+	const maxWindowDays = 365 * 24 * time.Hour
+	if end.Sub(start) > maxWindowDays {
+		writeComplianceError(w, http.StatusBadRequest, "M_BAD_JSON", "time_range window exceeds 365 days")
+		return
+	}
+	const retentionHorizon = 7 * 365 * 24 * time.Hour
+	if start.Before(time.Now().Add(-retentionHorizon)) {
+		writeComplianceError(w, http.StatusBadRequest, "M_BAD_JSON", "time_range_start is older than 7-year retention horizon")
+		return
+	}
+
 	// justification: required + minimum 20 characters
 	if req.Justification == "" {
 		writeComplianceError(w, http.StatusBadRequest, "M_BAD_JSON", "justification is required")
@@ -340,6 +352,12 @@ func (h *AccessRequestHandler) postDecision(
 		}
 	}
 	note := body.Note
+
+	// FB-54-01: enforce note max-length (4096 characters).
+	if len(note) > 4096 {
+		writeComplianceError(w, http.StatusBadRequest, "M_BAD_JSON", "note exceeds maximum length of 4096 characters")
+		return
+	}
 
 	// Pre-flight: fetch requester_user_id to enforce self-approval/reject guard.
 	var requesterUserID string
@@ -701,20 +719,27 @@ func (h *ExportHandler) GetExport(w http.ResponseWriter, r *http.Request) {
 	startMs := startTime.UnixMilli()
 	endMs := endTime.UnixMilli()
 
-	// Step 5: Pre-flight — fetch requester + approver from compliance_requests.
+	// Step 5: Pre-flight — fetch requester + approver + status from compliance_requests.
+	// FB-56-01: status must be re-read at export time to detect TOCTOU revocations.
 	// approver_user_id is nullable (JSONB without NOT NULL) — use sql.NullString.
 	var requesterUserID string
 	var approverNull sql.NullString
+	var requestStatus string
 	err = h.DB.QueryRowContext(r.Context(),
-		`SELECT requester_user_id, approver_user_id FROM compliance_requests WHERE id = $1`,
+		`SELECT requester_user_id, approver_user_id, status FROM compliance_requests WHERE id = $1`,
 		claims.ComplianceRequestID,
-	).Scan(&requesterUserID, &approverNull)
+	).Scan(&requesterUserID, &approverNull, &requestStatus)
 	if err != nil {
 		// sql.ErrNoRows: token was valid but request deleted (data integrity issue).
 		// Any DB error: 500.
 		slog.Error("compliance/export: pre-flight compliance_requests query failed",
 			"request_id", claims.ComplianceRequestID, "err", err)
 		writeComplianceError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
+		return
+	}
+	// FB-56-01: reject if request is no longer approved (TOCTOU revocation guard).
+	if requestStatus != "approved" {
+		writeComplianceError(w, http.StatusForbidden, "M_FORBIDDEN", "Compliance request is no longer approved")
 		return
 	}
 	approverUserID := ""
@@ -725,10 +750,10 @@ func (h *ExportHandler) GetExport(w http.ResponseWriter, r *http.Request) {
 	// Step 6: Fetch m.room.message events (strict scope: all scope from token claims).
 	// origin_server_ts is BIGINT (epoch ms) — convert RFC 3339 claims to ms above.
 	//
-	// LIMIT 10000 is a MVP DoS-guard sane default: a single export request loads all
-	// events into memory ([]exportEvent) and re-marshals them; without a cap a wide
-	// time range over a busy room could produce >>100 MB responses and OOM the gateway.
-	// Streaming/chunked export is tracked as FB-56-01 (Story 5.29 follow-up).
+	// FB-56-01: Use LIMIT 10001 as a truncation probe. If the query returns 10001 rows,
+	// we cap at 10000 and set truncated=true in the export document + audit metadata.
+	// This detects large result sets without streaming (MVP), avoiding OOM from >>100 MB responses.
+	const eventCap = 10000
 	rows, err := h.DB.QueryContext(r.Context(),
 		`SELECT event_id, room_id, sender, event_type, content, origin_server_ts, signatures
 		   FROM events
@@ -736,7 +761,7 @@ func (h *ExportHandler) GetExport(w http.ResponseWriter, r *http.Request) {
 		    AND event_type = 'm.room.message'
 		    AND origin_server_ts BETWEEN $2 AND $3
 		  ORDER BY origin_server_ts ASC
-		  LIMIT 10000`,
+		  LIMIT 10001`,
 		claims.RoomID, startMs, endMs,
 	)
 	if err != nil {
@@ -776,6 +801,13 @@ func (h *ExportHandler) GetExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// FB-56-01: detect and apply truncation cap.
+	truncated := false
+	if len(events) > eventCap {
+		events = events[:eventCap]
+		truncated = true
+	}
+
 	// Step 7: Build export document as a map (Go map marshaling is alphabetically ordered —
 	// this ensures deterministic serialization for signing and matches test reconstruction).
 	// The signed bytes must be the same as: unmarshal response → delete server_signature → remarshal.
@@ -809,6 +841,13 @@ func (h *ExportHandler) GetExport(w http.ResponseWriter, r *http.Request) {
 	docMap["time_range_end"] = timeEndJSON
 	timeStartJSON, _ := json.Marshal(claims.TimeRangeStart)
 	docMap["time_range_start"] = timeStartJSON
+	// FB-56-01: include truncation flag in the signed export document.
+	if truncated {
+		truncatedJSON, _ := json.Marshal(true)
+		docMap["truncated"] = truncatedJSON
+		eventsAtJSON, _ := json.Marshal(eventCap)
+		docMap["events_truncated_at"] = eventsAtJSON
+	}
 
 	// Step 8: Marshal doc WITHOUT server_signature → sign → base64-encode.
 	// Export document is signed over map-marshalled JSON (alphabetically sorted keys).
@@ -830,9 +869,14 @@ func (h *ExportHandler) GetExport(w http.ResponseWriter, r *http.Request) {
 	// Audit — never-raise, 500ms timeout (AC8, AC9).
 	auditCtx, cancel := context.WithTimeout(context.Background(), auditTimeout)
 	defer cancel()
+	auditMeta := map[string]any{"event_count": len(events)}
+	if truncated {
+		auditMeta["truncated"] = true
+		auditMeta["events_truncated_at"] = eventCap
+	}
 	_ = auditpkg.LogEvent(auditCtx, h.CoreClient, callerSub,
 		"compliance_export_downloaded", "compliance_request", claims.ComplianceRequestID,
-		map[string]any{"event_count": len(events)},
+		auditMeta,
 		"success", "")
 
 	w.WriteHeader(http.StatusOK)

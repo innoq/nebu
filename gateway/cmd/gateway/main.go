@@ -746,19 +746,20 @@ func main() {
 		DB:         complianceDB,
 		CoreClient: coreClient.CoreServiceClient(),
 	}
+	// FB-53-01: all compliance/* and admin anonymize/key-delete routes wrapped in strictRL (10/min/IP).
 	mux.Handle("POST /api/v1/compliance/access-requests",
-		bodyLimit64KiB(jwtMiddleware(http.HandlerFunc(accessRequestHandler.PostAccessRequest))))
+		strictRL(bodyLimit64KiB(jwtMiddleware(http.HandlerFunc(accessRequestHandler.PostAccessRequest)))))
 
 	// Story 5.4 — Four-Eyes Approval API
 	// GET: no body, so no bodyLimit needed
 	mux.Handle("GET /api/v1/compliance/access-requests",
-		jwtMiddleware(http.HandlerFunc(accessRequestHandler.GetAccessRequests)))
+		strictRL(jwtMiddleware(http.HandlerFunc(accessRequestHandler.GetAccessRequests))))
 
 	mux.Handle("POST /api/v1/compliance/access-requests/{requestId}/approve",
-		bodyLimit64KiB(jwtMiddleware(http.HandlerFunc(accessRequestHandler.PostApprove))))
+		strictRL(bodyLimit64KiB(jwtMiddleware(http.HandlerFunc(accessRequestHandler.PostApprove)))))
 
 	mux.Handle("POST /api/v1/compliance/access-requests/{requestId}/reject",
-		bodyLimit64KiB(jwtMiddleware(http.HandlerFunc(accessRequestHandler.PostReject))))
+		strictRL(bodyLimit64KiB(jwtMiddleware(http.HandlerFunc(accessRequestHandler.PostReject)))))
 
 	// Admin API (session auth, not JWT) — pending-count badge for dashboard
 	pendingCountHandler := &compliance.PendingCountHandler{DB: complianceDB}
@@ -818,7 +819,7 @@ func main() {
 		PublicKey:  compPubKey,
 	}
 	mux.Handle("POST /api/v1/compliance/access-requests/{requestId}/session",
-		bodyLimit64KiB(jwtMiddleware(http.HandlerFunc(sessionHandler.PostSession))))
+		strictRL(bodyLimit64KiB(jwtMiddleware(http.HandlerFunc(sessionHandler.PostSession)))))
 
 	// Story 5.6 — Compliance Data Export
 	// GET endpoint — no body, so no bodyLimit64KiB or requireJSON needed.
@@ -830,7 +831,7 @@ func main() {
 		PublicKey:   compPubKey,
 	}
 	mux.Handle("GET /api/v1/compliance/export",
-		jwtMiddleware(http.HandlerFunc(exportHandler.GetExport)))
+		strictRL(jwtMiddleware(http.HandlerFunc(exportHandler.GetExport))))
 
 	// Story 5.29c AC2 — Compliance session revoke endpoint.
 	// POST /api/v1/admin/compliance/sessions/{sessionId}/revoke
@@ -845,7 +846,7 @@ func main() {
 		CoreClient: coreClient.CoreServiceClient(),
 	}
 	mux.Handle("POST /api/v1/admin/compliance/sessions/{sessionId}/revoke",
-		bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(revokeSessionHandler.RevokeSession)))))
+		strictRL(bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(revokeSessionHandler.RevokeSession))))))
 
 	// Story 5.7 — DSGVO User Key Deletion
 	// Route namespace: /api/v1/admin/* — instance_admin only, role gate inside handler.
@@ -854,7 +855,7 @@ func main() {
 		CoreClient: coreClient.CoreServiceClient(),
 	}
 	mux.Handle("DELETE /api/v1/admin/users/{userId}/keys",
-		bodyLimit64KiB(jwtMiddleware(http.HandlerFunc(userKeyDeletionHandler.DeleteUserKeys))))
+		strictRL(bodyLimit64KiB(jwtMiddleware(http.HandlerFunc(userKeyDeletionHandler.DeleteUserKeys)))))
 
 	// Story 5.8 — Operational PII Anonymization
 	// Route namespace: /api/v1/admin/* — instance_admin only, role gate inside handler.
@@ -866,7 +867,7 @@ func main() {
 		StoragePath: os.Getenv("NEBU_MEDIA_STORAGE_PATH"),
 	}
 	mux.Handle("POST /api/v1/admin/users/{userId}/anonymize",
-		jwtMiddleware(http.HandlerFunc(anonymizationHandler.AnonymizeUser)))
+		strictRL(jwtMiddleware(http.HandlerFunc(anonymizationHandler.AnonymizeUser))))
 
 	// POST /rooms/{roomId}/leave — leave a room (calls Elixir LeaveRoom gRPC)
 	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/leave",

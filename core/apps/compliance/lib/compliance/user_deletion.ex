@@ -97,7 +97,12 @@ defmodule Compliance.UserDeletion do
     end
   end
 
-  # ─── Step 1: Guard — check user existence and deletion_status ────────────────
+  # ─── Step 1: Guard — check user existence ────────────────────────────────────
+  #
+  # FB-57-01: This SELECT checks existence and deletion_status for early-exit guards
+  # (:user_not_found, :conflict when already in_progress/keys_deleted).
+  # The TOCTOU window between this SELECT and Step 2 is closed by the atomic
+  # conditional UPDATE in mark_in_progress/1 (which uses RETURNING to detect races).
 
   defp check_user(target_user_id) do
     sql = "SELECT user_id, deletion_status FROM users WHERE user_id = $1"
@@ -118,18 +123,35 @@ defmodule Compliance.UserDeletion do
     end
   end
 
-  # ─── Step 2: Mark deletion_in_progress ───────────────────────────────────────
+  # ─── Step 2: Mark deletion_in_progress (atomic conditional UPDATE) ───────────
+  #
+  # FB-57-01: Replace the old unconditional UPDATE with a single atomic
+  # conditional UPDATE + RETURNING. This closes the TOCTOU race window between
+  # check_user/1 and the status write:
+  #
+  #   UPDATE users
+  #   SET deletion_status = 'deletion_in_progress'
+  #   WHERE user_id = $1
+  #     AND (deletion_status IS NULL OR deletion_status = 'active')
+  #   RETURNING user_id
+  #
+  # If a concurrent caller already set deletion_in_progress between our SELECT
+  # (step 1) and this UPDATE, the WHERE predicate finds 0 matching rows and
+  # RETURNING returns an empty list → {:error, :conflict}.
+  # This guarantees exactly-once semantics even under concurrent callers.
 
   defp mark_in_progress(target_user_id) do
     sql = """
     UPDATE users
     SET deletion_status = 'deletion_in_progress'
     WHERE user_id = $1
-      AND (deletion_status IS NULL OR deletion_status IS DISTINCT FROM 'deletion_in_progress')
+      AND (deletion_status IS NULL OR deletion_status = 'active')
+    RETURNING user_id
     """
 
     case repo().query(sql, [target_user_id]) do
-      {:ok, _} -> :ok
+      {:ok, %{rows: []}} -> {:error, :conflict}
+      {:ok, %{rows: [_ | _]}} -> :ok
       {:error, reason} -> {:error, reason}
     end
   end

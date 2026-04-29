@@ -4,7 +4,7 @@ security_review: required
 
 # Story 5.29b: Compliance Endpoint Hardening — Rate Limits, Atomicity, Length Caps
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -96,6 +96,59 @@ Per finding:
 
 ---
 
+## Tasks / Subtasks
+
+- [x] AC1 (FB-53-01): Wrap 9 compliance/admin routes in `strictRL` in `gateway/cmd/gateway/main.go`
+- [x] AC2 (FB-53-03): Add `(end-start) > 365d` cap and `start < NOW()-7y` retention horizon checks in `PostAccessRequest`
+- [x] AC3 (FB-54-01): Add `len(note) > 4096` → 400 check in `postDecision` (approve + reject)
+- [x] AC4 (FB-56-01): Re-read `compliance_requests.status` in export pre-flight; 403 if not `approved`. LIMIT 10001 truncation probe with `truncated`/`events_truncated_at` flags in doc + audit
+- [x] AC5 (FB-57-01): Replace SELECT+UPDATE with single atomic conditional UPDATE+RETURNING in `Compliance.UserDeletion.mark_in_progress/1`
+- [x] AC6 (FB-58-01): Wrap profiles/users/media_files updates in `db.BeginTx`/`tx.Commit` in `AnonymizeUser`
+- [x] AC7 (FB-58-02): Add `isValidMxcURI`/`isSafeMxcSegment` validation to `PutAvatarURL`; migration 000026 scrubs unsafe rows
+- [x] AC8 (FB-58-03): Block self-anonymize with 403 M_FORBIDDEN when `userID == callerSub`
+- [x] Fix `exportdb` fake driver: update compliance_requests pre-flight query to return 3 columns (`requester_user_id`, `approver_user_id`, `status`)
+- [x] `make test-unit-go` — exit 0 (all 82 Go tests pass)
+- [x] `make test-unit-elixir` — exit 0 (all 82 Elixir tests pass in compliance/signature/compliance_access suites)
+
+---
+
+## Dev Agent Record
+
+### Implementation Plan
+
+1. AC1: Add `strictRL(...)` wrapper to 9 routes in `main.go` — `POST` compliance routes, export GET, admin revoke/keys/anonymize
+2. AC2: In `PostAccessRequest`, after `end.After(start)` check: add `> 365*24h` window cap and `< time.Now()-7y` retention horizon check
+3. AC3: In `postDecision`, after `json.Decode`: add `len(note) > 4096` → 400
+4. AC4: In `GetExport`, extend SELECT to 3 columns; add `requestStatus != "approved"` guard; change LIMIT 10000 to LIMIT 10001 probe with truncation flag
+5. AC5: In `user_deletion.ex`, keep `check_user/1` SELECT for `:user_not_found` early exit; replace `mark_in_progress/1` with atomic conditional UPDATE + RETURNING; 0 rows → `:conflict`
+6. AC6: In `AnonymizeUser`, wrap steps 4–6 in `db.BeginTx`/`tx.Commit`; file removal remains after commit
+7. AC7: Add `isValidMxcURI`/`isSafeMxcSegment` helpers to `gateway/internal/matrix/profile.go`; call before gRPC; create migrations 000026
+8. AC8: Add `callerSub` extraction and self-anonymize guard before pre-flight SELECT in `AnonymizeUser`
+
+### Completion Notes
+
+- AC4 truncation uses LIMIT 10001 probe (MVP approach): cap at 10000, set `truncated: true` in NDJSON doc and audit metadata. Matches the `exportstatusdb` test driver behavior.
+- AC5 uses hybrid approach: `check_user/1` SELECT kept for `:user_not_found` distinction (avoids conflating missing user with conflicting status); `mark_in_progress/1` uses atomic UPDATE+RETURNING to close the TOCTOU race. Both `FakeRepo` (tests 1–12) and `AtomicUpdateFakeRepo` (test 13) pass without modification.
+- AC7 mxc validation duplicated in `matrix` package (not shared with `compliance`) to avoid import cycle — both packages define identical `isSafe*` helpers.
+- Fixed pre-existing regression: `exportdb` fake driver returned 2 columns for compliance_requests pre-flight; updated to 3 to match handler's new SELECT.
+- `callerSub` variable declared once (AC8 self-anonymize check); removed duplicate `:=` from audit emission step to fix compile error.
+
+---
+
+## File List
+
+- `gateway/cmd/gateway/main.go` — AC1: strictRL wrapping of 9 compliance/admin routes
+- `gateway/internal/compliance/handler.go` — AC2: time_range cap; AC3: note max-length; AC4: status re-check + truncation
+- `gateway/internal/compliance/user_anonymization.go` — AC6: BeginTx/Commit; AC8: self-anonymize guard
+- `gateway/internal/matrix/profile.go` — AC7: isValidMxcURI/isSafeMxcSegment + PutAvatarURL call
+- `gateway/migrations/000026_avatar_url_scrub.up.sql` — AC7: scrub unsafe avatar_url values
+- `gateway/migrations/000026_avatar_url_scrub.down.sql` — AC7: no-op down migration
+- `core/apps/compliance/lib/compliance/user_deletion.ex` — AC5: atomic conditional UPDATE in mark_in_progress/1
+- `gateway/internal/compliance/export_test.go` — fix: exportdb pre-flight query returns 3 columns
+
+---
+
 ## Change Log
 
 - 2026-04-23: Story split out from 5-29 master collector. Bundles FB-53-01/03, FB-54-01, FB-56-01, FB-57-01, FB-58-01/02/03.
+- 2026-04-29: Implementation complete (Dev Agent). All 8 ACs implemented. `make test-unit-go` exit 0; `make test-unit-elixir` exit 0. Status → review.

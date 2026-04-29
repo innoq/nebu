@@ -382,6 +382,198 @@ defmodule Compliance.UserDeletionTest do
            "expected {:error, :no_private_key} when private_key is nil (AC5 guard), got #{inspect(result)}"
   end
 
+  # ─── Story 5.29b — AC5 (FB-57-01): Atomic guard — concurrent calls ──────────
+  #
+  # ALL tests below are expected to FAIL until Story 5.29b is implemented.
+  #
+  # AC5 spec:
+  #   Replace SELECT+UPDATE guard with a single conditional UPDATE:
+  #     UPDATE users
+  #     SET deletion_status = 'deletion_in_progress'
+  #     WHERE id = $1
+  #       AND (deletion_status IS NULL OR deletion_status = 'active')
+  #     RETURNING id
+  #   0 rows returned → {:error, :conflict}
+  #
+  # Failing reason: current implementation uses a two-step SELECT+UPDATE which has
+  # a TOCTOU window. The new implementation must use a single conditional UPDATE.
+  #
+  # Test: two concurrent Task.async calls to delete_user_keys/3.
+  #   - Exactly one call must return {:ok, _}.
+  #   - Exactly one call must return {:error, :conflict}.
+  #   - Exactly one audit entry with action='user_keys_deleted' must exist.
+  #
+  # Note: this test uses a real concurrent scenario via Task.async/1.
+  # The FakeRepo for this test must simulate the atomic-UPDATE race:
+  #   - First caller's UPDATE matches and returns 1 row.
+  #   - Second caller's UPDATE finds no matching row (deletion_status already changed)
+  #     and returns 0 rows → :conflict.
+
+  defmodule AtomicUpdateFakeRepo do
+    @moduledoc """
+    FakeRepo variant that simulates the atomic conditional UPDATE for deletion_in_progress.
+    Uses an Agent to track whether the first caller has already set deletion_in_progress.
+    The first UPDATE call succeeds (1 row); subsequent calls return 0 rows (conflict).
+    """
+
+    # Shared Agent pid is stored in :compliance app env before the test.
+    # This simulates the DB row state that the conditional UPDATE observes.
+
+    def transaction(fun) when is_function(fun, 0) do
+      result = fun.()
+      case result do
+        {:error, _} = err -> err
+        other -> {:ok, other}
+      end
+    end
+
+    def query(sql, args, _opts \\ []) do
+      cond do
+        # Atomic conditional UPDATE:
+        #   UPDATE users SET deletion_status='deletion_in_progress'
+        #   WHERE id=$1 AND (deletion_status IS NULL OR deletion_status='active')
+        #   RETURNING id
+        #
+        # First caller: state is nil/active → matches → returns 1 row.
+        # Second caller: state is now 'deletion_in_progress' → no match → 0 rows.
+        String.contains?(sql, "deletion_in_progress") and
+          String.contains?(sql, "WHERE") and
+            String.contains?(sql, "RETURNING") ->
+          agent = Application.get_env(:compliance, :__test_atomic_agent__)
+
+          if agent do
+            claimed = Agent.get_and_update(agent, fn claimed ->
+              {claimed, true}
+            end)
+
+            if claimed do
+              # Second caller: conditional UPDATE found 0 matching rows → conflict.
+              {:ok, %{rows: [], num_rows: 0}}
+            else
+              # First caller: UPDATE succeeded.
+              user_id = List.first(args) || "target-user-concurrent"
+              {:ok, %{rows: [[user_id]], num_rows: 1}}
+            end
+          else
+            # Fallback: not configured for atomic test.
+            user_id = List.first(args) || "target-user-concurrent"
+            {:ok, %{rows: [[user_id]], num_rows: 1}}
+          end
+
+        # Guard SELECT: check user existence and current deletion_status.
+        String.contains?(sql, "deletion_status") and String.contains?(sql, "FROM users WHERE") ->
+          {:ok, %{rows: [["target-user-concurrent", nil]], num_rows: 1}}
+
+        # Signing key soft-delete.
+        String.contains?(sql, "signing") ->
+          {:ok, %{rows: [], num_rows: 1}}
+
+        # Encryption key soft-delete.
+        String.contains?(sql, "encryption") ->
+          {:ok, %{rows: [], num_rows: 1}}
+
+        # keys_deleted status update.
+        String.contains?(sql, "keys_deleted") and String.contains?(sql, "UPDATE users") ->
+          {:ok, %{rows: [], num_rows: 1}}
+
+        true ->
+          {:ok, %{rows: [], num_rows: 0}}
+      end
+    end
+
+    def insert(struct, _opts \\ []) do
+      bucket = Application.get_env(:compliance, :__test_fake_repo_bucket__)
+      if bucket, do: Agent.update(bucket, fn rows -> [struct | rows] end)
+      {:ok, struct}
+    end
+
+    def insert!(_struct, _opts \\ []), do: raise("AtomicUpdateFakeRepo.insert! unexpected")
+  end
+
+  # ─── Test 13: Concurrent calls — exactly one wins, one gets :conflict ─────────
+  #
+  # Given: user exists, deletion_status = nil (active)
+  # When:  two simultaneous calls to delete_user_keys/3 via Task.async
+  # Then:  exactly 1 {:ok, _} and exactly 1 {:error, :conflict}
+  #        exactly 1 audit entry with action='user_keys_deleted'
+  #        (no :conflict audit entry — conflict is a guard, not a TX failure)
+  #
+  # RED-PHASE: this test will FAIL until the atomic conditional UPDATE is implemented.
+  # With the current SELECT+UPDATE implementation, both calls may see deletion_status=nil
+  # in the SELECT guard and both proceed, producing 2 {:ok, _} responses and 2 audits.
+
+  test "concurrent calls — exactly one wins, one gets :conflict, exactly one audit",
+       %{audit_bucket: audit_bucket} do
+    # Start an Agent to simulate the DB's atomic row-level lock.
+    {:ok, atomic_agent} = Agent.start_link(fn -> false end)
+
+    Application.put_env(:compliance, :repo, AtomicUpdateFakeRepo)
+    Application.put_env(:compliance, :__test_atomic_agent__, atomic_agent)
+
+    # Launch two concurrent calls using Task.async.
+    task_a =
+      Task.async(fn ->
+        Compliance.UserDeletion.delete_user_keys(
+          "admin-sub-concurrent",
+          "target-user-concurrent",
+          "DSGVO concurrent deletion test A"
+        )
+      end)
+
+    task_b =
+      Task.async(fn ->
+        Compliance.UserDeletion.delete_user_keys(
+          "admin-sub-concurrent",
+          "target-user-concurrent",
+          "DSGVO concurrent deletion test B"
+        )
+      end)
+
+    result_a = Task.await(task_a, 5000)
+    result_b = Task.await(task_b, 5000)
+
+    results = [result_a, result_b]
+
+    ok_count =
+      Enum.count(results, fn
+        {:ok, _} -> true
+        _ -> false
+      end)
+
+    conflict_count =
+      Enum.count(results, fn
+        {:error, :conflict} -> true
+        _ -> false
+      end)
+
+    # RED-PHASE ASSERTION: exactly one winner, one conflict.
+    assert ok_count == 1,
+           "expected exactly 1 {:ok, _} from concurrent calls, got #{ok_count} — " <>
+             "results: #{inspect(results)} — " <>
+             "Story 5.29b AC5 atomic conditional UPDATE not yet implemented"
+
+    assert conflict_count == 1,
+           "expected exactly 1 {:error, :conflict} from concurrent calls, got #{conflict_count} — " <>
+             "results: #{inspect(results)} — " <>
+             "Story 5.29b AC5 atomic conditional UPDATE not yet implemented"
+
+    # Exactly 1 audit entry (only the winner emits 'user_keys_deleted').
+    audit_log = Agent.get(audit_bucket, & &1)
+    assert length(audit_log) == 1,
+           "expected exactly 1 audit entry (winner only), got #{length(audit_log)}: #{inspect(audit_log)}"
+
+    [audit_entry] = audit_log
+
+    assert audit_entry.action == "user_keys_deleted",
+           "expected audit action='user_keys_deleted', got #{inspect(audit_entry.action)}"
+
+    assert audit_entry.outcome == "success",
+           "expected audit outcome='success', got #{inspect(audit_entry.outcome)}"
+
+    # Cleanup.
+    Agent.stop(atomic_agent)
+  end
+
   # ─── Test 12: Audit metadata — success vs. attempted shape ───────────────────
   #
   # Given: success path → audit metadata has only :reason (no :error key)

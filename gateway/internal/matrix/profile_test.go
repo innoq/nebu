@@ -644,3 +644,108 @@ func TestPutDisplayname_MultiByteUnicode128Chars(t *testing.T) {
 		t.Fatalf("expected 200 for 128-char multi-byte displayname, got %d; body: %s", w.Code, w.Body.String())
 	}
 }
+
+// ─── Story 5.29b — AC7 (FB-58-02): Avatar URL upstream validation ─────────────
+//
+// ALL two tests below are expected to FAIL until Story 5.29b is implemented.
+//
+// AC7 spec:
+//   PUT /profile/{userId}/avatar_url must enforce safe mxc:// format:
+//     mxc://<safe-server>/<safe-mediaId>
+//   where safe-server and safe-mediaId contain only [a-zA-Z0-9._-] (no ../ or /).
+//   Path-traversal candidates like "mxc://../../etc/passwd/x" → 400 M_BAD_JSON.
+//
+// Currently: the handler only validates that avatar_url starts with "mxc://"
+// (see TestPutAvatarUrl_NonMxcUrl — it uses "https://cdn.example.com/img.jpg").
+// Path-traversal mxc URIs pass the current check and are accepted.
+
+// TestPutAvatarURL_RejectsUnsafeMxc_Returns400 verifies that a path-traversal mxc URI
+// is rejected with 400 M_BAD_JSON "invalid avatar URL".
+//
+// Given: authenticated user, avatar_url = "mxc://../../etc/passwd/x"
+// When:  PUT /profile/{userId}/avatar_url
+// Then:  400 M_BAD_JSON "invalid avatar URL"
+//        Core NOT called (validation before gRPC)
+//
+// RED: handler currently accepts any mxc:// URI → returns 200 until 5.29b.
+func TestPutAvatarURL_RejectsUnsafeMxc_Returns400(t *testing.T) {
+	coreMock := &mockProfileCoreClient{
+		resp: &pb.UpdateProfileResponse{},
+	}
+	mux, _, makeToken := buildAuthedProfileHandler(t, coreMock, &mockProfileDB{})
+
+	// Path-traversal mxc URI — must be rejected by safe-path validation.
+	body := `{"avatar_url": "mxc://../../etc/passwd/x"}`
+	req := httptest.NewRequest(
+		http.MethodPut,
+		"/profile/@test-sub-123:test.local/avatar_url",
+		strings.NewReader(body),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	// RED-PHASE ASSERTION: will fail until safe mxc validation is added to PutAvatarURL.
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for unsafe mxc URI (path traversal), got %d; body: %s"+
+			" — Story 5.29b AC7 not yet implemented", w.Code, w.Body.String())
+	}
+
+	var errResp struct {
+		ErrCode string `json:"errcode"`
+		Error   string `json:"error"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("failed to decode error response: %v; body: %s", err, w.Body.String())
+	}
+	if errResp.ErrCode != "M_BAD_JSON" {
+		t.Errorf("expected errcode M_BAD_JSON, got %s", errResp.ErrCode)
+	}
+	if !strings.Contains(strings.ToLower(errResp.Error), "invalid avatar") {
+		t.Errorf("expected error to contain 'invalid avatar', got %q", errResp.Error)
+	}
+
+	// Core must NOT have been called.
+	if coreMock.capturedReq != nil {
+		t.Error("expected UpdateProfile NOT to be called on unsafe mxc URI, but capturedReq is set")
+	}
+}
+
+// TestPutAvatarURL_AcceptsValidMxc_Returns200 verifies that a well-formed safe mxc URI
+// is accepted (boundary check — passes through validation).
+//
+// Given: authenticated user, avatar_url = "mxc://server.local/mediaABC123"
+// When:  PUT /profile/{userId}/avatar_url
+// Then:  200 OK, Core called with canonical mxc URI
+func TestPutAvatarURL_AcceptsValidMxc_Returns200(t *testing.T) {
+	coreMock := &mockProfileCoreClient{
+		resp: &pb.UpdateProfileResponse{},
+	}
+	mux, _, makeToken := buildAuthedProfileHandler(t, coreMock, &mockProfileDB{})
+
+	body := `{"avatar_url": "mxc://server.local/mediaABC123"}`
+	req := httptest.NewRequest(
+		http.MethodPut,
+		"/profile/@test-sub-123:test.local/avatar_url",
+		strings.NewReader(body),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for valid mxc URI, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	// Core must have been called with the mxc URI.
+	if coreMock.capturedReq == nil {
+		t.Fatal("expected UpdateProfile to be called for valid mxc URI, but capturedReq is nil")
+	}
+	if coreMock.capturedReq.AvatarUrl != "mxc://server.local/mediaABC123" {
+		t.Errorf("expected avatar_url forwarded as-is, got %q", coreMock.capturedReq.AvatarUrl)
+	}
+}

@@ -166,11 +166,11 @@ func (s *exportFakeStmt) Query(args []driver.Value) (driver.Rows, error) {
 	}
 
 	// Pattern 1: compliance_requests pre-flight
-	// SELECT requester_user_id, approver_user_id FROM compliance_requests WHERE id = $1
+	// SELECT requester_user_id, approver_user_id, status FROM compliance_requests WHERE id = $1
 	if strings.Contains(s.query, "compliance_requests") &&
 		strings.Contains(s.query, "requester_user_id") &&
 		strings.Contains(s.query, "approver_user_id") {
-		cols := []string{"requester_user_id", "approver_user_id"}
+		cols := []string{"requester_user_id", "approver_user_id", "status"}
 		if !s.requestRowExists {
 			return &exportFakeRows{cols: cols, data: nil}, nil
 		}
@@ -179,6 +179,7 @@ func (s *exportFakeStmt) Query(args []driver.Value) (driver.Rows, error) {
 			data: [][]driver.Value{{
 				"@alice:server.example", // requester_user_id
 				"@admin:server.example", // approver_user_id
+				"approved",              // status — all happy-path tests use approved requests
 			}},
 		}, nil
 	}
@@ -1138,5 +1139,347 @@ func TestGetExport_MalformedTimeRangeClaim_Returns500(t *testing.T) {
 	}
 	if client.callCount() != 0 {
 		t.Errorf("audit must NOT be emitted on malformed claim 500, got %d calls", client.callCount())
+	}
+}
+
+// ─── Story 5.29b — AC4 (FB-56-01): Export status TOCTOU + LIMIT/truncation ───
+//
+// ALL two tests below are expected to FAIL until Story 5.29b is implemented.
+//
+// AC4a — Status re-check TOCTOU:
+//   The current handler reads status at token-issuance time (5-5).  AC4 requires
+//   a second SELECT that reads the current status at export time.  If the status
+//   is no longer 'approved', the handler must return 403 M_FORBIDDEN.
+//   Failing reason: handler does not re-read status → accepts revoked requests.
+//
+// AC4b — Truncation flag:
+//   When the events query would return > 10000 rows, the response must carry
+//   {"truncated":true,"events_truncated_at":10000} AND the audit metadata must
+//   reflect the truncation.
+//   Failing reason: handler either streams all rows or has no truncation flag yet.
+//
+// Note on exportFakeDriver extension:
+//   AC4a uses a new DSN flag "requestStatus=rejected" in the pre-flight SELECT.
+//   The exportFakeStmt.Query currently returns only requester_user_id + approver_user_id.
+//   Until the handler reads status, the 403 branch cannot be reached → test fails.
+
+// exportStatusFakeDriver wraps exportFakeDriver to inject a controllable status.
+// Registered as "exportstatusdb" to avoid collision with "exportdb".
+//
+// DSN flags (semicolon-separated):
+//   requestStatus=<approved|rejected|pending>  — status returned by pre-flight SELECT
+//   events=<N>                                 — number of event rows (default 3)
+
+var exportStatusDriverOnce sync.Once
+
+func init() {
+	exportStatusDriverOnce.Do(func() {
+		sql.Register("exportstatusdb", &exportStatusFakeDriver{})
+	})
+}
+
+type exportStatusFakeDriver struct{}
+
+func (d *exportStatusFakeDriver) Open(name string) (driver.Conn, error) {
+	return &exportStatusFakeConn{dsn: name}, nil
+}
+
+type exportStatusFakeConn struct {
+	dsn string
+}
+
+func (c *exportStatusFakeConn) dsnFlag(key string) string {
+	for _, part := range strings.Split(c.dsn, ";") {
+		if strings.HasPrefix(part, key+"=") {
+			return strings.TrimPrefix(part, key+"=")
+		}
+	}
+	return ""
+}
+
+func (c *exportStatusFakeConn) Prepare(query string) (driver.Stmt, error) {
+	eventsStr := c.dsnFlag("events")
+	eventCount := 3
+	if eventsStr != "" {
+		if n, err := strconv.Atoi(eventsStr); err == nil {
+			eventCount = n
+		}
+	}
+	requestStatus := c.dsnFlag("requestStatus")
+	if requestStatus == "" {
+		requestStatus = "approved"
+	}
+	return &exportStatusFakeStmt{
+		query:         query,
+		eventCount:    eventCount,
+		requestStatus: requestStatus,
+	}, nil
+}
+
+func (c *exportStatusFakeConn) Close() error { return nil }
+func (c *exportStatusFakeConn) Begin() (driver.Tx, error) {
+	return &exportFakeTx{}, nil // reuse existing no-op tx
+}
+
+type exportStatusFakeStmt struct {
+	query         string
+	eventCount    int
+	requestStatus string // "approved", "rejected", "pending"
+}
+
+func (s *exportStatusFakeStmt) Close() error  { return nil }
+func (s *exportStatusFakeStmt) NumInput() int { return -1 }
+
+func (s *exportStatusFakeStmt) Exec(args []driver.Value) (driver.Result, error) {
+	return driver.RowsAffected(0), nil
+}
+
+func (s *exportStatusFakeStmt) Query(args []driver.Value) (driver.Rows, error) {
+	// Revocation check: compliance_sessions token_hash lookup → active (not revoked).
+	if strings.Contains(s.query, "compliance_sessions") && strings.Contains(s.query, "token_hash") {
+		return &exportFakeRows{
+			cols: []string{"?column?"},
+			data: [][]driver.Value{{int64(1)}},
+		}, nil
+	}
+
+	// Pre-flight SELECT: returns requester, approver, AND status.
+	// The existing handler only reads requester+approver; once AC4a is implemented it
+	// must also read status from this query (or a second query).
+	if strings.Contains(s.query, "compliance_requests") && strings.Contains(s.query, "requester_user_id") {
+		// Return three columns so the handler can read status.
+		// If the handler reads only 2 columns, Scan will error — but that is a RED signal.
+		cols := []string{"requester_user_id", "approver_user_id", "status"}
+		return &exportFakeRows{
+			cols: cols,
+			data: [][]driver.Value{{
+				"@alice:server.example", // requester_user_id
+				"@admin:server.example", // approver_user_id
+				s.requestStatus,         // status — AC4a: may be "rejected"
+			}},
+		}, nil
+	}
+
+	// Events query.
+	if strings.Contains(s.query, "FROM events") && strings.Contains(s.query, "room_id") {
+		cols := []string{"event_id", "room_id", "sender", "event_type", "content", "origin_server_ts", "signatures"}
+		rows := make([][]driver.Value, s.eventCount)
+		for i := 0; i < s.eventCount; i++ {
+			rows[i] = []driver.Value{
+				fmt.Sprintf("$event%d:server.example", i+1),
+				"!test-room:server.example",
+				"@alice:server.example",
+				"m.room.message",
+				json.RawMessage(`{"msgtype":"m.text","body":"msg"}`),
+				int64(1700000000000 + int64(i)*1000),
+				json.RawMessage(`{"server.example":{"ed25519:1":"sig"}}`),
+			}
+		}
+		return &exportFakeRows{cols: cols, data: rows}, nil
+	}
+
+	return &exportFakeRows{}, nil
+}
+
+func openExportStatusDB(t *testing.T, flags string) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("exportstatusdb", flags)
+	if err != nil {
+		t.Fatalf("sql.Open(exportstatusdb): %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	return db
+}
+
+// TestGetExport_StatusFlippedAfterIssue_Returns403 simulates a TOCTOU scenario:
+//   - A compliance session token was issued while status='approved'.
+//   - Between token issuance and the export call, an admin manually revoked the
+//     request (status flipped to 'rejected').
+//   - The export handler's in-flight pre-flight SELECT returns status='rejected'.
+//   - Expected: 403 M_FORBIDDEN.
+//
+// Given: valid X-Compliance-Token (sub matches, not expired),
+//        exportFakeDB returns status='rejected' in pre-flight SELECT
+// When:  GET /api/v1/compliance/export
+// Then:  403 M_FORBIDDEN — "compliance request no longer approved"
+//
+// RED: handler does not re-read status → returns 200 until 5.29b is implemented.
+func TestGetExport_StatusFlippedAfterIssue_Returns403(t *testing.T) {
+	// DB returns requestStatus='rejected' in pre-flight SELECT.
+	db := openExportStatusDB(t, "requestStatus=rejected;events=3")
+	client := &mockCoreClient{}
+	h := newExportHandler(t, db, client)
+
+	tok := issueTestComplianceToken(t,
+		exportTestSub, exportTestRequestID, exportTestRoomID,
+		exportTestStart, exportTestEnd, exportTokenTTL)
+
+	w := httptest.NewRecorder()
+	r := newExportRequest(t, "compliance_officer", exportTestSub, tok)
+
+	h.GetExport(w, r)
+
+	// RED-PHASE ASSERTION: will fail until AC4a status re-check is implemented.
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 M_FORBIDDEN when request status flipped to rejected, got %d — body: %s"+
+			" — Story 5.29b AC4 (TOCTOU status re-check) not yet implemented", w.Code, w.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("response is not valid JSON: %v — body: %s", err, w.Body.String())
+	}
+	if resp["errcode"] != "M_FORBIDDEN" {
+		t.Errorf("expected errcode=M_FORBIDDEN, got %q", resp["errcode"])
+	}
+}
+
+// TestGetExport_AddsTruncationFlagWhenLimitHit verifies that when the events query
+// would return more than 10000 events, the export response carries:
+//   - "truncated": true
+//   - "events_truncated_at": 10000
+// AND the audit metadata reflects the truncation.
+//
+// Given: valid X-Compliance-Token, mock DB returns 10001 events (or LIMIT 10000+1 probe)
+// When:  GET /api/v1/compliance/export
+// Then:  200 (not an error), body.truncated=true, body.events_truncated_at=10000
+//        audit metadata contains truncated=true
+//
+// RED: handler currently has no truncation flag mechanism — fails until 5.29b.
+//
+// Note: the fake DB uses events=10001 to simulate a beyond-LIMIT scenario.
+// The implementation is expected to either use LIMIT 10001 as a probe (returning 10000
+// rows + dropping the 10001st) or stream and cap. Either way, truncated=true must appear.
+func TestGetExport_AddsTruncationFlagWhenLimitHit(t *testing.T) {
+	// events=10001 — simulates the query returning more than the 10000 cap.
+	db := openExportStatusDB(t, "requestStatus=approved;events=10001")
+	client := &mockCoreClient{}
+	h := newExportHandler(t, db, client)
+
+	tok := issueTestComplianceToken(t,
+		exportTestSub, exportTestRequestID, exportTestRoomID,
+		exportTestStart, exportTestEnd, exportTokenTTL)
+
+	w := httptest.NewRecorder()
+	r := newExportRequest(t, "compliance_officer", exportTestSub, tok)
+
+	h.GetExport(w, r)
+
+	// Must still be 200 (truncation is not an error).
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK (truncation is informational, not an error), got %d — body: %s",
+			w.Code, w.Body.String())
+	}
+
+	var body map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+		t.Fatalf("response is not valid JSON: %v", err)
+	}
+
+	// RED-PHASE ASSERTIONS: will fail until AC4b truncation flag is implemented.
+	truncated, ok := body["truncated"].(bool)
+	if !ok || !truncated {
+		t.Errorf("expected body.truncated=true when event count > 10000, got %v — "+
+			"Story 5.29b AC4 truncation flag not yet implemented", body["truncated"])
+	}
+
+	eventsAt, ok := body["events_truncated_at"].(float64) // JSON numbers decode as float64
+	if !ok || int(eventsAt) != 10000 {
+		t.Errorf("expected body.events_truncated_at=10000, got %v — "+
+			"Story 5.29b AC4 truncation flag not yet implemented", body["events_truncated_at"])
+	}
+
+	// Audit must carry truncation metadata.
+	if client.callCount() == 0 {
+		t.Fatal("audit must be emitted on successful export with truncation")
+	}
+	req := client.lastReceived()
+	if req == nil {
+		t.Fatal("lastReceived audit request is nil")
+	}
+	var auditMeta map[string]any
+	if err := json.Unmarshal(req.MetadataJson, &auditMeta); err != nil {
+		t.Fatalf("audit metadata_json is not valid JSON: %v — raw=%q", err, string(req.MetadataJson))
+	}
+	truncatedAudit, _ := auditMeta["truncated"].(bool)
+	if !truncatedAudit {
+		t.Errorf("audit metadata must carry truncated=true when events were capped, got %v", auditMeta)
+	}
+}
+
+// TestGetExport_SignatureVerifiable_TruncatedPath verifies that the Ed25519
+// server_signature is valid over the FULL truncated document — including the
+// "truncated" and "events_truncated_at" fields. Closes the gap noted by
+// TEA-MINOR-4 (Story 5.29b code review).
+//
+// Why this matters: a bug that signs the document BEFORE injecting the
+// truncation flags would leave the truncation evidence outside the signed
+// bytes — an auditor could not tell whether the events list was tampered
+// with after signing. The test reconstructs the signed document the same
+// way as the non-truncated test (map → delete server_signature → marshal)
+// and verifies via ed25519.Verify.
+//
+// Given: valid X-Compliance-Token, mock DB returns 10001 events
+// When:  GET /api/v1/compliance/export
+// Then:  200, response carries truncated=true AND server_signature
+//        verifies against the doc bytes WITH the truncation flags inside.
+func TestGetExport_SignatureVerifiable_TruncatedPath(t *testing.T) {
+	db := openExportStatusDB(t, "requestStatus=approved;events=10001")
+	client := &mockCoreClient{}
+	h := newExportHandler(t, db, client)
+
+	tok := issueTestComplianceToken(t,
+		exportTestSub, exportTestRequestID, exportTestRoomID,
+		exportTestStart, exportTestEnd, exportTokenTTL)
+
+	w := httptest.NewRecorder()
+	r := newExportRequest(t, "compliance_officer", exportTestSub, tok)
+
+	h.GetExport(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on truncated path, got %d — body: %s", w.Code, w.Body.String())
+	}
+
+	// Parse response, extract server_signature.
+	var body map[string]json.RawMessage
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+		t.Fatalf("response body is not valid JSON: %v", err)
+	}
+
+	// Sanity: truncation flags must be present (this test is meaningless without them).
+	if _, ok := body["truncated"]; !ok {
+		t.Fatal("response missing 'truncated' field — truncation flag must be inside signed doc")
+	}
+	if _, ok := body["events_truncated_at"]; !ok {
+		t.Fatal("response missing 'events_truncated_at' field — must be inside signed doc")
+	}
+
+	sigRaw, ok := body["server_signature"]
+	if !ok {
+		t.Fatal("response body missing 'server_signature'")
+	}
+	var sigB64 string
+	if err := json.Unmarshal(sigRaw, &sigB64); err != nil || sigB64 == "" {
+		t.Fatalf("server_signature is not a valid string: %v", err)
+	}
+
+	sigBytes, err := base64.StdEncoding.DecodeString(sigB64)
+	if err != nil {
+		t.Fatalf("server_signature base64 decode failed: %v", err)
+	}
+
+	// Reconstruct doc WITHOUT server_signature; the truncation fields MUST remain
+	// inside the signed bytes (delete only server_signature, not truncated/events_truncated_at).
+	delete(body, "server_signature")
+	docBytes, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("failed to re-marshal truncated doc: %v", err)
+	}
+
+	initTestExportKey()
+	if !ed25519.Verify(testExportPub, docBytes, sigBytes) {
+		t.Error("ed25519.Verify failed: server_signature does not validate over truncated document bytes — " +
+			"the handler may be signing BEFORE injecting truncated/events_truncated_at flags")
 	}
 }

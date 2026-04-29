@@ -96,6 +96,14 @@ func (h *AnonymizationHandler) AnonymizeUser(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	// FB-58-03: self-anonymize guard — admin cannot anonymize themselves.
+	// Requires four-eyes approval (a second admin must initiate).
+	callerSub, _ := r.Context().Value(middleware.ContextKeySub).(string)
+	if userID == callerSub {
+		writeComplianceError(w, http.StatusForbidden, "M_FORBIDDEN", "self-anonymize requires four-eyes approval")
+		return
+	}
+
 	// Step 3: Pre-flight SELECT avatar_url FROM profiles — user existence + mxc check (AC3)
 	var avatarURL sql.NullString
 	err := h.DB.QueryRowContext(r.Context(),
@@ -112,12 +120,25 @@ func (h *AnonymizationHandler) AnonymizeUser(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	// Steps 4–6 (FB-58-01): wrapped in a single DB transaction to prevent half-committed
+	// state (e.g. profiles wiped but users.anonymized_at not set on DB error mid-flight).
+	// Pre-flight SELECT (step 3) and file removal (step 6b) remain outside the TX:
+	//   - pre-flight is read-only; running it outside TX avoids lock overhead.
+	//   - file removal is best-effort after TX commit; we don't roll back on file errors.
+	tx, err := h.DB.BeginTx(r.Context(), nil)
+	if err != nil {
+		slog.Error("anonymize: BeginTx failed", "user_id", userID, "err", err)
+		writeComplianceError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
+		return
+	}
+
 	// Step 4: UPDATE profiles SET displayname='Deleted User', avatar_url=NULL (AC2)
-	_, err = h.DB.ExecContext(r.Context(),
+	_, err = tx.ExecContext(r.Context(),
 		`UPDATE profiles SET displayname = 'Deleted User', avatar_url = NULL WHERE user_id = $1`,
 		userID,
 	)
 	if err != nil {
+		_ = tx.Rollback()
 		slog.Error("anonymize: UPDATE profiles failed", "user_id", userID, "err", err)
 		writeComplianceError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
 		return
@@ -125,52 +146,62 @@ func (h *AnonymizationHandler) AnonymizeUser(w http.ResponseWriter, r *http.Requ
 
 	// Step 5: UPDATE users SET anonymized_at=<Unix-ms> (AC2)
 	anonymizedAt := time.Now().UnixMilli()
-	_, err = h.DB.ExecContext(r.Context(),
+	_, err = tx.ExecContext(r.Context(),
 		`UPDATE users SET anonymized_at = $1 WHERE user_id = $2`,
 		anonymizedAt, userID,
 	)
 	if err != nil {
+		_ = tx.Rollback()
 		slog.Error("anonymize: UPDATE users failed", "user_id", userID, "err", err)
 		writeComplianceError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
 		return
 	}
 
-	// Step 6: Avatar mxc:// cleanup — soft-delete in DB + remove disk file (AC3)
+	// Step 6a: Avatar mxc:// soft-delete in media_files (inside TX).
 	currentAvatarURL := ""
 	if avatarURL.Valid {
 		currentAvatarURL = avatarURL.String
 	}
-	if serverName, mediaID, ok := parseMxcURI(currentAvatarURL); ok {
-		// 6a. Soft-delete in media_files
-		_, dbErr := h.DB.ExecContext(r.Context(),
+	var mxcServerName, mxcMediaID string
+	var hasMxc bool
+	if mxcServerName, mxcMediaID, hasMxc = parseMxcURI(currentAvatarURL); hasMxc {
+		_, dbErr := tx.ExecContext(r.Context(),
 			`UPDATE media_files SET deleted = true WHERE media_id = $1`,
-			mediaID,
+			mxcMediaID,
 		)
 		if dbErr != nil {
-			// Log but do not abort — anonymization is still considered successful
+			// Log but do not abort TX — media_files update is best-effort within the TX.
 			slog.Warn("anonymize: UPDATE media_files failed",
-				"user_id", userID, "media_id", mediaID, "err", dbErr)
+				"user_id", userID, "media_id", mxcMediaID, "err", dbErr)
 		}
+	}
 
-		// 6b. Remove disk file. Skip when StoragePath is unset to avoid attempting
-		// os.Remove against a path resolved relative to the gateway's cwd
-		// (NEBU_MEDIA_STORAGE_PATH may legitimately be unconfigured in
-		// dev/test environments where media storage lives elsewhere).
+	// Commit the transaction (profiles + users + media_files soft-delete).
+	if err = tx.Commit(); err != nil {
+		_ = tx.Rollback()
+		slog.Error("anonymize: TX commit failed", "user_id", userID, "err", err)
+		writeComplianceError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
+		return
+	}
+
+	// Step 6b: Remove disk file — AFTER tx.Commit (file removal is best-effort;
+	// a file-system error must NOT roll back the DB anonymization).
+	if hasMxc {
 		if h.StoragePath == "" {
 			slog.Warn("anonymize: NEBU_MEDIA_STORAGE_PATH not configured — skipping disk file removal",
-				"user_id", userID, "media_id", mediaID)
+				"user_id", userID, "media_id", mxcMediaID)
 		} else {
-			diskPath := filepath.Join(h.StoragePath, serverName, mediaID)
+			diskPath := filepath.Join(h.StoragePath, mxcServerName, mxcMediaID)
 			if removeErr := h.fileRemover().Remove(diskPath); removeErr != nil {
 				// AC3: "log error but do NOT abort"
 				slog.Warn("anonymize: failed to remove avatar file from disk",
-					"user_id", userID, "media_id", mediaID, "path", diskPath, "err", removeErr)
+					"user_id", userID, "media_id", mxcMediaID, "path", diskPath, "err", removeErr)
 			}
 		}
 	}
 
 	// Step 7: Audit emission — never-raise, 500ms timeout (AC5)
-	callerSub, _ := r.Context().Value(middleware.ContextKeySub).(string)
+	// callerSub already declared above (FB-58-03 self-anonymize check).
 	auditCtx, auditCancel := context.WithTimeout(context.Background(), auditTimeout)
 	defer auditCancel()
 	_ = auditpkg.LogEvent(auditCtx, h.CoreClient, callerSub,

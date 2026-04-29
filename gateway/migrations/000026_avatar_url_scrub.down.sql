@@ -1,0 +1,4 @@
+-- Migration 000026 down: no-op.
+-- The avatar_url scrub (setting unsafe values to NULL) is irreversible.
+-- Rolling back would restore unsafe path-traversal values, which is a security regression.
+-- Intentionally left empty — down migration does nothing.
