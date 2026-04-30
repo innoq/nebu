@@ -1,5 +1,14 @@
 # generated: 2026-03-20
 # last_updated: 2026-04-30
+# story 7-16c done (pipeline: ATDD+Dev+CodeReview MINOR_FIXED+Security CLEAN — gRPC pipeline smoke tests, logout HTTP flow, compile-collision fixed): 2026-04-30
+# story 7-16b done (pipeline: ATDD+Dev+CodeReview+Security CLEAN — complianceRL isolated from strictRL login bucket): 2026-04-30
+# story 7-16a done (pipeline: test-only fix — migrationDBURL BYPASSRLS for TRUNCATE, security_review: not-needed): 2026-04-30
+# story 7-16f created: 7-16f → ready-for-dev: 2026-04-30
+# story 7-16e created: 7-16e → ready-for-dev: 2026-04-30
+# story 7-16d created: 7-16d → ready-for-dev: 2026-04-30
+# story 7-16c created: 7-16c → ready-for-dev: 2026-04-30
+# story 7-16b created: 7-16b → ready-for-dev: 2026-04-30
+# story 7-16a created: 7-16a → ready-for-dev: 2026-04-30 (bugfix batch: integration-test regressions + missing features post-epic-7-rebase)
 # story 7-6 done (CR: 2 MINOR fixed inline — rune-count fix + dead template branch removed; 0 decision-needed, 0 deferred): 2026-04-29
 # story 7-6 created: 7-6 → ready-for-dev: 2026-04-29
 # story 7-5 done (CR: 1 MINOR fixed inline — badge normalization extracted to toUserRowData helper; 0 decision-needed, 0 deferred): 2026-04-29
@@ -80,7 +89,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-20
-last_updated: 2026-04-29
+last_updated: 2026-04-30
 # story 5-1 review: 2026-04-23 (audit-log schema + RLS + retention cleanup)
 # story 5-29 created as follow-up of 5-27 scope reduction (code-review MAJOR-B): 2026-04-23
 # story 5-27 done (pipeline: 1 MAJOR-A fixed, 1 MAJOR-B deferred to 5-29, 8 MINOR fixed, Kassandra CLEAN): 2026-04-23
@@ -560,4 +569,10 @@ development_status:
   7-13-wcag-audit-axe-core-report-automatisierter-scan-aller-admin-seiten: done  # nested <main> fixed in 4 templates, sr-only labels added, axe WCAG 2.1 AA spec for 8 pages
   7-14-gherkin-admin-ui-smoke-flows-user-deactivate-room-archive-via-ui: done  # smoke-flows spec, reactivate+unarchive handlers added
   7-15-bootstrap-wizard-claim-role-mapping-instance-admin-compliance-user: done  # role-mapping config page, regex validation, Kassandra CLEAN
+  7-16a-test-fixture-bootstrap-truncate-permission: done
+  7-16b-rate-limiter-revoke-strictrl-and-ip-isolation: done
+  7-16c-audit-log-admin-events-missing: done
+  7-16d-grpc-auth-http404-statt-unauthenticated: ready-for-dev
+  7-16e-audit-log-purge-security-definer: ready-for-dev
+  7-16f-migration-avatar-url-scrub-fehlt: ready-for-dev
   epic-7-retrospective: pending  # SEC Gate 2 done (HIGH: CSRF follow-up story needed); traceability 97% PASS; retro outstanding

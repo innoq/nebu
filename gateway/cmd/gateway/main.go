@@ -205,8 +205,10 @@ func main() {
 	// so that only the proxy-appended IP (rightmost-minus-1) is trusted for rate limiting.
 	trustedProxy := os.Getenv("NEBU_TRUSTED_PROXY") == "true"
 	// strictRL: Matrix /login (real brute-force risk: username+password) — 30 req/min, burst 10.
-	// (Compliance endpoints also use strictRL but are JWT-gated, so brute-force isn't a concern there.)
 	strictRL := middleware.NewIPRateLimiter(middleware.RateLimitConfig{Rate: rate.Limit(30.0 / 60.0), Burst: 10}, trustedProxy, "strict")
+	// complianceRL: all compliance/* and admin user key/anonymize routes — 10 req/min, burst 10.
+	// Separate instance from strictRL so compliance traffic cannot exhaust the login bucket.
+	complianceRL := middleware.NewIPRateLimiter(middleware.RateLimitConfig{Rate: rate.Limit(10.0 / 60.0), Burst: 10}, trustedProxy, "compliance")
 	// adminRL: all rate-limited admin endpoints (login/start, callback, bootstrap, claim-select) —
 	// 60 req/min, burst 20. Sized so legit admin clicking never hits the limit; sustained
 	// hammering is still capped to ~1/sec which kills brute-force.
@@ -798,20 +800,21 @@ func main() {
 		DB:         complianceDB,
 		CoreClient: coreClient.CoreServiceClient(),
 	}
-	// FB-53-01: all compliance/* and admin anonymize/key-delete routes wrapped in strictRL (10/min/IP).
+	// FB-53-01: all compliance/* and admin anonymize/key-delete routes wrapped in complianceRL (10/min/IP).
+	// Separate from strictRL (login) so compliance traffic cannot exhaust the login rate-limit bucket.
 	mux.Handle("POST /api/v1/compliance/access-requests",
-		strictRL(bodyLimit64KiB(jwtMiddleware(http.HandlerFunc(accessRequestHandler.PostAccessRequest)))))
+		complianceRL(bodyLimit64KiB(jwtMiddleware(http.HandlerFunc(accessRequestHandler.PostAccessRequest)))))
 
 	// Story 5.4 — Four-Eyes Approval API
 	// GET: no body, so no bodyLimit needed
 	mux.Handle("GET /api/v1/compliance/access-requests",
-		strictRL(jwtMiddleware(http.HandlerFunc(accessRequestHandler.GetAccessRequests))))
+		complianceRL(jwtMiddleware(http.HandlerFunc(accessRequestHandler.GetAccessRequests))))
 
 	mux.Handle("POST /api/v1/compliance/access-requests/{requestId}/approve",
-		strictRL(bodyLimit64KiB(jwtMiddleware(http.HandlerFunc(accessRequestHandler.PostApprove)))))
+		complianceRL(bodyLimit64KiB(jwtMiddleware(http.HandlerFunc(accessRequestHandler.PostApprove)))))
 
 	mux.Handle("POST /api/v1/compliance/access-requests/{requestId}/reject",
-		strictRL(bodyLimit64KiB(jwtMiddleware(http.HandlerFunc(accessRequestHandler.PostReject)))))
+		complianceRL(bodyLimit64KiB(jwtMiddleware(http.HandlerFunc(accessRequestHandler.PostReject)))))
 
 	// Admin API (session auth, not JWT) — pending-count badge for dashboard
 	pendingCountHandler := &compliance.PendingCountHandler{DB: complianceDB}
@@ -878,7 +881,7 @@ func main() {
 		PublicKey:  compPubKey,
 	}
 	mux.Handle("POST /api/v1/compliance/access-requests/{requestId}/session",
-		strictRL(bodyLimit64KiB(jwtMiddleware(http.HandlerFunc(sessionHandler.PostSession)))))
+		complianceRL(bodyLimit64KiB(jwtMiddleware(http.HandlerFunc(sessionHandler.PostSession)))))
 
 	// Story 5.6 — Compliance Data Export
 	// GET endpoint — no body, so no bodyLimit64KiB or requireJSON needed.
@@ -890,7 +893,7 @@ func main() {
 		PublicKey:  compPubKey,
 	}
 	mux.Handle("GET /api/v1/compliance/export",
-		strictRL(jwtMiddleware(http.HandlerFunc(exportHandler.GetExport))))
+		complianceRL(jwtMiddleware(http.HandlerFunc(exportHandler.GetExport))))
 
 	// Story 5.29c AC2 — Compliance session revoke endpoint.
 	// POST /api/v1/admin/compliance/sessions/{sessionId}/revoke
@@ -900,12 +903,13 @@ func main() {
 	// like every other admin POST (Logout, Bootstrap, Select-Claim). Without
 	// this, a lure-attack would let an attacker revoke compliance sessions
 	// via a forged form post. Kassandra HIGH-1 fix (2026-04-29).
+	// 7-16b: moved from adminRL (burst=20) to complianceRL (burst=10) — Story 5.29b AC1 gap.
 	revokeSessionHandler := &compliance.RevokeSessionHandler{
 		DB:         complianceDB,
 		CoreClient: coreClient.CoreServiceClient(),
 	}
 	mux.Handle("POST /api/v1/admin/compliance/sessions/{sessionId}/revoke",
-		adminRL(bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(revokeSessionHandler.RevokeSession))))))
+		complianceRL(bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(revokeSessionHandler.RevokeSession))))))
 
 	// Story 5.7 — DSGVO User Key Deletion
 	// Route namespace: /api/v1/admin/* — instance_admin only, role gate inside handler.
@@ -914,7 +918,7 @@ func main() {
 		CoreClient: coreClient.CoreServiceClient(),
 	}
 	mux.Handle("DELETE /api/v1/admin/users/{userId}/keys",
-		strictRL(bodyLimit64KiB(jwtMiddleware(http.HandlerFunc(userKeyDeletionHandler.DeleteUserKeys)))))
+		complianceRL(bodyLimit64KiB(jwtMiddleware(http.HandlerFunc(userKeyDeletionHandler.DeleteUserKeys)))))
 
 	// Story 5.8 — Operational PII Anonymization
 	// Route namespace: /api/v1/admin/* — instance_admin only, role gate inside handler.
@@ -926,7 +930,7 @@ func main() {
 		StoragePath: os.Getenv("NEBU_MEDIA_STORAGE_PATH"),
 	}
 	mux.Handle("POST /api/v1/admin/users/{userId}/anonymize",
-		strictRL(jwtMiddleware(http.HandlerFunc(anonymizationHandler.AnonymizeUser))))
+		complianceRL(jwtMiddleware(http.HandlerFunc(anonymizationHandler.AnonymizeUser))))
 
 	// POST /rooms/{roomId}/leave — leave a room (calls Elixir LeaveRoom gRPC)
 	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/leave",

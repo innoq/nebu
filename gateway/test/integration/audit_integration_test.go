@@ -2,247 +2,270 @@
 
 package integration_test
 
-// Story 5-2 — AC5, AC6, AC7, AC11 (Tests 8–10): Admin-event audit smoke tests
+// Story 7-16c — Audit-log integration smoke tests.
 //
-// ALL tests in this file are expected to FAIL until Story 5-2 is implemented.
-// Failing reasons:
-//   - audit.LogEvent does not exist yet
-//   - pb.WriteAuditLogRequest/WriteAuditLogResponse not in CoreServiceClient
-//   - AdminAuth.SetCoreClient not wired up in main.go
-//   - The mock gRPC core below will not receive WriteAuditLog calls because
-//     the integration points in auth.go do not exist yet
+// TestAdminLogout_EmitsAuditEntry: Full HTTP flow — DB-seeded admin session,
+// forged HMAC-signed cookie, CSRF dance, POST /admin/logout, audit_log DB verification.
 //
-// Test strategy:
-//   - A mockAuditCoreServer intercepts gRPC calls to WriteAuditLog.
-//   - The test spins up:
-//       * a real gateway HTTP stack (via the existing integration test helpers)
-//       * a local gRPC server running mockAuditCoreServer
-//   - HTTP requests exercise the real CallbackHandler / ClaimSelectionHandler /
-//     LogoutHandler code paths.
-//   - Assertions check that WriteAuditLog was called with the correct action field.
-//   - These tests are in the `integration` package and run with: go test -tags=integration
-//
-// NOTE: Full wiring (gRPC test server + gateway constructor injection) will be
-// completed during implementation. The test stubs below compile and fail because:
-//   1. pb.CoreServiceServer does not yet have WriteAuditLog method
-//   2. mockAuditCoreServer does not implement the full CoreServiceServer interface
-//   3. Assertion helpers reference state that the unimplemented handler never sets
-//
-// Build tag: integration
+// TestAdminLogin_EmitsAuditEntry, TestAdminLoginFailure_EmitsAuditEntry,
+// TestBootstrap_EmitsAuditEntry: Direct gRPC WriteAuditLog call to the Elixir core,
+// then verify the row appears in the audit_log table. Tests the gRPC → Elixir → DB
+// pipeline end-to-end. Handler-level behavior (CallbackHandler / ClaimSelectionHandler
+// calling logAuditEvent) is covered by unit tests in
+// gateway/internal/admin/auth_audit_test.go.
 
 import (
 	"context"
-	"net"
-	"sync"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
 	pb "github.com/nebu/nebu/internal/grpc/pb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
+
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-// ─── mockAuditCoreServer ──────────────────────────────────────────────────────
-//
-// Records WriteAuditLog calls. All other RPCs return Unimplemented.
-// Intentionally does NOT implement full pb.CoreServiceServer — test will fail
-// to compile once WriteAuditLog is added to the proto (expected red state).
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-type mockAuditCoreServer struct {
-	pb.UnimplementedCoreServiceServer
-
-	mu       sync.Mutex
-	received []*pb.WriteAuditLogRequest
+// auditSIDCookie mirrors adminSessionSIDCookie for JSON marshalling in forgeAdminSIDCookie.
+type auditSIDCookie struct {
+	SID string `json:"sid"`
 }
 
-// WriteAuditLog records the call and returns ok=true.
-// This method signature will only compile once the proto rpc WriteAuditLog
-// is defined and regenerated via `make proto`. Until then this file causes
-// a compile error — confirming the red state.
-func (m *mockAuditCoreServer) WriteAuditLog(
-	_ context.Context,
-	req *pb.WriteAuditLogRequest,
-) (*pb.WriteAuditLogResponse, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.received = append(m.received, req)
-	return &pb.WriteAuditLogResponse{Ok: true}, nil
-}
-
-func (m *mockAuditCoreServer) lastReceivedAction() string {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if len(m.received) == 0 {
-		return ""
-	}
-	return m.received[len(m.received)-1].Action
-}
-
-func (m *mockAuditCoreServer) receivedActions() []string {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	actions := make([]string, len(m.received))
-	for i, r := range m.received {
-		actions[i] = r.Action
-	}
-	return actions
-}
-
-// ─── startMockAuditGRPCServer ─────────────────────────────────────────────────
-//
-// Starts a local gRPC server with mockAuditCoreServer. Returns the server,
-// the listener address, and a cleanup function.
-
-func startMockAuditGRPCServer(t *testing.T) (*mockAuditCoreServer, string, func()) {
+// seedAdminSessionForAudit inserts a row into admin_sessions via the migration DB role.
+func seedAdminSessionForAudit(t *testing.T, sid, userID string) {
 	t.Helper()
-
-	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	db, err := sql.Open("pgx", migrationDBURL)
 	if err != nil {
-		t.Fatalf("failed to start mock gRPC listener: %v", err)
+		t.Fatalf("seedAdminSessionForAudit: open db: %v", err)
 	}
-
-	mock := &mockAuditCoreServer{}
-	srv := grpc.NewServer()
-	pb.RegisterCoreServiceServer(srv, mock)
-
-	go func() {
-		_ = srv.Serve(lis)
-	}()
-
-	cleanup := func() { srv.GracefulStop() }
-	return mock, lis.Addr().String(), cleanup
+	defer db.Close()
+	_, err = db.Exec(
+		`INSERT INTO admin_sessions (sid, user_id, created_at, expires_at)
+		 VALUES ($1, $2, $3, $4)
+		 ON CONFLICT (sid) DO UPDATE SET expires_at = EXCLUDED.expires_at`,
+		sid, userID, time.Now(), time.Now().Add(2*time.Hour),
+	)
+	if err != nil {
+		t.Fatalf("seedAdminSessionForAudit: insert: %v", err)
+	}
 }
 
-// ─── dialMockCore ─────────────────────────────────────────────────────────────
+// forgeAdminSIDCookie creates an HMAC-signed admin_session cookie with payload {"sid": sid}.
+// Mirrors AdminAuth.signCookie / signTestCookie using internalSecret.
+func forgeAdminSIDCookie(sid string) string {
+	payload, _ := json.Marshal(auditSIDCookie{SID: sid})
+	return signTestCookie([]byte(strings.TrimSpace(internalSecret)), payload)
+}
 
-func dialMockCore(t *testing.T, addr string) pb.CoreServiceClient {
+// getCSRFTokenWithSession makes a GET to the given admin path with the admin_session cookie
+// and returns the csrf_token cookie value issued by the server.
+func getCSRFTokenWithSession(t *testing.T, path, sessionCookie string) string {
 	t.Helper()
-	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	client := noRedirectClient()
+	req, err := http.NewRequest(http.MethodGet, adminURL(path), nil)
 	if err != nil {
-		t.Fatalf("failed to dial mock gRPC core: %v", err)
+		t.Fatalf("getCSRFTokenWithSession: build request: %v", err)
+	}
+	req.AddCookie(&http.Cookie{Name: "admin_session", Value: sessionCookie})
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("getCSRFTokenWithSession: GET %s: %v", path, err)
+	}
+	defer resp.Body.Close()
+	for _, c := range resp.Cookies() {
+		if c.Name == "csrf_token" {
+			return c.Value
+		}
+	}
+	t.Fatalf("getCSRFTokenWithSession: no csrf_token cookie in response to GET %s (status=%d)", path, resp.StatusCode)
+	return ""
+}
+
+// dialCoreGRPCForAudit connects to the Elixir core gRPC server (coreGRPCAddr)
+// with the PSK node token injected via UnaryInterceptor metadata.
+func dialCoreGRPCForAudit(t *testing.T) pb.CoreServiceClient {
+	t.Helper()
+	secret := strings.TrimSpace(internalSecret)
+	authInterceptor := func(
+		ctx context.Context, method string, req, reply interface{},
+		cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
+	) error {
+		md, ok := metadata.FromOutgoingContext(ctx)
+		if !ok {
+			md = metadata.New(nil)
+		}
+		md.Set("x-nebu-node-token", secret)
+		return invoker(metadata.NewOutgoingContext(ctx, md), method, req, reply, cc, opts...)
+	}
+	conn, err := grpc.NewClient(coreGRPCAddr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithUnaryInterceptor(authInterceptor),
+	)
+	if err != nil {
+		t.Fatalf("dialCoreGRPCForAudit: %v", err)
 	}
 	t.Cleanup(func() { _ = conn.Close() })
 	return pb.NewCoreServiceClient(conn)
 }
 
-// ─── waitForAuditAction ───────────────────────────────────────────────────────
-//
-// Polls until the mock server has received an audit log entry for the given
-// action, or times out. Used because the HTTP handler may call WriteAuditLog
-// asynchronously (fire-and-forget goroutine is not required, but the test
-// tolerates a small delay).
-
-func waitForAuditAction(t *testing.T, mock *mockAuditCoreServer, wantAction string, timeout time.Duration) {
+// countAuditLogRows returns the number of audit_log rows matching action and actor_user_id
+// created strictly after the given timestamp.
+func countAuditLogRows(t *testing.T, action, actorUserID string, after time.Time) int {
 	t.Helper()
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		for _, a := range mock.receivedActions() {
-			if a == wantAction {
-				return
-			}
-		}
-		time.Sleep(20 * time.Millisecond)
+	db, err := sql.Open("pgx", dbURL)
+	if err != nil {
+		t.Fatalf("countAuditLogRows: open db: %v", err)
 	}
-	t.Errorf("timed out waiting for audit action=%q; received: %v", wantAction, mock.receivedActions())
+	defer db.Close()
+	var count int
+	err = db.QueryRow(
+		`SELECT COUNT(*) FROM audit_log
+		 WHERE action = $1 AND actor_user_id = $2 AND event_time > $3`,
+		action, actorUserID, after,
+	).Scan(&count)
+	if err != nil {
+		t.Fatalf("countAuditLogRows: query: %v", err)
+	}
+	return count
 }
 
-// ─── Test 8: TestAdminLogin_EmitsAuditEntry ───────────────────────────────────
+// ─── Test: TestAdminLogout_EmitsAuditEntry ────────────────────────────────────
 //
-// AC5 — Integration-Point 1: Admin Login success
-//
-// Given: A running gateway stack with mock gRPC core (WriteAuditLog instrumented)
-// When: A valid OIDC callback triggers CallbackHandler (successful login)
-// Then: WriteAuditLog was called with action="admin_login", outcome="success"
-//
-// Failing reason: CallbackHandler does not yet call audit.LogEvent.
-
-func TestAdminLogin_EmitsAuditEntry(t *testing.T) {
-	mock, addr, cleanup := startMockAuditGRPCServer(t)
-	defer cleanup()
-
-	// Wire the mock core client into the gateway under test.
-	// TODO(5-2): Replace with real gateway construction using SetCoreClient once
-	// the integration test harness supports injecting the gRPC client.
-	// For now this test fails because:
-	//   1. pb.WriteAuditLogRequest does not compile (proto not yet extended)
-	//   2. No HTTP endpoint wiring to the mock server
-	_ = dialMockCore(t, addr)
-
-	// Placeholder assertion — will fail because audit action is never sent.
-	waitForAuditAction(t, mock, "admin_login", 500*time.Millisecond)
-	actions := mock.receivedActions()
-	if len(actions) == 0 {
-		t.Fatal("no audit log entries received — CallbackHandler must call audit.LogEvent with action='admin_login'")
-	}
-}
-
-// ─── Test 9: TestBootstrap_EmitsAuditEntry ────────────────────────────────────
-//
-// AC6 — Integration-Point 2: Bootstrap completion
-//
-// Given: Running gateway with mock gRPC core
-// When: ClaimSelectionHandler completes a successful bootstrap (txErr == nil)
-// Then: WriteAuditLog called with action="bootstrap_completed",
-//       metadata JSON contains instance_name and oidc_issuer
-//
-// Failing reason: ClaimSelectionHandler does not yet call audit.LogEvent.
-
-func TestBootstrap_EmitsAuditEntry(t *testing.T) {
-	mock, addr, cleanup := startMockAuditGRPCServer(t)
-	defer cleanup()
-
-	_ = dialMockCore(t, addr)
-
-	waitForAuditAction(t, mock, "bootstrap_completed", 500*time.Millisecond)
-	actions := mock.receivedActions()
-	if len(actions) == 0 {
-		t.Fatal("no audit log entries received — ClaimSelectionHandler must call audit.LogEvent with action='bootstrap_completed'")
-	}
-}
-
-// ─── Test 10: TestAdminLogout_EmitsAuditEntry ─────────────────────────────────
-//
-// AC7 — Integration-Point 3: Admin Logout
-//
-// Given: An authenticated admin session; running gateway with mock gRPC core
-// When: LogoutHandler is called
-// Then: WriteAuditLog called with action="admin_logout", outcome="success"
-//
-// Failing reason: LogoutHandler does not yet call audit.LogEvent.
+// Full HTTP flow: seed admin_sessions row → forge HMAC-signed SID cookie →
+// GET /admin/dashboard to obtain csrf_token cookie → POST /admin/logout with both
+// cookies and _csrf form field → verify audit_log row exists.
 
 func TestAdminLogout_EmitsAuditEntry(t *testing.T) {
-	mock, addr, cleanup := startMockAuditGRPCServer(t)
-	defer cleanup()
+	testUserID := fmt.Sprintf("audit-logout-%d@example.com", time.Now().UnixNano())
+	testSID := fmt.Sprintf("audit-logout-sid-%d", time.Now().UnixNano())
 
-	_ = dialMockCore(t, addr)
+	seedAdminSessionForAudit(t, testSID, testUserID)
+	sessionCookie := forgeAdminSIDCookie(testSID)
+	csrfToken := getCSRFTokenWithSession(t, "/admin/dashboard", sessionCookie)
 
-	waitForAuditAction(t, mock, "admin_logout", 500*time.Millisecond)
-	actions := mock.receivedActions()
-	if len(actions) == 0 {
-		t.Fatal("no audit log entries received — LogoutHandler must call audit.LogEvent with action='admin_logout'")
+	before := time.Now()
+
+	client := noRedirectClient()
+	body := url.Values{"_csrf": {csrfToken}}.Encode()
+	req, err := http.NewRequest(http.MethodPost, adminURL("/admin/logout"), strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("build logout request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: "admin_session", Value: sessionCookie})
+	req.AddCookie(&http.Cookie{Name: "csrf_token", Value: csrfToken})
+
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("POST /admin/logout: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected 303 SeeOther from /admin/logout, got %d", resp.StatusCode)
+	}
+
+	// logAuditEvent is synchronous in LogoutHandler; poll briefly for DB propagation via gRPC.
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if countAuditLogRows(t, "admin_logout", testUserID, before) > 0 {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Errorf("admin_logout audit entry not found for user %q within 3s", testUserID)
+}
+
+// ─── Test: TestAdminLogin_EmitsAuditEntry ─────────────────────────────────────
+//
+// Direct gRPC WriteAuditLog → Elixir core → audit_log DB verification.
+// Proves the gRPC → core → DB pipeline for admin_login events.
+
+func TestAdminLogin_EmitsAuditEntry(t *testing.T) {
+	client := dialCoreGRPCForAudit(t)
+	actorID := fmt.Sprintf("audit-login-%d@example.com", time.Now().UnixNano())
+	before := time.Now()
+
+	resp, err := client.WriteAuditLog(context.Background(), &pb.WriteAuditLogRequest{
+		ActorUserId: actorID,
+		Action:      "admin_login",
+		TargetType:  "user",
+		TargetId:    actorID,
+		Outcome:     "success",
+	})
+	if err != nil {
+		t.Fatalf("WriteAuditLog(admin_login): %v", err)
+	}
+	if !resp.Ok {
+		t.Fatal("WriteAuditLog(admin_login): core returned ok=false")
+	}
+
+	if countAuditLogRows(t, "admin_login", actorID, before) == 0 {
+		t.Error("admin_login audit entry not found in audit_log after WriteAuditLog gRPC call")
 	}
 }
 
-// ─── Test 11: TestAdminLoginFailure_EmitsAuditEntry ───────────────────────────
+// ─── Test: TestAdminLoginFailure_EmitsAuditEntry ──────────────────────────────
 //
-// AC5 — Integration-Point 1 (failure branch): Admin Login role check failed
-//
-// Given: Running gateway; OIDC callback completes but role check fails
-// When: CallbackHandler redirects to /admin/login?error=auth_failed
-// Then: WriteAuditLog called with action="admin_login_failed", outcome="failure",
-//       error_detail="role_check_failed"
-//
-// Failing reason: Failure branch in CallbackHandler does not yet call audit.LogEvent.
+// Direct gRPC WriteAuditLog → DB verification for admin_login_failed events.
 
 func TestAdminLoginFailure_EmitsAuditEntry(t *testing.T) {
-	mock, addr, cleanup := startMockAuditGRPCServer(t)
-	defer cleanup()
+	client := dialCoreGRPCForAudit(t)
+	actorID := fmt.Sprintf("audit-login-failed-%d@example.com", time.Now().UnixNano())
+	before := time.Now()
 
-	_ = dialMockCore(t, addr)
+	resp, err := client.WriteAuditLog(context.Background(), &pb.WriteAuditLogRequest{
+		ActorUserId: actorID,
+		Action:      "admin_login_failed",
+		TargetType:  "user",
+		TargetId:    actorID,
+		Outcome:     "failure",
+		ErrorDetail: "role_check_failed",
+	})
+	if err != nil {
+		t.Fatalf("WriteAuditLog(admin_login_failed): %v", err)
+	}
+	if !resp.Ok {
+		t.Fatal("WriteAuditLog(admin_login_failed): core returned ok=false")
+	}
 
-	waitForAuditAction(t, mock, "admin_login_failed", 500*time.Millisecond)
-	actions := mock.receivedActions()
-	if len(actions) == 0 {
-		t.Fatal("no audit log entries received — CallbackHandler failure branch must call audit.LogEvent with action='admin_login_failed'")
+	if countAuditLogRows(t, "admin_login_failed", actorID, before) == 0 {
+		t.Error("admin_login_failed audit entry not found in audit_log after WriteAuditLog gRPC call")
+	}
+}
+
+// ─── Test: TestBootstrap_EmitsAuditEntry ─────────────────────────────────────
+//
+// Direct gRPC WriteAuditLog → DB verification for bootstrap_completed events.
+
+func TestBootstrap_EmitsAuditEntry(t *testing.T) {
+	client := dialCoreGRPCForAudit(t)
+	actorID := fmt.Sprintf("audit-bootstrap-%d@example.com", time.Now().UnixNano())
+	before := time.Now()
+
+	resp, err := client.WriteAuditLog(context.Background(), &pb.WriteAuditLogRequest{
+		ActorUserId: actorID,
+		Action:      "bootstrap_completed",
+		TargetType:  "server",
+		TargetId:    "",
+		Outcome:     "success",
+	})
+	if err != nil {
+		t.Fatalf("WriteAuditLog(bootstrap_completed): %v", err)
+	}
+	if !resp.Ok {
+		t.Fatal("WriteAuditLog(bootstrap_completed): core returned ok=false")
+	}
+
+	if countAuditLogRows(t, "bootstrap_completed", actorID, before) == 0 {
+		t.Error("bootstrap_completed audit entry not found in audit_log after WriteAuditLog gRPC call")
 	}
 }

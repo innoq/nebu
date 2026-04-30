@@ -41,21 +41,13 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// coreGRPCAddr returns the gRPC address for the core service from env.
-func coreGRPCAddr() string {
-	addr := os.Getenv("NEBU_TEST_CORE_GRPC_ADDR")
-	if addr == "" {
-		return "core:9000"
-	}
-	return addr
-}
-
 // dialUnauthenticatedCore dials the core gRPC server with insecure credentials
 // and NO auth metadata — simulating an attacker with L4 access.
+// Uses the package-level coreGRPCAddr variable (initialized in main_test.go).
 func dialUnauthenticatedCore(t *testing.T) pb.CoreServiceClient {
 	t.Helper()
 	conn, err := grpc.NewClient(
-		coreGRPCAddr(),
+		coreGRPCAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
 	if err != nil {
@@ -84,7 +76,7 @@ func dialWithToken(t *testing.T, token string) pb.CoreServiceClient {
 	})
 
 	conn, err := grpc.NewClient(
-		coreGRPCAddr(),
+		coreGRPCAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		interceptor,
 	)

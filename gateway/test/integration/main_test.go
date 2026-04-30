@@ -29,9 +29,18 @@ var matrixURL string
 // Override via NEBU_TEST_DB_URL env var (default: postgresql://nebu:nebu_dev_password@postgres:5432/nebu).
 var dbURL string
 
+// migrationDBURL is the PostgreSQL connection string for privileged operations (TRUNCATE, DDL).
+// Uses nebu_migrate role which has BYPASSRLS and table ownership.
+// Override via NEBU_TEST_MIGRATION_DB_URL env var.
+var migrationDBURL string
+
 // internalSecret is the gateway's HMAC internal secret, used to forge admin session cookies.
 // Override via NEBU_TEST_INTERNAL_SECRET env var (default: dev-secret-placeholder for local runs).
 var internalSecret string
+
+// coreGRPCAddr is the gRPC address for the Elixir core service.
+// Override via NEBU_TEST_CORE_GRPC_ADDR env var (default: core:9000).
+var coreGRPCAddr string
 
 func TestMain(m *testing.M) {
 	gatewayURL = os.Getenv("NEBU_TEST_GATEWAY_URL")
@@ -54,9 +63,17 @@ func TestMain(m *testing.M) {
 	if dbURL == "" {
 		dbURL = "postgresql://nebu:nebu_dev_password@postgres:5432/nebu"
 	}
+	migrationDBURL = os.Getenv("NEBU_TEST_MIGRATION_DB_URL")
+	if migrationDBURL == "" {
+		migrationDBURL = "postgresql://nebu_migrate:nebu_migrate_dev_pw@postgres:5432/nebu"
+	}
 	internalSecret = os.Getenv("NEBU_TEST_INTERNAL_SECRET")
 	if internalSecret == "" {
 		internalSecret = "dev-secret-placeholder"
+	}
+	coreGRPCAddr = os.Getenv("NEBU_TEST_CORE_GRPC_ADDR")
+	if coreGRPCAddr == "" {
+		coreGRPCAddr = "core:9000"
 	}
 	os.Exit(m.Run())
 }

@@ -84,12 +84,12 @@ func noRedirectClient() *http.Client {
 }
 
 // theServerHasNoBootstrapCompleted truncates server_config and bootstrap_draft to ensure
-// a clean slate (no bootstrap_completed row). Runs as the nebu table owner, which is
-// allowed to TRUNCATE even with INSERT-only RLS policies.
+// a clean slate (no bootstrap_completed row). Uses migrationDBURL (nebu_migrate role) which
+// has BYPASSRLS and table ownership — nebu_app does not have TRUNCATE permission after Story 5.29a.
 func theServerHasNoBootstrapCompleted() error {
-	db, err := openTestDB()
+	db, err := sql.Open("pgx", migrationDBURL)
 	if err != nil {
-		return fmt.Errorf("open db: %w", err)
+		return fmt.Errorf("open migration db: %w", err)
 	}
 	defer db.Close()
 
