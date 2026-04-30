@@ -1204,9 +1204,9 @@ defmodule Nebu.EventDispatcher.Server do
   4. Calls Room GenServer leave/2 to remove target from members.
   5. Returns empty KickUserResponse on success.
   """
-  def kick_user(request, _stream) do
+  def kick_user(request, stream) do
     room_id   = request.room_id
-    caller_id = request.caller_id
+    {caller_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
     target_id = request.target_id
 
     case Nebu.Room.RoomSupervisor.lookup_room(room_id) do
@@ -1286,9 +1286,9 @@ defmodule Nebu.EventDispatcher.Server do
   5. Emits a m.room.member ban state event.
   6. Returns empty BanUserResponse on success.
   """
-  def ban_user(request, _stream) do
+  def ban_user(request, stream) do
     room_id   = request.room_id
-    caller_id = request.caller_id
+    {caller_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
     target_id = request.target_id
 
     case Nebu.Room.RoomSupervisor.lookup_room(room_id) do
@@ -1363,9 +1363,9 @@ defmodule Nebu.EventDispatcher.Server do
   4. Emits a m.room.member leave state event (unban = set to leave).
   5. Returns empty UnbanUserResponse on success.
   """
-  def unban_user(request, _stream) do
+  def unban_user(request, stream) do
     room_id   = request.room_id
-    caller_id = request.caller_id
+    {caller_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
     target_id = request.target_id
 
     case Nebu.Room.RoomSupervisor.lookup_room(room_id) do

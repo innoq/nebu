@@ -1,5 +1,7 @@
 # generated: 2026-03-20
 # last_updated: 2026-04-30
+# story 7-32 done (pipeline: ATDD+Dev+CodeReview CLEAN — kick/ban/unban use metadata not body caller_id): 2026-04-30
+# story 7-32 created: 7-32 → ready-for-dev: 2026-04-30 (SEC Gate 2 HIGH fix: moderation caller_id must come from gRPC metadata not request body)
 # epic-7b SEC Gate 2 done — Kassandra HIGH (kick/ban/unban caller_id from body not metadata); 6 MEDIUM; follow-ups needed: 2026-04-30
 # story 7-30 done (pipeline: ATDD+Dev+CodeReview 1 MAJOR fixed (SELECT FOR UPDATE in PutRule) + 5 MINOR fixed): 2026-04-30
 # story 7-29 done (pipeline: CodeReview 1 MAJOR fixed (RLS→WHERE clause) + 3 MINOR fixed (slog, matrixURL, captureResponse): 2026-04-30
@@ -611,4 +613,6 @@ development_status:
   7-29-notifications-api-get-notifications: done
   7-30-push-rules-pushers-api: done
   7-31-search-api-post-search-adr-required: backlog  # blocked: ADR-010 (FTS strategy) required first
+  # SEC Gate 2 HIGH follow-up
+  7-32-moderation-caller-id-from-metadata: done
   epic-7-retrospective: pending  # SEC Gate 2 done; retro blocked until 7-17 (CSRF HIGH) is done
