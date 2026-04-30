@@ -135,7 +135,7 @@ defmodule Nebu.EventDispatcher.SyncTest do
       all_events =
         :ets.match(:sync_test_db, {{:event, :"$1"}, :"$2"})
         |> Enum.map(fn [_id, ev] -> ev end)
-        |> Enum.filter(fn ev -> ev["room_id"] == room_id end)
+        |> Enum.filter(fn ev -> ev["room_id"] == room_id and Map.has_key?(ev, "event_type") end)
         |> Enum.sort_by(fn ev -> ev["origin_server_ts"] end, :desc)
         |> Enum.take(limit)
 
@@ -159,7 +159,9 @@ defmodule Nebu.EventDispatcher.SyncTest do
         :ets.match(:sync_test_db, {{:event, :"$1"}, :"$2"})
         |> Enum.map(fn [_id, ev] -> ev end)
         |> Enum.filter(fn ev ->
-          ev["room_id"] == room_id and ev["origin_server_ts"] > cutoff_ts
+          ev["room_id"] == room_id and
+            Map.has_key?(ev, "event_type") and
+            ev["origin_server_ts"] > cutoff_ts
         end)
         |> Enum.sort_by(fn ev -> ev["origin_server_ts"] end, :asc)
         |> Enum.take(limit)
@@ -768,7 +770,9 @@ defmodule Nebu.EventDispatcher.SyncTest do
         :ets.match(:sync_test_db, {{:event, :"$1"}, :"$2"})
         |> Enum.map(fn [_id, ev] -> ev end)
         |> Enum.filter(fn ev ->
-          ev["room_id"] == room_id and ev["origin_server_ts"] > cutoff_ts
+          ev["room_id"] == room_id and
+            Map.has_key?(ev, "event_type") and
+            ev["origin_server_ts"] > cutoff_ts
         end)
         |> Enum.sort_by(fn ev -> ev["origin_server_ts"] end, :asc)
         |> Enum.take(limit)

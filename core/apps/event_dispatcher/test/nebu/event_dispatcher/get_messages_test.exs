@@ -98,7 +98,7 @@ defmodule Nebu.EventDispatcher.GetMessagesTest do
       all_events =
         :ets.match(:get_messages_test_db, {{:event, :"$1"}, :"$2"})
         |> Enum.map(fn [_id, ev] -> ev end)
-        |> Enum.filter(fn ev -> ev["room_id"] == room_id end)
+        |> Enum.filter(fn ev -> ev["room_id"] == room_id and Map.has_key?(ev, "event_type") end)
         |> Enum.sort_by(fn ev -> ev["origin_server_ts"] end)
 
       # Apply cursor if from_token is non-empty.

@@ -59,8 +59,9 @@ defmodule Compliance.UserDeletionTest do
           end
 
         # Step 2: UPDATE users SET deletion_status = 'deletion_in_progress'
+        # RETURNING user_id — simulate 1 matched row (conditional UPDATE succeeded).
         String.contains?(sql, "deletion_in_progress") and String.contains?(sql, "UPDATE users") and not String.contains?(sql, "keys_deleted") ->
-          {:ok, %{rows: [], num_rows: 1}}
+          {:ok, %{rows: [[hd(args)]], num_rows: 1}}
 
         # Step 3: UPDATE user_keys SET private_key = NULL ... signing
         String.contains?(sql, "signing") ->

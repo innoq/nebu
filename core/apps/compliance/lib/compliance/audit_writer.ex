@@ -49,7 +49,7 @@ defmodule Compliance.AuditWriter do
     # AC8 (Story 5.29c): reject unknown action strings before changeset validation.
     # Unknown actions indicate a bug (typo, missing allowlist entry) rather than
     # a validation error — use a distinct error atom so callers can distinguish.
-    if action not in @known_actions do
+    if is_binary(action) and action != "" and action not in @known_actions do
       Logger.error("AuditWriter: rejected unknown audit action",
         action: inspect(action),
         actor: actor_user_id
