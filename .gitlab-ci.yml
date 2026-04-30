@@ -75,7 +75,7 @@ build-ci-elixir:
 .download_vendor: &download_vendor
   before_script:
     - mkdir -p gateway/internal/admin/static/vendor
-    - curl -fsSL -o gateway/internal/admin/static/vendor/vue.esm-browser.prod.js 'https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.esm-browser.prod.js'
+    - wget -q -O gateway/internal/admin/static/vendor/vue.esm-browser.prod.js 'https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.esm-browser.prod.js'
 
 # ─── Lint ─────────────────────────────────────────────────────────────────────
 
