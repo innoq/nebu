@@ -40,6 +40,10 @@ const (
 	CoreService_UpdateProfile_FullMethodName    = "/core.CoreService/UpdateProfile"
 	CoreService_WriteAuditLog_FullMethodName    = "/core.CoreService/WriteAuditLog"
 	CoreService_DeleteUserKeys_FullMethodName   = "/core.CoreService/DeleteUserKeys"
+	CoreService_KickUser_FullMethodName         = "/core.CoreService/KickUser"
+	CoreService_BanUser_FullMethodName          = "/core.CoreService/BanUser"
+	CoreService_UnbanUser_FullMethodName        = "/core.CoreService/UnbanUser"
+	CoreService_ForgetRoom_FullMethodName       = "/core.CoreService/ForgetRoom"
 )
 
 // CoreServiceClient is the client API for CoreService service.
@@ -86,6 +90,14 @@ type CoreServiceClient interface {
 	// Story 5.7: instance_admin only. Returns keys_deleted_at (Unix ms) on success.
 	// Elixir Core handles the Ecto.Multi + failure-invariant audit emission.
 	DeleteUserKeys(ctx context.Context, in *DeleteUserKeysRequest, opts ...grpc.CallOption) (*DeleteUserKeysResponse, error)
+	// KickUser — room moderator action; power check enforced by GenServer
+	KickUser(ctx context.Context, in *KickUserRequest, opts ...grpc.CallOption) (*KickUserResponse, error)
+	// BanUser — bans a user from a room; power check enforced by GenServer
+	BanUser(ctx context.Context, in *BanUserRequest, opts ...grpc.CallOption) (*BanUserResponse, error)
+	// UnbanUser — removes a ban (sets membership: leave); power check enforced by GenServer
+	UnbanUser(ctx context.Context, in *UnbanUserRequest, opts ...grpc.CallOption) (*UnbanUserResponse, error)
+	// ForgetRoom — marks a room as excluded from future /sync for the calling user
+	ForgetRoom(ctx context.Context, in *ForgetRoomRequest, opts ...grpc.CallOption) (*ForgetRoomResponse, error)
 }
 
 type coreServiceClient struct {
@@ -315,6 +327,46 @@ func (c *coreServiceClient) DeleteUserKeys(ctx context.Context, in *DeleteUserKe
 	return out, nil
 }
 
+func (c *coreServiceClient) KickUser(ctx context.Context, in *KickUserRequest, opts ...grpc.CallOption) (*KickUserResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(KickUserResponse)
+	err := c.cc.Invoke(ctx, CoreService_KickUser_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) BanUser(ctx context.Context, in *BanUserRequest, opts ...grpc.CallOption) (*BanUserResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BanUserResponse)
+	err := c.cc.Invoke(ctx, CoreService_BanUser_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) UnbanUser(ctx context.Context, in *UnbanUserRequest, opts ...grpc.CallOption) (*UnbanUserResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UnbanUserResponse)
+	err := c.cc.Invoke(ctx, CoreService_UnbanUser_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) ForgetRoom(ctx context.Context, in *ForgetRoomRequest, opts ...grpc.CallOption) (*ForgetRoomResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ForgetRoomResponse)
+	err := c.cc.Invoke(ctx, CoreService_ForgetRoom_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CoreServiceServer is the server API for CoreService service.
 // All implementations must embed UnimplementedCoreServiceServer
 // for forward compatibility.
@@ -359,6 +411,14 @@ type CoreServiceServer interface {
 	// Story 5.7: instance_admin only. Returns keys_deleted_at (Unix ms) on success.
 	// Elixir Core handles the Ecto.Multi + failure-invariant audit emission.
 	DeleteUserKeys(context.Context, *DeleteUserKeysRequest) (*DeleteUserKeysResponse, error)
+	// KickUser — room moderator action; power check enforced by GenServer
+	KickUser(context.Context, *KickUserRequest) (*KickUserResponse, error)
+	// BanUser — bans a user from a room; power check enforced by GenServer
+	BanUser(context.Context, *BanUserRequest) (*BanUserResponse, error)
+	// UnbanUser — removes a ban (sets membership: leave); power check enforced by GenServer
+	UnbanUser(context.Context, *UnbanUserRequest) (*UnbanUserResponse, error)
+	// ForgetRoom — marks a room as excluded from future /sync for the calling user
+	ForgetRoom(context.Context, *ForgetRoomRequest) (*ForgetRoomResponse, error)
 	mustEmbedUnimplementedCoreServiceServer()
 }
 
@@ -431,6 +491,18 @@ func (UnimplementedCoreServiceServer) WriteAuditLog(context.Context, *WriteAudit
 }
 func (UnimplementedCoreServiceServer) DeleteUserKeys(context.Context, *DeleteUserKeysRequest) (*DeleteUserKeysResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteUserKeys not implemented")
+}
+func (UnimplementedCoreServiceServer) KickUser(context.Context, *KickUserRequest) (*KickUserResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method KickUser not implemented")
+}
+func (UnimplementedCoreServiceServer) BanUser(context.Context, *BanUserRequest) (*BanUserResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BanUser not implemented")
+}
+func (UnimplementedCoreServiceServer) UnbanUser(context.Context, *UnbanUserRequest) (*UnbanUserResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UnbanUser not implemented")
+}
+func (UnimplementedCoreServiceServer) ForgetRoom(context.Context, *ForgetRoomRequest) (*ForgetRoomResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ForgetRoom not implemented")
 }
 func (UnimplementedCoreServiceServer) mustEmbedUnimplementedCoreServiceServer() {}
 func (UnimplementedCoreServiceServer) testEmbeddedByValue()                     {}
@@ -824,6 +896,78 @@ func _CoreService_DeleteUserKeys_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_KickUser_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(KickUserRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).KickUser(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_KickUser_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).KickUser(ctx, req.(*KickUserRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_BanUser_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BanUserRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).BanUser(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_BanUser_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).BanUser(ctx, req.(*BanUserRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_UnbanUser_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UnbanUserRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).UnbanUser(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_UnbanUser_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).UnbanUser(ctx, req.(*UnbanUserRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_ForgetRoom_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ForgetRoomRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).ForgetRoom(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_ForgetRoom_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).ForgetRoom(ctx, req.(*ForgetRoomRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CoreService_ServiceDesc is the grpc.ServiceDesc for CoreService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -910,6 +1054,22 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteUserKeys",
 			Handler:    _CoreService_DeleteUserKeys_Handler,
+		},
+		{
+			MethodName: "KickUser",
+			Handler:    _CoreService_KickUser_Handler,
+		},
+		{
+			MethodName: "BanUser",
+			Handler:    _CoreService_BanUser_Handler,
+		},
+		{
+			MethodName: "UnbanUser",
+			Handler:    _CoreService_UnbanUser_Handler,
+		},
+		{
+			MethodName: "ForgetRoom",
+			Handler:    _CoreService_ForgetRoom_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

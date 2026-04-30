@@ -56,6 +56,18 @@ service CoreService {
   // Story 5.7: instance_admin only. Returns keys_deleted_at (Unix ms) on success.
   // Elixir Core handles the Ecto.Multi + failure-invariant audit emission.
   rpc DeleteUserKeys(DeleteUserKeysRequest) returns (DeleteUserKeysResponse);
+
+  // KickUser — room moderator action; power check enforced by GenServer
+  rpc KickUser(KickUserRequest) returns (KickUserResponse);
+
+  // BanUser — bans a user from a room; power check enforced by GenServer
+  rpc BanUser(BanUserRequest) returns (BanUserResponse);
+
+  // UnbanUser — removes a ban (sets membership: leave); power check enforced by GenServer
+  rpc UnbanUser(UnbanUserRequest) returns (UnbanUserResponse);
+
+  // ForgetRoom — marks a room as excluded from future /sync for the calling user
+  rpc ForgetRoom(ForgetRoomRequest) returns (ForgetRoomResponse);
 }
 
 // Shared event type used across multiple RPCs
@@ -306,3 +318,36 @@ message DeleteUserKeysResponse {
   string status          = 1;  // "keys_deleted"
   int64  keys_deleted_at = 2;  // Unix milliseconds — convert to ISO8601 in Go handler
 }
+
+// KickUser — room moderator action; power check enforced by GenServer
+message KickUserRequest {
+  string room_id   = 1;
+  string caller_id = 2;  // user performing the kick
+  string target_id = 3;  // user to kick
+  string reason    = 4;  // optional
+}
+message KickUserResponse {}
+
+// BanUser — bans a user from a room; power check enforced by GenServer
+message BanUserRequest {
+  string room_id   = 1;
+  string caller_id = 2;
+  string target_id = 3;
+  string reason    = 4;  // optional
+}
+message BanUserResponse {}
+
+// UnbanUser — removes ban (sets membership: leave); power check enforced by GenServer
+message UnbanUserRequest {
+  string room_id   = 1;
+  string caller_id = 2;
+  string target_id = 3;
+}
+message UnbanUserResponse {}
+
+// ForgetRoom — marks a room as excluded from future /sync for the calling user
+message ForgetRoomRequest {
+  string room_id = 1;
+  string user_id = 2;
+}
+message ForgetRoomResponse {}

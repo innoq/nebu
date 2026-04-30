@@ -153,6 +153,18 @@ func (m *mockCoreClient) UpdateProfile(_ context.Context, _ *pb.UpdateProfileReq
 func (m *mockCoreClient) DeleteUserKeys(_ context.Context, _ *pb.DeleteUserKeysRequest, _ ...grpc.CallOption) (*pb.DeleteUserKeysResponse, error) {
 	return &pb.DeleteUserKeysResponse{}, nil
 }
+func (m *mockCoreClient) KickUser(_ context.Context, _ *pb.KickUserRequest, _ ...grpc.CallOption) (*pb.KickUserResponse, error) {
+	return &pb.KickUserResponse{}, nil
+}
+func (m *mockCoreClient) BanUser(_ context.Context, _ *pb.BanUserRequest, _ ...grpc.CallOption) (*pb.BanUserResponse, error) {
+	return &pb.BanUserResponse{}, nil
+}
+func (m *mockCoreClient) UnbanUser(_ context.Context, _ *pb.UnbanUserRequest, _ ...grpc.CallOption) (*pb.UnbanUserResponse, error) {
+	return &pb.UnbanUserResponse{}, nil
+}
+func (m *mockCoreClient) ForgetRoom(_ context.Context, _ *pb.ForgetRoomRequest, _ ...grpc.CallOption) (*pb.ForgetRoomResponse, error) {
+	return &pb.ForgetRoomResponse{}, nil
+}
 
 // ─── fakeDB driver ────────────────────────────────────────────────────────────
 //

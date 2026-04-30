@@ -105,6 +105,18 @@ func (m *mockCoreClient) UpdateProfile(ctx context.Context, in *pb.UpdateProfile
 func (m *mockCoreClient) DeleteUserKeys(_ context.Context, _ *pb.DeleteUserKeysRequest, _ ...grpc.CallOption) (*pb.DeleteUserKeysResponse, error) {
 	panic("unexpected call: DeleteUserKeys")
 }
+func (m *mockCoreClient) KickUser(_ context.Context, _ *pb.KickUserRequest, _ ...grpc.CallOption) (*pb.KickUserResponse, error) {
+	panic("unexpected call: KickUser")
+}
+func (m *mockCoreClient) BanUser(_ context.Context, _ *pb.BanUserRequest, _ ...grpc.CallOption) (*pb.BanUserResponse, error) {
+	panic("unexpected call: BanUser")
+}
+func (m *mockCoreClient) UnbanUser(_ context.Context, _ *pb.UnbanUserRequest, _ ...grpc.CallOption) (*pb.UnbanUserResponse, error) {
+	panic("unexpected call: UnbanUser")
+}
+func (m *mockCoreClient) ForgetRoom(_ context.Context, _ *pb.ForgetRoomRequest, _ ...grpc.CallOption) (*pb.ForgetRoomResponse, error) {
+	panic("unexpected call: ForgetRoom")
+}
 
 // ─── AC11 Test 5: LogEvent_Success ───────────────────────────────────────────
 //

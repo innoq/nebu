@@ -532,3 +532,92 @@ defmodule Core.DeleteUserKeysResponse do
   field :status, 1, type: :string
   field :keys_deleted_at, 2, type: :int64, json_name: "keysDeletedAt"
 end
+
+defmodule Core.KickUserRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.KickUserRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :room_id, 1, type: :string, json_name: "roomId"
+  field :caller_id, 2, type: :string, json_name: "callerId"
+  field :target_id, 3, type: :string, json_name: "targetId"
+  field :reason, 4, type: :string
+end
+
+defmodule Core.KickUserResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.KickUserResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+end
+
+defmodule Core.BanUserRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.BanUserRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :room_id, 1, type: :string, json_name: "roomId"
+  field :caller_id, 2, type: :string, json_name: "callerId"
+  field :target_id, 3, type: :string, json_name: "targetId"
+  field :reason, 4, type: :string
+end
+
+defmodule Core.BanUserResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.BanUserResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+end
+
+defmodule Core.UnbanUserRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.UnbanUserRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :room_id, 1, type: :string, json_name: "roomId"
+  field :caller_id, 2, type: :string, json_name: "callerId"
+  field :target_id, 3, type: :string, json_name: "targetId"
+end
+
+defmodule Core.UnbanUserResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.UnbanUserResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+end
+
+defmodule Core.ForgetRoomRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.ForgetRoomRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :room_id, 1, type: :string, json_name: "roomId"
+  field :user_id, 2, type: :string, json_name: "userId"
+end
+
+defmodule Core.ForgetRoomResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.ForgetRoomResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+end

@@ -7,7 +7,7 @@ created: 2026-04-30
 
 # Story 7.22: Room Moderation — kick / ban / unban / forget
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 

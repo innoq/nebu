@@ -2500,6 +2500,402 @@ func (x *DeleteUserKeysResponse) GetKeysDeletedAt() int64 {
 	return 0
 }
 
+// KickUser — room moderator action; power check enforced by GenServer
+type KickUserRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RoomId        string                 `protobuf:"bytes,1,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
+	CallerId      string                 `protobuf:"bytes,2,opt,name=caller_id,json=callerId,proto3" json:"caller_id,omitempty"` // user performing the kick
+	TargetId      string                 `protobuf:"bytes,3,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"` // user to kick
+	Reason        string                 `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`                     // optional
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *KickUserRequest) Reset() {
+	*x = KickUserRequest{}
+	mi := &file_core_proto_msgTypes[44]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *KickUserRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KickUserRequest) ProtoMessage() {}
+
+func (x *KickUserRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[44]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KickUserRequest.ProtoReflect.Descriptor instead.
+func (*KickUserRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{44}
+}
+
+func (x *KickUserRequest) GetRoomId() string {
+	if x != nil {
+		return x.RoomId
+	}
+	return ""
+}
+
+func (x *KickUserRequest) GetCallerId() string {
+	if x != nil {
+		return x.CallerId
+	}
+	return ""
+}
+
+func (x *KickUserRequest) GetTargetId() string {
+	if x != nil {
+		return x.TargetId
+	}
+	return ""
+}
+
+func (x *KickUserRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type KickUserResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *KickUserResponse) Reset() {
+	*x = KickUserResponse{}
+	mi := &file_core_proto_msgTypes[45]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *KickUserResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KickUserResponse) ProtoMessage() {}
+
+func (x *KickUserResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[45]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KickUserResponse.ProtoReflect.Descriptor instead.
+func (*KickUserResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{45}
+}
+
+// BanUser — bans a user from a room; power check enforced by GenServer
+type BanUserRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RoomId        string                 `protobuf:"bytes,1,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
+	CallerId      string                 `protobuf:"bytes,2,opt,name=caller_id,json=callerId,proto3" json:"caller_id,omitempty"`
+	TargetId      string                 `protobuf:"bytes,3,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
+	Reason        string                 `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"` // optional
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BanUserRequest) Reset() {
+	*x = BanUserRequest{}
+	mi := &file_core_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BanUserRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BanUserRequest) ProtoMessage() {}
+
+func (x *BanUserRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BanUserRequest.ProtoReflect.Descriptor instead.
+func (*BanUserRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *BanUserRequest) GetRoomId() string {
+	if x != nil {
+		return x.RoomId
+	}
+	return ""
+}
+
+func (x *BanUserRequest) GetCallerId() string {
+	if x != nil {
+		return x.CallerId
+	}
+	return ""
+}
+
+func (x *BanUserRequest) GetTargetId() string {
+	if x != nil {
+		return x.TargetId
+	}
+	return ""
+}
+
+func (x *BanUserRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type BanUserResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BanUserResponse) Reset() {
+	*x = BanUserResponse{}
+	mi := &file_core_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BanUserResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BanUserResponse) ProtoMessage() {}
+
+func (x *BanUserResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BanUserResponse.ProtoReflect.Descriptor instead.
+func (*BanUserResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{47}
+}
+
+// UnbanUser — removes ban (sets membership: leave); power check enforced by GenServer
+type UnbanUserRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RoomId        string                 `protobuf:"bytes,1,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
+	CallerId      string                 `protobuf:"bytes,2,opt,name=caller_id,json=callerId,proto3" json:"caller_id,omitempty"`
+	TargetId      string                 `protobuf:"bytes,3,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UnbanUserRequest) Reset() {
+	*x = UnbanUserRequest{}
+	mi := &file_core_proto_msgTypes[48]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UnbanUserRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UnbanUserRequest) ProtoMessage() {}
+
+func (x *UnbanUserRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[48]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UnbanUserRequest.ProtoReflect.Descriptor instead.
+func (*UnbanUserRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{48}
+}
+
+func (x *UnbanUserRequest) GetRoomId() string {
+	if x != nil {
+		return x.RoomId
+	}
+	return ""
+}
+
+func (x *UnbanUserRequest) GetCallerId() string {
+	if x != nil {
+		return x.CallerId
+	}
+	return ""
+}
+
+func (x *UnbanUserRequest) GetTargetId() string {
+	if x != nil {
+		return x.TargetId
+	}
+	return ""
+}
+
+type UnbanUserResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UnbanUserResponse) Reset() {
+	*x = UnbanUserResponse{}
+	mi := &file_core_proto_msgTypes[49]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UnbanUserResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UnbanUserResponse) ProtoMessage() {}
+
+func (x *UnbanUserResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[49]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UnbanUserResponse.ProtoReflect.Descriptor instead.
+func (*UnbanUserResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{49}
+}
+
+// ForgetRoom — marks a room as excluded from future /sync for the calling user
+type ForgetRoomRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RoomId        string                 `protobuf:"bytes,1,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
+	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ForgetRoomRequest) Reset() {
+	*x = ForgetRoomRequest{}
+	mi := &file_core_proto_msgTypes[50]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ForgetRoomRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ForgetRoomRequest) ProtoMessage() {}
+
+func (x *ForgetRoomRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[50]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ForgetRoomRequest.ProtoReflect.Descriptor instead.
+func (*ForgetRoomRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{50}
+}
+
+func (x *ForgetRoomRequest) GetRoomId() string {
+	if x != nil {
+		return x.RoomId
+	}
+	return ""
+}
+
+func (x *ForgetRoomRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+type ForgetRoomResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ForgetRoomResponse) Reset() {
+	*x = ForgetRoomResponse{}
+	mi := &file_core_proto_msgTypes[51]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ForgetRoomResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ForgetRoomResponse) ProtoMessage() {}
+
+func (x *ForgetRoomResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[51]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ForgetRoomResponse.ProtoReflect.Descriptor instead.
+func (*ForgetRoomResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{51}
+}
+
 var File_core_proto protoreflect.FileDescriptor
 
 const file_core_proto_rawDesc = "" +
@@ -2685,7 +3081,28 @@ const file_core_proto_rawDesc = "" +
 	"\x06reason\x18\x03 \x01(\tR\x06reason\"X\n" +
 	"\x16DeleteUserKeysResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12&\n" +
-	"\x0fkeys_deleted_at\x18\x02 \x01(\x03R\rkeysDeletedAt2\xad\v\n" +
+	"\x0fkeys_deleted_at\x18\x02 \x01(\x03R\rkeysDeletedAt\"|\n" +
+	"\x0fKickUserRequest\x12\x17\n" +
+	"\aroom_id\x18\x01 \x01(\tR\x06roomId\x12\x1b\n" +
+	"\tcaller_id\x18\x02 \x01(\tR\bcallerId\x12\x1b\n" +
+	"\ttarget_id\x18\x03 \x01(\tR\btargetId\x12\x16\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\"\x12\n" +
+	"\x10KickUserResponse\"{\n" +
+	"\x0eBanUserRequest\x12\x17\n" +
+	"\aroom_id\x18\x01 \x01(\tR\x06roomId\x12\x1b\n" +
+	"\tcaller_id\x18\x02 \x01(\tR\bcallerId\x12\x1b\n" +
+	"\ttarget_id\x18\x03 \x01(\tR\btargetId\x12\x16\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\"\x11\n" +
+	"\x0fBanUserResponse\"e\n" +
+	"\x10UnbanUserRequest\x12\x17\n" +
+	"\aroom_id\x18\x01 \x01(\tR\x06roomId\x12\x1b\n" +
+	"\tcaller_id\x18\x02 \x01(\tR\bcallerId\x12\x1b\n" +
+	"\ttarget_id\x18\x03 \x01(\tR\btargetId\"\x13\n" +
+	"\x11UnbanUserResponse\"E\n" +
+	"\x11ForgetRoomRequest\x12\x17\n" +
+	"\aroom_id\x18\x01 \x01(\tR\x06roomId\x12\x17\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\"\x14\n" +
+	"\x12ForgetRoomResponse2\x9f\r\n" +
 	"\vCoreService\x12<\n" +
 	"\tSendEvent\x12\x16.core.SendEventRequest\x1a\x17.core.SendEventResponse\x12?\n" +
 	"\n" +
@@ -2710,7 +3127,12 @@ const file_core_proto_rawDesc = "" +
 	"\vGetPresence\x12\x18.core.GetPresenceRequest\x1a\x19.core.GetPresenceResponse\x12H\n" +
 	"\rUpdateProfile\x12\x1a.core.UpdateProfileRequest\x1a\x1b.core.UpdateProfileResponse\x12H\n" +
 	"\rWriteAuditLog\x12\x1a.core.WriteAuditLogRequest\x1a\x1b.core.WriteAuditLogResponse\x12K\n" +
-	"\x0eDeleteUserKeys\x12\x1b.core.DeleteUserKeysRequest\x1a\x1c.core.DeleteUserKeysResponseB'Z%github.com/nebu/nebu/internal/grpc/pbb\x06proto3"
+	"\x0eDeleteUserKeys\x12\x1b.core.DeleteUserKeysRequest\x1a\x1c.core.DeleteUserKeysResponse\x129\n" +
+	"\bKickUser\x12\x15.core.KickUserRequest\x1a\x16.core.KickUserResponse\x126\n" +
+	"\aBanUser\x12\x14.core.BanUserRequest\x1a\x15.core.BanUserResponse\x12<\n" +
+	"\tUnbanUser\x12\x16.core.UnbanUserRequest\x1a\x17.core.UnbanUserResponse\x12?\n" +
+	"\n" +
+	"ForgetRoom\x12\x17.core.ForgetRoomRequest\x1a\x18.core.ForgetRoomResponseB'Z%github.com/nebu/nebu/internal/grpc/pbb\x06proto3"
 
 var (
 	file_core_proto_rawDescOnce sync.Once
@@ -2724,7 +3146,7 @@ func file_core_proto_rawDescGZIP() []byte {
 	return file_core_proto_rawDescData
 }
 
-var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 44)
+var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 52)
 var file_core_proto_goTypes = []any{
 	(*Event)(nil),                    // 0: core.Event
 	(*SendEventRequest)(nil),         // 1: core.SendEventRequest
@@ -2770,6 +3192,14 @@ var file_core_proto_goTypes = []any{
 	(*WriteAuditLogResponse)(nil),    // 41: core.WriteAuditLogResponse
 	(*DeleteUserKeysRequest)(nil),    // 42: core.DeleteUserKeysRequest
 	(*DeleteUserKeysResponse)(nil),   // 43: core.DeleteUserKeysResponse
+	(*KickUserRequest)(nil),          // 44: core.KickUserRequest
+	(*KickUserResponse)(nil),         // 45: core.KickUserResponse
+	(*BanUserRequest)(nil),           // 46: core.BanUserRequest
+	(*BanUserResponse)(nil),          // 47: core.BanUserResponse
+	(*UnbanUserRequest)(nil),         // 48: core.UnbanUserRequest
+	(*UnbanUserResponse)(nil),        // 49: core.UnbanUserResponse
+	(*ForgetRoomRequest)(nil),        // 50: core.ForgetRoomRequest
+	(*ForgetRoomResponse)(nil),       // 51: core.ForgetRoomResponse
 }
 var file_core_proto_depIdxs = []int32{
 	0,  // 0: core.GetMessagesResponse.events:type_name -> core.Event
@@ -2800,29 +3230,37 @@ var file_core_proto_depIdxs = []int32{
 	38, // 25: core.CoreService.UpdateProfile:input_type -> core.UpdateProfileRequest
 	40, // 26: core.CoreService.WriteAuditLog:input_type -> core.WriteAuditLogRequest
 	42, // 27: core.CoreService.DeleteUserKeys:input_type -> core.DeleteUserKeysRequest
-	2,  // 28: core.CoreService.SendEvent:output_type -> core.SendEventResponse
-	4,  // 29: core.CoreService.CreateRoom:output_type -> core.CreateRoomResponse
-	6,  // 30: core.CoreService.JoinRoom:output_type -> core.JoinRoomResponse
-	8,  // 31: core.CoreService.LeaveRoom:output_type -> core.LeaveRoomResponse
-	10, // 32: core.CoreService.GetMessages:output_type -> core.GetMessagesResponse
-	12, // 33: core.CoreService.SetPresence:output_type -> core.SetPresenceResponse
-	14, // 34: core.CoreService.SetTyping:output_type -> core.SetTypingResponse
-	16, // 35: core.CoreService.ValidateToken:output_type -> core.ValidateTokenResponse
-	18, // 36: core.CoreService.GetPendingEvents:output_type -> core.GetPendingEventsResponse
-	0,  // 37: core.CoreService.EventBus:output_type -> core.Event
-	21, // 38: core.CoreService.GetMetrics:output_type -> core.GetMetricsResponse
-	25, // 39: core.CoreService.GetRoomState:output_type -> core.GetRoomStateResponse
-	23, // 40: core.CoreService.InviteUser:output_type -> core.InviteUserResponse
-	27, // 41: core.CoreService.SetPowerLevels:output_type -> core.SetPowerLevelsResponse
-	29, // 42: core.CoreService.SendReceipt:output_type -> core.SendReceiptResponse
-	31, // 43: core.CoreService.GetInitialSync:output_type -> core.GetInitialSyncResponse
-	34, // 44: core.CoreService.GetSyncDelta:output_type -> core.GetSyncDeltaResponse
-	37, // 45: core.CoreService.GetPresence:output_type -> core.GetPresenceResponse
-	39, // 46: core.CoreService.UpdateProfile:output_type -> core.UpdateProfileResponse
-	41, // 47: core.CoreService.WriteAuditLog:output_type -> core.WriteAuditLogResponse
-	43, // 48: core.CoreService.DeleteUserKeys:output_type -> core.DeleteUserKeysResponse
-	28, // [28:49] is the sub-list for method output_type
-	7,  // [7:28] is the sub-list for method input_type
+	44, // 28: core.CoreService.KickUser:input_type -> core.KickUserRequest
+	46, // 29: core.CoreService.BanUser:input_type -> core.BanUserRequest
+	48, // 30: core.CoreService.UnbanUser:input_type -> core.UnbanUserRequest
+	50, // 31: core.CoreService.ForgetRoom:input_type -> core.ForgetRoomRequest
+	2,  // 32: core.CoreService.SendEvent:output_type -> core.SendEventResponse
+	4,  // 33: core.CoreService.CreateRoom:output_type -> core.CreateRoomResponse
+	6,  // 34: core.CoreService.JoinRoom:output_type -> core.JoinRoomResponse
+	8,  // 35: core.CoreService.LeaveRoom:output_type -> core.LeaveRoomResponse
+	10, // 36: core.CoreService.GetMessages:output_type -> core.GetMessagesResponse
+	12, // 37: core.CoreService.SetPresence:output_type -> core.SetPresenceResponse
+	14, // 38: core.CoreService.SetTyping:output_type -> core.SetTypingResponse
+	16, // 39: core.CoreService.ValidateToken:output_type -> core.ValidateTokenResponse
+	18, // 40: core.CoreService.GetPendingEvents:output_type -> core.GetPendingEventsResponse
+	0,  // 41: core.CoreService.EventBus:output_type -> core.Event
+	21, // 42: core.CoreService.GetMetrics:output_type -> core.GetMetricsResponse
+	25, // 43: core.CoreService.GetRoomState:output_type -> core.GetRoomStateResponse
+	23, // 44: core.CoreService.InviteUser:output_type -> core.InviteUserResponse
+	27, // 45: core.CoreService.SetPowerLevels:output_type -> core.SetPowerLevelsResponse
+	29, // 46: core.CoreService.SendReceipt:output_type -> core.SendReceiptResponse
+	31, // 47: core.CoreService.GetInitialSync:output_type -> core.GetInitialSyncResponse
+	34, // 48: core.CoreService.GetSyncDelta:output_type -> core.GetSyncDeltaResponse
+	37, // 49: core.CoreService.GetPresence:output_type -> core.GetPresenceResponse
+	39, // 50: core.CoreService.UpdateProfile:output_type -> core.UpdateProfileResponse
+	41, // 51: core.CoreService.WriteAuditLog:output_type -> core.WriteAuditLogResponse
+	43, // 52: core.CoreService.DeleteUserKeys:output_type -> core.DeleteUserKeysResponse
+	45, // 53: core.CoreService.KickUser:output_type -> core.KickUserResponse
+	47, // 54: core.CoreService.BanUser:output_type -> core.BanUserResponse
+	49, // 55: core.CoreService.UnbanUser:output_type -> core.UnbanUserResponse
+	51, // 56: core.CoreService.ForgetRoom:output_type -> core.ForgetRoomResponse
+	32, // [32:57] is the sub-list for method output_type
+	7,  // [7:32] is the sub-list for method input_type
 	7,  // [7:7] is the sub-list for extension type_name
 	7,  // [7:7] is the sub-list for extension extendee
 	0,  // [0:7] is the sub-list for field type_name
@@ -2843,7 +3281,7 @@ func file_core_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_core_proto_rawDesc), len(file_core_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   44,
+			NumMessages:   52,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

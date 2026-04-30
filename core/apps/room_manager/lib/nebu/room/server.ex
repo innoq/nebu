@@ -66,6 +66,15 @@ defmodule Nebu.Room.Server do
   def leave(room_id, user_id), do: GenServer.call(via(room_id), {:leave, user_id})
 
   @doc """
+  Removes `user_id` from the room's member set without emitting a membership event.
+
+  Used by kick and ban, which emit their own event with the correct sender (caller_id).
+  Returns `:ok` on success, `{:error, :not_member}` if not joined, or `{:error, reason}`.
+  """
+  @spec remove_member(String.t(), String.t()) :: :ok | {:error, term()}
+  def remove_member(room_id, user_id), do: GenServer.call(via(room_id), {:remove_member, user_id})
+
+  @doc """
   Returns the default Matrix power levels map.
 
   Public so that EventDispatcher.Server and tests can build creator-boosted maps
@@ -223,6 +232,22 @@ defmodule Nebu.Room.Server do
         :ok ->
           # Emit m.room.member leave event so sync delta includes the left room.
           emit_membership_event(state.room_id, user_id, "leave")
+          new_state = %{state | members: MapSet.delete(members, user_id)}
+          {:reply, :ok, new_state}
+
+        {:error, reason} ->
+          {:reply, {:error, reason}, state}
+      end
+    end
+  end
+
+  @impl GenServer
+  def handle_call({:remove_member, user_id}, _from, %{members: members} = state) do
+    if not MapSet.member?(members, user_id) do
+      {:reply, {:error, :not_member}, state}
+    else
+      case db_module().delete_member(state.room_id, user_id) do
+        :ok ->
           new_state = %{state | members: MapSet.delete(members, user_id)}
           {:reply, :ok, new_state}
 

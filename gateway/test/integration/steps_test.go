@@ -89,4 +89,5 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	initializeRoomStateSteps(sc)         // room state API step definitions (Story 7-19)
 	initializeJoinedMembersSteps(sc)     // joined members API step definitions (Story 7-20)
 	initializeProfileSubfieldSteps(sc)   // profile sub-field API step definitions (Story 7-21)
+	initializeModerationSteps(sc)        // room moderation step definitions (Story 7-22)
 }

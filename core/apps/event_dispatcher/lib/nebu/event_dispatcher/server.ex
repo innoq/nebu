@@ -1192,6 +1192,272 @@ defmodule Nebu.EventDispatcher.Server do
     GRPC.Server.send_reply(stream, event)
   end
 
+  # ─── Story 7-22: Room Moderation ─────────────────────────────────────────────
+
+  @doc """
+  Handles POST /_matrix/client/v3/rooms/{roomId}/kick.
+
+  Kicks `target_id` from the room:
+  1. Verifies room exists.
+  2. Verifies `caller_id` is a room member.
+  3. Checks caller power level ≥ kick threshold (50 by default).
+  4. Calls Room GenServer leave/2 to remove target from members.
+  5. Returns empty KickUserResponse on success.
+  """
+  def kick_user(request, _stream) do
+    room_id   = request.room_id
+    caller_id = request.caller_id
+    target_id = request.target_id
+
+    case Nebu.Room.RoomSupervisor.lookup_room(room_id) do
+      {:error, :not_found} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "room not found: #{room_id}"
+
+      {:ok, _pid} ->
+        state = Nebu.Room.Server.get_state(room_id)
+
+        unless MapSet.member?(state.members, caller_id) do
+          raise GRPC.RPCError,
+            status: GRPC.Status.permission_denied(),
+            message: "you are not a member of this room"
+        end
+
+        unless Nebu.Room.PowerLevels.can?(state.power_levels, caller_id, :kick) do
+          raise GRPC.RPCError,
+            status: GRPC.Status.permission_denied(),
+            message: "insufficient power level for kick"
+        end
+
+        case Nebu.Room.Server.remove_member(room_id, target_id) do
+          :ok ->
+            # Emit kick as m.room.member leave with sender = caller_id (not target_id).
+            reason = if request.reason != "", do: request.reason, else: nil
+            content = %{"membership" => "leave"} |> then(fn c ->
+              if reason, do: Map.put(c, "reason", reason), else: c
+            end)
+            kick_event = %{
+              "room_id"          => room_id,
+              "type"             => "m.room.member",
+              "state_key"        => target_id,
+              "sender"           => caller_id,
+              "content"          => content,
+              "origin_server_ts" => Nebu.DB.Helpers.now_ms()
+            }
+            event_id      = Nebu.EventId.generate(kick_event)
+            event_with_id = Map.put(kick_event, "event_id", event_id)
+            {_pub, priv}  = :persistent_term.get(:nebu_signing_key)
+            event_json    = Nebu.CanonicalJson.encode!(kick_event)
+            signature     = :crypto.sign(:eddsa, :none, event_json, [priv, :ed25519])
+            sig_b64       = Base.encode64(signature)
+            signed        = Map.put(event_with_id, "signatures", %{"nebu" => sig_b64})
+            case messages_db_module().insert_event(signed) do
+              :ok ->
+                Enum.each(:pg.get_local_members("room:#{room_id}"), &send(&1, {:new_event, signed}))
+                %Core.KickUserResponse{}
+              {:error, reason} ->
+                raise GRPC.RPCError,
+                  status: GRPC.Status.internal(),
+                  message: "kick failed: #{inspect(reason)}"
+            end
+
+          {:error, :not_member} ->
+            raise GRPC.RPCError,
+              status: GRPC.Status.not_found(),
+              message: "target user is not a member of this room"
+
+          {:error, reason} ->
+            raise GRPC.RPCError,
+              status: GRPC.Status.internal(),
+              message: "kick failed: #{inspect(reason)}"
+        end
+    end
+  end
+
+  @doc """
+  Handles POST /_matrix/client/v3/rooms/{roomId}/ban.
+
+  Bans `target_id` from the room:
+  1. Verifies room exists.
+  2. Verifies `caller_id` is a room member.
+  3. Checks caller power level ≥ ban threshold (50 by default).
+  4. If target is currently joined, removes them from members first.
+  5. Emits a m.room.member ban state event.
+  6. Returns empty BanUserResponse on success.
+  """
+  def ban_user(request, _stream) do
+    room_id   = request.room_id
+    caller_id = request.caller_id
+    target_id = request.target_id
+
+    case Nebu.Room.RoomSupervisor.lookup_room(room_id) do
+      {:error, :not_found} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "room not found: #{room_id}"
+
+      {:ok, _pid} ->
+        state = Nebu.Room.Server.get_state(room_id)
+
+        unless MapSet.member?(state.members, caller_id) do
+          raise GRPC.RPCError,
+            status: GRPC.Status.permission_denied(),
+            message: "you are not a member of this room"
+        end
+
+        unless Nebu.Room.PowerLevels.can?(state.power_levels, caller_id, :ban) do
+          raise GRPC.RPCError,
+            status: GRPC.Status.permission_denied(),
+            message: "insufficient power level for ban"
+        end
+
+        # If the target is currently a member, remove them without emitting a leave event
+        # (the ban event below is the authoritative membership change).
+        if MapSet.member?(state.members, target_id) do
+          Nebu.Room.Server.remove_member(room_id, target_id)
+        end
+
+        reason = if request.reason != "", do: request.reason, else: nil
+        ban_content = %{"membership" => "ban"} |> then(fn c ->
+          if reason, do: Map.put(c, "reason", reason), else: c
+        end)
+
+        # Emit a m.room.member ban state event to signal the ban.
+        ban_event = %{
+          "room_id"          => room_id,
+          "type"             => "m.room.member",
+          "state_key"        => target_id,
+          "sender"           => caller_id,
+          "content"          => ban_content,
+          "origin_server_ts" => Nebu.DB.Helpers.now_ms()
+        }
+        event_id       = Nebu.EventId.generate(ban_event)
+        event_with_id  = Map.put(ban_event, "event_id", event_id)
+        {_pub, priv}   = :persistent_term.get(:nebu_signing_key)
+        event_json     = Nebu.CanonicalJson.encode!(ban_event)
+        signature      = :crypto.sign(:eddsa, :none, event_json, [priv, :ed25519])
+        sig_b64        = Base.encode64(signature)
+        signed         = Map.put(event_with_id, "signatures", %{"nebu" => sig_b64})
+
+        case messages_db_module().insert_event(signed) do
+          :ok ->
+            Enum.each(:pg.get_local_members("room:#{room_id}"), &send(&1, {:new_event, signed}))
+            %Core.BanUserResponse{}
+
+          {:error, reason} ->
+            raise GRPC.RPCError,
+              status: GRPC.Status.internal(),
+              message: "ban failed: #{inspect(reason)}"
+        end
+    end
+  end
+
+  @doc """
+  Handles POST /_matrix/client/v3/rooms/{roomId}/unban.
+
+  Unbans `target_id` from the room by setting their membership to leave:
+  1. Verifies room exists.
+  2. Verifies `caller_id` is a room member.
+  3. Checks caller power level ≥ ban threshold (50 by default).
+  4. Emits a m.room.member leave state event (unban = set to leave).
+  5. Returns empty UnbanUserResponse on success.
+  """
+  def unban_user(request, _stream) do
+    room_id   = request.room_id
+    caller_id = request.caller_id
+    target_id = request.target_id
+
+    case Nebu.Room.RoomSupervisor.lookup_room(room_id) do
+      {:error, :not_found} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "room not found: #{room_id}"
+
+      {:ok, _pid} ->
+        state = Nebu.Room.Server.get_state(room_id)
+
+        unless MapSet.member?(state.members, caller_id) do
+          raise GRPC.RPCError,
+            status: GRPC.Status.permission_denied(),
+            message: "you are not a member of this room"
+        end
+
+        unless Nebu.Room.PowerLevels.can?(state.power_levels, caller_id, :ban) do
+          raise GRPC.RPCError,
+            status: GRPC.Status.permission_denied(),
+            message: "insufficient power level for unban"
+        end
+
+        # Emit m.room.member leave state event — unban = set membership to leave.
+        unban_event = %{
+          "room_id"          => room_id,
+          "type"             => "m.room.member",
+          "state_key"        => target_id,
+          "sender"           => caller_id,
+          "content"          => %{"membership" => "leave"},
+          "origin_server_ts" => Nebu.DB.Helpers.now_ms()
+        }
+        event_id       = Nebu.EventId.generate(unban_event)
+        event_with_id  = Map.put(unban_event, "event_id", event_id)
+        {_pub, priv}   = :persistent_term.get(:nebu_signing_key)
+        event_json     = Nebu.CanonicalJson.encode!(unban_event)
+        signature      = :crypto.sign(:eddsa, :none, event_json, [priv, :ed25519])
+        sig_b64        = Base.encode64(signature)
+        signed         = Map.put(event_with_id, "signatures", %{"nebu" => sig_b64})
+
+        case messages_db_module().insert_event(signed) do
+          :ok ->
+            Enum.each(:pg.get_local_members("room:#{room_id}"), &send(&1, {:new_event, signed}))
+            %Core.UnbanUserResponse{}
+
+          {:error, reason} ->
+            raise GRPC.RPCError,
+              status: GRPC.Status.internal(),
+              message: "unban failed: #{inspect(reason)}"
+        end
+    end
+  end
+
+  @doc """
+  Handles POST /_matrix/client/v3/rooms/{roomId}/forget.
+
+  Marks a room as excluded from future /sync for the calling user:
+  1. Verifies room exists.
+  2. Verifies caller is NOT currently joined (must leave first).
+  3. Returns empty ForgetRoomResponse on success.
+
+  Note: In MVP, forget is a no-op beyond the FailedPrecondition check because
+  GetSyncDelta does not yet filter forgotten rooms. A follow-up story will add
+  the `forgotten_rooms` column to session state and filter in GetSyncDelta.
+  """
+  def forget_room(request, _stream) do
+    room_id = request.room_id
+    user_id = request.user_id
+
+    case Nebu.Room.RoomSupervisor.lookup_room(room_id) do
+      {:error, :not_found} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "room not found: #{room_id}"
+
+      {:ok, _pid} ->
+        state = Nebu.Room.Server.get_state(room_id)
+
+        # Cannot forget a room while still joined.
+        if MapSet.member?(state.members, user_id) do
+          raise GRPC.RPCError,
+            status: GRPC.Status.failed_precondition(),
+            message: "user must leave the room before forgetting"
+        end
+
+        # Room is not currently joined — forget acknowledged.
+        %Core.ForgetRoomResponse{}
+    end
+  end
+
+  # ─── Private helpers ──────────────────────────────────────────────────────────
+
   # Emits a signed m.room.member leave event into the events table and broadcasts
   # it to any :pg subscribers of the room. Called when an invite is declined via
   # POST /rooms/{roomId}/leave so that:

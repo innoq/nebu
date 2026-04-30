@@ -779,6 +779,22 @@ func main() {
 	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/read_markers",
 		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(readMarkersHandler.PostReadMarkers))))
 
+	// Story 7-22: Room Moderation — kick / ban / unban / forget.
+	// All four are state-changing Matrix POST endpoints; require JWT auth + bodyLimit1MiB
+	// (matches existing /v3 pattern — no per-route rate limit beyond the global default).
+	moderationHandler := matrix.NewModerationHandler(matrix.ModerationConfig{
+		CoreClient: coreClient,
+		ServerName: serverName,
+	})
+	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/kick",
+		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(moderationHandler.PostKickUser))))
+	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/ban",
+		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(moderationHandler.PostBanUser))))
+	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/unban",
+		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(moderationHandler.PostUnbanUser))))
+	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/forget",
+		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(moderationHandler.PostForgetRoom))))
+
 	// Profile DB: reuse the bootstrapDB connection for direct profile reads (GET /profile — no gRPC).
 	profileHandler := matrix.NewProfileHandler(matrix.ProfileConfig{
 		CoreClient: coreClient,

@@ -224,6 +224,30 @@ func (c *Client) GetSyncDelta(ctx context.Context, req *pb.GetSyncDeltaRequest) 
 	return c.core.GetSyncDelta(ctx, req)
 }
 
+// KickUser calls the Elixir core to kick a user from a room.
+// Power-level check is enforced by the Elixir GenServer.
+func (c *Client) KickUser(ctx context.Context, req *pb.KickUserRequest) (*pb.KickUserResponse, error) {
+	return c.core.KickUser(ctx, req)
+}
+
+// BanUser calls the Elixir core to ban a user from a room.
+// Power-level check is enforced by the Elixir GenServer.
+func (c *Client) BanUser(ctx context.Context, req *pb.BanUserRequest) (*pb.BanUserResponse, error) {
+	return c.core.BanUser(ctx, req)
+}
+
+// UnbanUser calls the Elixir core to unban a user from a room (sets membership: leave).
+// Power-level check is enforced by the Elixir GenServer.
+func (c *Client) UnbanUser(ctx context.Context, req *pb.UnbanUserRequest) (*pb.UnbanUserResponse, error) {
+	return c.core.UnbanUser(ctx, req)
+}
+
+// ForgetRoom calls the Elixir core to mark a room as excluded from future /sync for the user.
+// Returns FailedPrecondition if the user is still joined.
+func (c *Client) ForgetRoom(ctx context.Context, req *pb.ForgetRoomRequest) (*pb.ForgetRoomResponse, error) {
+	return c.core.ForgetRoom(ctx, req)
+}
+
 // CoreServiceClient returns the underlying generated gRPC client stub.
 // Used by EventBusStream (Story 4-16) which requires the raw pb.CoreServiceClient.
 func (c *Client) CoreServiceClient() pb.CoreServiceClient {
