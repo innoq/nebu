@@ -1,5 +1,6 @@
 # generated: 2026-03-20
 # last_updated: 2026-04-30
+# story 7-16f done (pipeline: no-op — migration 000026_avatar_url_scrub already committed in feat(security) 4e25855; story was deferred AC7 from 5.29b, now verified in place): 2026-04-30
 # story 7-16e done (pipeline: MINOR_FIXED+Security CLEAN — migration 000028 re-asserts audit_log_purge SECURITY DEFINER; test INSERT+UPDATE to bypass BEFORE INSERT trigger): 2026-04-30
 # story 7-16d done (pipeline: CLEAN — missing 4 RPC registrations in core_grpc.pb.ex fixed; auth interceptor now runs for WriteAuditLog/GetPresence/UpdateProfile/DeleteUserKeys): 2026-04-30
 # story 7-16c done (pipeline: ATDD+Dev+CodeReview MINOR_FIXED+Security CLEAN — gRPC pipeline smoke tests, logout HTTP flow, compile-collision fixed): 2026-04-30
@@ -576,5 +577,5 @@ development_status:
   7-16c-audit-log-admin-events-missing: done
   7-16d-grpc-auth-http404-statt-unauthenticated: done
   7-16e-audit-log-purge-security-definer: done
-  7-16f-migration-avatar-url-scrub-fehlt: ready-for-dev
+  7-16f-migration-avatar-url-scrub-fehlt: done
   epic-7-retrospective: pending  # SEC Gate 2 done (HIGH: CSRF follow-up story needed); traceability 97% PASS; retro outstanding
