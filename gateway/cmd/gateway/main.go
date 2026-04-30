@@ -745,6 +745,23 @@ func main() {
 	mux.Handle("GET /_matrix/client/v3/rooms/{roomId}/members",
 		jwtMiddleware(http.HandlerFunc(getRoomMembersHandler.GetRoomMembers)))
 
+	// Story 7-19: Room State API — GET /rooms/{roomId}/state (all events) and
+	// GET /rooms/{roomId}/state/{eventType}/{stateKey} / /{eventType} (single event).
+	// All three variants require JWT auth (AC7).
+	getRoomStateHandler := matrix.NewGetRoomStateHandler(matrix.GetRoomStateConfig{
+		CoreClient: coreClient,
+		ServerName: serverName,
+	})
+	mux.Handle("GET /_matrix/client/v3/rooms/{roomId}/state",
+		jwtMiddleware(http.HandlerFunc(getRoomStateHandler.GetRoomState)))
+	mux.Handle("GET /_matrix/client/v3/rooms/{roomId}/state/{eventType}/{stateKey}",
+		jwtMiddleware(http.HandlerFunc(getRoomStateHandler.GetRoomStateSingleEvent)))
+	// Trailing-slash variant handles "GET /state/{eventType}/" with empty stateKey (subtree pattern).
+	mux.Handle("GET /_matrix/client/v3/rooms/{roomId}/state/{eventType}/",
+		jwtMiddleware(http.HandlerFunc(getRoomStateHandler.GetRoomStateSingleEvent)))
+	mux.Handle("GET /_matrix/client/v3/rooms/{roomId}/state/{eventType}",
+		jwtMiddleware(http.HandlerFunc(getRoomStateHandler.GetRoomStateSingleEvent)))
+
 	// Read markers — Element Web posts fully-read markers; acknowledge without persisting (MVP).
 	// Without this, Element enters a retry loop producing "Error sending fully_read" log spam.
 	readMarkersHandler := matrix.NewReadMarkersHandler(matrix.ReadMarkersConfig{ServerName: serverName})

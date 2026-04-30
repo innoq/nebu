@@ -298,6 +298,8 @@ defmodule Core.GetRoomStateRequest do
     syntax: :proto3
 
   field :room_id, 1, type: :string, json_name: "roomId"
+  field :event_type, 2, type: :string, json_name: "eventType"
+  field :state_key, 3, type: :string, json_name: "stateKey"
 end
 
 defmodule Core.GetRoomStateResponse do
@@ -311,6 +313,7 @@ defmodule Core.GetRoomStateResponse do
   field :members, 1, repeated: true, type: :string
   field :power_levels_json, 2, type: :string, json_name: "powerLevelsJson"
   field :room_name, 3, type: :string, json_name: "roomName"
+  field :state_events, 4, repeated: true, type: Core.SyncRoomStateEvent, json_name: "stateEvents"
 end
 
 defmodule Core.SetPowerLevelsRequest do

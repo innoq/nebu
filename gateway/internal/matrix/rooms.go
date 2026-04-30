@@ -473,3 +473,159 @@ func (h *SendEventHandler) PutSendEvent(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(sendEventResponse{EventID: resp.EventId})
 }
+
+// ─── GetRoomStateHandler ──────────────────────────────────────────────────────
+
+// GetRoomStateCoreClient is a consumer-defined interface for the GetRoomState
+// gRPC call used by GetRoomStateHandler. Separate from GetMembersCoreClient
+// so the two handlers evolve independently (Go interface convention, ADR-009).
+type GetRoomStateCoreClient interface {
+	GetRoomState(ctx context.Context, req *pb.GetRoomStateRequest) (*pb.GetRoomStateResponse, error)
+}
+
+// GetRoomStateConfig holds dependencies for NewGetRoomStateHandler.
+type GetRoomStateConfig struct {
+	CoreClient GetRoomStateCoreClient
+	ServerName string
+}
+
+// GetRoomStateHandler handles:
+//
+//	GET /_matrix/client/v3/rooms/{roomId}/state
+//	GET /_matrix/client/v3/rooms/{roomId}/state/{eventType}/{stateKey}
+//	GET /_matrix/client/v3/rooms/{roomId}/state/{eventType}
+type GetRoomStateHandler struct {
+	coreClient GetRoomStateCoreClient
+	serverName string
+}
+
+// NewGetRoomStateHandler constructs a GetRoomStateHandler from the provided config.
+func NewGetRoomStateHandler(cfg GetRoomStateConfig) *GetRoomStateHandler {
+	return &GetRoomStateHandler{
+		coreClient: cfg.CoreClient,
+		serverName: cfg.ServerName,
+	}
+}
+
+// stateEventJSON is the Matrix state event envelope returned by GET /state (AC1).
+type stateEventJSON struct {
+	Type     string `json:"type"`
+	StateKey string `json:"state_key"`
+	Content  any    `json:"content"`
+	Sender   string `json:"sender"`
+}
+
+// grpcErrToMatrixState maps gRPC status codes to Matrix HTTP error responses.
+// Consistent with error-mapping pattern from the story implementation notes.
+func grpcErrToMatrixState(w http.ResponseWriter, err error) {
+	st, _ := status.FromError(err)
+	switch st.Code() {
+	case codes.PermissionDenied:
+		writeMatrixError(w, http.StatusForbidden, "M_FORBIDDEN", "You are not a member of this room")
+	case codes.NotFound:
+		writeMatrixError(w, http.StatusNotFound, "M_NOT_FOUND", "Room or state event not found")
+	case codes.Unavailable:
+		writeMatrixError(w, http.StatusServiceUnavailable, "M_UNAVAILABLE", "Server unavailable")
+	default:
+		writeMatrixError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
+	}
+}
+
+// GetRoomState handles GET /_matrix/client/v3/rooms/{roomId}/state.
+//
+// AC1: returns 200 with a JSON array of all current state events.
+// Each element has the Matrix state event envelope shape:
+//
+//	{"type": "...", "state_key": "...", "content": {...}, "sender": "..."}
+//
+// An empty room returns [] (never null).
+func (h *GetRoomStateHandler) GetRoomState(w http.ResponseWriter, r *http.Request) {
+	roomID := r.PathValue("roomId")
+
+	userID, _ := r.Context().Value(middleware.ContextKeyUserID).(string)
+	systemRole, _ := r.Context().Value(middleware.ContextKeySystemRole).(string)
+	grpcCtx := coregrpc.WithUserMetadata(r.Context(), userID, systemRole)
+
+	resp, err := h.coreClient.GetRoomState(grpcCtx, &pb.GetRoomStateRequest{
+		RoomId: roomID,
+		// EventType and StateKey left empty → return all state events.
+	})
+	if err != nil {
+		grpcErrToMatrixState(w, err)
+		return
+	}
+
+	// Build the response array. Initialise as empty slice (not nil) so JSON
+	// encoding produces [] rather than null for rooms with no state events.
+	events := make([]stateEventJSON, 0, len(resp.StateEvents))
+	for _, ev := range resp.StateEvents {
+		var content any
+		if len(ev.Content) > 0 {
+			if jsonErr := json.Unmarshal(ev.Content, &content); jsonErr != nil {
+				// Fall back to raw string on malformed JSON — never drop the event.
+				content = string(ev.Content)
+			}
+		} else {
+			content = map[string]any{}
+		}
+		events = append(events, stateEventJSON{
+			Type:     ev.Type,
+			StateKey: ev.StateKey,
+			Content:  content,
+			Sender:   ev.Sender,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(events)
+}
+
+// GetRoomStateSingleEvent handles:
+//
+//	GET /_matrix/client/v3/rooms/{roomId}/state/{eventType}/{stateKey}
+//	GET /_matrix/client/v3/rooms/{roomId}/state/{eventType}
+//
+// AC2: returns the raw content object of the matching state event (no envelope).
+// AC3: missing stateKey segment is equivalent to stateKey="" (empty string default).
+// AC6: Core returns NotFound when no state event matches → 404 M_NOT_FOUND.
+func (h *GetRoomStateHandler) GetRoomStateSingleEvent(w http.ResponseWriter, r *http.Request) {
+	roomID := r.PathValue("roomId")
+	eventType := r.PathValue("eventType")
+	stateKey := r.PathValue("stateKey") // empty string when the {stateKey} segment is absent
+
+	userID, _ := r.Context().Value(middleware.ContextKeyUserID).(string)
+	systemRole, _ := r.Context().Value(middleware.ContextKeySystemRole).(string)
+	grpcCtx := coregrpc.WithUserMetadata(r.Context(), userID, systemRole)
+
+	resp, err := h.coreClient.GetRoomState(grpcCtx, &pb.GetRoomStateRequest{
+		RoomId:    roomID,
+		EventType: eventType,
+		StateKey:  stateKey,
+	})
+	if err != nil {
+		grpcErrToMatrixState(w, err)
+		return
+	}
+
+	// Core should return exactly one matching state event when event_type is set.
+	// If the state_events list is empty, treat it as not-found.
+	if len(resp.StateEvents) == 0 {
+		writeMatrixError(w, http.StatusNotFound, "M_NOT_FOUND", "State event not found")
+		return
+	}
+
+	ev := resp.StateEvents[0]
+
+	// Matrix spec: response is the raw content block only — no event envelope.
+	var content any
+	if len(ev.Content) > 0 {
+		if jsonErr := json.Unmarshal(ev.Content, &content); jsonErr != nil {
+			content = map[string]any{}
+		}
+	} else {
+		content = map[string]any{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(content)
+}

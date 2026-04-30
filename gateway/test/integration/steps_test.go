@@ -86,4 +86,5 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	initializeAdminBootstrapSteps(sc)  // admin bootstrap + dashboard step definitions
 	initializeRoomFlowSteps(sc)        // room flow step definitions
 	initializeComplianceFlowSteps(sc)  // compliance flow step definitions (Story 5.9)
+	initializeRoomStateSteps(sc)       // room state API step definitions (Story 7-19)
 }

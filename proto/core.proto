@@ -193,12 +193,15 @@ message InviteUserResponse {}
 
 // GetRoomState — unary: Go queries current room members + metadata
 message GetRoomStateRequest {
-  string room_id = 1;
+  string room_id    = 1;
+  string event_type = 2;  // optional filter; empty = return all state events
+  string state_key  = 3;  // optional; only meaningful when event_type is set
 }
 message GetRoomStateResponse {
-  repeated string members           = 1;
-  string          power_levels_json = 2;  // JSON string — full power levels in Story 4-13
-  string          room_name         = 3;  // empty for now — full room metadata in Story 4-9
+  repeated string            members           = 1;  // kept for /members backward compat
+  string                     power_levels_json = 2;  // kept for /members backward compat
+  string                     room_name         = 3;  // kept for backward compat
+  repeated SyncRoomStateEvent state_events     = 4;  // Story 7-19: full state array
 }
 
 // SetPowerLevels — update room power levels (caller must have change_state power)

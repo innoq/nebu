@@ -1368,6 +1368,8 @@ func (*InviteUserResponse) Descriptor() ([]byte, []int) {
 type GetRoomStateRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RoomId        string                 `protobuf:"bytes,1,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
+	EventType     string                 `protobuf:"bytes,2,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"` // optional filter; empty = return all state events
+	StateKey      string                 `protobuf:"bytes,3,opt,name=state_key,json=stateKey,proto3" json:"state_key,omitempty"`    // optional; only meaningful when event_type is set
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1409,11 +1411,26 @@ func (x *GetRoomStateRequest) GetRoomId() string {
 	return ""
 }
 
+func (x *GetRoomStateRequest) GetEventType() string {
+	if x != nil {
+		return x.EventType
+	}
+	return ""
+}
+
+func (x *GetRoomStateRequest) GetStateKey() string {
+	if x != nil {
+		return x.StateKey
+	}
+	return ""
+}
+
 type GetRoomStateResponse struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
-	Members         []string               `protobuf:"bytes,1,rep,name=members,proto3" json:"members,omitempty"`
-	PowerLevelsJson string                 `protobuf:"bytes,2,opt,name=power_levels_json,json=powerLevelsJson,proto3" json:"power_levels_json,omitempty"` // JSON string — full power levels in Story 4-13
-	RoomName        string                 `protobuf:"bytes,3,opt,name=room_name,json=roomName,proto3" json:"room_name,omitempty"`                        // empty for now — full room metadata in Story 4-9
+	Members         []string               `protobuf:"bytes,1,rep,name=members,proto3" json:"members,omitempty"`                                          // kept for /members backward compat
+	PowerLevelsJson string                 `protobuf:"bytes,2,opt,name=power_levels_json,json=powerLevelsJson,proto3" json:"power_levels_json,omitempty"` // kept for /members backward compat
+	RoomName        string                 `protobuf:"bytes,3,opt,name=room_name,json=roomName,proto3" json:"room_name,omitempty"`                        // kept for backward compat
+	StateEvents     []*SyncRoomStateEvent  `protobuf:"bytes,4,rep,name=state_events,json=stateEvents,proto3" json:"state_events,omitempty"`               // Story 7-19: full state array
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -1467,6 +1484,13 @@ func (x *GetRoomStateResponse) GetRoomName() string {
 		return x.RoomName
 	}
 	return ""
+}
+
+func (x *GetRoomStateResponse) GetStateEvents() []*SyncRoomStateEvent {
+	if x != nil {
+		return x.StateEvents
+	}
+	return nil
 }
 
 // SetPowerLevels — update room power levels (caller must have change_state power)
@@ -2583,13 +2607,17 @@ const file_core_proto_rawDesc = "" +
 	"inviter_id\x18\x02 \x01(\tR\tinviterId\x12\x1d\n" +
 	"\n" +
 	"invitee_id\x18\x03 \x01(\tR\tinviteeId\"\x14\n" +
-	"\x12InviteUserResponse\".\n" +
+	"\x12InviteUserResponse\"j\n" +
 	"\x13GetRoomStateRequest\x12\x17\n" +
-	"\aroom_id\x18\x01 \x01(\tR\x06roomId\"y\n" +
+	"\aroom_id\x18\x01 \x01(\tR\x06roomId\x12\x1d\n" +
+	"\n" +
+	"event_type\x18\x02 \x01(\tR\teventType\x12\x1b\n" +
+	"\tstate_key\x18\x03 \x01(\tR\bstateKey\"\xb6\x01\n" +
 	"\x14GetRoomStateResponse\x12\x18\n" +
 	"\amembers\x18\x01 \x03(\tR\amembers\x12*\n" +
 	"\x11power_levels_json\x18\x02 \x01(\tR\x0fpowerLevelsJson\x12\x1b\n" +
-	"\troom_name\x18\x03 \x01(\tR\broomName\"\\\n" +
+	"\troom_name\x18\x03 \x01(\tR\broomName\x12;\n" +
+	"\fstate_events\x18\x04 \x03(\v2\x18.core.SyncRoomStateEventR\vstateEvents\"\\\n" +
 	"\x15SetPowerLevelsRequest\x12\x17\n" +
 	"\aroom_id\x18\x01 \x01(\tR\x06roomId\x12*\n" +
 	"\x11power_levels_json\x18\x02 \x01(\tR\x0fpowerLevelsJson\"\x18\n" +
@@ -2746,57 +2774,58 @@ var file_core_proto_goTypes = []any{
 var file_core_proto_depIdxs = []int32{
 	0,  // 0: core.GetMessagesResponse.events:type_name -> core.Event
 	0,  // 1: core.GetPendingEventsResponse.events:type_name -> core.Event
-	35, // 2: core.GetInitialSyncResponse.rooms:type_name -> core.SyncRoom
-	35, // 3: core.GetSyncDeltaResponse.rooms:type_name -> core.SyncRoom
-	32, // 4: core.SyncRoom.state_events:type_name -> core.SyncRoomStateEvent
-	0,  // 5: core.SyncRoom.timeline_events:type_name -> core.Event
-	1,  // 6: core.CoreService.SendEvent:input_type -> core.SendEventRequest
-	3,  // 7: core.CoreService.CreateRoom:input_type -> core.CreateRoomRequest
-	5,  // 8: core.CoreService.JoinRoom:input_type -> core.JoinRoomRequest
-	7,  // 9: core.CoreService.LeaveRoom:input_type -> core.LeaveRoomRequest
-	9,  // 10: core.CoreService.GetMessages:input_type -> core.GetMessagesRequest
-	11, // 11: core.CoreService.SetPresence:input_type -> core.SetPresenceRequest
-	13, // 12: core.CoreService.SetTyping:input_type -> core.SetTypingRequest
-	15, // 13: core.CoreService.ValidateToken:input_type -> core.ValidateTokenRequest
-	17, // 14: core.CoreService.GetPendingEvents:input_type -> core.GetPendingEventsRequest
-	19, // 15: core.CoreService.EventBus:input_type -> core.EventBusRequest
-	20, // 16: core.CoreService.GetMetrics:input_type -> core.GetMetricsRequest
-	24, // 17: core.CoreService.GetRoomState:input_type -> core.GetRoomStateRequest
-	22, // 18: core.CoreService.InviteUser:input_type -> core.InviteUserRequest
-	26, // 19: core.CoreService.SetPowerLevels:input_type -> core.SetPowerLevelsRequest
-	28, // 20: core.CoreService.SendReceipt:input_type -> core.SendReceiptRequest
-	30, // 21: core.CoreService.GetInitialSync:input_type -> core.GetInitialSyncRequest
-	33, // 22: core.CoreService.GetSyncDelta:input_type -> core.GetSyncDeltaRequest
-	36, // 23: core.CoreService.GetPresence:input_type -> core.GetPresenceRequest
-	38, // 24: core.CoreService.UpdateProfile:input_type -> core.UpdateProfileRequest
-	40, // 25: core.CoreService.WriteAuditLog:input_type -> core.WriteAuditLogRequest
-	42, // 26: core.CoreService.DeleteUserKeys:input_type -> core.DeleteUserKeysRequest
-	2,  // 27: core.CoreService.SendEvent:output_type -> core.SendEventResponse
-	4,  // 28: core.CoreService.CreateRoom:output_type -> core.CreateRoomResponse
-	6,  // 29: core.CoreService.JoinRoom:output_type -> core.JoinRoomResponse
-	8,  // 30: core.CoreService.LeaveRoom:output_type -> core.LeaveRoomResponse
-	10, // 31: core.CoreService.GetMessages:output_type -> core.GetMessagesResponse
-	12, // 32: core.CoreService.SetPresence:output_type -> core.SetPresenceResponse
-	14, // 33: core.CoreService.SetTyping:output_type -> core.SetTypingResponse
-	16, // 34: core.CoreService.ValidateToken:output_type -> core.ValidateTokenResponse
-	18, // 35: core.CoreService.GetPendingEvents:output_type -> core.GetPendingEventsResponse
-	0,  // 36: core.CoreService.EventBus:output_type -> core.Event
-	21, // 37: core.CoreService.GetMetrics:output_type -> core.GetMetricsResponse
-	25, // 38: core.CoreService.GetRoomState:output_type -> core.GetRoomStateResponse
-	23, // 39: core.CoreService.InviteUser:output_type -> core.InviteUserResponse
-	27, // 40: core.CoreService.SetPowerLevels:output_type -> core.SetPowerLevelsResponse
-	29, // 41: core.CoreService.SendReceipt:output_type -> core.SendReceiptResponse
-	31, // 42: core.CoreService.GetInitialSync:output_type -> core.GetInitialSyncResponse
-	34, // 43: core.CoreService.GetSyncDelta:output_type -> core.GetSyncDeltaResponse
-	37, // 44: core.CoreService.GetPresence:output_type -> core.GetPresenceResponse
-	39, // 45: core.CoreService.UpdateProfile:output_type -> core.UpdateProfileResponse
-	41, // 46: core.CoreService.WriteAuditLog:output_type -> core.WriteAuditLogResponse
-	43, // 47: core.CoreService.DeleteUserKeys:output_type -> core.DeleteUserKeysResponse
-	27, // [27:48] is the sub-list for method output_type
-	6,  // [6:27] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	32, // 2: core.GetRoomStateResponse.state_events:type_name -> core.SyncRoomStateEvent
+	35, // 3: core.GetInitialSyncResponse.rooms:type_name -> core.SyncRoom
+	35, // 4: core.GetSyncDeltaResponse.rooms:type_name -> core.SyncRoom
+	32, // 5: core.SyncRoom.state_events:type_name -> core.SyncRoomStateEvent
+	0,  // 6: core.SyncRoom.timeline_events:type_name -> core.Event
+	1,  // 7: core.CoreService.SendEvent:input_type -> core.SendEventRequest
+	3,  // 8: core.CoreService.CreateRoom:input_type -> core.CreateRoomRequest
+	5,  // 9: core.CoreService.JoinRoom:input_type -> core.JoinRoomRequest
+	7,  // 10: core.CoreService.LeaveRoom:input_type -> core.LeaveRoomRequest
+	9,  // 11: core.CoreService.GetMessages:input_type -> core.GetMessagesRequest
+	11, // 12: core.CoreService.SetPresence:input_type -> core.SetPresenceRequest
+	13, // 13: core.CoreService.SetTyping:input_type -> core.SetTypingRequest
+	15, // 14: core.CoreService.ValidateToken:input_type -> core.ValidateTokenRequest
+	17, // 15: core.CoreService.GetPendingEvents:input_type -> core.GetPendingEventsRequest
+	19, // 16: core.CoreService.EventBus:input_type -> core.EventBusRequest
+	20, // 17: core.CoreService.GetMetrics:input_type -> core.GetMetricsRequest
+	24, // 18: core.CoreService.GetRoomState:input_type -> core.GetRoomStateRequest
+	22, // 19: core.CoreService.InviteUser:input_type -> core.InviteUserRequest
+	26, // 20: core.CoreService.SetPowerLevels:input_type -> core.SetPowerLevelsRequest
+	28, // 21: core.CoreService.SendReceipt:input_type -> core.SendReceiptRequest
+	30, // 22: core.CoreService.GetInitialSync:input_type -> core.GetInitialSyncRequest
+	33, // 23: core.CoreService.GetSyncDelta:input_type -> core.GetSyncDeltaRequest
+	36, // 24: core.CoreService.GetPresence:input_type -> core.GetPresenceRequest
+	38, // 25: core.CoreService.UpdateProfile:input_type -> core.UpdateProfileRequest
+	40, // 26: core.CoreService.WriteAuditLog:input_type -> core.WriteAuditLogRequest
+	42, // 27: core.CoreService.DeleteUserKeys:input_type -> core.DeleteUserKeysRequest
+	2,  // 28: core.CoreService.SendEvent:output_type -> core.SendEventResponse
+	4,  // 29: core.CoreService.CreateRoom:output_type -> core.CreateRoomResponse
+	6,  // 30: core.CoreService.JoinRoom:output_type -> core.JoinRoomResponse
+	8,  // 31: core.CoreService.LeaveRoom:output_type -> core.LeaveRoomResponse
+	10, // 32: core.CoreService.GetMessages:output_type -> core.GetMessagesResponse
+	12, // 33: core.CoreService.SetPresence:output_type -> core.SetPresenceResponse
+	14, // 34: core.CoreService.SetTyping:output_type -> core.SetTypingResponse
+	16, // 35: core.CoreService.ValidateToken:output_type -> core.ValidateTokenResponse
+	18, // 36: core.CoreService.GetPendingEvents:output_type -> core.GetPendingEventsResponse
+	0,  // 37: core.CoreService.EventBus:output_type -> core.Event
+	21, // 38: core.CoreService.GetMetrics:output_type -> core.GetMetricsResponse
+	25, // 39: core.CoreService.GetRoomState:output_type -> core.GetRoomStateResponse
+	23, // 40: core.CoreService.InviteUser:output_type -> core.InviteUserResponse
+	27, // 41: core.CoreService.SetPowerLevels:output_type -> core.SetPowerLevelsResponse
+	29, // 42: core.CoreService.SendReceipt:output_type -> core.SendReceiptResponse
+	31, // 43: core.CoreService.GetInitialSync:output_type -> core.GetInitialSyncResponse
+	34, // 44: core.CoreService.GetSyncDelta:output_type -> core.GetSyncDeltaResponse
+	37, // 45: core.CoreService.GetPresence:output_type -> core.GetPresenceResponse
+	39, // 46: core.CoreService.UpdateProfile:output_type -> core.UpdateProfileResponse
+	41, // 47: core.CoreService.WriteAuditLog:output_type -> core.WriteAuditLogResponse
+	43, // 48: core.CoreService.DeleteUserKeys:output_type -> core.DeleteUserKeysResponse
+	28, // [28:49] is the sub-list for method output_type
+	7,  // [7:28] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_core_proto_init() }

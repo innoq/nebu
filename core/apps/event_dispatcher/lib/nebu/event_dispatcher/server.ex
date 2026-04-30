@@ -710,9 +710,13 @@ defmodule Nebu.EventDispatcher.Server do
   # calls GenServer.call(via(room_id), :get_state).
   # In tests, room_registry_module is overridden with FakeRoomRegistry.
 
-  def get_room_state(request, _stream) do
+  def get_room_state(request, stream) do
     room_id = request.room_id
+    event_type = Map.get(request, :event_type, "")
+    state_key = Map.get(request, :state_key, "")
     mod = room_registry_module()
+
+    {caller_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
 
     state =
       try do
@@ -724,10 +728,41 @@ defmodule Nebu.EventDispatcher.Server do
             message: "room not found: #{room_id}"
       end
 
+    unless MapSet.member?(state.members, caller_id) do
+      raise GRPC.RPCError,
+        status: GRPC.Status.permission_denied(),
+        message: "#{caller_id} is not a member of #{room_id}"
+    end
+
+    # Build the full state_events list for this room.
+    all_state_events = build_state_events(state, room_id)
+
+    # Apply optional event_type / state_key filter (Story 7-19, AC2 + AC3 + AC6).
+    # When event_type is empty, return all events (backward compat: /members caller).
+    # When event_type is set, filter to matching events; raise not_found if none match.
+    filtered_events =
+      if event_type == "" do
+        all_state_events
+      else
+        matched =
+          Enum.filter(all_state_events, fn ev ->
+            ev.type == event_type && ev.state_key == state_key
+          end)
+
+        if matched == [] do
+          raise GRPC.RPCError,
+            status: GRPC.Status.not_found(),
+            message: "no state event for type=#{event_type} state_key=#{state_key} in room #{room_id}"
+        end
+
+        matched
+      end
+
     %Core.GetRoomStateResponse{
       members: MapSet.to_list(state.members),
       power_levels_json: Jason.encode!(state.power_levels),
-      room_name: ""
+      room_name: "",
+      state_events: filtered_events
     }
   end
 
