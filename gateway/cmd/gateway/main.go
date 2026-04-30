@@ -773,6 +773,16 @@ func main() {
 	mux.Handle("GET /_matrix/client/v3/rooms/{roomId}/state/{eventType}",
 		jwtMiddleware(http.HandlerFunc(getRoomStateHandler.GetRoomStateSingleEvent)))
 
+	// Story 7-23: Room Aliases — GET /rooms/{roomId}/aliases.
+	// MVP: membership verified via GetRoomState gRPC; returns {"aliases":[]} (no alias storage yet).
+	// JWT required (jwtMiddleware). Extensible: when alias storage is added, gRPC call drops in here.
+	getRoomAliasesHandler := matrix.NewGetRoomAliasesHandler(matrix.GetRoomAliasesConfig{
+		CoreClient: coreClient,
+		ServerName: serverName,
+	})
+	mux.Handle("GET /_matrix/client/v3/rooms/{roomId}/aliases",
+		jwtMiddleware(http.HandlerFunc(getRoomAliasesHandler.GetRoomAliases)))
+
 	// Read markers — Element Web posts fully-read markers; acknowledge without persisting (MVP).
 	// Without this, Element enters a retry loop producing "Error sending fully_read" log spam.
 	readMarkersHandler := matrix.NewReadMarkersHandler(matrix.ReadMarkersConfig{ServerName: serverName})

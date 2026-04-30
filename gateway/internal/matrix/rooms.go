@@ -580,6 +580,87 @@ func (h *GetRoomStateHandler) GetRoomState(w http.ResponseWriter, r *http.Reques
 	_ = json.NewEncoder(w).Encode(events)
 }
 
+// ─── GetRoomAliasesHandler ────────────────────────────────────────────────────
+
+// GetRoomAliasesCoreClient is a consumer-defined interface for the GetRoomState
+// gRPC call used by GetRoomAliasesHandler. Using GetRoomState (rather than a
+// dedicated GetRoomAliases RPC) for membership verification avoids a new proto
+// message in the MVP (story 7-23, implementation notes).
+// Separate interface so this handler evolves independently (Go convention, ADR-009).
+type GetRoomAliasesCoreClient interface {
+	GetRoomState(ctx context.Context, req *pb.GetRoomStateRequest) (*pb.GetRoomStateResponse, error)
+}
+
+// getRoomAliasesResponse is the JSON response for GET /rooms/{roomId}/aliases.
+// The aliases field MUST always be present, even when the array is empty (AC5).
+type getRoomAliasesResponse struct {
+	Aliases []string `json:"aliases"`
+}
+
+// GetRoomAliasesHandler handles GET /_matrix/client/v3/rooms/{roomId}/aliases.
+type GetRoomAliasesHandler struct {
+	coreClient GetRoomAliasesCoreClient
+	serverName string
+}
+
+// GetRoomAliasesConfig holds dependencies for NewGetRoomAliasesHandler.
+type GetRoomAliasesConfig struct {
+	CoreClient GetRoomAliasesCoreClient
+	ServerName string
+}
+
+// NewGetRoomAliasesHandler constructs a GetRoomAliasesHandler from the provided config.
+func NewGetRoomAliasesHandler(cfg GetRoomAliasesConfig) *GetRoomAliasesHandler {
+	return &GetRoomAliasesHandler{
+		coreClient: cfg.CoreClient,
+		serverName: cfg.ServerName,
+	}
+}
+
+// GetRoomAliases handles GET /_matrix/client/v3/rooms/{roomId}/aliases.
+//
+// Flow:
+//  1. Extract roomId from URL path via r.PathValue.
+//  2. Extract authenticated user_id + systemRole from JWT context.
+//  3. Call Core.GetRoomState to verify membership and room existence
+//     (reuses the existing gRPC call — no new proto message needed for MVP).
+//  4. On success: return 200 {"aliases":[]}.
+//  5. On gRPC error: map to Matrix error (same pattern as other room handlers).
+//
+// The handler is deliberately extensible: when alias storage is added in a
+// future story, a GetRoomAliases gRPC call can be dropped in at step 4 without
+// any changes to the route registration or middleware chain (AC6).
+func (h *GetRoomAliasesHandler) GetRoomAliases(w http.ResponseWriter, r *http.Request) {
+	roomID := r.PathValue("roomId")
+
+	userID, _ := r.Context().Value(middleware.ContextKeyUserID).(string)
+	systemRole, _ := r.Context().Value(middleware.ContextKeySystemRole).(string)
+	grpcCtx := coregrpc.WithUserMetadata(r.Context(), userID, systemRole)
+
+	_, err := h.coreClient.GetRoomState(grpcCtx, &pb.GetRoomStateRequest{RoomId: roomID})
+	if err != nil {
+		st, _ := status.FromError(err)
+		switch st.Code() {
+		case codes.PermissionDenied:
+			writeMatrixError(w, http.StatusForbidden, "M_FORBIDDEN", "You are not a member of this room")
+		case codes.NotFound:
+			writeMatrixError(w, http.StatusNotFound, "M_NOT_FOUND", "Room not found")
+		case codes.Unavailable:
+			writeMatrixError(w, http.StatusServiceUnavailable, "M_UNAVAILABLE", "Server unavailable")
+		default:
+			writeMatrixError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
+		}
+		return
+	}
+
+	// TODO(7-23): When alias storage is implemented (future story), replace this
+	// empty slice with a GetRoomAliases gRPC call to Elixir Core.
+	aliases := []string{}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(getRoomAliasesResponse{Aliases: aliases})
+}
+
 // GetRoomStateSingleEvent handles:
 //
 //	GET /_matrix/client/v3/rooms/{roomId}/state/{eventType}/{stateKey}

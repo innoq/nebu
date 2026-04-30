@@ -7,7 +7,7 @@ created: 2026-04-30
 
 # Story 7.23: Room Aliases — GET /rooms/{roomId}/aliases
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 

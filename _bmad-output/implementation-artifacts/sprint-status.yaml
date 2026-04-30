@@ -1,5 +1,6 @@
 # generated: 2026-03-20
 # last_updated: 2026-04-30
+# story 7-23 done (pipeline: ATDD+Dev+CodeReview CLEAN — aliases stub returns [], JWT-gated): 2026-04-30
 # story 7-22 done (pipeline: ATDD+Dev+CodeReview 5 MAJOR fixed (kick wrong-sender+ban double-event+reason dropped+forget-stub AC noted)+Security not-needed per CR): 2026-04-30
 # story 7-21 done (pipeline: ATDD+Dev+CodeReview CLEAN — 1 MINOR (404 wording per spec accepted)): 2026-04-30
 # story 7-20 done (pipeline: ATDD+Dev+CodeReview CLEAN — 2 MINOR fixed (Godog field assertion+comment drift), N+1 profile lookup acceptable for MVP): 2026-04-30
@@ -593,7 +594,7 @@ development_status:
   7-20-joined-members-get-rooms-roomid-joined-members: done
   7-21-profile-einzelfelder-displayname-avatar-url: done
   7-22-room-moderation-kick-ban-unban-forget: done
-  7-23-room-aliases-get-rooms-roomid-aliases: ready-for-dev
+  7-23-room-aliases-get-rooms-roomid-aliases: done
   7-24-account-data-per-room-get-put: ready-for-dev
   7-25-tags-api-get-put-delete: ready-for-dev
   7-26-device-management-get-put-delete-devices: ready-for-dev
