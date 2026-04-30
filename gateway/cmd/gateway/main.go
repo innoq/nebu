@@ -330,6 +330,12 @@ func main() {
 	// POST /admin/config — no csrf() wrapper (stub phase; see TODO in handler); sessionGuard still applies.
 	mux.Handle("POST /admin/config", sessionGuard(http.HandlerFunc(configHandler.UpdateConfigHandler)))
 
+	// Story 7.15: Role Mapping configuration page.
+	roleMappingHandler := admin.NewRoleMappingHandler(tmplHandler)
+	mux.Handle("GET /admin/config/role-mapping", csrf(sessionGuard(http.HandlerFunc(roleMappingHandler.Handler))))
+	// POST — no csrf() wrapper (stub phase); sessionGuard still applies.
+	mux.Handle("POST /admin/config/role-mapping", sessionGuard(http.HandlerFunc(roleMappingHandler.UpdateHandler)))
+
 	// Story 7.11: Compliance Access Requests page (four-eyes approval UI).
 	complianceHandler := admin.NewComplianceHandler(tmplHandler)
 	mux.Handle("GET /admin/compliance", csrf(sessionGuard(http.HandlerFunc(complianceHandler.ListHandler))))

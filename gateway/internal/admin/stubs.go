@@ -118,3 +118,23 @@ var stubConfig = StubConfig{
 	MaxRoomsPerUser:   10,
 	RetentionDays:     90,
 }
+
+// StubRoleMappingConfig holds OIDC group claim → role mapping configuration (Story 7.15).
+// Used until Epic 6 (Admin API) provides a real persistence layer.
+// OIDCGroupClaim is the OIDC claim name (e.g. "groups").
+// InstanceAdminGroup is the claim value that maps to instance_admin.
+// ComplianceUserGroup is the claim value that maps to compliance_user (optional).
+type StubRoleMappingConfig struct {
+	OIDCGroupClaim      string // claim name, e.g. "groups"
+	InstanceAdminGroup  string // value that maps to instance_admin, e.g. "instance_admin"
+	ComplianceUserGroup string // value that maps to compliance_user, e.g. "" (optional)
+}
+
+// stubRoleMappingConfig is the in-memory role mapping config, mutated by
+// RoleMappingHandler.UpdateHandler (Story 7.15).
+// Changes are lost on gateway restart — acceptable for stub phase.
+var stubRoleMappingConfig = StubRoleMappingConfig{
+	OIDCGroupClaim:      "groups",
+	InstanceAdminGroup:  "instance_admin",
+	ComplianceUserGroup: "",
+}

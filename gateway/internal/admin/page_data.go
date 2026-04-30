@@ -222,6 +222,18 @@ type ConfigPageData struct {
 	Flash  AlertBannerData
 }
 
+// RoleMappingPageData holds data for the Role Mapping configuration page (Story 7.15).
+// Embeds PageData for ActiveNav, topbar status, and CSRF token.
+// Config is populated from stubRoleMappingConfig by RoleMappingHandler.Handler.
+// Errors carries per-field validation error messages (only on POST re-render).
+// Flash is populated when ?flash= query param is present (PRG pattern).
+type RoleMappingPageData struct {
+	PageData
+	Config StubRoleMappingConfig
+	Errors map[string]string
+	Flash  AlertBannerData
+}
+
 // CompliancePageData holds data for the Compliance Access Requests page (Story 7.11).
 // Embeds PageData for ActiveNav, topbar status, and CSRF token.
 // Requests is the filtered slice of compliance requests.

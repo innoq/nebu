@@ -1,5 +1,5 @@
 # generated: 2026-03-20
-# last_updated: 2026-04-29
+# last_updated: 2026-04-30
 # story 7-6 done (CR: 2 MINOR fixed inline — rune-count fix + dead template branch removed; 0 decision-needed, 0 deferred): 2026-04-29
 # story 7-6 created: 7-6 → ready-for-dev: 2026-04-29
 # story 7-5 done (CR: 1 MINOR fixed inline — badge normalization extracted to toUserRowData helper; 0 decision-needed, 0 deferred): 2026-04-29
@@ -559,5 +559,5 @@ development_status:
   7-12-audit-log-view-atlas-pattern-zeitraum-filter-read-only: done
   7-13-wcag-audit-axe-core-report-automatisierter-scan-aller-admin-seiten: done  # nested <main> fixed in 4 templates, sr-only labels added, axe WCAG 2.1 AA spec for 8 pages
   7-14-gherkin-admin-ui-smoke-flows-user-deactivate-room-archive-via-ui: done  # smoke-flows spec, reactivate+unarchive handlers added
-  7-15-bootstrap-wizard-claim-role-mapping-instance-admin-compliance-user: backlog
+  7-15-bootstrap-wizard-claim-role-mapping-instance-admin-compliance-user: done  # role-mapping config page, regex validation, Kassandra CLEAN
   epic-7-retrospective: optional
