@@ -49,3 +49,10 @@ Feature: Public Room Directory — GET/POST /publicRooms
     Then the response status is 200
     And the response body contains "world_readable"
     And the response body contains "guest_can_join"
+
+  # Story 7-36: P1 gap closure — 7-27-AC5 private room exclusion
+  Scenario: GetPublicRooms_PrivateRoom_ExcludedFromDirectory — private room absent from public directory
+    Given kai is authenticated via OIDC
+    And kai creates a room named "private-room-test"
+    When an unauthenticated client calls GET /_matrix/client/v3/publicRooms
+    Then the public rooms chunk does not contain a room named "private-room-test"

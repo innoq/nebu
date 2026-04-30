@@ -12,6 +12,7 @@ package integration_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/http"
 
@@ -56,8 +57,31 @@ func unauthenticatedClientCallsPostPublicRoomsWithBody(body string) error {
 	return captureResponse(resp)
 }
 
+// thePublicRoomsChunkDoesNotContainRoomNamed asserts that the public rooms response
+// (stored in lastBody) contains no chunk entry with name == roomName.
+// Uses GET /publicRooms?limit=100 result from the prior step.
+func thePublicRoomsChunkDoesNotContainRoomNamed(roomName string) error {
+	var publicRoomsResp struct {
+		Chunk []struct {
+			Name string `json:"name"`
+		} `json:"chunk"`
+	}
+	if err := json.Unmarshal([]byte(lastBody), &publicRoomsResp); err != nil {
+		return fmt.Errorf("parsing publicRooms response: %w (body: %s)", err, lastBody)
+	}
+	for _, entry := range publicRoomsResp.Chunk {
+		if entry.Name == roomName {
+			return fmt.Errorf("private room %q unexpectedly found in public rooms directory — join_rule filter not working.\nBody: %s",
+				roomName, lastBody)
+		}
+	}
+	return nil
+}
+
 func initializePublicRoomsSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^an unauthenticated client calls GET (/_matrix/client/v3/publicRooms[^\s]*)$`, unauthenticatedClientCallsGetPublicRooms)
 	sc.Step(`^kai calls POST /_matrix/client/v3/publicRooms with body (.+)$`, kaiCallsPostPublicRoomsWithBody)
 	sc.Step(`^an unauthenticated client calls POST /_matrix/client/v3/publicRooms with body (.+)$`, unauthenticatedClientCallsPostPublicRoomsWithBody)
+	// Story 7-36: private room exclusion assertion
+	sc.Step(`^the public rooms chunk does not contain a room named "([^"]*)"$`, thePublicRoomsChunkDoesNotContainRoomNamed)
 }

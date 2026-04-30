@@ -30,6 +30,8 @@ var lastSecondEventID string
 var lastMsgBody string
 var marieCapturedSyncToken string
 var marieIncrementalSyncBody string
+var kaiCapturedSyncToken string
+var kaiIncrementalSyncBody string
 
 // authenticateUser runs the Dex authorization code flow for the given credentials
 // and then performs POST /login on the Matrix endpoint. The resulting access_token
@@ -512,6 +514,8 @@ func initializeRoomFlowSteps(sc *godog.ScenarioContext) {
 		marieUserID = ""
 		marieCapturedSyncToken = ""
 		marieIncrementalSyncBody = ""
+		kaiCapturedSyncToken = ""
+		kaiIncrementalSyncBody = ""
 		lastTxnID = ""
 		lastSecondEventID = ""
 		lastMsgBody = ""

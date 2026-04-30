@@ -51,3 +51,12 @@ Feature: Tags API — GET/PUT/DELETE /user/{userId}/rooms/{roomId}/tags
   Scenario: GetTags_Unauthenticated — request without JWT is rejected
     When an unauthenticated client calls GET /user/{userId}/rooms/{roomId}/tags
     Then the response status is 401
+
+  # Story 7-36: P1 gap closure — 7-25-AC5 tag sync propagation
+  Scenario: TagSync_AfterPut_AppearsinSync — tag PUT appears as m.tag event in incremental sync
+    Given kai is authenticated via OIDC
+    And kai creates a room named "tag-sync-test-room"
+    And kai captures a sync token before tag change
+    When kai puts tag "m.favourite" with body {"order":0.5} for the created room
+    And kai calls incremental sync with the captured token
+    Then the incremental sync contains account_data event of type "m.tag" for the room

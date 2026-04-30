@@ -188,6 +188,14 @@ func theResponseBodyIs(expected string) error {
 	return nil
 }
 
+// kaiPutsTagForRoom calls
+// PUT /_matrix/client/v3/user/{kaiUserID}/rooms/{lastRoomID}/tags/{tag}
+// with the given JSON body, authenticated as kai.
+// Used in the Story 7-36 sync propagation scenario.
+func kaiPutsTagForRoom(tag, body string) error {
+	return kaiCallsPutTagWithBody(tag, body)
+}
+
 // ─── Step registration ────────────────────────────────────────────────────────
 
 // initializeTagsSteps registers all step definitions for tags.feature.
@@ -202,4 +210,6 @@ func initializeTagsSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the tags object is empty$`, theTagsObjectIsEmpty)
 	sc.Step(`^the tags object contains "([^"]+)"$`, theTagsObjectContains)
 	sc.Step(`^the response body is "([^"]*)"$`, theResponseBodyIs)
+	// Story 7-36: tag sync propagation steps
+	sc.Step(`^kai puts tag "([^"]*)" with body (.+?) for the created room$`, kaiPutsTagForRoom)
 }

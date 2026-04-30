@@ -60,3 +60,10 @@ Feature: Account Data API — GET/PUT /user/{userId}/account_data/{type} and /us
     Then the response status is 200
     And the response body contains "\"tags\":"
     And the response body does not contain "m.favourite"
+
+  # Story 7-36: P1 gap closure — 7-24-AC4 sync propagation
+  Scenario: AccountDataSync_AfterPut_AppearsinSync — account_data PUT appears in incremental sync
+    Given kai captures a sync token before account data change
+    When kai puts room account data type "m.fully_read" with body {"event_id":"$test123"} for the created room
+    And kai calls incremental sync with the captured token
+    Then the incremental sync contains account_data event of type "m.fully_read" for the room

@@ -1,5 +1,7 @@
 # generated: 2026-03-20
 # last_updated: 2026-04-30
+# story 7-36 done (pipeline: ATDD+Dev+CodeReview CLEAN — sync propagation Godog + private room exclusion + theResponseBodyIs compile fix): 2026-04-30
+# story 7-36 created: 7-36 → ready-for-dev: 2026-04-30 (P1 test gap closure: sync propagation for account_data+tags + private room exclusion from publicRooms)
 # story 7-35 done (pipeline: ATDD+Dev+CodeReview MINOR-FIXED — withUserDB helper, SET LOCAL GUC, RLS migration 000033): 2026-04-30
 # story 7-33 done (pipeline: ATDD+Dev+CodeReview CLEAN — system-role bypass in get_room_state, fanout goroutine fixed): 2026-04-30
 # story 7-33 created: 7-33 → ready-for-dev: 2026-04-30 (SEC Gate 2 MEDIUM fix: fanout goroutine must send system role to bypass membership check in get_room_state)
@@ -622,4 +624,6 @@ development_status:
   7-33-fanout-system-role-bypass: done
   # SEC Gate 2 MEDIUM follow-up (RLS GUC wiring + enable RLS on notifications/push_rules/pushers)
   7-35-rls-per-request-guc-wiring: done
+  # P1 test gap closure (from epic-7-final-traceability-2026-04-30.md)
+  7-36-p1-test-gaps-sync-propagation-private-room-exclusion: done
   epic-7-retrospective: pending  # SEC Gate 2 done; retro blocked until 7-17 (CSRF HIGH) is done
