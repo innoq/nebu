@@ -310,40 +310,31 @@ func main() {
 	usersHandler := admin.NewUsersHandler(tmplHandler)
 	mux.Handle("GET /admin/users", csrf(sessionGuard(http.HandlerFunc(usersHandler.ListHandler))))
 	mux.Handle("GET /admin/users/{userId}", csrf(sessionGuard(http.HandlerFunc(usersHandler.DetailHandler))))
-	// Story 7.6: Display name update — intentionally NO csrf() wrapper (stub phase; see TODO in handler).
-	// sessionGuard still applies — the admin must be logged in.
-	mux.Handle("POST /admin/users/{userId}/display-name", sessionGuard(http.HandlerFunc(usersHandler.UpdateDisplayNameHandler)))
-	// Story 7.7: Role update and deactivation — no csrf() wrapper (stub phase, same pattern as display-name).
-	mux.Handle("POST /admin/users/{userId}/role", sessionGuard(http.HandlerFunc(usersHandler.UpdateRoleHandler)))
-	mux.Handle("POST /admin/users/{userId}/deactivate", sessionGuard(http.HandlerFunc(usersHandler.DeactivateUserHandler)))
-	// Story 7.14: Reactivation — inverse of DeactivateUserHandler; used by smoke-flow afterEach cleanup.
-	mux.Handle("POST /admin/users/{userId}/reactivate", sessionGuard(http.HandlerFunc(usersHandler.ReactivateUserHandler)))
+	mux.Handle("POST /admin/users/{userId}/display-name", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(usersHandler.UpdateDisplayNameHandler)))))
+	mux.Handle("POST /admin/users/{userId}/role", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(usersHandler.UpdateRoleHandler)))))
+	mux.Handle("POST /admin/users/{userId}/deactivate", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(usersHandler.DeactivateUserHandler)))))
+	mux.Handle("POST /admin/users/{userId}/reactivate", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(usersHandler.ReactivateUserHandler)))))
 	roomsHandler := admin.NewRoomsHandler(tmplHandler)
 	mux.Handle("GET /admin/rooms", csrf(sessionGuard(http.HandlerFunc(roomsHandler.ListHandler))))
 	mux.Handle("GET /admin/rooms/{roomId}", csrf(sessionGuard(http.HandlerFunc(roomsHandler.DetailHandler))))
-	// Story 7.9: Room name update and archive — no csrf() wrapper (stub phase; see TODO in handler).
-	mux.Handle("POST /admin/rooms/{roomId}/name", sessionGuard(http.HandlerFunc(roomsHandler.UpdateRoomNameHandler)))
-	mux.Handle("POST /admin/rooms/{roomId}/archive", sessionGuard(http.HandlerFunc(roomsHandler.ArchiveRoomHandler)))
-	// Story 7.14: Unarchive — inverse of ArchiveRoomHandler; used by smoke-flow afterEach cleanup.
-	mux.Handle("POST /admin/rooms/{roomId}/unarchive", sessionGuard(http.HandlerFunc(roomsHandler.UnarchiveRoomHandler)))
+	mux.Handle("POST /admin/rooms/{roomId}/name", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(roomsHandler.UpdateRoomNameHandler)))))
+	mux.Handle("POST /admin/rooms/{roomId}/archive", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(roomsHandler.ArchiveRoomHandler)))))
+	mux.Handle("POST /admin/rooms/{roomId}/unarchive", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(roomsHandler.UnarchiveRoomHandler)))))
 	// Story 7.10: Server Configuration page.
 	configHandler := admin.NewConfigHandler(tmplHandler)
 	mux.Handle("GET /admin/config", csrf(sessionGuard(http.HandlerFunc(configHandler.Handler))))
-	// POST /admin/config — no csrf() wrapper (stub phase; see TODO in handler); sessionGuard still applies.
-	mux.Handle("POST /admin/config", sessionGuard(http.HandlerFunc(configHandler.UpdateConfigHandler)))
+	mux.Handle("POST /admin/config", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(configHandler.UpdateConfigHandler)))))
 
 	// Story 7.15: Role Mapping configuration page.
 	roleMappingHandler := admin.NewRoleMappingHandler(tmplHandler)
 	mux.Handle("GET /admin/config/role-mapping", csrf(sessionGuard(http.HandlerFunc(roleMappingHandler.Handler))))
-	// POST — no csrf() wrapper (stub phase); sessionGuard still applies.
-	mux.Handle("POST /admin/config/role-mapping", sessionGuard(http.HandlerFunc(roleMappingHandler.UpdateHandler)))
+	mux.Handle("POST /admin/config/role-mapping", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(roleMappingHandler.UpdateHandler)))))
 
 	// Story 7.11: Compliance Access Requests page (four-eyes approval UI).
 	complianceHandler := admin.NewComplianceHandler(tmplHandler)
 	mux.Handle("GET /admin/compliance", csrf(sessionGuard(http.HandlerFunc(complianceHandler.ListHandler))))
-	// POST approve/reject — no csrf() wrapper (stub phase; see TODO in handler); sessionGuard still applies.
-	mux.Handle("POST /admin/compliance/{id}/approve", sessionGuard(http.HandlerFunc(complianceHandler.ApproveHandler)))
-	mux.Handle("POST /admin/compliance/{id}/reject", sessionGuard(http.HandlerFunc(complianceHandler.RejectHandler)))
+	mux.Handle("POST /admin/compliance/{id}/approve", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(complianceHandler.ApproveHandler)))))
+	mux.Handle("POST /admin/compliance/{id}/reject", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(complianceHandler.RejectHandler)))))
 
 	// Story 7.12: Audit Log page — read-only, no POST handlers.
 	auditLogHandler := admin.NewAuditLogHandler(tmplHandler)

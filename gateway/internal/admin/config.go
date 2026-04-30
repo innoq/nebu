@@ -35,7 +35,6 @@ func (h *ConfigHandler) Handler(w http.ResponseWriter, r *http.Request) {
 // UpdateConfigHandler handles POST /admin/config.
 // Validates form fields, updates stubConfig in-memory, then PRG-redirects.
 // TODO(epic-6): replace stub mutation with Admin API call (PATCH /api/v1/admin/config).
-// TODO(story-7-csrf): enforce CSRF middleware when wiring in production.
 func (h *ConfigHandler) UpdateConfigHandler(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)

@@ -157,7 +157,6 @@ func (h *UsersHandler) DetailHandler(w http.ResponseWriter, r *http.Request) {
 // UpdateRoleHandler handles POST /admin/users/{userId}/role.
 // Validates and updates the user's role in-memory (stub phase).
 // TODO(epic-6): replace stub mutation with Admin API call when Epic 6 is implemented.
-// TODO(story-7-csrf): enforce CSRF middleware when wiring in production.
 func (h *UsersHandler) UpdateRoleHandler(w http.ResponseWriter, r *http.Request) {
 	userID := r.PathValue("userId")
 	if err := r.ParseForm(); err != nil {
@@ -182,7 +181,6 @@ func (h *UsersHandler) UpdateRoleHandler(w http.ResponseWriter, r *http.Request)
 // DeactivateUserHandler handles POST /admin/users/{userId}/deactivate.
 // Sets Status = "deactivated" in-memory (stub phase).
 // TODO(epic-6): replace stub mutation with Admin API call (POST /api/v1/admin/users/{userId}/deactivate).
-// TODO(story-7-csrf): enforce CSRF middleware when wiring in production.
 func (h *UsersHandler) DeactivateUserHandler(w http.ResponseWriter, r *http.Request) {
 	userID := r.PathValue("userId")
 	for i := range stubUsers {
@@ -198,7 +196,6 @@ func (h *UsersHandler) DeactivateUserHandler(w http.ResponseWriter, r *http.Requ
 // Restores Status = "active" in-memory (stub phase — inverse of DeactivateUserHandler).
 // Used by Playwright smoke-flow specs (Story 7.14) to restore stub state in afterEach.
 // TODO(epic-6): replace stub mutation with Admin API call when Epic 6 is implemented.
-// TODO(story-7-csrf): enforce CSRF middleware when wiring in production.
 func (h *UsersHandler) ReactivateUserHandler(w http.ResponseWriter, r *http.Request) {
 	userID := r.PathValue("userId")
 	for i := range stubUsers {
@@ -215,7 +212,6 @@ func (h *UsersHandler) ReactivateUserHandler(w http.ResponseWriter, r *http.Requ
 // TODO(epic-6): replace stub mutation with Admin API call when Epic 6 is implemented.
 func (h *UsersHandler) UpdateDisplayNameHandler(w http.ResponseWriter, r *http.Request) {
 	userID := r.PathValue("userId")
-	// TODO(story-7-csrf): enforce CSRF middleware when wiring in production
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return

@@ -1,5 +1,7 @@
 # generated: 2026-03-20
 # last_updated: 2026-04-30
+# story 7-17 done (pipeline: ATDD+Dev+CodeReview CLEAN+Security CLEAN — 11 POST routes wrapped bodyLimit64KiB(csrf(sessionGuard))); Kassandra MEDIUM non-blocking): 2026-04-30
+# stories 7-17..7-31 created (2 security follow-ups from SEC Gate 2 + 13 Matrix API gap stories from tmp/missing-matrix-features.md; migration numbers corrected to 000029..000032): 2026-04-30
 # story 7-16f done (pipeline: no-op — migration 000026_avatar_url_scrub already committed in feat(security) 4e25855; story was deferred AC7 from 5.29b, now verified in place): 2026-04-30
 # story 7-16e done (pipeline: MINOR_FIXED+Security CLEAN — migration 000028 re-asserts audit_log_purge SECURITY DEFINER; test INSERT+UPDATE to bypass BEFORE INSERT trigger): 2026-04-30
 # story 7-16d done (pipeline: CLEAN — missing 4 RPC registrations in core_grpc.pb.ex fixed; auth interceptor now runs for WriteAuditLog/GetPresence/UpdateProfile/DeleteUserKeys): 2026-04-30
@@ -578,4 +580,21 @@ development_status:
   7-16d-grpc-auth-http404-statt-unauthenticated: done
   7-16e-audit-log-purge-security-definer: done
   7-16f-migration-avatar-url-scrub-fehlt: done
-  epic-7-retrospective: pending  # SEC Gate 2 done (HIGH: CSRF follow-up story needed); traceability 97% PASS; retro outstanding
+  # Security follow-up stories (SEC Gate 2 findings)
+  7-17-csrf-enforcement-body-size-limits-admin-post-routes: done
+  7-18-flash-message-allowlist-admin-get-handlers: ready-for-dev
+  # Matrix Client-Server API gaps (from tmp/missing-matrix-features.md)
+  7-19-room-state-api-get-state-single-event: ready-for-dev
+  7-20-joined-members-get-rooms-roomid-joined-members: ready-for-dev
+  7-21-profile-einzelfelder-displayname-avatar-url: ready-for-dev
+  7-22-room-moderation-kick-ban-unban-forget: ready-for-dev
+  7-23-room-aliases-get-rooms-roomid-aliases: ready-for-dev
+  7-24-account-data-per-room-get-put: ready-for-dev
+  7-25-tags-api-get-put-delete: ready-for-dev
+  7-26-device-management-get-put-delete-devices: ready-for-dev
+  7-27-public-room-directory-get-post-publicrooms: ready-for-dev
+  7-28-event-context-get-rooms-roomid-context-eventid: ready-for-dev
+  7-29-notifications-api-get-notifications: ready-for-dev
+  7-30-push-rules-pushers-api: ready-for-dev
+  7-31-search-api-post-search-adr-required: backlog  # blocked: ADR-010 (FTS strategy) required first
+  epic-7-retrospective: pending  # SEC Gate 2 done; retro blocked until 7-17 (CSRF HIGH) is done

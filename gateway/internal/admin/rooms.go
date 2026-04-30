@@ -148,7 +148,6 @@ func (h *RoomsHandler) DetailHandler(w http.ResponseWriter, r *http.Request) {
 // TODO(epic-6): replace stub mutation with Admin API call when Epic 6 is implemented.
 func (h *RoomsHandler) UpdateRoomNameHandler(w http.ResponseWriter, r *http.Request) {
 	roomID := r.PathValue("roomId")
-	// TODO(story-7-csrf): enforce CSRF middleware when wiring in production
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
@@ -177,7 +176,6 @@ func (h *RoomsHandler) UpdateRoomNameHandler(w http.ResponseWriter, r *http.Requ
 // ArchiveRoomHandler handles POST /admin/rooms/{roomId}/archive.
 // Sets Status = "archived" in-memory (stub phase).
 // TODO(epic-6): replace stub mutation with Admin API call (POST /api/v1/admin/rooms/{roomId}/archive).
-// TODO(story-7-csrf): enforce CSRF middleware when wiring in production.
 func (h *RoomsHandler) ArchiveRoomHandler(w http.ResponseWriter, r *http.Request) {
 	roomID := r.PathValue("roomId")
 	found := false
@@ -199,7 +197,6 @@ func (h *RoomsHandler) ArchiveRoomHandler(w http.ResponseWriter, r *http.Request
 // Restores Status = "active" in-memory (stub phase — inverse of ArchiveRoomHandler).
 // Used by Playwright smoke-flow specs (Story 7.14) to restore stub state in afterEach.
 // TODO(epic-6): replace stub mutation with Admin API call when Epic 6 is implemented.
-// TODO(story-7-csrf): enforce CSRF middleware when wiring in production.
 func (h *RoomsHandler) UnarchiveRoomHandler(w http.ResponseWriter, r *http.Request) {
 	roomID := r.PathValue("roomId")
 	found := false

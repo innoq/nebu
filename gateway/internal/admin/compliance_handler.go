@@ -49,7 +49,6 @@ func (h *ComplianceHandler) ListHandler(w http.ResponseWriter, r *http.Request) 
 // ApproveHandler handles POST /admin/compliance/{id}/approve.
 // Sets Status="approved" and ReviewedBy="kai@example.com" on the matching stub entry.
 // PRG-redirects to /admin/compliance with a flash message.
-// TODO(story-7-csrf): enforce CSRF middleware when wiring in production.
 // TODO(epic-6): replace stub mutation with Admin API call when compliance API is implemented.
 func (h *ComplianceHandler) ApproveHandler(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
@@ -66,7 +65,6 @@ func (h *ComplianceHandler) ApproveHandler(w http.ResponseWriter, r *http.Reques
 // RejectHandler handles POST /admin/compliance/{id}/reject.
 // Sets Status="rejected" and ReviewedBy="kai@example.com" on the matching stub entry.
 // PRG-redirects to /admin/compliance with a flash message.
-// TODO(story-7-csrf): enforce CSRF middleware when wiring in production.
 // TODO(epic-6): replace stub mutation with Admin API call when compliance API is implemented.
 func (h *ComplianceHandler) RejectHandler(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")

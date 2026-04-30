@@ -42,7 +42,6 @@ func (h *RoleMappingHandler) Handler(w http.ResponseWriter, r *http.Request) {
 // UpdateHandler handles POST /admin/config/role-mapping.
 // Validates form fields, updates stubRoleMappingConfig in-memory, then PRG-redirects.
 // TODO(epic-6): replace stub mutation with Admin API call.
-// TODO(story-7-csrf): enforce CSRF middleware when wiring in production.
 func (h *RoleMappingHandler) UpdateHandler(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
