@@ -462,12 +462,31 @@ func main() {
 		w.Write([]byte(`{"errcode":"M_UNRECOGNIZED","error":"MSC2965 OIDC-native auth is not supported by this server. Use m.login.sso."}`))
 	})))
 
-	// pushrules: return empty rule set — no push notifications in MVP.
+	// Story 7-30: Push Rules API — GET/PUT/DELETE /pushrules + Pushers.
+	// Replaces the empty stub with a full database-backed implementation.
+	// Default rules are seeded lazily on first GET /pushrules/ for each user.
+	pushRulesHandler := matrix.NewPushRulesHandler(matrix.PushRulesConfig{
+		DB: db.NewPostgresPushRulesDB(bootstrapDB),
+	})
+	pushersHandler := matrix.NewPushersHandler(matrix.PushersConfig{
+		DB: db.NewPostgresPushersDB(bootstrapDB),
+	})
 	mux.Handle("GET /_matrix/client/v3/pushrules/",
-		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"global":{"content":[],"override":[],"room":[],"sender":[],"underride":[]}}`))
-		})))
+		jwtMiddleware(http.HandlerFunc(pushRulesHandler.GetAllPushRules)))
+	mux.Handle("GET /_matrix/client/v3/pushrules/{scope}/{kind}/{ruleId}",
+		jwtMiddleware(http.HandlerFunc(pushRulesHandler.GetPushRule)))
+	mux.Handle("PUT /_matrix/client/v3/pushrules/{scope}/{kind}/{ruleId}",
+		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(pushRulesHandler.PutPushRule))))
+	mux.Handle("DELETE /_matrix/client/v3/pushrules/{scope}/{kind}/{ruleId}",
+		jwtMiddleware(http.HandlerFunc(pushRulesHandler.DeletePushRule)))
+	mux.Handle("PUT /_matrix/client/v3/pushrules/{scope}/{kind}/{ruleId}/enabled",
+		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(pushRulesHandler.PutPushRuleEnabled))))
+	mux.Handle("PUT /_matrix/client/v3/pushrules/{scope}/{kind}/{ruleId}/actions",
+		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(pushRulesHandler.PutPushRuleActions))))
+	mux.Handle("GET /_matrix/client/v3/pushers",
+		jwtMiddleware(http.HandlerFunc(pushersHandler.GetPushers)))
+	mux.Handle("POST /_matrix/client/v3/pushers/set",
+		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(pushersHandler.SetPusher))))
 
 	// media config: report the upload size limit (10 MiB default).
 	// looseRL: unauthenticated media config endpoint.

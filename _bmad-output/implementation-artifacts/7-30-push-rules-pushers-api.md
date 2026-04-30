@@ -7,7 +7,7 @@ created: 2026-04-30
 
 # Story 7.30: Push Rules API — GET/PUT/DELETE /pushrules + Pushers
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -212,3 +212,67 @@ The gateway already holds a `db *sql.DB` connection for direct DB access (see ex
 - HTTP pusher delivery (actually POSTing to the registered pusher URL).
 - `before` / `after` ordering parameters on `PUT /pushrules/{scope}/{kind}/{ruleId}`.
 - Per-device push rule scopes.
+
+## Tasks/Subtasks
+
+- [x] Task 1: Create SQL migrations (000032_push_rules_pushers.up.sql + .down.sql)
+- [x] Task 2: Create gateway/internal/matrix/push_rules.go — PushRulesHandler + PushersHandler
+  - [x] Subtask 2a: PushRulesDB and PushersDB consumer-defined interfaces
+  - [x] Subtask 2b: GetAllPushRules (AC1, AC2 — lazy seed + grouped response)
+  - [x] Subtask 2c: GetPushRule (AC3 — single rule or 404)
+  - [x] Subtask 2d: PutPushRule (AC4 — create/overwrite custom, 400 for default)
+  - [x] Subtask 2e: DeletePushRule (AC5 — delete custom, 400 for default)
+  - [x] Subtask 2f: PutPushRuleEnabled (AC6 — toggle any rule)
+  - [x] Subtask 2g: PutPushRuleActions (AC7 — replace actions on any rule)
+  - [x] Subtask 2h: Scope validation (AC8 — non-global → 400 M_INVALID_PARAM)
+  - [x] Subtask 2i: GetPushers (AC9 — empty array when none registered)
+  - [x] Subtask 2j: SetPusher (AC10 — register/deregister pusher)
+- [x] Task 3: Create gateway/internal/db/push_rules_store.go — PostgresPushRulesDB
+- [x] Task 4: Create gateway/internal/db/pushers_store.go — PostgresPushersDB
+- [x] Task 5: Update gateway/cmd/gateway/main.go — replace stub with real handler routes
+- [x] Task 6: Verify all unit tests pass (make test-unit-go)
+
+## Dev Agent Record
+
+### Implementation Plan
+
+Followed red-green-refactor cycle. All 17 test packages passed after implementation.
+
+**Architecture decisions:**
+- Consumer-defined interfaces `PushRulesDB` and `PushersDB` per Go convention (ADR-009).
+- PostgreSQL store uses `WHERE user_id=$1` directly — no GUC/RLS per story constraint.
+- `SeedDefaultRules` uses `ON CONFLICT DO NOTHING` per-rule (15 inserts) for idempotency.
+- Default rules: `m.rule.contains_user_name` placed in `content` kind (spec §11.14.1), not `underride`.
+  All others follow the spec ordering.
+- Sentinel errors `ErrPushRuleNotFound` and `ErrDefaultRuleImmutable` allow clean error mapping in handlers.
+- `kind` in `setPusherWire` is `*string` so JSON null decodes correctly for deregister flow.
+
+### Completion Notes
+
+- All 10 ACs verified via unit tests in `push_rules_test.go` (21 test functions, all green).
+- Fixed compile-time check in `pushers_store.go` that caused a nil pointer dereference at init.
+- All 17 Go packages pass `make test-unit-go` with `-race`.
+- Story status set to `review`.
+
+## File List
+
+New files:
+- `gateway/migrations/000032_push_rules_pushers.up.sql`
+- `gateway/migrations/000032_push_rules_pushers.down.sql`
+- `gateway/internal/matrix/push_rules.go`
+- `gateway/internal/db/push_rules_store.go`
+- `gateway/internal/db/pushers_store.go`
+
+Modified files:
+- `gateway/cmd/gateway/main.go` — replaced pushrules stub (lines 465-470) with 8 real routes
+
+Pre-existing (from ATDD gate, unchanged):
+- `gateway/features/push_rules.feature`
+- `gateway/internal/matrix/push_rules_test.go`
+- `gateway/test/integration/push_rules_steps_test.go`
+
+## Change Log
+
+- 2026-04-30: Story 7-30 implemented. Push Rules API (7 routes) + Pushers API (2 routes)
+  backed by PostgreSQL (migration 000032). Default rules seeded lazily with ON CONFLICT DO NOTHING.
+  All 10 ACs covered by 21 unit tests — all green. Story moved to review.

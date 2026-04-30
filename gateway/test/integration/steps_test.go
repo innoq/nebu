@@ -109,4 +109,5 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	initializePublicRoomsSteps(sc)       // public room directory step definitions (Story 7-27)
 	initializeEventContextSteps(sc)      // event context step definitions (Story 7-28)
 	initializeNotificationsSteps(sc)     // notifications API step definitions (Story 7-29)
+	initializePushRulesSteps(sc)          // push rules + pushers API step definitions (Story 7-30)
 }
