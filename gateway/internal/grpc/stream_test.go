@@ -132,6 +132,12 @@ func (m *mockCoreClient) UnbanUser(_ context.Context, _ *pb.UnbanUserRequest, _ 
 func (m *mockCoreClient) ForgetRoom(_ context.Context, _ *pb.ForgetRoomRequest, _ ...grpc.CallOption) (*pb.ForgetRoomResponse, error) {
 	return nil, nil
 }
+func (m *mockCoreClient) GetEventContext(_ context.Context, _ *pb.GetEventContextRequest, _ ...grpc.CallOption) (*pb.GetEventContextResponse, error) {
+	return nil, nil
+}
+func (m *mockCoreClient) ListPublicRooms(_ context.Context, _ *pb.ListPublicRoomsRequest, _ ...grpc.CallOption) (*pb.ListPublicRoomsResponse, error) {
+	return nil, nil
+}
 
 // ─── Mock server-streaming client ────────────────────────────────────────────
 

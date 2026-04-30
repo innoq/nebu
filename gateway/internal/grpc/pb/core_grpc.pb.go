@@ -98,6 +98,12 @@ type CoreServiceClient interface {
 	UnbanUser(ctx context.Context, in *UnbanUserRequest, opts ...grpc.CallOption) (*UnbanUserResponse, error)
 	// ForgetRoom — marks a room as excluded from future /sync for the calling user
 	ForgetRoom(ctx context.Context, in *ForgetRoomRequest, opts ...grpc.CallOption) (*ForgetRoomResponse, error)
+	// ListPublicRooms — returns paginated public rooms (join_rule=public) with live member counts.
+	// Story 7-27: GET/POST /_matrix/client/v3/publicRooms.
+	ListPublicRooms(ctx context.Context, in *ListPublicRoomsRequest, opts ...grpc.CallOption) (*ListPublicRoomsResponse, error)
+	// GetEventContext — returns target event, surrounding events, state snapshot, and pagination tokens.
+	// Story 7-28.
+	GetEventContext(ctx context.Context, in *GetEventContextRequest, opts ...grpc.CallOption) (*GetEventContextResponse, error)
 }
 
 type coreServiceClient struct {
@@ -367,6 +373,26 @@ func (c *coreServiceClient) ForgetRoom(ctx context.Context, in *ForgetRoomReques
 	return out, nil
 }
 
+func (c *coreServiceClient) ListPublicRooms(ctx context.Context, in *ListPublicRoomsRequest, opts ...grpc.CallOption) (*ListPublicRoomsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListPublicRoomsResponse)
+	err := c.cc.Invoke(ctx, "/core.CoreService/ListPublicRooms", in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) GetEventContext(ctx context.Context, in *GetEventContextRequest, opts ...grpc.CallOption) (*GetEventContextResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetEventContextResponse)
+	err := c.cc.Invoke(ctx, "/core.CoreService/GetEventContext", in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CoreServiceServer is the server API for CoreService service.
 // All implementations must embed UnimplementedCoreServiceServer
 // for forward compatibility.
@@ -419,6 +445,12 @@ type CoreServiceServer interface {
 	UnbanUser(context.Context, *UnbanUserRequest) (*UnbanUserResponse, error)
 	// ForgetRoom — marks a room as excluded from future /sync for the calling user
 	ForgetRoom(context.Context, *ForgetRoomRequest) (*ForgetRoomResponse, error)
+	// ListPublicRooms — returns paginated public rooms (join_rule=public) with live member counts.
+	// Story 7-27: GET/POST /_matrix/client/v3/publicRooms.
+	ListPublicRooms(context.Context, *ListPublicRoomsRequest) (*ListPublicRoomsResponse, error)
+	// GetEventContext — returns target event, surrounding events, state snapshot, and pagination tokens.
+	// Story 7-28.
+	GetEventContext(context.Context, *GetEventContextRequest) (*GetEventContextResponse, error)
 	mustEmbedUnimplementedCoreServiceServer()
 }
 
@@ -503,6 +535,12 @@ func (UnimplementedCoreServiceServer) UnbanUser(context.Context, *UnbanUserReque
 }
 func (UnimplementedCoreServiceServer) ForgetRoom(context.Context, *ForgetRoomRequest) (*ForgetRoomResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ForgetRoom not implemented")
+}
+func (UnimplementedCoreServiceServer) ListPublicRooms(context.Context, *ListPublicRoomsRequest) (*ListPublicRoomsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListPublicRooms not implemented")
+}
+func (UnimplementedCoreServiceServer) GetEventContext(context.Context, *GetEventContextRequest) (*GetEventContextResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetEventContext not implemented")
 }
 func (UnimplementedCoreServiceServer) mustEmbedUnimplementedCoreServiceServer() {}
 func (UnimplementedCoreServiceServer) testEmbeddedByValue()                     {}
@@ -968,6 +1006,42 @@ func _CoreService_ForgetRoom_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_ListPublicRooms_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPublicRoomsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).ListPublicRooms(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/core.CoreService/ListPublicRooms",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).ListPublicRooms(ctx, req.(*ListPublicRoomsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_GetEventContext_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetEventContextRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).GetEventContext(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/core.CoreService/GetEventContext",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).GetEventContext(ctx, req.(*GetEventContextRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CoreService_ServiceDesc is the grpc.ServiceDesc for CoreService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1070,6 +1144,14 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ForgetRoom",
 			Handler:    _CoreService_ForgetRoom_Handler,
+		},
+		{
+			MethodName: "ListPublicRooms",
+			Handler:    _CoreService_ListPublicRooms_Handler,
+		},
+		{
+			MethodName: "GetEventContext",
+			Handler:    _CoreService_GetEventContext_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

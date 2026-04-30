@@ -649,6 +649,34 @@ func main() {
 	mux.Handle("DELETE /_matrix/client/v3/user/{userId}/rooms/{roomId}/tags/{tag}",
 		jwtMiddleware(http.HandlerFunc(tagsHandler.DeleteTag)))
 
+	// Story 7-27: Public Room Directory — GET/POST /_matrix/client/v3/publicRooms.
+	// GET is unauthenticated (looseRL); POST requires JWT + body size limit.
+	publicRoomsHandler := matrix.NewPublicRoomsHandler(matrix.PublicRoomsConfig{
+		CoreClient: coreClient,
+		ServerName: serverName,
+	})
+	mux.Handle("GET /_matrix/client/v3/publicRooms",
+		looseRL(http.HandlerFunc(publicRoomsHandler.GetPublicRooms)))
+	mux.Handle("POST /_matrix/client/v3/publicRooms",
+		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(publicRoomsHandler.PostPublicRooms))))
+
+	// Story 7-28: Event Context — GET /_matrix/client/v3/rooms/{roomId}/context/{eventId}.
+	// JWT required. Query param: limit (default 5, max 25).
+	eventContextHandler := matrix.NewGetEventContextHandler(matrix.GetEventContextConfig{
+		CoreClient: coreClient,
+	})
+	mux.Handle("GET /_matrix/client/v3/rooms/{roomId}/context/{eventId}",
+		jwtMiddleware(http.HandlerFunc(eventContextHandler.GetEventContext)))
+
+	// Story 7-29: Notifications API — GET /_matrix/client/v3/notifications.
+	// Reads from the notifications table (migration 000031) with cursor-based pagination.
+	// JWT required (jwtMiddleware). Query params: from (cursor), limit (default 50, max 200), only.
+	notificationsHandler := matrix.NewNotificationsHandler(matrix.NotificationsConfig{
+		DB: db.NewPostgresNotificationsDB(bootstrapDB),
+	})
+	mux.Handle("GET /_matrix/client/v3/notifications",
+		jwtMiddleware(http.HandlerFunc(notificationsHandler.GetNotifications)))
+
 	// Misc stubs to suppress other 404s in Element Web startup
 	// looseRL on unauthenticated stub endpoints that clients poll at startup.
 	mux.Handle("GET /_matrix/client/v3/voip/turnServer", looseRL(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

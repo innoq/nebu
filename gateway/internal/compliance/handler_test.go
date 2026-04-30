@@ -165,6 +165,12 @@ func (m *mockCoreClient) UnbanUser(_ context.Context, _ *pb.UnbanUserRequest, _ 
 func (m *mockCoreClient) ForgetRoom(_ context.Context, _ *pb.ForgetRoomRequest, _ ...grpc.CallOption) (*pb.ForgetRoomResponse, error) {
 	return &pb.ForgetRoomResponse{}, nil
 }
+func (m *mockCoreClient) GetEventContext(_ context.Context, _ *pb.GetEventContextRequest, _ ...grpc.CallOption) (*pb.GetEventContextResponse, error) {
+	return &pb.GetEventContextResponse{}, nil
+}
+func (m *mockCoreClient) ListPublicRooms(_ context.Context, _ *pb.ListPublicRoomsRequest, _ ...grpc.CallOption) (*pb.ListPublicRoomsResponse, error) {
+	return &pb.ListPublicRoomsResponse{}, nil
+}
 
 // ─── fakeDB driver ────────────────────────────────────────────────────────────
 //

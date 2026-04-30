@@ -248,6 +248,22 @@ func (c *Client) ForgetRoom(ctx context.Context, req *pb.ForgetRoomRequest) (*pb
 	return c.core.ForgetRoom(ctx, req)
 }
 
+// ListPublicRooms calls the Elixir core to retrieve a paginated list of public rooms.
+// Story 7-27: backing RPC for GET/POST /_matrix/client/v3/publicRooms.
+// The Elixir handler queries the DB for rooms where join_rule = 'public', resolves live member
+// counts from Room GenServers (DB fallback for rooms whose GenServer is not running), and
+// returns the page with a cursor for stable lexicographic pagination.
+func (c *Client) ListPublicRooms(ctx context.Context, req *pb.ListPublicRoomsRequest) (*pb.ListPublicRoomsResponse, error) {
+	return c.core.ListPublicRooms(ctx, req)
+}
+
+// GetEventContext calls the Elixir core to retrieve the context window around a specific event.
+// Returns NOT_FOUND if the event does not exist in the room, PERMISSION_DENIED if the user
+// is not a room member. Story 7-28: GET /_matrix/client/v3/rooms/{roomId}/context/{eventId}.
+func (c *Client) GetEventContext(ctx context.Context, req *pb.GetEventContextRequest) (*pb.GetEventContextResponse, error) {
+	return c.core.GetEventContext(ctx, req)
+}
+
 // CoreServiceClient returns the underlying generated gRPC client stub.
 // Used by EventBusStream (Story 4-16) which requires the raw pb.CoreServiceClient.
 func (c *Client) CoreServiceClient() pb.CoreServiceClient {

@@ -117,6 +117,12 @@ func (m *mockCoreClient) UnbanUser(_ context.Context, _ *pb.UnbanUserRequest, _ 
 func (m *mockCoreClient) ForgetRoom(_ context.Context, _ *pb.ForgetRoomRequest, _ ...grpc.CallOption) (*pb.ForgetRoomResponse, error) {
 	panic("unexpected call: ForgetRoom")
 }
+func (m *mockCoreClient) GetEventContext(_ context.Context, _ *pb.GetEventContextRequest, _ ...grpc.CallOption) (*pb.GetEventContextResponse, error) {
+	panic("unexpected call: GetEventContext")
+}
+func (m *mockCoreClient) ListPublicRooms(_ context.Context, _ *pb.ListPublicRoomsRequest, _ ...grpc.CallOption) (*pb.ListPublicRoomsResponse, error) {
+	panic("unexpected call: ListPublicRooms")
+}
 
 // ─── AC11 Test 5: LogEvent_Success ───────────────────────────────────────────
 //

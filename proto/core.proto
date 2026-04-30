@@ -68,6 +68,15 @@ service CoreService {
 
   // ForgetRoom — marks a room as excluded from future /sync for the calling user
   rpc ForgetRoom(ForgetRoomRequest) returns (ForgetRoomResponse);
+
+  // ListPublicRooms — returns paginated public rooms (join_rule=public) with live member counts.
+  // Story 7-27: GET/POST /_matrix/client/v3/publicRooms.
+  rpc ListPublicRooms(ListPublicRoomsRequest) returns (ListPublicRoomsResponse);
+
+  // GetEventContext — returns the target event plus up to `limit` events before
+  // and after it, a state snapshot, and pagination tokens compatible with GetMessages.
+  // Story 7-28.
+  rpc GetEventContext(GetEventContextRequest) returns (GetEventContextResponse);
 }
 
 // Shared event type used across multiple RPCs
@@ -351,3 +360,55 @@ message ForgetRoomRequest {
   string user_id = 2;
 }
 message ForgetRoomResponse {}
+
+// ListPublicRooms — Story 7-27
+// Cursor: since is the room_id of the last item on the previous page (lexicographic).
+// filter_term: case-insensitive substring match on room name and topic (ILIKE '%term%').
+message ListPublicRoomsRequest {
+  int32  limit       = 1;  // max rooms per page; 0 = default 20; server caps at 100
+  string since       = 2;  // opaque cursor from previous next_cursor; empty = first page
+  string filter_term = 3;  // generic_search_term; empty = no filter
+}
+
+// RoomSummary represents one public room entry in the directory.
+message RoomSummary {
+  string room_id            = 1;
+  string name               = 2;
+  string topic              = 3;
+  int32  num_joined_members = 4;  // live count from Room GenServer (or DB fallback)
+  bool   world_readable     = 5;  // always false for Nebu rooms
+  bool   guest_can_join     = 6;  // always false for Nebu rooms
+}
+
+message ListPublicRoomsResponse {
+  repeated RoomSummary rooms          = 1;
+  string               next_cursor    = 2;  // empty when no more pages
+  int32                total_estimate = 3;  // approximate total public room count
+}
+
+// GetEventContext — Story 7-28
+// Returns the target event, up to `limit` events before and after it, a state
+// snapshot at the time of the event, and pagination tokens that are compatible
+// with GetMessages (start is usable as `to`, end as `from`).
+message GetEventContextRequest {
+  string room_id  = 1;
+  string event_id = 2;
+  int32  limit    = 3;  // events before AND after; 0 = default 10; clamped to 100
+}
+
+// ContextStateEvent is a state event in the context snapshot (needs state_key).
+message ContextStateEvent {
+  string event_type = 1;
+  string state_key  = 2;
+  bytes  content    = 3;  // JSON-encoded
+  string sender     = 4;
+}
+
+message GetEventContextResponse {
+  Event                      event         = 1;  // the target event itself
+  repeated Event             events_before = 2;  // up to `limit` events older than event (newest last)
+  repeated Event             events_after  = 3;  // up to `limit` events newer than event (oldest first)
+  repeated ContextStateEvent state         = 4;  // state snapshot at event time
+  string                     start_token   = 5;  // pagination token — use as `to` in GET /messages
+  string                     end_token     = 6;  // pagination token — use as `from` in GET /messages
+}

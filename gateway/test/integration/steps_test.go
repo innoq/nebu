@@ -75,6 +75,18 @@ func theResponseBodyContains(expected string) error {
 	return nil
 }
 
+// captureResponse reads the response body and stores it in lastStatusCode / lastBody.
+func captureResponse(resp *http.Response) error {
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("reading response body: %w", err)
+	}
+	lastStatusCode = resp.StatusCode
+	lastBody = string(body)
+	return nil
+}
+
 // InitializeScenario registers all step definitions for the integration test suite.
 func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^the docker compose stack is started$`, theDockerComposeStackIsStarted)
@@ -94,4 +106,7 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	initializeAccountDataSteps(sc)       // account data API step definitions (Story 7-24)
 	initializeTagsSteps(sc)              // tags API step definitions (Story 7-25)
 	initializeDevicesSteps(sc)           // device management step definitions (Story 7-26)
+	initializePublicRoomsSteps(sc)       // public room directory step definitions (Story 7-27)
+	initializeEventContextSteps(sc)      // event context step definitions (Story 7-28)
+	initializeNotificationsSteps(sc)     // notifications API step definitions (Story 7-29)
 }

@@ -1,5 +1,8 @@
 # generated: 2026-03-20
 # last_updated: 2026-04-30
+# story 7-29 done (pipeline: CodeReview 1 MAJOR fixed (RLS→WHERE clause) + 3 MINOR fixed (slog, matrixURL, captureResponse): 2026-04-30
+# story 7-28 done (pipeline: CodeReview MINOR fixed (slog, auth guard panic) + compile errors fixed): 2026-04-30
+# story 7-27 done (pipeline: CodeReview 2 MINOR fixed (gRPC ctx propagation, slog) + compile errors fixed): 2026-04-30
 # story 7-26 done (pipeline: ATDD+Dev+CodeReview MAJOR accepted (token-invalidation MVP risk)+Security Kassandra CLEAN): 2026-04-30
 # story 7-25 done (pipeline: ATDD+Dev+CodeReview CLEAN — tags read-modify-write via m.tag account data entry): 2026-04-30
 # story 7-24 done (pipeline: ATDD+Dev+CodeReview CLEAN — account_data table migration 000029, upsert, sync integration): 2026-04-30
@@ -601,9 +604,9 @@ development_status:
   7-24-account-data-per-room-get-put: done
   7-25-tags-api-get-put-delete: done
   7-26-device-management-get-put-delete-devices: done
-  7-27-public-room-directory-get-post-publicrooms: ready-for-dev
-  7-28-event-context-get-rooms-roomid-context-eventid: ready-for-dev
-  7-29-notifications-api-get-notifications: ready-for-dev
+  7-27-public-room-directory-get-post-publicrooms: done
+  7-28-event-context-get-rooms-roomid-context-eventid: done
+  7-29-notifications-api-get-notifications: done
   7-30-push-rules-pushers-api: ready-for-dev
   7-31-search-api-post-search-adr-required: backlog  # blocked: ADR-010 (FTS strategy) required first
   epic-7-retrospective: pending  # SEC Gate 2 done; retro blocked until 7-17 (CSRF HIGH) is done
