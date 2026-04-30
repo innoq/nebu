@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-//go:embed static/admin.css static/fonts static/vendor static/js
+//go:embed static/admin.css static/fonts static/vendor static/js static/icons
 var staticFS embed.FS
 
 // ServeCSS serves the embedded admin.css with long-lived caching headers.
@@ -90,6 +90,46 @@ func ServeMetricsWidgetJS(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/javascript")
 	w.Header().Set("Cache-Control", "no-cache")
+	w.WriteHeader(http.StatusOK)
+	w.Write(data) //nolint:errcheck
+}
+
+// ServeFavicon serves the embedded favicon.ico.
+// Route: GET /favicon.ico
+func ServeFavicon(w http.ResponseWriter, r *http.Request) {
+	data, err := staticFS.ReadFile("static/icons/favicon.ico")
+	if err != nil {
+		http.Error(w, "Not Found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "image/x-icon")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	w.WriteHeader(http.StatusOK)
+	w.Write(data) //nolint:errcheck
+}
+
+var iconContentTypes = map[string]string{
+	".svg": "image/svg+xml",
+	".png": "image/png",
+}
+
+// ServeIconFile serves embedded icon files (SVG, PNG) from static/icons/.
+// Route: GET /admin/static/icons/{filename}
+func ServeIconFile(w http.ResponseWriter, r *http.Request) {
+	filename := path.Base(r.PathValue("filename"))
+	ext := strings.ToLower(path.Ext(filename))
+	ct, ok := iconContentTypes[ext]
+	if !ok {
+		http.Error(w, "Not Found", http.StatusNotFound)
+		return
+	}
+	data, err := staticFS.ReadFile("static/icons/" + filename)
+	if err != nil {
+		http.Error(w, "Not Found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", ct)
+	w.Header().Set("Cache-Control", "public, max-age=86400")
 	w.WriteHeader(http.StatusOK)
 	w.Write(data) //nolint:errcheck
 }

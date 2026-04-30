@@ -357,6 +357,8 @@ func main() {
 	mux.HandleFunc("GET /admin/static/vendor/{filename}", admin.ServeVendorFile)
 	mux.HandleFunc("GET /admin/static/metrics-widget.js", admin.ServeMetricsWidgetJS)
 	mux.HandleFunc("GET /admin/static/js/{filename}", admin.ServeJSFile)
+	mux.HandleFunc("GET /admin/static/icons/{filename}", admin.ServeIconFile)
+	mux.HandleFunc("GET /favicon.ico", admin.ServeFavicon)
 
 	// SSE live metrics endpoint — behind session guard (AC5: no CSRF on SSE/GET).
 	sseMetricsHandler := admin.NewSSEMetricsHandler(&coreMetricsAdapter{client: coreClient})
