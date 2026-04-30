@@ -46,41 +46,44 @@ func (p *PostgresNotificationsDB) GetNotifications(
 	// Fetch limit+1 to detect if there is a next page.
 	fetchLimit := limit + 1
 
-	rows, err := p.db.QueryContext(ctx,
-		`SELECT id, room_id, event_json, actions, read,
-		        EXTRACT(EPOCH FROM created_at)::BIGINT * 1000 AS ts_ms
-		   FROM notifications
-		  WHERE user_id = $1
-		    AND ($2 = 0 OR id < $2)
-		    AND ($3 = false OR actions @> '["highlight"]'::jsonb)
-		  ORDER BY id DESC
-		  LIMIT $4`,
-		userID, fromID, onlyHighlight, fetchLimit,
-	)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer rows.Close()
-
 	var result []matrix.NotificationRow
-	for rows.Next() {
-		var row matrix.NotificationRow
-		var actionsBytes, eventBytes []byte
-		if err := rows.Scan(
-			&row.ID,
-			&row.RoomID,
-			&eventBytes,
-			&actionsBytes,
-			&row.Read,
-			&row.TS,
-		); err != nil {
-			return nil, 0, err
+	err := withUserDB(ctx, p.db, userID, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx,
+			`SELECT id, room_id, event_json, actions, read,
+			        EXTRACT(EPOCH FROM created_at)::BIGINT * 1000 AS ts_ms
+			   FROM notifications
+			  WHERE user_id = $1
+			    AND ($2 = 0 OR id < $2)
+			    AND ($3 = false OR actions @> '["highlight"]'::jsonb)
+			  ORDER BY id DESC
+			  LIMIT $4`,
+			userID, fromID, onlyHighlight, fetchLimit,
+		)
+		if err != nil {
+			return err
 		}
-		row.ActionsRaw = json.RawMessage(actionsBytes)
-		row.EventRaw = json.RawMessage(eventBytes)
-		result = append(result, row)
-	}
-	if err := rows.Err(); err != nil {
+		defer rows.Close()
+
+		for rows.Next() {
+			var row matrix.NotificationRow
+			var actionsBytes, eventBytes []byte
+			if err := rows.Scan(
+				&row.ID,
+				&row.RoomID,
+				&eventBytes,
+				&actionsBytes,
+				&row.Read,
+				&row.TS,
+			); err != nil {
+				return err
+			}
+			row.ActionsRaw = json.RawMessage(actionsBytes)
+			row.EventRaw = json.RawMessage(eventBytes)
+			result = append(result, row)
+		}
+		return rows.Err()
+	})
+	if err != nil {
 		return nil, 0, err
 	}
 

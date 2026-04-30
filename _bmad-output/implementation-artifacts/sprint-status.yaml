@@ -1,5 +1,6 @@
 # generated: 2026-03-20
 # last_updated: 2026-04-30
+# story 7-35 done (pipeline: ATDD+Dev+CodeReview MINOR-FIXED — withUserDB helper, SET LOCAL GUC, RLS migration 000033): 2026-04-30
 # story 7-33 done (pipeline: ATDD+Dev+CodeReview CLEAN — system-role bypass in get_room_state, fanout goroutine fixed): 2026-04-30
 # story 7-33 created: 7-33 → ready-for-dev: 2026-04-30 (SEC Gate 2 MEDIUM fix: fanout goroutine must send system role to bypass membership check in get_room_state)
 # story 7-32 done (pipeline: ATDD+Dev+CodeReview CLEAN — kick/ban/unban use metadata not body caller_id): 2026-04-30
@@ -619,4 +620,6 @@ development_status:
   7-32-moderation-caller-id-from-metadata: done
   # SEC Gate 2 MEDIUM follow-up (fanout regression from 7-19 IDOR fix)
   7-33-fanout-system-role-bypass: done
+  # SEC Gate 2 MEDIUM follow-up (RLS GUC wiring + enable RLS on notifications/push_rules/pushers)
+  7-35-rls-per-request-guc-wiring: done
   epic-7-retrospective: pending  # SEC Gate 2 done; retro blocked until 7-17 (CSRF HIGH) is done

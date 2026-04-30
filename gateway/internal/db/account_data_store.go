@@ -31,12 +31,15 @@ func NewPostgresAccountDataDB(db *sql.DB) *PostgresAccountDataDB {
 // roomID is empty string for global account data.
 // Returns matrix.ErrAccountDataNotFound when no row exists.
 func (p *PostgresAccountDataDB) GetAccountData(ctx context.Context, userID, roomID, eventType string) (json.RawMessage, error) {
-	row := p.db.QueryRowContext(ctx,
-		`SELECT content FROM room_account_data
-		 WHERE user_id = $1 AND room_id = $2 AND event_type = $3`,
-		userID, roomID, eventType)
 	var content []byte
-	if err := row.Scan(&content); err != nil {
+	err := withUserDB(ctx, p.db, userID, func(tx *sql.Tx) error {
+		row := tx.QueryRowContext(ctx,
+			`SELECT content FROM room_account_data
+			 WHERE user_id = $1 AND room_id = $2 AND event_type = $3`,
+			userID, roomID, eventType)
+		return row.Scan(&content)
+	})
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, matrix.ErrAccountDataNotFound
 		}
@@ -49,11 +52,13 @@ func (p *PostgresAccountDataDB) GetAccountData(ctx context.Context, userID, room
 // roomID is empty string for global account data.
 // Uses INSERT … ON CONFLICT DO UPDATE to implement last-write-wins upsert semantics (AC6).
 func (p *PostgresAccountDataDB) PutAccountData(ctx context.Context, userID, roomID, eventType string, content json.RawMessage) error {
-	_, err := p.db.ExecContext(ctx,
-		`INSERT INTO room_account_data (user_id, room_id, event_type, content, updated_at)
-		 VALUES ($1, $2, $3, $4, NOW())
-		 ON CONFLICT (user_id, room_id, event_type)
-		 DO UPDATE SET content = EXCLUDED.content, updated_at = NOW()`,
-		userID, roomID, eventType, []byte(content))
-	return err
+	return withUserDB(ctx, p.db, userID, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx,
+			`INSERT INTO room_account_data (user_id, room_id, event_type, content, updated_at)
+			 VALUES ($1, $2, $3, $4, NOW())
+			 ON CONFLICT (user_id, room_id, event_type)
+			 DO UPDATE SET content = EXCLUDED.content, updated_at = NOW()`,
+			userID, roomID, eventType, []byte(content))
+		return err
+	})
 }
