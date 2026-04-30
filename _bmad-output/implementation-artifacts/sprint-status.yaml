@@ -1,5 +1,7 @@
 # generated: 2026-03-20
 # last_updated: 2026-04-30
+# story 7-25 done (pipeline: ATDD+Dev+CodeReview CLEAN — tags read-modify-write via m.tag account data entry): 2026-04-30
+# story 7-24 done (pipeline: ATDD+Dev+CodeReview CLEAN — account_data table migration 000029, upsert, sync integration): 2026-04-30
 # story 7-23 done (pipeline: ATDD+Dev+CodeReview CLEAN — aliases stub returns [], JWT-gated): 2026-04-30
 # story 7-22 done (pipeline: ATDD+Dev+CodeReview 5 MAJOR fixed (kick wrong-sender+ban double-event+reason dropped+forget-stub AC noted)+Security not-needed per CR): 2026-04-30
 # story 7-21 done (pipeline: ATDD+Dev+CodeReview CLEAN — 1 MINOR (404 wording per spec accepted)): 2026-04-30
@@ -595,8 +597,8 @@ development_status:
   7-21-profile-einzelfelder-displayname-avatar-url: done
   7-22-room-moderation-kick-ban-unban-forget: done
   7-23-room-aliases-get-rooms-roomid-aliases: done
-  7-24-account-data-per-room-get-put: ready-for-dev
-  7-25-tags-api-get-put-delete: ready-for-dev
+  7-24-account-data-per-room-get-put: done
+  7-25-tags-api-get-put-delete: done
   7-26-device-management-get-put-delete-devices: ready-for-dev
   7-27-public-room-directory-get-post-publicrooms: ready-for-dev
   7-28-event-context-get-rooms-roomid-context-eventid: ready-for-dev

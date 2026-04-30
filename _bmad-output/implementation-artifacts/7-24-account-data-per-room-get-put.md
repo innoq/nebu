@@ -7,7 +7,7 @@ created: 2026-04-30
 
 # Story 7.24: Account Data pro Raum — GET/PUT /user/{userId}/rooms/{roomId}/account_data/{type}
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 

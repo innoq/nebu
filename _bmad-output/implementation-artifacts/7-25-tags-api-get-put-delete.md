@@ -7,7 +7,7 @@ created: 2026-04-30
 
 # Story 7.25: Tags API — GET/PUT/DELETE /user/{userId}/rooms/{roomId}/tags
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -95,9 +95,9 @@ DELETE /_matrix/client/v3/user/{userId}/rooms/{roomId}/tags/{tag}   → jwtMiddl
 
 ## Tasks
 
-- [ ] Write failing Godog scenarios in `gateway/features/tags.feature`
-- [ ] Write failing Go httptest in `gateway/internal/matrix/tags_test.go`
-- [ ] Implement `gateway/internal/matrix/tags.go` (GetTagsHandler, PutTagHandler, DeleteTagHandler, validateTag)
-- [ ] Register routes in `main.go`
-- [ ] Run `make test-unit-go` — all pass
-- [ ] Run `make test-integration` — Godog scenarios green
+- [x] Write failing Godog scenarios in `gateway/features/tags.feature`
+- [x] Write failing Go httptest in `gateway/internal/matrix/tags_test.go`
+- [x] Implement `gateway/internal/matrix/tags.go` (TagsHandler, GetTags, PutTag, DeleteTag, validateTag)
+- [x] Register routes in `main.go`
+- [x] Run `make test-unit-go` — all pass (26s, no failures)
+- [ ] Run `make test-integration` — Godog scenarios green (requires running stack)

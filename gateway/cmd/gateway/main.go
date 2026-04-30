@@ -604,18 +604,39 @@ func main() {
 			w.Write([]byte(`{"version":"1"}`))
 		}))))
 
-	// Account data endpoints (used for secret storage, notification settings, etc.)
+	// Story 7-24: Account data endpoints — global and per-room.
+	// GET/PUT /_matrix/client/v3/user/{userId}/account_data/{type}
+	// GET/PUT /_matrix/client/v3/user/{userId}/rooms/{roomId}/account_data/{type}
+	// Stored directly in PostgreSQL (no gRPC round-trip needed for account data).
+	// RLS policy on room_account_data enforces user isolation per row.
+	accountDataHandler := matrix.NewAccountDataHandler(matrix.AccountDataConfig{
+		ServerName: serverName,
+		DB:         db.NewPostgresAccountDataDB(bootstrapDB),
+	})
 	mux.Handle("GET /_matrix/client/v3/user/{userId}/account_data/{type}",
-		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusNotFound)
-			w.Write([]byte(`{"errcode":"M_NOT_FOUND","error":"Account data not found"}`))
-		})))
+		jwtMiddleware(http.HandlerFunc(accountDataHandler.GetGlobalAccountData)))
 	mux.Handle("PUT /_matrix/client/v3/user/{userId}/account_data/{type}",
-		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{}`))
-		}))))
+		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(accountDataHandler.PutGlobalAccountData))))
+	mux.Handle("GET /_matrix/client/v3/user/{userId}/rooms/{roomId}/account_data/{type}",
+		jwtMiddleware(http.HandlerFunc(accountDataHandler.GetRoomAccountData)))
+	mux.Handle("PUT /_matrix/client/v3/user/{userId}/rooms/{roomId}/account_data/{type}",
+		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(accountDataHandler.PutRoomAccountData))))
+
+	// Story 7-25: Tags API — GET/PUT/DELETE /user/{userId}/rooms/{roomId}/tags[/{tag}].
+	// Tags are stored as a single "m.tag" room account data entry ({"tags":{...}}) via
+	// the same PostgreSQL room_account_data table introduced in Story 7-24.
+	// All three endpoints require JWT auth (AC6 ownership check inside handler).
+	// PUT/DELETE require bodyLimit1MiB (PUT body: {"order":0.5}; DELETE has no body).
+	tagsHandler := matrix.NewTagsHandler(matrix.TagsConfig{
+		ServerName: serverName,
+		DB:         db.NewPostgresAccountDataDB(bootstrapDB),
+	})
+	mux.Handle("GET /_matrix/client/v3/user/{userId}/rooms/{roomId}/tags",
+		jwtMiddleware(http.HandlerFunc(tagsHandler.GetTags)))
+	mux.Handle("PUT /_matrix/client/v3/user/{userId}/rooms/{roomId}/tags/{tag}",
+		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(tagsHandler.PutTag))))
+	mux.Handle("DELETE /_matrix/client/v3/user/{userId}/rooms/{roomId}/tags/{tag}",
+		jwtMiddleware(http.HandlerFunc(tagsHandler.DeleteTag)))
 
 	// Misc stubs to suppress other 404s in Element Web startup
 	// looseRL on unauthenticated stub endpoints that clients poll at startup.
@@ -715,10 +736,11 @@ func main() {
 		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(setRoomStateHandler.PutSetRoomState))))
 
 	syncHandler := matrix.NewGetSyncHandler(matrix.GetSyncConfig{
-		CoreClient: coreClient,
-		ServerName: serverName,
-		Buffer:     msgBuf,
-		DB:         bootstrapDB, // for rooms.invite pending invitation queries
+		CoreClient:    coreClient,
+		ServerName:    serverName,
+		Buffer:        msgBuf,
+		DB:            bootstrapDB, // for rooms.invite pending invitation queries
+		AccountDataDB: db.NewPostgresAccountDataDB(bootstrapDB), // Story 7-24 AC4: account_data in sync
 	})
 	mux.Handle("GET /_matrix/client/v3/sync",
 		jwtMiddleware(http.HandlerFunc(syncHandler.GetSync)))

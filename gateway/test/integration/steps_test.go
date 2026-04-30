@@ -91,4 +91,6 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	initializeProfileSubfieldSteps(sc)   // profile sub-field API step definitions (Story 7-21)
 	initializeModerationSteps(sc)        // room moderation step definitions (Story 7-22)
 	initializeRoomAliasesSteps(sc)       // room aliases API step definitions (Story 7-23)
+	initializeAccountDataSteps(sc)       // account data API step definitions (Story 7-24)
+	initializeTagsSteps(sc)              // tags API step definitions (Story 7-25)
 }
