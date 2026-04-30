@@ -200,6 +200,22 @@ defmodule Nebu.EventDispatcher.JoinRoomTest do
     end
   end
 
+  # Horde.Registry uses DeltaCrdt which can propagate asynchronously even on a
+  # single node. Retry the lookup until the entry appears or we time out.
+  defp wait_for_registry(room_id, retries \\ 20) do
+    case Nebu.Room.RoomSupervisor.lookup_room(room_id) do
+      {:ok, pid} when is_pid(pid) ->
+        :ok
+
+      _ when retries > 0 ->
+        Process.sleep(10)
+        wait_for_registry(room_id, retries - 1)
+
+      _ ->
+        raise "Horde.Registry did not register #{room_id} within timeout"
+    end
+  end
+
   # ─── Helper: start a room and join a user into it directly ───────────────────
   #
   # Uses RoomSupervisor.start_room/1 + Room.Server.join/2 to put the system
@@ -207,6 +223,7 @@ defmodule Nebu.EventDispatcher.JoinRoomTest do
 
   defp setup_room_with_member(room_id, user_id) do
     {:ok, _pid} = Nebu.Room.RoomSupervisor.start_room(room_id)
+    :ok = wait_for_registry(room_id)
     start_and_track_room(room_id)
     :ok = Nebu.Room.Server.join(room_id, user_id)
     :ok
