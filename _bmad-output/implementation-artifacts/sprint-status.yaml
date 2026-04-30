@@ -1,5 +1,6 @@
 # generated: 2026-03-20
 # last_updated: 2026-04-30
+# story 7-20 done (pipeline: ATDD+Dev+CodeReview CLEAN — 2 MINOR fixed (Godog field assertion+comment drift), N+1 profile lookup acceptable for MVP): 2026-04-30
 # story 7-19 done (pipeline: ATDD+Dev+CodeReview MAJOR fixed (IDOR membership check server.ex)+3 MINOR fixed (Gherkin keys+step parser+gofmt)): 2026-04-30
 # story 7-18 done (pipeline: ATDD+Dev+CodeReview MINOR_FIXED (3 MAJOR Playwright+1 MINOR compliance)+Security CLEAN): 2026-04-30
 # story 7-17 done (pipeline: ATDD+Dev+CodeReview CLEAN+Security CLEAN — 11 POST routes wrapped bodyLimit64KiB(csrf(sessionGuard))); Kassandra MEDIUM non-blocking): 2026-04-30
@@ -587,7 +588,7 @@ development_status:
   7-18-flash-message-allowlist-admin-get-handlers: done
   # Matrix Client-Server API gaps (from tmp/missing-matrix-features.md)
   7-19-room-state-api-get-state-single-event: done
-  7-20-joined-members-get-rooms-roomid-joined-members: ready-for-dev
+  7-20-joined-members-get-rooms-roomid-joined-members: done
   7-21-profile-einzelfelder-displayname-avatar-url: ready-for-dev
   7-22-room-moderation-kick-ban-unban-forget: ready-for-dev
   7-23-room-aliases-get-rooms-roomid-aliases: ready-for-dev

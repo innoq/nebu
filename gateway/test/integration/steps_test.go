@@ -87,4 +87,5 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	initializeRoomFlowSteps(sc)        // room flow step definitions
 	initializeComplianceFlowSteps(sc)  // compliance flow step definitions (Story 5.9)
 	initializeRoomStateSteps(sc)       // room state API step definitions (Story 7-19)
+	initializeJoinedMembersSteps(sc)   // joined members API step definitions (Story 7-20)
 }

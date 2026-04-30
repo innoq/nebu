@@ -7,7 +7,7 @@ created: 2026-04-30
 
 # Story 7.20: Joined Members — GET /rooms/{roomId}/joined_members
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 

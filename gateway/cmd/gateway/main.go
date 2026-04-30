@@ -745,6 +745,17 @@ func main() {
 	mux.Handle("GET /_matrix/client/v3/rooms/{roomId}/members",
 		jwtMiddleware(http.HandlerFunc(getRoomMembersHandler.GetRoomMembers)))
 
+	// Story 7-20: Joined members compact map — returns {"joined": {"@user:server": {...}}}
+	// with only users whose current membership is "join". Profile data (display_name, avatar_url)
+	// is read from PostgreSQL via ProfileDB. JWT required (authenticated endpoint).
+	getJoinedMembersHandler := matrix.NewGetJoinedMembersHandler(matrix.GetJoinedMembersConfig{
+		CoreClient: coreClient,
+		ServerName: serverName,
+		DB:         db.NewPostgresProfileDB(bootstrapDB),
+	})
+	mux.Handle("GET /_matrix/client/v3/rooms/{roomId}/joined_members",
+		jwtMiddleware(http.HandlerFunc(getJoinedMembersHandler.GetJoinedMembers)))
+
 	// Story 7-19: Room State API — GET /rooms/{roomId}/state (all events) and
 	// GET /rooms/{roomId}/state/{eventType}/{stateKey} / /{eventType} (single event).
 	// All three variants require JWT auth (AC7).
