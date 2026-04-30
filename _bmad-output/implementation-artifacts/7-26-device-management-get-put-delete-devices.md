@@ -7,7 +7,7 @@ created: 2026-04-30
 
 # Story 7.26: Device Management — GET/PUT/DELETE /devices + POST /delete_devices
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 

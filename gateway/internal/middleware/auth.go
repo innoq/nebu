@@ -43,6 +43,10 @@ const (
 	// ContextKeyUserID holds the pre-computed Matrix user ID (@localpart:server).
 	// Handlers should read this instead of calling FormatUserID themselves.
 	ContextKeyUserID contextKey = "user_id"
+	// ContextKeyDeviceID holds the device_id from the JWT "did" claim.
+	// Empty string if the claim is not present (most OIDC tokens don't include it).
+	// Story 7-26: used by device management handlers for current-device detection.
+	ContextKeyDeviceID contextKey = "device_id"
 )
 
 type matrixError struct {
@@ -124,6 +128,7 @@ func JWTMiddleware(provider *auth.Provider, clientID string, claimName string, s
 			preferredUsername, _ := allClaims["preferred_username"].(string)
 			name, _ := allClaims["name"].(string)
 			email, _ := allClaims["email"].(string)
+			deviceID, _ := allClaims["did"].(string) // Story 7-26: device_id claim ("did")
 			rawRole := auth.ExtractRoleClaim(allClaims, claimName)
 			systemRole := auth.MapSystemRole(rawRole)
 
@@ -139,6 +144,7 @@ func JWTMiddleware(provider *auth.Provider, clientID string, claimName string, s
 			ctx = context.WithValue(ctx, ContextKeySystemRole, systemRole)
 			ctx = context.WithValue(ctx, ContextKeyTokenExpiry, idToken.Expiry)
 			ctx = context.WithValue(ctx, ContextKeyUserID, userID)
+			ctx = context.WithValue(ctx, ContextKeyDeviceID, deviceID)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

@@ -1,5 +1,6 @@
 # generated: 2026-03-20
 # last_updated: 2026-04-30
+# story 7-26 done (pipeline: ATDD+Dev+CodeReview MAJOR accepted (token-invalidation MVP risk)+Security Kassandra CLEAN): 2026-04-30
 # story 7-25 done (pipeline: ATDD+Dev+CodeReview CLEAN — tags read-modify-write via m.tag account data entry): 2026-04-30
 # story 7-24 done (pipeline: ATDD+Dev+CodeReview CLEAN — account_data table migration 000029, upsert, sync integration): 2026-04-30
 # story 7-23 done (pipeline: ATDD+Dev+CodeReview CLEAN — aliases stub returns [], JWT-gated): 2026-04-30
@@ -599,7 +600,7 @@ development_status:
   7-23-room-aliases-get-rooms-roomid-aliases: done
   7-24-account-data-per-room-get-put: done
   7-25-tags-api-get-put-delete: done
-  7-26-device-management-get-put-delete-devices: ready-for-dev
+  7-26-device-management-get-put-delete-devices: done
   7-27-public-room-directory-get-post-publicrooms: ready-for-dev
   7-28-event-context-get-rooms-roomid-context-eventid: ready-for-dev
   7-29-notifications-api-get-notifications: ready-for-dev

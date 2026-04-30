@@ -93,4 +93,5 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	initializeRoomAliasesSteps(sc)       // room aliases API step definitions (Story 7-23)
 	initializeAccountDataSteps(sc)       // account data API step definitions (Story 7-24)
 	initializeTagsSteps(sc)              // tags API step definitions (Story 7-25)
+	initializeDevicesSteps(sc)           // device management step definitions (Story 7-26)
 }

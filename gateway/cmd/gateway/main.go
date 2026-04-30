@@ -486,12 +486,23 @@ func main() {
 			w.Write([]byte(`{"threepids":[]}`))
 		})))
 
-	// Device list — no multi-device management in MVP.
+	// Story 7-26: Device Management API — GET/PUT/DELETE /devices + POST /delete_devices.
+	// Devices are backed by the sessions table; migration 000030 adds device_display_name.
+	// DELETE and POST /delete_devices require UIA (m.login.sso stage).
+	devicesHandler := matrix.NewDevicesHandler(matrix.DevicesConfig{
+		ServerName: serverName,
+		DB:         db.NewPostgresDeviceStore(bootstrapDB),
+	})
 	mux.Handle("GET /_matrix/client/v3/devices",
-		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"devices":[]}`))
-		})))
+		jwtMiddleware(http.HandlerFunc(devicesHandler.ListDevices)))
+	mux.Handle("GET /_matrix/client/v3/devices/{deviceId}",
+		jwtMiddleware(http.HandlerFunc(devicesHandler.GetDevice)))
+	mux.Handle("PUT /_matrix/client/v3/devices/{deviceId}",
+		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(devicesHandler.PutDevice))))
+	mux.Handle("DELETE /_matrix/client/v3/devices/{deviceId}",
+		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(devicesHandler.DeleteDevice))))
+	mux.Handle("POST /_matrix/client/v3/delete_devices",
+		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(devicesHandler.DeleteDevices))))
 
 	// Joined rooms — clients use this as a shortcut; sync already returns room state.
 	mux.Handle("GET /_matrix/client/v3/joined_rooms",
