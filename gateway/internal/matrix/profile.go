@@ -204,6 +204,75 @@ func (h *ProfileHandler) PutAvatarURL(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{})
 }
 
+// GetDisplayname handles GET /_matrix/client/v3/profile/{userId}/displayname.
+// No JWT required — public endpoint per Matrix spec (AC4).
+// Returns only the displayname field: {"displayname": "..."}.
+// An empty displayname is returned as "" (empty string), not null (AC6).
+//
+// Flow:
+//  1. Extract userId from r.PathValue("userId").
+//  2. Call h.db.GetProfile(ctx, userId).
+//  3. If not found → 404 M_NOT_FOUND.
+//  4. Return 200 {"displayname": "..."}.
+func (h *ProfileHandler) GetDisplayname(w http.ResponseWriter, r *http.Request) {
+	userID := r.PathValue("userId")
+
+	profile, err := h.db.GetProfile(r.Context(), userID)
+	if err != nil {
+		if errors.Is(err, ErrProfileNotFound) {
+			w.Header().Set("Cache-Control", "public, max-age=60")
+			writeMatrixError(w, http.StatusNotFound, "M_NOT_FOUND", "User not found")
+			return
+		}
+		writeMatrixError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
+		return
+	}
+
+	w.Header().Set("Cache-Control", "public, max-age=60")
+	w.Header().Set("Content-Type", "application/json")
+	// AC6: empty displayname is returned as "" (empty string), not null.
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"displayname": profile.DisplayName,
+	})
+}
+
+// GetAvatarURL handles GET /_matrix/client/v3/profile/{userId}/avatar_url.
+// No JWT required — public endpoint per Matrix spec (AC4).
+// Returns only the avatar_url field: {"avatar_url": "mxc://..."} or {"avatar_url": null} when unset.
+// An unset (empty) avatar_url is returned as null (AC6).
+//
+// Flow:
+//  1. Extract userId from r.PathValue("userId").
+//  2. Call h.db.GetProfile(ctx, userId).
+//  3. If not found → 404 M_NOT_FOUND.
+//  4. Return 200 {"avatar_url": "..." | null}.
+func (h *ProfileHandler) GetAvatarURL(w http.ResponseWriter, r *http.Request) {
+	userID := r.PathValue("userId")
+
+	profile, err := h.db.GetProfile(r.Context(), userID)
+	if err != nil {
+		if errors.Is(err, ErrProfileNotFound) {
+			w.Header().Set("Cache-Control", "public, max-age=60")
+			writeMatrixError(w, http.StatusNotFound, "M_NOT_FOUND", "User not found")
+			return
+		}
+		writeMatrixError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
+		return
+	}
+
+	w.Header().Set("Cache-Control", "public, max-age=60")
+	w.Header().Set("Content-Type", "application/json")
+	// AC6: unset avatar_url is returned as null, not "".
+	// Use a *string so that encoding/json emits null for empty AvatarURL.
+	var avatarURL *string
+	if profile.AvatarURL != "" {
+		avatarURL = &profile.AvatarURL
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"avatar_url": avatarURL,
+	})
+}
+
 // isValidMxcURI validates that uri is a safe mxc:// URI with no path-traversal segments.
 // Mirrors the parseMxcURI / isSafePathSegment logic from compliance/user_anonymization.go.
 // Both serverName and mediaId must be non-empty and free of path-separator chars, "..", ".".

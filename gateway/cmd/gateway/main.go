@@ -785,6 +785,12 @@ func main() {
 		ServerName: serverName,
 		DB:         db.NewPostgresProfileDB(bootstrapDB),
 	})
+	// Story 7-21: GET sub-field endpoints — unauthenticated (AC4), looseRL (AC5).
+	// Must be registered BEFORE the less-specific GET /profile/{userId} pattern.
+	mux.Handle("GET /_matrix/client/v3/profile/{userId}/displayname",
+		looseRL(http.HandlerFunc(profileHandler.GetDisplayname)))
+	mux.Handle("GET /_matrix/client/v3/profile/{userId}/avatar_url",
+		looseRL(http.HandlerFunc(profileHandler.GetAvatarURL)))
 	// GET is unauthenticated — no jwtMiddleware wrapper (per Matrix spec: profile is public).
 	// GET /profile is unauthenticated (Matrix spec: profile is public) — medium rate-limit (Story 5.21, AC 2).
 	mux.Handle("GET /_matrix/client/v3/profile/{userId}", mediumRL(http.HandlerFunc(profileHandler.GetProfile)))

@@ -7,7 +7,7 @@ created: 2026-04-30
 
 # Story 7.21: Profile Einzelfelder — GET /profile/{userId}/displayname + /avatar_url
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
