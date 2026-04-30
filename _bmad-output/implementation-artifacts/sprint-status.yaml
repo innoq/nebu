@@ -560,4 +560,4 @@ development_status:
   7-13-wcag-audit-axe-core-report-automatisierter-scan-aller-admin-seiten: done  # nested <main> fixed in 4 templates, sr-only labels added, axe WCAG 2.1 AA spec for 8 pages
   7-14-gherkin-admin-ui-smoke-flows-user-deactivate-room-archive-via-ui: done  # smoke-flows spec, reactivate+unarchive handlers added
   7-15-bootstrap-wizard-claim-role-mapping-instance-admin-compliance-user: done  # role-mapping config page, regex validation, Kassandra CLEAN
-  epic-7-retrospective: optional
+  epic-7-retrospective: pending  # SEC Gate 2 done (HIGH: CSRF follow-up story needed); traceability 97% PASS; retro outstanding
