@@ -16,6 +16,15 @@ variables:
   CI_ELIXIR_IMAGE: $CI_REGISTRY_IMAGE/ci-elixir:1.19
   GITLEAKS_VERSION: "8.24.3"
 
+# Suppress duplicate pipelines: when a branch has an open MR, only the MR
+# pipeline runs. Without this, every push fires both a branch and an MR pipeline.
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'
+      when: never
+    - if: '$CI_COMMIT_BRANCH'
+
 # Defaults applied to every job unless overridden.
 # - `timeout: 30 minutes` bounds runaway jobs (Kassandra 8.6 review M-3).
 # - `interruptible: true` cancels superseded pipelines on the same ref so a
