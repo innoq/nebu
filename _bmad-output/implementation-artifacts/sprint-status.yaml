@@ -1,5 +1,6 @@
 # generated: 2026-03-20
 # last_updated: 2026-04-30
+# epic-7b SEC Gate 2 done — Kassandra HIGH (kick/ban/unban caller_id from body not metadata); 6 MEDIUM; follow-ups needed: 2026-04-30
 # story 7-30 done (pipeline: ATDD+Dev+CodeReview 1 MAJOR fixed (SELECT FOR UPDATE in PutRule) + 5 MINOR fixed): 2026-04-30
 # story 7-29 done (pipeline: CodeReview 1 MAJOR fixed (RLS→WHERE clause) + 3 MINOR fixed (slog, matrixURL, captureResponse): 2026-04-30
 # story 7-28 done (pipeline: CodeReview MINOR fixed (slog, auth guard panic) + compile errors fixed): 2026-04-30
