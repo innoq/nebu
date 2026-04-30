@@ -25,7 +25,7 @@ func (h *ComplianceHandler) ListHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var flash AlertBannerData
-	if msg := r.URL.Query().Get("flash"); msg != "" {
+	if msg := sanitizeFlash(r.URL.Query().Get("flash")); msg != "" {
 		flash = AlertBannerData{Severity: "success", Message: msg, Dismissible: true}
 	}
 
@@ -59,7 +59,7 @@ func (h *ComplianceHandler) ApproveHandler(w http.ResponseWriter, r *http.Reques
 	}
 	cr.Status = "approved"
 	cr.ReviewedBy = "kai@example.com"
-	http.Redirect(w, r, "/admin/compliance?flash=Request+approved", http.StatusFound)
+	http.Redirect(w, r, "/admin/compliance?flash=Approved", http.StatusFound)
 }
 
 // RejectHandler handles POST /admin/compliance/{id}/reject.
@@ -75,7 +75,7 @@ func (h *ComplianceHandler) RejectHandler(w http.ResponseWriter, r *http.Request
 	}
 	cr.Status = "rejected"
 	cr.ReviewedBy = "kai@example.com"
-	http.Redirect(w, r, "/admin/compliance?flash=Request+rejected", http.StatusFound)
+	http.Redirect(w, r, "/admin/compliance?flash=Rejected", http.StatusFound)
 }
 
 // filterComplianceRequests returns a filtered slice of StubComplianceRequest.

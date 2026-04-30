@@ -21,7 +21,7 @@ func NewConfigHandler(tmpl *TemplateHandler) *ConfigHandler {
 // Reads the ?flash= query param and populates Flash with an AlertBanner on success.
 func (h *ConfigHandler) Handler(w http.ResponseWriter, r *http.Request) {
 	var flash AlertBannerData
-	if msg := r.URL.Query().Get("flash"); msg != "" {
+	if msg := sanitizeFlash(r.URL.Query().Get("flash")); msg != "" {
 		flash = AlertBannerData{Severity: "success", Message: msg, Dismissible: true}
 	}
 	data := ConfigPageData{
@@ -65,5 +65,5 @@ func (h *ConfigHandler) UpdateConfigHandler(w http.ResponseWriter, r *http.Reque
 	stubConfig.MaxRoomsPerUser = maxRooms
 	stubConfig.RetentionDays = retentionDays
 
-	http.Redirect(w, r, "/admin/config?flash=Configuration+saved", http.StatusFound)
+	http.Redirect(w, r, "/admin/config?flash=Config+updated", http.StatusFound)
 }

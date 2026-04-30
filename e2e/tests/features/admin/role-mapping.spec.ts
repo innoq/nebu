@@ -75,7 +75,7 @@ test.describe('Role Mapping Configuration Page', () => {
     await page.locator('button[type="submit"]').click();
 
     // PRG redirect back to /admin/config/role-mapping with flash banner
-    await expect(page.locator('div[role="alert"]')).toContainText('Role mapping saved');
+    await expect(page.locator('div[role="alert"]')).toContainText('Role mapping updated');
   });
 
   test('invalid claim name shows validation error', async ({ page }) => {

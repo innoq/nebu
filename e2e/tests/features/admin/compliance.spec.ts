@@ -56,7 +56,7 @@ test.describe('Compliance Access Requests Page', () => {
     await page.locator('button[type="submit"]:has-text("Approve")').first().click();
 
     // PRG redirect back to /admin/compliance with flash banner
-    await expect(page.locator('div[role="alert"]')).toContainText('Request approved');
+    await expect(page.locator('div[role="alert"]')).toContainText('Approved');
   });
 
 });

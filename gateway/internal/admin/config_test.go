@@ -37,8 +37,8 @@ func TestConfigPageRenders(t *testing.T) {
 	}
 }
 
-// TestConfigPageFlashMessage verifies GET /admin/config?flash=Configuration+saved
-// renders an alert banner containing "Configuration saved".
+// TestConfigPageFlashMessage verifies GET /admin/config?flash=Config+updated
+// renders an alert banner containing "Config updated" (canonical allowlist value, Story 7.18).
 // AC: 2, 8 (Story 7.10)
 func TestConfigPageFlashMessage(t *testing.T) {
 	tmpl, err := NewTemplateHandler()
@@ -47,7 +47,7 @@ func TestConfigPageFlashMessage(t *testing.T) {
 	}
 	h := NewConfigHandler(tmpl)
 
-	req := httptest.NewRequest(http.MethodGet, "/admin/config?flash=Configuration+saved", nil)
+	req := httptest.NewRequest(http.MethodGet, "/admin/config?flash=Config+updated", nil)
 	w := httptest.NewRecorder()
 	h.Handler(w, req)
 
@@ -55,8 +55,8 @@ func TestConfigPageFlashMessage(t *testing.T) {
 		t.Fatalf("expected HTTP 200, got %d", w.Code)
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, "Configuration saved") {
-		t.Error("expected 'Configuration saved' in body (flash alert banner)")
+	if !strings.Contains(body, "Config updated") {
+		t.Error("expected 'Config updated' in body (flash alert banner)")
 	}
 }
 

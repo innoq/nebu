@@ -89,7 +89,7 @@ func (h *RoomsHandler) DetailHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Read flash query param; populate AlertBannerData if present (Story 7.9 AC1).
 	var flash AlertBannerData
-	if msg := r.URL.Query().Get("flash"); msg != "" {
+	if msg := sanitizeFlash(r.URL.Query().Get("flash")); msg != "" {
 		flash = AlertBannerData{Severity: "success", Message: msg, Dismissible: true}
 	}
 
@@ -170,7 +170,7 @@ func (h *RoomsHandler) UpdateRoomNameHandler(w http.ResponseWriter, r *http.Requ
 		http.NotFound(w, r)
 		return
 	}
-	http.Redirect(w, r, "/admin/rooms/"+roomID+"?flash=Name+updated", http.StatusFound)
+	http.Redirect(w, r, "/admin/rooms/"+roomID+"?flash=Room+name+updated", http.StatusFound)
 }
 
 // ArchiveRoomHandler handles POST /admin/rooms/{roomId}/archive.

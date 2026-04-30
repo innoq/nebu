@@ -1,5 +1,6 @@
 # generated: 2026-03-20
 # last_updated: 2026-04-30
+# story 7-18 done (pipeline: ATDD+Dev+CodeReview MINOR_FIXED (3 MAJOR Playwright+1 MINOR compliance)+Security CLEAN): 2026-04-30
 # story 7-17 done (pipeline: ATDD+Dev+CodeReview CLEAN+Security CLEAN — 11 POST routes wrapped bodyLimit64KiB(csrf(sessionGuard))); Kassandra MEDIUM non-blocking): 2026-04-30
 # stories 7-17..7-31 created (2 security follow-ups from SEC Gate 2 + 13 Matrix API gap stories from tmp/missing-matrix-features.md; migration numbers corrected to 000029..000032): 2026-04-30
 # story 7-16f done (pipeline: no-op — migration 000026_avatar_url_scrub already committed in feat(security) 4e25855; story was deferred AC7 from 5.29b, now verified in place): 2026-04-30
@@ -582,7 +583,7 @@ development_status:
   7-16f-migration-avatar-url-scrub-fehlt: done
   # Security follow-up stories (SEC Gate 2 findings)
   7-17-csrf-enforcement-body-size-limits-admin-post-routes: done
-  7-18-flash-message-allowlist-admin-get-handlers: ready-for-dev
+  7-18-flash-message-allowlist-admin-get-handlers: done
   # Matrix Client-Server API gaps (from tmp/missing-matrix-features.md)
   7-19-room-state-api-get-state-single-event: ready-for-dev
   7-20-joined-members-get-rooms-roomid-joined-members: ready-for-dev

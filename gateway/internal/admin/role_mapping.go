@@ -28,7 +28,7 @@ func NewRoleMappingHandler(tmpl *TemplateHandler) *RoleMappingHandler {
 // Reads the ?flash= query param and populates Flash with an AlertBanner on success.
 func (h *RoleMappingHandler) Handler(w http.ResponseWriter, r *http.Request) {
 	var flash AlertBannerData
-	if msg := r.URL.Query().Get("flash"); msg != "" {
+	if msg := sanitizeFlash(r.URL.Query().Get("flash")); msg != "" {
 		flash = AlertBannerData{Severity: "success", Message: msg, Dismissible: true}
 	}
 	data := RoleMappingPageData{
@@ -95,5 +95,5 @@ func (h *RoleMappingHandler) UpdateHandler(w http.ResponseWriter, r *http.Reques
 	stubRoleMappingConfig.InstanceAdminGroup = instanceAdminGroup
 	stubRoleMappingConfig.ComplianceUserGroup = complianceUserGroup
 
-	http.Redirect(w, r, "/admin/config/role-mapping?flash=Role+mapping+saved", http.StatusFound)
+	http.Redirect(w, r, "/admin/config/role-mapping?flash=Role+mapping+updated", http.StatusFound)
 }

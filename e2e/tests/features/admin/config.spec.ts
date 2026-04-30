@@ -59,7 +59,7 @@ test.describe('Server Configuration Page', () => {
     await page.locator('button[type="submit"]').click();
 
     // PRG redirect back to /admin/config with flash banner
-    await expect(page.locator('div[role="alert"]')).toContainText('Configuration saved');
+    await expect(page.locator('div[role="alert"]')).toContainText('Config updated');
   });
 
 });

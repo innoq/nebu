@@ -91,7 +91,7 @@ func (h *UsersHandler) DetailHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Read flash query param; populate AlertBannerData if present (Story 7.6 AC1).
 	var flash AlertBannerData
-	if msg := r.URL.Query().Get("flash"); msg != "" {
+	if msg := sanitizeFlash(r.URL.Query().Get("flash")); msg != "" {
 		flash = AlertBannerData{Severity: "success", Message: msg, Dismissible: true}
 	}
 

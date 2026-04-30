@@ -47,13 +47,13 @@ func TestRoleMappingPageRenders(t *testing.T) {
 	}
 }
 
-// TestRoleMappingPageFlash verifies GET /admin/config/role-mapping?flash=Role+mapping+saved
-// renders an alert banner containing "Role mapping saved".
+// TestRoleMappingPageFlash verifies GET /admin/config/role-mapping?flash=Role+mapping+updated
+// renders an alert banner containing "Role mapping updated" (canonical allowlist value, Story 7.18).
 // AC: 3, 8 (Story 7.15)
 func TestRoleMappingPageFlash(t *testing.T) {
 	h := newRoleMappingHandler(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/admin/config/role-mapping?flash=Role+mapping+saved", nil)
+	req := httptest.NewRequest(http.MethodGet, "/admin/config/role-mapping?flash=Role+mapping+updated", nil)
 	w := httptest.NewRecorder()
 	h.Handler(w, req)
 
@@ -61,8 +61,8 @@ func TestRoleMappingPageFlash(t *testing.T) {
 		t.Fatalf("expected HTTP 200, got %d", w.Code)
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, "Role mapping saved") {
-		t.Error("expected 'Role mapping saved' in body (flash alert banner)")
+	if !strings.Contains(body, "Role mapping updated") {
+		t.Error("expected 'Role mapping updated' in body (flash alert banner)")
 	}
 }
 

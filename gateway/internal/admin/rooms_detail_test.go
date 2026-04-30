@@ -58,8 +58,8 @@ func TestRoomDetailPanelNotFound(t *testing.T) {
 	}
 }
 
-// TestRoomDetailFlashMessage verifies that ?flash=Name+updated renders
-// an alert banner containing that text.
+// TestRoomDetailFlashMessage verifies that ?flash=Room+name+updated renders
+// an alert banner containing that text (canonical allowlist value, Story 7.18).
 // AC: 8 (TestRoomDetailFlashMessage — Story 7.9)
 func TestRoomDetailFlashMessage(t *testing.T) {
 	tmpl, err := NewTemplateHandler()
@@ -72,15 +72,15 @@ func TestRoomDetailFlashMessage(t *testing.T) {
 	mux.HandleFunc("GET /admin/rooms/{roomId}", h.DetailHandler)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/admin/rooms/room-001?flash=Name+updated", nil)
+	r := httptest.NewRequest(http.MethodGet, "/admin/rooms/room-001?flash=Room+name+updated", nil)
 	mux.ServeHTTP(w, r)
 
 	if w.Code != 200 {
 		t.Fatalf("want 200 got %d", w.Code)
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, "Name updated") {
-		t.Errorf("expected body to contain 'Name updated', got: %s", body[:min(500, len(body))])
+	if !strings.Contains(body, "Room name updated") {
+		t.Errorf("expected body to contain 'Room name updated', got: %s", body[:min(500, len(body))])
 	}
 }
 

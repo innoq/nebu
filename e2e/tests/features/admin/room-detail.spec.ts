@@ -55,10 +55,10 @@ test.describe('Room Detail Panel', () => {
 
   test('flash message shown after room name update', async ({ page }) => {
     await loginAsAdmin(page);
-    await page.goto('/admin/rooms/room-001?flash=Name+updated');
+    await page.goto('/admin/rooms/room-001?flash=Room+name+updated');
 
     // Flash banner with success message must be visible
-    await expect(page.locator('div[role="alert"]')).toContainText('Name updated');
+    await expect(page.locator('div[role="alert"]')).toContainText('Room name updated');
   });
 
   test('inline edit saves room name', async ({ page }) => {
