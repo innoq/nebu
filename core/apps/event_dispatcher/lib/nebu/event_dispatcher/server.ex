@@ -716,7 +716,7 @@ defmodule Nebu.EventDispatcher.Server do
     state_key = Map.get(request, :state_key, "")
     mod = room_registry_module()
 
-    {caller_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
+    {caller_id, system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
 
     state =
       try do
@@ -728,7 +728,9 @@ defmodule Nebu.EventDispatcher.Server do
             message: "room not found: #{room_id}"
       end
 
-    unless MapSet.member?(state.members, caller_id) do
+    # System-role callers (internal gateway fanout) skip the membership check.
+    # User-role callers must be room members (Story 7-19 IDOR fix preserved).
+    unless system_role == "system" or MapSet.member?(state.members, caller_id) do
       raise GRPC.RPCError,
         status: GRPC.Status.permission_denied(),
         message: "#{caller_id} is not a member of #{room_id}"

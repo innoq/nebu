@@ -53,8 +53,11 @@ type coreRoomStateLookup struct {
 }
 
 // GetRoomState satisfies buffer.RoomStateLookup: calls the gRPC Core and returns member IDs.
+// Uses coregrpc.WithUserMetadata to identify this as a trusted internal (system) call so that
+// the Elixir Core's system-role bypass skips the membership check (Story 7-33).
 func (a *coreRoomStateLookup) GetRoomState(ctx context.Context, roomID string) ([]string, error) {
-	resp, err := a.client.GetRoomState(ctx, &pb.GetRoomStateRequest{RoomId: roomID})
+	sysCtx := coregrpc.WithUserMetadata(ctx, "", "system")
+	resp, err := a.client.GetRoomState(sysCtx, &pb.GetRoomStateRequest{RoomId: roomID})
 	if err != nil {
 		return nil, err
 	}
