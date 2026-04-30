@@ -21,21 +21,19 @@ Ausführung. Jeder Schritt läuft in einem eigenen, frischen Subagenten-Kontext.
 ## Ablauf-Übersicht
 
 ```
-[0] Session-Usage-Check      → Ollama-Fallback wenn ≥ 80 %
+[1] bmad-create-story        (Sonnet, frischer Kontext)
           ↓
-[1] bmad-create-story        (Sonnet oder Ollama, frischer Kontext)
-          ↓
-[2] bmad-testarch-atdd       (Sonnet oder Ollama, frischer Kontext)  ← TEA Gate 1
+[2] bmad-testarch-atdd       (Sonnet, frischer Kontext)  ← TEA Gate 1
     failing tests generieren + stagen
           ↓
-[3] bmad-dev-story           (Sonnet oder Ollama, frischer Kontext)
+[3] bmad-dev-story           (Sonnet, frischer Kontext)
           ↓
        git add -A
           ↓
-[4] bmad-testarch-test-review (Sonnet oder Ollama, frischer Kontext) ← TEA Gate 2
+[4] bmad-testarch-test-review (Sonnet, frischer Kontext) ← TEA Gate 2
     Test-Qualität prüfen, Findings ausgeben
           ↓
-[5] bmad-code-review         (Opus oder Ollama, frischer Kontext)
+[5] bmad-code-review         (Opus, frischer Kontext)
     "fixe minor issues instantly"
     → Minor Issues werden vom Skill selbst gefixt
           ↓
@@ -51,7 +49,11 @@ Ausführung. Jeder Schritt läuft in einem eigenen, frischen Subagenten-Kontext.
           ↓
     Major/Critical/HIGH Issues aus [5] oder [5b] gefunden?
        Ja  → Pause, User entscheidet
-       Nein → git commit
+       Nein → sprint-status.yaml aktualisieren (Story → done, last_updated, Kommentarzeile)
+              ↓
+              git add sprint-status.yaml
+              ↓
+              git commit
           ↓
 [6] Epic-Check: sprint-status.yaml
        Epic fertig? → [6b] Kassandra am Epic-Ende  ← SEC Gate 2
@@ -82,96 +84,11 @@ Subagenten weitergegeben.
 
 ---
 
-### Schritt 0: Session-Usage-Check
-
-**Führe diesen Check immer als allererstes aus, bevor ein Subagent gestartet wird.**
-
-#### 0.1 — Aktuelle Session ermitteln
-
-Rufe `mcp__session_info__list_sessions` auf (limit: 5).
-Nimm die erste Session mit `is_child: false` — das ist die laufende Haupt-Session.
-Notiere die `session_id`.
-
-#### 0.2 — Transcript lesen und Token-Verbrauch schätzen
-
-Rufe `mcp__session_info__read_transcript` auf:
-- `session_id`: ID aus 0.1
-- `format`: `"full"`
-- `max_wait_seconds`: 0  (sofortiger Return)
-
-Zähle die **Gesamtlänge** des zurückgegebenen Strings in Zeichen.
-Schätze den Token-Verbrauch:
-
-```
-geschätzte_tokens  = zeichen_anzahl / 4
-auslastung_prozent = (geschätzte_tokens / 200000) * 100
-```
-
-(Basis: 200.000 Token Context-Window für Sonnet 4.6 und Opus 4.6)
-
-#### 0.3 — Entscheidung: Standard oder Ollama-Fallback
-
-**Wenn `auslastung_prozent >= 80`:**
-
-```bash
-cat > /tmp/bmad-session-env.sh << 'EOF'
-export ANTHROPIC_AUTH_TOKEN="ollama"
-export ANTHROPIC_API_KEY=""
-export ANTHROPIC_BASE_URL="http://localhost:11434"
-export BMAD_OLLAMA_MODE="true"
-export BMAD_FALLBACK_MODEL="qwen3.5:35b-a3b-coding-nvfp4"
-EOF
-```
-
-Setze intern `OLLAMA_MODE=true`.
-
-Zeige:
-```
-⚠️  Session-Auslastung: ~XX % (~YYY.YYY Tokens)
-🔀 Ollama-Fallback aktiv: qwen3.5:35b-a3b-coding-nvfp4
-    (ANTHROPIC_BASE_URL=http://localhost:11434)
-```
-
-**Wenn `auslastung_prozent < 80`:**
-
-```bash
-rm -f /tmp/bmad-session-env.sh
-```
-
-Setze intern `OLLAMA_MODE=false`.
-
-Zeige:
-```
-✓ Session-Auslastung: ~XX % (~YYY.YYY Tokens) — Standard-Modelle aktiv.
-```
-
-#### 0.4 — Ollama-Präambel (nur wenn OLLAMA_MODE=true)
-
-Wenn `OLLAMA_MODE=true`, stelle **jedem** Subagenten-Prompt diese Präambel voran:
-
-```
-WICHTIG – Ollama-Fallback aktiv:
-Bevor du mit deiner eigentlichen Aufgabe beginnst, führe in der Shell aus:
-  export ANTHROPIC_AUTH_TOKEN="ollama"
-  export ANTHROPIC_API_KEY=""
-  export ANTHROPIC_BASE_URL="http://localhost:11434"
-Nutze ausschließlich das Modell: qwen3.5:35b-a3b-coding-nvfp4
-```
-
-Diese Präambel stellt sicher, dass der Subagent im frischen Kontext die Ollama-Verbindung
-selbst einrichtet.
-
----
-
 ### Schritt 1: bmad-create-story
 
-**Modell:** `claude-sonnet-4-6` (Standard) | `qwen3.5:35b-a3b-coding-nvfp4` (Ollama) | **Kontext:** frisch (Task-Tool)
-
-Baue den Prompt zusammen — füge [OLLAMA-PRÄAMBEL aus 0.4] voran wenn `OLLAMA_MODE=true`:
+**Modell:** `claude-sonnet-4-6` | **Kontext:** frisch (Task-Tool)
 
 ```
-[OLLAMA-PRÄAMBEL wenn OLLAMA_MODE=true]
-
 Lies und befolge die Anweisungen aus .claude/skills/bmad-create-story/SKILL.md.
 Feature/Story: [FEATURE_BESCHREIBUNG_VOM_USER]
 Arbeite das vollständig durch und beende dann.
@@ -185,18 +102,14 @@ Zeige: `✓ Schritt 1: Story erstellt → [story-datei.md]`
 
 ### Schritt 2: bmad-testarch-atdd (TEA Gate 1 — Failing Tests)
 
-**Modell:** `claude-sonnet-4-6` (Standard) | `qwen3.5:35b-a3b-coding-nvfp4` (Ollama) | **Kontext:** frisch (Task-Tool) | **Pflicht**
+**Modell:** `claude-sonnet-4-6` | **Kontext:** frisch (Task-Tool) | **Pflicht**
 
 **Ausnahme:** Reine Infrastruktur-Stories ohne beobachtbares Verhalten (z.B. nur Dockerfile, nur Migration ohne Logik) können übersprungen werden. Dann Ausgabe:
 `⏭️ Schritt 2: Infra-only Story — ATDD übersprungen.`
 
 Für alle anderen Stories:
 
-Baue den Prompt zusammen — füge [OLLAMA-PRÄAMBEL] voran wenn `OLLAMA_MODE=true`:
-
 ```
-[OLLAMA-PRÄAMBEL wenn OLLAMA_MODE=true]
-
 Lies und befolge die Anweisungen aus .claude/skills/bmad-testarch-atdd/SKILL.md
 (oder den ATDD workflow.md falls SKILL.md nicht existiert).
 Story-Datei: [STORY_DATEI_AUS_SCHRITT_1]
@@ -213,13 +126,9 @@ Zeige: `✓ Schritt 2: Failing Acceptance Tests generiert.`
 
 ### Schritt 3: bmad-dev-story + git add
 
-**Modell:** `claude-sonnet-4-6` (Standard) | `qwen3.5:35b-a3b-coding-nvfp4` (Ollama) | **Kontext:** frisch (Task-Tool)
-
-Baue den Prompt zusammen — füge [OLLAMA-PRÄAMBEL] voran wenn `OLLAMA_MODE=true`:
+**Modell:** `claude-sonnet-4-6` | **Kontext:** frisch (Task-Tool)
 
 ```
-[OLLAMA-PRÄAMBEL wenn OLLAMA_MODE=true]
-
 Lies und befolge die Anweisungen aus .claude/skills/bmad-dev-story/SKILL.md.
 Implementiere die zuletzt erstellte Story vollständig.
 Die failing Acceptance Tests aus Schritt 2 sind bereits vorhanden —
@@ -240,13 +149,9 @@ Zeige: `✓ Schritt 3: Implementierung abgeschlossen, git add ausgeführt.`
 
 ### Schritt 4: bmad-testarch-test-review (TEA Gate 2 — Test-Qualität)
 
-**Modell:** `claude-sonnet-4-6` (Standard) | `qwen3.5:35b-a3b-coding-nvfp4` (Ollama) | **Kontext:** frisch (Task-Tool) | **Pflicht**
-
-Baue den Prompt zusammen — füge [OLLAMA-PRÄAMBEL] voran wenn `OLLAMA_MODE=true`:
+**Modell:** `claude-sonnet-4-6` | **Kontext:** frisch (Task-Tool) | **Pflicht**
 
 ```
-[OLLAMA-PRÄAMBEL wenn OLLAMA_MODE=true]
-
 Lies und befolge die Anweisungen aus .claude/skills/bmad-testarch-test-review/SKILL.md
 (oder den test-review workflow.md falls SKILL.md nicht existiert).
 Reviewe alle gestagten Test-Dateien (git diff --staged).
@@ -281,9 +186,9 @@ Zeige: `✓ Schritt 4: Test-Review bestanden. Findings werden an Code-Review üb
 
 ### Schritt 5: bmad-code-review (inkl. Minor-Issue-Fix)
 
-**Modell:** `claude-opus-4-6` (Standard) | `qwen3.5:35b-a3b-coding-nvfp4` (Ollama) | **Kontext:** frisch (Task-Tool)
+**Modell:** `claude-opus-4-7` | **Kontext:** frisch (Task-Tool)
 
-Übergib die Findings aus Schritt 4 und füge [OLLAMA-PRÄAMBEL] voran wenn `OLLAMA_MODE=true`:
+Übergib die Findings aus Schritt 4 an den Code-Review-Agent:
 
 ```
 [OLLAMA-PRÄAMBEL wenn OLLAMA_MODE=true]
@@ -313,7 +218,7 @@ git add -A
 
 ### Schritt 5b: Security-Review-Gate (SEC Gate 1 — pro Story, conditional)
 
-**Modell:** `claude-opus-4-6` (Standard) | `qwen3.5:35b-a3b-coding-nvfp4` (Ollama) | **Kontext:** frisch (Task-Tool)
+**Modell:** `claude-opus-4-7` | **Kontext:** frisch (Task-Tool)
 
 **Ziel:** Security-sensitive Stories bekommen ein zweites, fokussiertes Review. Nicht-sensitive Stories überspringen den Schritt.
 
@@ -338,8 +243,6 @@ git add -A
 Falls `required` oder vom User bestätigt:
 
 ```
-[OLLAMA-PRÄAMBEL wenn OLLAMA_MODE=true]
-
 Lies und befolge die Anweisungen aus .claude/skills/bmad-security-review/SKILL.md.
 Reviewe alle gestagten Änderungen (git diff --staged).
 
@@ -411,15 +314,49 @@ Stoppe und warte. Bei "weiter": fahre mit dem Commit fort.
 
 Zeige: `✓ Kein blockierendes Issue – commite automatisch.`
 
+**Vor jedem Commit: sprint-status.yaml aktualisieren** (gilt genauso im "weiter"-Fall aus dem Stop oben).
+
+Datei: `_bmad-output/implementation-artifacts/sprint-status.yaml`
+
+1. **Story-Status im `development_status:`-Block auf `done` setzen.**
+   Der YAML-Key enthält den vollen Slug, z.B. `5-24-sso-redirect-scheme-allowlist: done`.
+   Story-ID und Slug kommen aus der in Schritt 1 erstellten Story-Datei.
+
+2. **`last_updated:` auf das heutige Datum setzen** — kommt zweimal in der Datei vor:
+    - als Kommentar am Dateianfang (`# last_updated: YYYY-MM-DD`)
+    - als YAML-Feld (`last_updated: YYYY-MM-DD`)
+
+3. **Neue Kommentarzeile direkt unter dem `last_updated`-Kommentar einfügen**, im bestehenden Format:
+
+   ```
+   # story {STORY_ID} done (pipeline: {KURZE_ZUSAMMENFASSUNG}): {YYYY-MM-DD}
+   ```
+
+   Beispiele für `{KURZE_ZUSAMMENFASSUNG}` aus der Historie:
+    - `ATDD+Dev+Code+Security CLEAN`
+    - `CLEAN, Bootstrap replay entry points closed`
+    - `2 MINOR fixed — handler alloc + base.html inline style`
+    - `2 MAJOR + HIGH fixed, 2 rounds Kassandra`
+    - `3 rounds — real sql.Tx via runInTx injection`
+
+4. **Stagen:**
+
 ```bash
-[ -f /tmp/bmad-session-env.sh ] && source /tmp/bmad-session-env.sh
+   git add _bmad-output/implementation-artifacts/sprint-status.yaml
+   ```
+
+Zeige: `✓ sprint-status.yaml aktualisiert ({STORY_ID} → done).`
+
+**Dann commiten:**
+
+```bash
 git commit -m "$(cat <<'EOF'
 [KURZE_ZUSAMMENFASSUNG_AUS_STORY_ODER_REVIEW]
-
-Co-Authored-By: Claude Sonnet 4.6 (1M context) <noreply@anthropic.com>
 EOF
 )"
 ```
+
+Keine `Co-Authored-By`-Zeile anhängen.
 
 Zeige: `✓ Commit erstellt.`
 
@@ -516,16 +453,6 @@ Stoppe hier und warte auf den User.
 
 ## Fehlerbehandlung
 
-- **Ollama nicht erreichbar:** Wenn `BMAD_OLLAMA_MODE=true` gesetzt ist und ein Subagent meldet,
-  dass das Modell nicht antwortet, zeige:
-  ```
-  ❌ Ollama-Fallback fehlgeschlagen (http://localhost:11434 nicht erreichbar).
-  Soll ich mit dem Standard-Modell (Sonnet/Opus) weitermachen? [ja/nein]
-  ```
-  Bei „ja“: `rm -f /tmp/bmad-session-env.sh`, setze `OLLAMA_MODE=false`, fahre fort.
-- **Session-Info nicht verfügbar:** Falls `mcp__session_info__list_sessions` fehlschlägt,
-  fahre mit Standard-Modellen fort und zeige:
-  `ℹ️ Session-Usage-Check nicht möglich – Standard-Modelle werden verwendet.`
 - **Subagent schlägt fehl:** Zeige die vollständige Fehlermeldung. Stoppe, User entscheidet.
 - **git add / git commit schlägt fehl:** Zeige den git-Fehler. Stoppe, warte auf User-Aktion.
 - **sprint-status.yaml nicht vorhanden:** `ℹ️ sprint-status.yaml nicht gefunden – Epic-Check übersprungen.`
@@ -537,21 +464,14 @@ Stoppe hier und warte auf den User.
 
 ## Modell-Übersicht
 
-| Schritt                      | Standard-Modell   | Ollama-Fallback (≥ 80 %)        |
-|------------------------------|-------------------|----------------------------------|
-| bmad-create-story            | claude-sonnet-4-6 | qwen3.5:35b-a3b-coding-nvfp4    |
-| bmad-testarch-atdd           | claude-sonnet-4-6 | qwen3.5:35b-a3b-coding-nvfp4    |
-| bmad-dev-story               | claude-sonnet-4-6 | qwen3.5:35b-a3b-coding-nvfp4    |
-| bmad-testarch-test-review    | claude-sonnet-4-6 | qwen3.5:35b-a3b-coding-nvfp4    |
-| bmad-code-review             | claude-opus-4-6   | qwen3.5:35b-a3b-coding-nvfp4    |
-| bmad-security-review (Kassandra, Gate 1 & 2) | per `.claude/security-agent.yaml` (Default: claude-opus-4-7) | qwen3.5:35b-a3b-coding-nvfp4 |
-
-Ollama-Verbindungsparameter (aktiv wenn Session-Auslastung ≥ 80 %):
-```
-ANTHROPIC_AUTH_TOKEN=ollama
-ANTHROPIC_API_KEY=
-ANTHROPIC_BASE_URL=http://localhost:11434
-```
+| Schritt                      | Modell            |
+|------------------------------|-------------------|
+| bmad-create-story            | claude-sonnet-4-6 |
+| bmad-testarch-atdd           | claude-sonnet-4-6 |
+| bmad-dev-story               | claude-sonnet-4-6 |
+| bmad-testarch-test-review    | claude-sonnet-4-6 |
+| bmad-code-review             | claude-opus-4-7   |
+| bmad-security-review (Kassandra, Gate 1 & 2) | per `.claude/security-agent.yaml` (Default: claude-opus-4-7) |
 
 ---
 
