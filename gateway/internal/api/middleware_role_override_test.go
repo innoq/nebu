@@ -26,7 +26,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/nebu/nebu/internal/api"
 	"github.com/nebu/nebu/internal/middleware"
@@ -386,8 +385,6 @@ func TestRequireRole_NilChecker_EmptyRole_Returns401(t *testing.T) {
 	}
 }
 
-// ── noopTime is used to ensure tests do not depend on wall-clock timing ───────
-
-// _ is a compile-time reminder that time.Now() is used inside RequireRole;
-// the cache expiry test defers full TTL-expiry verification to integration tests.
-var _ = time.Second // suppress "imported and not used" if time import is needed
+// Note: The 60s TTL cache uses time.Now() directly inside RequireRole.
+// Full TTL-expiry verification would require an injectable clock and is
+// explicitly deferred to a separate story (see TestRequireRole_OverrideLookup_IsCached).

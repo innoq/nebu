@@ -36,7 +36,8 @@ func RegisterAdminRoutes(mux *http.ServeMux, adminServer *AdminServer, jwtMW fun
 	// Order: jwtMW(outermost) → RequireRole → strictHandler method
 	mux.Handle("GET /api/v1/admin/config", jwtMW(RequireRole("instance_admin", checker)(http.HandlerFunc(sh.GetAdminConfig))))
 	mux.Handle("GET /api/v1/admin/metrics", jwtMW(RequireRole("instance_admin", checker)(http.HandlerFunc(sh.GetAdminMetrics))))
-	mux.Handle("GET /api/v1/admin/rooms", jwtMW(RequireRole("instance_admin", checker)(http.HandlerFunc(sh.ListAdminRooms))))
+	mux.Handle("GET /api/v1/admin/rooms", jwtMW(RequireRole("instance_admin", checker)(listAdminRoomsHandler(sh))))
+	mux.Handle("GET /api/v1/admin/rooms/{roomId}", jwtMW(RequireRole("instance_admin", checker)(getAdminRoomHandler(sh))))
 
 	// Story 6.4: ListAdminUsers — wraps sh.ListAdminUsers which requires params.
 	// The generated ServerInterfaceWrapper.ListAdminUsers parses query params; we
@@ -161,5 +162,61 @@ func assignAdminUserRoleHandler(sh ServerInterface) http.Handler {
 			return
 		}
 		sh.AssignAdminUserRole(w, r, userID)
+	})
+}
+
+// listAdminRoomsHandler returns an http.Handler that parses the cursor/limit/search/status query
+// parameters and delegates to sh.ListAdminRooms(w, r, params).
+//
+// Story 6.7: GET /api/v1/admin/rooms
+//
+// This wrapper is needed because the generated ServerInterface defines
+// ListAdminRooms(w, r, params ListAdminRoomsParams) — not a plain http.HandlerFunc.
+func listAdminRoomsHandler(sh ServerInterface) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var params ListAdminRoomsParams
+
+		// cursor — optional string
+		if v := r.URL.Query().Get("cursor"); v != "" {
+			params.Cursor = &v
+		}
+
+		// limit — optional integer
+		if v := r.URL.Query().Get("limit"); v != "" {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				// Non-integer limit — pass 0 to trigger range validation in handler.
+				zero := 0
+				params.Limit = &zero
+			} else {
+				params.Limit = &n
+			}
+		}
+
+		// search — optional string
+		if v := r.URL.Query().Get("search"); v != "" {
+			params.Search = &v
+		}
+
+		// status — optional string
+		if v := r.URL.Query().Get("status"); v != "" {
+			params.Status = &v
+		}
+
+		sh.ListAdminRooms(w, r, params)
+	})
+}
+
+// getAdminRoomHandler returns an http.Handler that extracts the {roomId} path value
+// and delegates to sh.GetAdminRoom(w, r, roomId).
+//
+// Story 6.7: GET /api/v1/admin/rooms/{roomId}
+//
+// This wrapper is needed because the generated ServerInterface defines
+// GetAdminRoom(w, r, roomId string) — not a plain http.HandlerFunc.
+func getAdminRoomHandler(sh ServerInterface) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		roomID := r.PathValue("roomId")
+		sh.GetAdminRoom(w, r, roomID)
 	})
 }

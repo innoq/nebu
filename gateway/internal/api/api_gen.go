@@ -96,6 +96,20 @@ type HealthResponse struct {
 	Status string `json:"status"`
 }
 
+// RoomDetailResponse defines model for RoomDetailResponse.
+type RoomDetailResponse struct {
+	Data map[string]interface{} `json:"data"`
+}
+
+// RoomListResponse defines model for RoomListResponse.
+type RoomListResponse struct {
+	Data []map[string]interface{} `json:"data"`
+	Meta struct {
+		NextCursor *string `json:"next_cursor,omitempty"`
+		Total      int     `json:"total"`
+	} `json:"meta"`
+}
+
 // UserDetailResponse defines model for UserDetailResponse.
 type UserDetailResponse struct {
 	Data map[string]interface{} `json:"data"`
@@ -116,6 +130,14 @@ type UserStatusResponse struct {
 		Status string `json:"status"`
 		UserId string `json:"user_id"`
 	} `json:"data"`
+}
+
+// ListAdminRoomsParams defines parameters for ListAdminRooms.
+type ListAdminRoomsParams struct {
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Search *string `form:"search,omitempty" json:"search,omitempty"`
+	Status *string `form:"status,omitempty" json:"status,omitempty"`
 }
 
 // ListAdminUsersParams defines parameters for ListAdminUsers.
@@ -139,9 +161,12 @@ type ServerInterface interface {
 	// Get metrics (placeholder — Story 6.10)
 	// (GET /admin/metrics)
 	GetAdminMetrics(w http.ResponseWriter, r *http.Request)
-	// List rooms (placeholder — Story 6.7)
+	// List rooms (instance_admin required)
 	// (GET /admin/rooms)
-	ListAdminRooms(w http.ResponseWriter, r *http.Request)
+	ListAdminRooms(w http.ResponseWriter, r *http.Request, params ListAdminRoomsParams)
+	// Get single room (instance_admin required)
+	// (GET /admin/rooms/{roomId})
+	GetAdminRoom(w http.ResponseWriter, r *http.Request, roomId string)
 	// List users (instance_admin required)
 	// (GET /admin/users)
 	ListAdminUsers(w http.ResponseWriter, r *http.Request, params ListAdminUsersParams)
@@ -217,6 +242,74 @@ func (siw *ServerInterfaceWrapper) GetAdminMetrics(w http.ResponseWriter, r *htt
 // ListAdminRooms operation middleware
 func (siw *ServerInterfaceWrapper) ListAdminRooms(w http.ResponseWriter, r *http.Request) {
 
+	var err error
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListAdminRoomsParams
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "search" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "search", r.URL.Query(), &params.Search, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "search", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAdminRooms(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAdminRoom operation middleware
+func (siw *ServerInterfaceWrapper) GetAdminRoom(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "roomId" -------------
+	var roomId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "roomId", r.PathValue("roomId"), &roomId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "roomId", Err: err})
+		return
+	}
+
 	ctx := r.Context()
 
 	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
@@ -224,7 +317,7 @@ func (siw *ServerInterfaceWrapper) ListAdminRooms(w http.ResponseWriter, r *http
 	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListAdminRooms(w, r)
+		siw.Handler.GetAdminRoom(w, r, roomId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -564,6 +657,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("GET "+options.BaseURL+"/admin/config", wrapper.GetAdminConfig)
 	m.HandleFunc("GET "+options.BaseURL+"/admin/metrics", wrapper.GetAdminMetrics)
 	m.HandleFunc("GET "+options.BaseURL+"/admin/rooms", wrapper.ListAdminRooms)
+	m.HandleFunc("GET "+options.BaseURL+"/admin/rooms/{roomId}", wrapper.GetAdminRoom)
 	m.HandleFunc("GET "+options.BaseURL+"/admin/users", wrapper.ListAdminUsers)
 	m.HandleFunc("GET "+options.BaseURL+"/admin/users/{userId}", wrapper.GetAdminUser)
 	m.HandleFunc("POST "+options.BaseURL+"/admin/users/{userId}/deactivate", wrapper.DeactivateAdminUser)
@@ -624,13 +718,14 @@ func (response GetAdminMetrics501Response) VisitGetAdminMetricsResponse(w http.R
 }
 
 type ListAdminRoomsRequestObject struct {
+	Params ListAdminRoomsParams
 }
 
 type ListAdminRoomsResponseObject interface {
 	VisitListAdminRoomsResponse(w http.ResponseWriter) error
 }
 
-type ListAdminRooms200JSONResponse EmptyResponse
+type ListAdminRooms200JSONResponse RoomListResponse
 
 func (response ListAdminRooms200JSONResponse) VisitListAdminRoomsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
@@ -639,10 +734,53 @@ func (response ListAdminRooms200JSONResponse) VisitListAdminRoomsResponse(w http
 	return json.NewEncoder(w).Encode(response)
 }
 
+type ListAdminRooms400JSONResponse EmptyResponse
+
+func (response ListAdminRooms400JSONResponse) VisitListAdminRoomsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 type ListAdminRooms501Response struct {
 }
 
 func (response ListAdminRooms501Response) VisitListAdminRoomsResponse(w http.ResponseWriter) error {
+	w.WriteHeader(501)
+	return nil
+}
+
+type GetAdminRoomRequestObject struct {
+	RoomId string `json:"roomId"`
+}
+
+type GetAdminRoomResponseObject interface {
+	VisitGetAdminRoomResponse(w http.ResponseWriter) error
+}
+
+type GetAdminRoom200JSONResponse RoomDetailResponse
+
+func (response GetAdminRoom200JSONResponse) VisitGetAdminRoomResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetAdminRoom404JSONResponse EmptyResponse
+
+func (response GetAdminRoom404JSONResponse) VisitGetAdminRoomResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetAdminRoom501Response struct {
+}
+
+func (response GetAdminRoom501Response) VisitGetAdminRoomResponse(w http.ResponseWriter) error {
 	w.WriteHeader(501)
 	return nil
 }
@@ -904,9 +1042,12 @@ type StrictServerInterface interface {
 	// Get metrics (placeholder — Story 6.10)
 	// (GET /admin/metrics)
 	GetAdminMetrics(ctx context.Context, request GetAdminMetricsRequestObject) (GetAdminMetricsResponseObject, error)
-	// List rooms (placeholder — Story 6.7)
+	// List rooms (instance_admin required)
 	// (GET /admin/rooms)
 	ListAdminRooms(ctx context.Context, request ListAdminRoomsRequestObject) (ListAdminRoomsResponseObject, error)
+	// Get single room (instance_admin required)
+	// (GET /admin/rooms/{roomId})
+	GetAdminRoom(ctx context.Context, request GetAdminRoomRequestObject) (GetAdminRoomResponseObject, error)
 	// List users (instance_admin required)
 	// (GET /admin/users)
 	ListAdminUsers(ctx context.Context, request ListAdminUsersRequestObject) (ListAdminUsersResponseObject, error)
@@ -1008,8 +1149,10 @@ func (sh *strictHandler) GetAdminMetrics(w http.ResponseWriter, r *http.Request)
 }
 
 // ListAdminRooms operation middleware
-func (sh *strictHandler) ListAdminRooms(w http.ResponseWriter, r *http.Request) {
+func (sh *strictHandler) ListAdminRooms(w http.ResponseWriter, r *http.Request, params ListAdminRoomsParams) {
 	var request ListAdminRoomsRequestObject
+
+	request.Params = params
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.ListAdminRooms(ctx, request.(ListAdminRoomsRequestObject))
@@ -1024,6 +1167,32 @@ func (sh *strictHandler) ListAdminRooms(w http.ResponseWriter, r *http.Request) 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ListAdminRoomsResponseObject); ok {
 		if err := validResponse.VisitListAdminRoomsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetAdminRoom operation middleware
+func (sh *strictHandler) GetAdminRoom(w http.ResponseWriter, r *http.Request, roomId string) {
+	var request GetAdminRoomRequestObject
+
+	request.RoomId = roomId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetAdminRoom(ctx, request.(GetAdminRoomRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetAdminRoom")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetAdminRoomResponseObject); ok {
+		if err := validResponse.VisitGetAdminRoomResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -1226,27 +1395,28 @@ func (sh *strictHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

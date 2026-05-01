@@ -100,6 +100,32 @@ components:
               type: string
             action:
               type: string
+    RoomListResponse:
+      type: object
+      required:
+        - data
+        - meta
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+        meta:
+          type: object
+          required:
+            - total
+          properties:
+            total:
+              type: integer
+            next_cursor:
+              type: string
+    RoomDetailResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
 security:
   - BearerAuth: []
 paths:
@@ -293,10 +319,62 @@ paths:
   /admin/rooms:
     get:
       operationId: ListAdminRooms
-      summary: List rooms (placeholder — Story 6.7)
+      summary: List rooms (instance_admin required)
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
       responses:
         "200":
           description: Room list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomListResponse"
+        "400":
+          description: Bad request (invalid cursor, limit, or status)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "501":
+          description: Not implemented
+  /admin/rooms/{roomId}:
+    get:
+      operationId: GetAdminRoom
+      summary: Get single room (instance_admin required)
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Room details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomDetailResponse"
+        "404":
+          description: Room not found
           content:
             application/json:
               schema:
