@@ -28,7 +28,7 @@ Ausführung. Jeder Schritt läuft in einem eigenen, frischen Subagenten-Kontext.
           ↓
 [3] bmad-dev-story           (Sonnet, frischer Kontext)
           ↓
-       git add -A
+       rtk git add .
           ↓
 [4] bmad-testarch-test-review (Sonnet, frischer Kontext) ← TEA Gate 2
     Test-Qualität prüfen, Findings ausgeben
@@ -37,7 +37,7 @@ Ausführung. Jeder Schritt läuft in einem eigenen, frischen Subagenten-Kontext.
     "fixe minor issues instantly"
     → Minor Issues werden vom Skill selbst gefixt
           ↓
-       git add -A
+       rtk git add .
           ↓
 [5b] Security-Review-Gate (conditional)  ← SEC Gate 1
      Story-Frontmatter `security_review` prüfen (required/optional/not-needed)
@@ -51,14 +51,14 @@ Ausführung. Jeder Schritt läuft in einem eigenen, frischen Subagenten-Kontext.
        Ja  → Pause, User entscheidet
        Nein → sprint-status.yaml aktualisieren (Story → done, last_updated, Kommentarzeile)
               ↓
-              git add sprint-status.yaml
+              rtk git add sprint-status.yaml
               ↓
-              git commit
+              rtk git commit
           ↓
 [6] Epic-Check: sprint-status.yaml
        Epic fertig? → [6b] Kassandra am Epic-Ende  ← SEC Gate 2
                      (zwingend, unabhängig von Story-Flags)
-                     mit Diff-Range-Override: git diff <epic-base>..HEAD
+                     mit Diff-Range-Override: rtk git diff <epic-base>..HEAD
                      → epic-{N}-security-review-{date}.md wird erzeugt
                      → CRITICAL/HIGH = Pause, User entscheidet
                      → Danach Pause für Retrospektive
@@ -71,13 +71,19 @@ Ausführung. Jeder Schritt läuft in einem eigenen, frischen Subagenten-Kontext.
 
 ### Vorbereitung
 
-Lies die BMAD-Skill-Pfade im aktuellen Verzeichnis:
-- `.claude/skills/bmad-create-story/SKILL.md`
-- `.claude/skills/bmad-testarch-atdd/SKILL.md` (oder `bmad-testarch-atdd/workflow.md`)
-- `.claude/skills/bmad-dev-story/SKILL.md`
-- `.claude/skills/bmad-testarch-test-review/SKILL.md`
-- `.claude/skills/bmad-code-review/SKILL.md`
-- `.claude/skills/bmad-security-review/SKILL.md` (Kassandra)
+Bestimme die BMAD-Skill-Pfade:
+
+```bash
+rtk find . -name "SKILL.md" -type f
+```
+
+Erwartete Pfade:
+- `skills/bmad-create-story/SKILL.md`
+- `skills/bmad-testarch-atdd/SKILL.md`
+- `skills/bmad-dev-story/SKILL.md`
+- `skills/bmad-testarch-test-review/SKILL.md`
+- `skills/bmad-code-review/SKILL.md`
+- `skills/bmad-security-review/SKILL.md` (Kassandra)
 
 Halte den Story-Titel oder die Feature-Beschreibung vom User fest – sie wird an alle
 Subagenten weitergegeben.
@@ -94,7 +100,11 @@ Feature/Story: [FEATURE_BESCHREIBUNG_VOM_USER]
 Arbeite das vollständig durch und beende dann.
 ```
 
-Warte auf Fertigstellung. Notiere den Namen der erstellten Story-Datei.
+Warte auf Fertigstellung. Notiere den Namen der erstellten Story-Datei:
+
+```bash
+rtk git status
+```
 
 Zeige: `✓ Schritt 1: Story erstellt → [story-datei.md]`
 
@@ -140,7 +150,8 @@ Warte auf Fertigstellung. Danach:
 
 ```bash
 [ -f /tmp/bmad-session-env.sh ] && source /tmp/bmad-session-env.sh
-git add -A
+rtk git add .
+rtk git status
 ```
 
 Zeige: `✓ Schritt 3: Implementierung abgeschlossen, git add ausgeführt.`
@@ -211,7 +222,8 @@ Danach in jedem Fall:
 
 ```bash
 [ -f /tmp/bmad-session-env.sh ] && source /tmp/bmad-session-env.sh
-git add -A
+rtk git add .
+rtk git status
 ```
 
 ---
@@ -230,13 +242,19 @@ git add -A
     - `not-needed` → Gate überspringen, Zeile ausgeben: `⏭️ Schritt 5b: Security-Review übersprungen (Story flagged `not-needed`).`
     - **Flag fehlt:** Auto-Klassifikation (siehe unten).
 
-2. **Auto-Klassifikation** (wenn Frontmatter-Flag fehlt). Lese `git diff --staged --name-only` und markiere als `required`, wenn **mindestens einer** zutrifft:
-    - Datei liegt unter `gateway/internal/auth/`, `gateway/internal/middleware/`, `gateway/internal/admin/`, `gateway/internal/db/`
-    - Neue HTTP-Route in `gateway/cmd/gateway/main.go` (`mux.Handle` oder `mux.HandleFunc` Zeilen hinzugefügt)
-    - Datei liegt unter `core/apps/signature/` oder `core/apps/permissions/`
-    - Elixir `.ex`-Datei `imports :crypto` oder nutzt `Plug.Conn` auf externem Input
-    - Neue SQL-Migration unter `gateway/migrations/`
-    - Sonst: `not-needed`. Gate überspringen mit kurzer Begründung.
+2. **Auto-Klassifikation** (wenn Frontmatter-Flag fehlt). Lese die gestagten Dateinamen:
+
+```bash
+rtk git diff --staged --name-only
+```
+
+Markiere als `required`, wenn **mindestens einer** zutrifft:
+- Datei liegt unter `gateway/internal/auth/`, `gateway/internal/middleware/`, `gateway/internal/admin/`, `gateway/internal/db/`
+- Neue HTTP-Route in `gateway/cmd/gateway/main.go` (`mux.Handle` oder `mux.HandleFunc` Zeilen hinzugefügt)
+- Datei liegt unter `core/apps/signature/` oder `core/apps/permissions/`
+- Elixir `.ex`-Datei `imports :crypto` oder nutzt `Plug.Conn` auf externem Input
+- Neue SQL-Migration unter `gateway/migrations/`
+- Sonst: `not-needed`. Gate überspringen mit kurzer Begründung.
 
 #### Security-Review durchführen
 
@@ -287,7 +305,7 @@ Zeige: `✓ Schritt 5b: Kassandra — clean.`
 
 ```bash
 [ -f /tmp/bmad-session-env.sh ] && source /tmp/bmad-session-env.sh
-git add -A
+rtk git add .
 ```
 
 ---
@@ -316,7 +334,9 @@ Zeige: `✓ Kein blockierendes Issue – commite automatisch.`
 
 **Vor jedem Commit: sprint-status.yaml aktualisieren** (gilt genauso im "weiter"-Fall aus dem Stop oben).
 
-Datei: `_bmad-output/implementation-artifacts/sprint-status.yaml`
+```bash
+rtk read _bmad-output/implementation-artifacts/sprint-status.yaml
+```
 
 1. **Story-Status im `development_status:`-Block auf `done` setzen.**
    Der YAML-Key enthält den vollen Slug, z.B. `5-24-sso-redirect-scheme-allowlist: done`.
@@ -342,7 +362,7 @@ Datei: `_bmad-output/implementation-artifacts/sprint-status.yaml`
 4. **Stagen:**
 
 ```bash
-   git add _bmad-output/implementation-artifacts/sprint-status.yaml
+   rtk git add _bmad-output/implementation-artifacts/sprint-status.yaml
    ```
 
 Zeige: `✓ sprint-status.yaml aktualisiert ({STORY_ID} → done).`
@@ -350,7 +370,7 @@ Zeige: `✓ sprint-status.yaml aktualisiert ({STORY_ID} → done).`
 **Dann commiten:**
 
 ```bash
-git commit -m "$(cat <<'EOF'
+rtk git commit -m "$(cat <<'EOF'
 [KURZE_ZUSAMMENFASSUNG_AUS_STORY_ODER_REVIEW]
 EOF
 )"
@@ -364,10 +384,8 @@ Zeige: `✓ Commit erstellt.`
 
 ### Schritt 7: Epic-Status prüfen
 
-Lies die Datei:
-
-```
-_bmad-output/implementation-artifacts/sprint-status.yaml
+```bash
+rtk read _bmad-output/implementation-artifacts/sprint-status.yaml
 ```
 
 Suche in der YAML nach dem Feld `epic-{N}-retrospective` (z.B. `epic-1-retrospective`).
@@ -385,9 +403,12 @@ committed haben, ist genau diese letzte Story.
 Dies läuft unabhängig von Story-Flags — jedes Epic bekommt am Ende ein ganzheitliches Security-Review.
 
 1. Bestimme die Base-Referenz für den Epic-Diff:
-    - Lies `sprint-status.yaml` nach dem letzten `done`-Eintrag der vorherigen Epic (z.B. `epic-4-retrospective done`) und extrahiere das Datum
-    - Alternative: `git log --all --grep="epic-{N}-start\|retrospective" --oneline` um den Epic-Start-Commit zu finden
-    - Wenn unklar: frage den User: "Epic-Diff-Basis? (commit-sha oder Tag)"
+
+```bash
+rtk git log --grep="epic-{N-1}-retrospective\|retrospektive" --oneline
+```
+
+    - Falls unklar: frage den User: "Epic-Diff-Basis? (commit-sha oder Tag)"
 
 2. Führe Kassandra mit Epic-Diff-Range-Override aus:
 
@@ -481,7 +502,7 @@ Stoppe hier und warte auf den User.
 - Die Feature-Beschreibung des Users muss an alle Subagenten weitergegeben werden.
 - Alle Schritte laufen **sequenziell** – kein paralleles Starten von Subagenten.
 - Die Findings aus dem Test-Review (Schritt 4) **müssen** an den Code-Review-Agent (Schritt 5) übergeben werden.
-- Das `git add -A` nach dem Code-Review ist immer auszuführen, unabhängig davon ob
+- `rtk git add .` nach dem Code-Review ist immer auszuführen, unabhängig davon ob
   Minor Issues gefunden wurden oder nicht – es schadet nicht und stellt Vollständigkeit sicher.
 - **TEA Gate 1 (ATDD)** erzeugt failing Tests — der Dev-Agent implementiert gegen diese.
   Ohne failing Tests kein klares Definition of Done.
