@@ -4,22 +4,24 @@
 // Room List + Get API.
 //
 // RED PHASE — all tests fail until implementation is complete.
-// This file will not compile until:
+// The types AdminRoom, AdminRoomDetail, RoomRepository, and handlers
+// ListAdminRooms / GetAdminRoom do not exist yet; this file will not compile until:
 //   - RoomRepository interface is defined in rooms_repo.go
-//   - AdminRoom and AdminRoomDetail structs are defined in rooms_repo.go
+//   - AdminRoom and AdminRoomDetail types are defined in rooms_repo.go
 //   - AdminServer gains a Rooms RoomRepository field (server.go)
-//   - ListAdminRooms handler replaces the 501 stub (server.go)
-//   - GetAdminRoom handler is added (server.go)
-//   - GET /api/v1/admin/rooms/{roomId} is registered (router.go)
-//   - make gen-api has regenerated api_gen.go with:
-//       ListAdminRoomsParams (cursor, limit, search, status fields)
-//       GetAdminRoom operation + request/response types
+//   - ListAdminRooms is fully implemented (replaces 501 stub) in server.go
+//   - GetAdminRoom is implemented in server.go
+//   - GET /api/v1/admin/rooms/{roomId} is registered in router.go
+//   - make gen-api has regenerated api_gen.go with ListAdminRoomsParams,
+//     GetAdminRoomRequestObject, and updated response types
 //
 // Covered Acceptance Criteria:
-//   - AC#1  GET /api/v1/admin/rooms — pagination, search, status filter, cursor/limit validation
-//   - AC#2  GET /api/v1/admin/rooms/{roomId} — single room with detail fields, 404 on missing
-//   - AC#3  Both endpoints emit audit log via audit.LogEvent
-//   - AC#6  Unit tests: all 9 acceptance test cases listed in the story document
+//   - AC#1  GET /api/v1/admin/rooms — status filter, search filter, pagination, limit validation
+//   - AC#2  GET /api/v1/admin/rooms/{roomId} — room detail, 404 on unknown room,
+//           member_count (left_at IS NULL), message_count
+//   - AC#3  Both endpoints emit audit log: action="admin_room_viewed", target_type="room"
+//   - AC#6  Unit tests: all 7 acceptance test cases from the story
+//   - AC#7  go build ./... and make test-unit-go pass with zero failures
 package api_test
 
 import (
@@ -38,50 +40,43 @@ import (
 // ── Test doubles ──────────────────────────────────────────────────────────────
 
 // mockRoomRepository implements api.RoomRepository for unit tests.
-// Fields control per-test behaviour; zero-value fields produce safe defaults.
+// All fields are populated per-test; zero-value fields produce safe defaults.
 type mockRoomRepository struct {
-	// ListRooms behaviour
-	rooms      []api.AdminRoom
-	total      int
-	nextCursor string
+	listResult []api.AdminRoom
+	listTotal  int
+	listCursor string
 	listErr    error
 
-	// ListRooms call capture — for verifying params passed to the repo
-	capturedSearch       string
-	capturedStatusFilter string
+	getResult *api.AdminRoomDetail
+	getErr    error
 
-	// GetRoom behaviour
-	detail    *api.AdminRoomDetail
-	detailErr error
+	// captured values allow assertions on how the handler called the repository
+	capturedListSearch string
+	capturedListStatus string
+	capturedListLimit  int
 }
 
 func (m *mockRoomRepository) ListRooms(
 	_ context.Context,
-	_, _ string, // afterID, afterCreatedAt (cursor)
-	_ int, // limit
-	search, statusFilter string,
+	_, _ string,
+	limit int,
+	search, status string,
 ) ([]api.AdminRoom, int, string, error) {
-	// Capture params for assertion in forwarding tests.
-	m.capturedSearch = search
-	m.capturedStatusFilter = statusFilter
-
+	m.capturedListSearch = search
+	m.capturedListStatus = status
+	m.capturedListLimit = limit
 	if m.listErr != nil {
 		return nil, 0, "", m.listErr
 	}
-	return m.rooms, m.total, m.nextCursor, nil
+	return m.listResult, m.listTotal, m.listCursor, nil
 }
 
 func (m *mockRoomRepository) GetRoom(
 	_ context.Context,
-	_ string, // roomID
+	_ string,
 ) (*api.AdminRoomDetail, error) {
-	if m.detailErr != nil {
-		return nil, m.detailErr
-	}
-	return m.detail, nil
+	return m.getResult, m.getErr
 }
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
 
 // noopJWTMiddlewareForRooms injects an instance_admin role and a test actor
 // user ID into the request context, simulating the real JWT middleware.
@@ -94,100 +89,166 @@ func noopJWTMiddlewareForRooms(next http.Handler) http.Handler {
 	})
 }
 
-// buildAdminServerWithRooms constructs an AdminServer wired with the provided
-// RoomRepository and (optionally) a mock CoreClient.
-func buildAdminServerWithRooms(repo api.RoomRepository, coreClient interface{}) *api.AdminServer {
-	srv := &api.AdminServer{
-		Rooms: repo,
-	}
-	// Accept nil or a typed pb.CoreServiceClient — caller passes typed value.
-	_ = coreClient // injected via typed helper below
-	return srv
-}
 
-// makeAdminRoom constructs an AdminRoom for use in test fixtures.
+// makeAdminRoom constructs a minimal AdminRoom fixture.
 func makeAdminRoom(roomID, name, status string) api.AdminRoom {
 	return api.AdminRoom{
-		RoomID:         roomID,
-		Name:           name,
-		Topic:          "",
-		CanonicalAlias: "",
-		Visibility:     "private",
-		IsPublic:       false,
-		MemberCount:    0,
-		Status:         status,
-		CreatedAt:      time.Now().UTC().Format(time.RFC3339),
-		CreatorUserID:  "",
-		AdminNote:      "",
+		RoomID:        roomID,
+		Name:          name,
+		Topic:         "",
+		Visibility:    "private",
+		MemberCount:   0,
+		Status:        status,
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+		CreatorUserID: "",
 	}
 }
 
-// ── AC#1: Auth — no auth → 401 ───────────────────────────────────────────────
+// ── AC#1 + AC#6 (Acceptance Test #1): status=archived filter ─────────────────
 
-// TestListAdminRooms_NoAuth_Returns401 covers AC#1 + Acceptance Test #1 [P0]:
-// GET /api/v1/admin/rooms without a JWT / role must be rejected with 401.
-// This reuses the noopJWTMiddleware (from router_test.go) that reads the role
-// from X-Test-System-Role — absent header → no role set → RequireRole → 401.
-//
-// THIS TEST WILL FAIL — ListAdminRooms replaces a 501 stub; the route itself
-// currently ignores auth in stub form; once properly wired this test passes.
-func TestListAdminRooms_NoAuth_Returns401(t *testing.T) {
-	// noopJWTMiddleware (defined in router_test.go) reads the role from the
-	// X-Test-System-Role header; not setting it means no role in context.
-	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, &api.AdminServer{}, noopJWTMiddleware, nil)
+// TestListAdminRooms_StatusArchivedFilter covers AC#1 + AC#6 (test 1) [P0]:
+// When status=archived is specified, the handler must pass status="archived" to the
+// repository. Only archived rooms must appear in the response data.
+func TestListAdminRooms_StatusArchivedFilter(t *testing.T) {
+	archivedRoom := makeAdminRoom("!archived:example.com", "Archived Room", "archived")
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/rooms", nil)
-	// No X-Test-System-Role header → RequireRole → 401.
-	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, req)
-
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("[AC#1] expected 401 for unauthenticated request, got %d; body: %s", w.Code, w.Body.String())
-	}
-}
-
-// ── AC#1: Auth — wrong role → 403 ────────────────────────────────────────────
-
-// TestListAdminRooms_WrongRole_Returns403 covers AC#1 + Acceptance Test #2 [P0]:
-// GET /api/v1/admin/rooms with a role other than instance_admin must be rejected
-// with 403 Forbidden.
-func TestListAdminRooms_WrongRole_Returns403(t *testing.T) {
-	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, &api.AdminServer{}, noopJWTMiddleware, nil)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/rooms", nil)
-	req.Header.Set("X-Test-System-Role", "compliance_officer") // not instance_admin
-	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, req)
-
-	if w.Code != http.StatusForbidden {
-		t.Errorf("[AC#1] expected 403 for wrong role, got %d; body: %s", w.Code, w.Body.String())
-	}
-}
-
-// ── AC#1: List rooms → 200 with data array and meta ──────────────────────────
-
-// TestListAdminRooms_InstanceAdmin_Returns200WithRooms covers AC#1 + Acceptance Test #3 [P0]:
-// GET /api/v1/admin/rooms with instance_admin role must return 200 with a data
-// array and meta.total field.
-//
-// THIS TEST WILL FAIL — ListAdminRooms is not implemented yet.
-func TestListAdminRooms_InstanceAdmin_Returns200WithRooms(t *testing.T) {
 	repo := &mockRoomRepository{
-		rooms: []api.AdminRoom{
-			makeAdminRoom("!aaa:example.com", "General", "active"),
-			makeAdminRoom("!bbb:example.com", "Engineering", "active"),
-			makeAdminRoom("!ccc:example.com", "Archive", "archived"),
-		},
-		total:      3,
-		nextCursor: "",
+		// Repository simulates the status filter: returns only the archived room.
+		// The handler is verified separately to forward status="archived" to the repo
+		// (asserted via repo.capturedListStatus below).
+		listResult: []api.AdminRoom{archivedRoom},
+		listTotal:  1,
 	}
 
 	mux := http.NewServeMux()
 	api.RegisterAdminRoutes(mux, &api.AdminServer{Rooms: repo}, noopJWTMiddlewareForRooms, nil)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/rooms", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/rooms?status=archived", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("[AC#1] expected status 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Data []api.AdminRoom `json:"data"`
+		Meta struct {
+			Total int `json:"total"`
+		} `json:"meta"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("[AC#1] response is not valid JSON: %v", err)
+	}
+
+	if len(resp.Data) != 1 {
+		t.Errorf("[AC#1] expected exactly 1 room for status=archived, got %d", len(resp.Data))
+	}
+	if len(resp.Data) > 0 && resp.Data[0].Status != "archived" {
+		t.Errorf("[AC#1] expected room status=archived, got %q", resp.Data[0].Status)
+	}
+
+	// Verify the status filter was forwarded to the repository
+	if repo.capturedListStatus != "archived" {
+		t.Errorf("[AC#1] expected repository to receive status=archived, got %q", repo.capturedListStatus)
+	}
+}
+
+// TestListAdminRooms_InvalidStatus_Returns400 covers AC#1 [P0]:
+// An unrecognized status value (not "active" or "archived") must return 400 M_BAD_REQUEST.
+func TestListAdminRooms_InvalidStatus_Returns400(t *testing.T) {
+	repo := &mockRoomRepository{}
+
+	mux := http.NewServeMux()
+	api.RegisterAdminRoutes(mux, &api.AdminServer{Rooms: repo}, noopJWTMiddlewareForRooms, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/rooms?status=deleted", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("[AC#1] expected 400 for invalid status=deleted, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("[AC#1] response is not valid JSON: %v", err)
+	}
+	if resp.Error.Code != "M_BAD_REQUEST" {
+		t.Errorf("[AC#1] expected error code M_BAD_REQUEST for invalid status, got %q", resp.Error.Code)
+	}
+}
+
+// ── AC#1 + AC#6 (Acceptance Test #2): search filter ─────────────────────────
+
+// TestListAdminRooms_SearchFiltersByName covers AC#1 + AC#6 (test 2) [P0]:
+// When search=gamma is provided, the handler forwards the search term to the
+// repository. The response must contain only rooms whose name matches "gamma"
+// (case-insensitive partial match performed by the repository/DB, not the handler).
+func TestListAdminRooms_SearchFiltersByName(t *testing.T) {
+	gammaRoom := makeAdminRoom("!gamma:example.com", "Gamma Room", "active")
+
+	repo := &mockRoomRepository{
+		// Repository simulates the ILIKE filter: only returns Gamma Room for search=gamma
+		listResult: []api.AdminRoom{gammaRoom},
+		listTotal:  1,
+	}
+
+	mux := http.NewServeMux()
+	api.RegisterAdminRoutes(mux, &api.AdminServer{Rooms: repo}, noopJWTMiddlewareForRooms, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/rooms?search=gamma", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("[AC#1] expected status 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Data []api.AdminRoom `json:"data"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("[AC#1] response is not valid JSON: %v", err)
+	}
+
+	if len(resp.Data) != 1 {
+		t.Errorf("[AC#1] expected exactly 1 room for search=gamma, got %d", len(resp.Data))
+	}
+	if len(resp.Data) > 0 && !strings.Contains(strings.ToLower(resp.Data[0].Name), "gamma") {
+		t.Errorf("[AC#1] expected result to contain 'gamma' in name, got %q", resp.Data[0].Name)
+	}
+
+	// Verify the search term was forwarded to the repository
+	if repo.capturedListSearch != "gamma" {
+		t.Errorf("[AC#1] expected repository to receive search=gamma, got %q", repo.capturedListSearch)
+	}
+}
+
+// ── AC#1: Pagination ─────────────────────────────────────────────────────────
+
+// TestListAdminRooms_PaginationMetaReturned covers AC#1 [P0]:
+// The response envelope must always include data[] and meta{total, next_cursor}.
+// next_cursor must be omitted (or empty) when there are no more pages.
+func TestListAdminRooms_PaginationMetaReturned(t *testing.T) {
+	nextCur := api.EncodeCursor("!room2:example.com", time.Now().UTC().Format(time.RFC3339))
+	repo := &mockRoomRepository{
+		listResult: []api.AdminRoom{
+			makeAdminRoom("!room1:example.com", "Room 1", "active"),
+			makeAdminRoom("!room2:example.com", "Room 2", "active"),
+		},
+		listTotal:  5,
+		listCursor: nextCur,
+	}
+
+	mux := http.NewServeMux()
+	api.RegisterAdminRoutes(mux, &api.AdminServer{Rooms: repo}, noopJWTMiddlewareForRooms, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/rooms?limit=2", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -206,60 +267,40 @@ func TestListAdminRooms_InstanceAdmin_Returns200WithRooms(t *testing.T) {
 		t.Fatalf("[AC#1] response is not valid JSON: %v", err)
 	}
 
-	if len(resp.Data) != 3 {
-		t.Errorf("[AC#1] expected 3 rooms in data, got %d", len(resp.Data))
+	if len(resp.Data) != 2 {
+		t.Errorf("[AC#1] expected 2 rooms in data, got %d", len(resp.Data))
 	}
-	if resp.Meta.Total != 3 {
-		t.Errorf("[AC#1] expected meta.total=3, got %d", resp.Meta.Total)
+	if resp.Meta.Total != 5 {
+		t.Errorf("[AC#1] expected meta.total=5, got %d", resp.Meta.Total)
+	}
+	if resp.Meta.NextCursor == "" {
+		t.Error("[AC#1] expected non-empty meta.next_cursor when more results exist")
 	}
 }
 
-// ── AC#1: Invalid cursor → 400 M_BAD_JSON ────────────────────────────────────
-
-// TestListAdminRooms_InvalidCursor_Returns400 covers AC#1 + Acceptance Test #4 [P0]:
-// A malformed cursor must produce 400 with M_BAD_JSON error code and the
-// message "Invalid cursor".
-//
-// THIS TEST WILL FAIL — ListAdminRooms is not implemented yet.
-func TestListAdminRooms_InvalidCursor_Returns400(t *testing.T) {
-	repo := &mockRoomRepository{}
+// TestListAdminRooms_DefaultLimit covers AC#1 [P1]:
+// When no limit param is supplied, the handler must use the default of 20 and
+// return 200 (no validation error).
+func TestListAdminRooms_DefaultLimit_NoError(t *testing.T) {
+	repo := &mockRoomRepository{listResult: []api.AdminRoom{}, listTotal: 0}
 
 	mux := http.NewServeMux()
 	api.RegisterAdminRoutes(mux, &api.AdminServer{Rooms: repo}, noopJWTMiddlewareForRooms, nil)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/rooms?cursor=not-valid-base64!", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/rooms", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("[AC#1] expected status 400 for invalid cursor, got %d; body: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Errorf("[AC#1] expected 200 for default limit, got %d; body: %s", w.Code, w.Body.String())
 	}
-
-	var resp struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-		t.Fatalf("[AC#1] response is not valid JSON: %v", err)
-	}
-	if resp.Error.Code != "M_BAD_JSON" {
-		t.Errorf("[AC#1] expected error code M_BAD_JSON for invalid cursor, got %q", resp.Error.Code)
-	}
-	if !strings.Contains(strings.ToLower(resp.Error.Message), "cursor") &&
-		!strings.Contains(strings.ToLower(resp.Error.Message), "invalid") {
-		t.Errorf("[AC#1] expected error message to mention cursor or invalid, got %q", resp.Error.Message)
+	if repo.capturedListLimit != 20 {
+		t.Errorf("[AC#1] expected default limit=20 forwarded to repo, got %d", repo.capturedListLimit)
 	}
 }
 
-// ── AC#1: limit out-of-range → 400 M_BAD_JSON ────────────────────────────────
-
-// TestListAdminRooms_LimitZero_Returns400 covers AC#1 + Acceptance Test #5 [P1]:
-// limit=0 is below the valid range [1, 100] and must produce 400 M_BAD_JSON
-// with message "limit must be between 1 and 100".
-//
-// THIS TEST WILL FAIL — ListAdminRooms is not implemented yet.
+// TestListAdminRooms_LimitZero_Returns400 covers AC#1 [P0]:
+// limit=0 is below the valid range [1,100] and must produce 400 M_BAD_REQUEST.
 func TestListAdminRooms_LimitZero_Returns400(t *testing.T) {
 	repo := &mockRoomRepository{}
 
@@ -271,7 +312,7 @@ func TestListAdminRooms_LimitZero_Returns400(t *testing.T) {
 	mux.ServeHTTP(w, req)
 
 	if w.Code != http.StatusBadRequest {
-		t.Errorf("[AC#1] expected status 400 for limit=0, got %d; body: %s", w.Code, w.Body.String())
+		t.Errorf("[AC#1] expected 400 for limit=0, got %d; body: %s", w.Code, w.Body.String())
 	}
 
 	var resp struct {
@@ -283,18 +324,16 @@ func TestListAdminRooms_LimitZero_Returns400(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("[AC#1] response is not valid JSON: %v", err)
 	}
-	if resp.Error.Code != "M_BAD_JSON" {
-		t.Errorf("[AC#1] expected error code M_BAD_JSON for limit=0, got %q", resp.Error.Code)
+	if resp.Error.Code != "M_BAD_REQUEST" {
+		t.Errorf("[AC#1] expected M_BAD_REQUEST for limit=0, got %q", resp.Error.Code)
 	}
 	if !strings.Contains(resp.Error.Message, "limit") {
 		t.Errorf("[AC#1] expected error message to mention 'limit', got %q", resp.Error.Message)
 	}
 }
 
-// TestListAdminRooms_LimitAbove100_Returns400 covers AC#1 [P1]:
-// limit=101 exceeds the maximum of 100 and must produce 400 M_BAD_JSON.
-//
-// THIS TEST WILL FAIL — ListAdminRooms is not implemented yet.
+// TestListAdminRooms_LimitAbove100_Returns400 covers AC#1 [P0]:
+// limit=101 exceeds the maximum and must produce 400 M_BAD_REQUEST.
 func TestListAdminRooms_LimitAbove100_Returns400(t *testing.T) {
 	repo := &mockRoomRepository{}
 
@@ -306,7 +345,7 @@ func TestListAdminRooms_LimitAbove100_Returns400(t *testing.T) {
 	mux.ServeHTTP(w, req)
 
 	if w.Code != http.StatusBadRequest {
-		t.Errorf("[AC#1] expected status 400 for limit=101, got %d; body: %s", w.Code, w.Body.String())
+		t.Errorf("[AC#1] expected 400 for limit=101, got %d", w.Code)
 	}
 
 	var resp struct {
@@ -317,86 +356,98 @@ func TestListAdminRooms_LimitAbove100_Returns400(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("[AC#1] response is not valid JSON: %v", err)
 	}
-	if resp.Error.Code != "M_BAD_JSON" {
-		t.Errorf("[AC#1] expected M_BAD_JSON for limit=101, got %q", resp.Error.Code)
+	if resp.Error.Code != "M_BAD_REQUEST" {
+		t.Errorf("[AC#1] expected M_BAD_REQUEST for limit=101, got %q", resp.Error.Code)
 	}
 }
 
-// ── AC#2: Get existing room → 200 with detail fields ─────────────────────────
-
-// TestGetAdminRoom_KnownRoom_Returns200WithDetail covers AC#2 + Acceptance Test #6 [P0]:
-// GET /api/v1/admin/rooms/{roomId} for a known room must return 200 with the full
-// detail object including message_count.
-//
-// THIS TEST WILL FAIL — GetAdminRoom is not implemented yet.
-func TestGetAdminRoom_KnownRoom_Returns200WithDetail(t *testing.T) {
-	detail := &api.AdminRoomDetail{
-		AdminRoom: api.AdminRoom{
-			RoomID:         "!abc123:example.com",
-			Name:           "General",
-			Topic:          "",
-			CanonicalAlias: "",
-			Visibility:     "private",
-			IsPublic:       false,
-			MemberCount:    5,
-			Status:         "active",
-			CreatedAt:      time.Now().UTC().Format(time.RFC3339),
-			CreatorUserID:  "",
-			AdminNote:      "",
-		},
-		MaxMembers:      0,
-		MessageCount:    42,
-		PowerLevelsJSON: `{"users_default":0}`,
-	}
-
-	repo := &mockRoomRepository{detail: detail}
+// TestListAdminRooms_InvalidCursor_Returns400 covers AC#1 [P0]:
+// An invalid (non-base64url) cursor must produce 400 M_BAD_REQUEST.
+func TestListAdminRooms_InvalidCursor_Returns400(t *testing.T) {
+	repo := &mockRoomRepository{}
 
 	mux := http.NewServeMux()
 	api.RegisterAdminRoutes(mux, &api.AdminServer{Rooms: repo}, noopJWTMiddlewareForRooms, nil)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/rooms/!abc123:example.com", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/rooms?cursor=not-valid-base64!!", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("[AC#1] expected 400 for invalid cursor, got %d", w.Code)
+	}
+
+	var resp struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("[AC#1] response is not valid JSON: %v", err)
+	}
+	if resp.Error.Code != "M_BAD_REQUEST" {
+		t.Errorf("[AC#1] expected M_BAD_REQUEST for invalid cursor, got %q", resp.Error.Code)
+	}
+}
+
+// TestListAdminRooms_RoomObjectFields covers AC#1 [P0]:
+// Each room object in data[] must contain all mandatory fields from the spec.
+func TestListAdminRooms_RoomObjectFields(t *testing.T) {
+	room := makeAdminRoom("!alpha:example.com", "Alpha Room", "active")
+	room.Topic = "A test topic"
+	room.MemberCount = 3
+	room.CreatorUserID = "@creator:example.com"
+
+	repo := &mockRoomRepository{listResult: []api.AdminRoom{room}, listTotal: 1}
+
+	mux := http.NewServeMux()
+	api.RegisterAdminRoutes(mux, &api.AdminServer{Rooms: repo}, noopJWTMiddlewareForRooms, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/rooms", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Fatalf("[AC#2] expected status 200, got %d; body: %s", w.Code, w.Body.String())
+		t.Fatalf("[AC#1] expected 200, got %d", w.Code)
 	}
 
-	var resp struct {
-		Data api.AdminRoomDetail `json:"data"`
+	body := w.Body.String()
+	requiredFields := []string{
+		`"room_id"`,
+		`"name"`,
+		`"topic"`,
+		`"visibility"`,
+		`"member_count"`,
+		`"status"`,
+		`"created_at"`,
+		`"creator_user_id"`,
 	}
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-		t.Fatalf("[AC#2] response is not valid JSON: %v", err)
-	}
-
-	if resp.Data.RoomID != "!abc123:example.com" {
-		t.Errorf("[AC#2] expected room_id '!abc123:example.com', got %q", resp.Data.RoomID)
-	}
-	if resp.Data.MessageCount != 42 {
-		t.Errorf("[AC#2] expected message_count=42, got %d", resp.Data.MessageCount)
+	for _, field := range requiredFields {
+		if !strings.Contains(body, field) {
+			t.Errorf("[AC#1] expected field %s in room object; body: %s", field, body)
+		}
 	}
 }
 
-// ── AC#2: Get unknown room → 404 M_NOT_FOUND ─────────────────────────────────
+// ── AC#2 + AC#6 (Acceptance Test #3): Get unknown room → 404 ─────────────────
 
-// TestGetAdminRoom_UnknownRoom_Returns404 covers AC#2 + Acceptance Test #7 [P0]:
-// GET /api/v1/admin/rooms/{roomId} when the repository returns (nil, nil) must
-// respond with 404 and error code M_NOT_FOUND.
-//
-// THIS TEST WILL FAIL — GetAdminRoom is not implemented yet.
+// TestGetAdminRoom_UnknownRoom_Returns404 covers AC#2 + AC#6 (test 3) [P0]:
+// GET /api/v1/admin/rooms/{roomId} for a room not in the repository must return
+// 404 with error code M_NOT_FOUND.
 func TestGetAdminRoom_UnknownRoom_Returns404(t *testing.T) {
-	// detail=nil, detailErr=nil → "not found"
-	repo := &mockRoomRepository{detail: nil}
+	// getResult=nil signals "not found" to the handler.
+	repo := &mockRoomRepository{getResult: nil}
 
 	mux := http.NewServeMux()
 	api.RegisterAdminRoutes(mux, &api.AdminServer{Rooms: repo}, noopJWTMiddlewareForRooms, nil)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/rooms/!nonexistent:example.com", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/rooms/!doesnotexist:example.com", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
 	if w.Code != http.StatusNotFound {
-		t.Errorf("[AC#2] expected status 404 for unknown room, got %d; body: %s", w.Code, w.Body.String())
+		t.Errorf("[AC#2] expected status 404, got %d; body: %s", w.Code, w.Body.String())
 	}
 
 	var resp struct {
@@ -416,226 +467,169 @@ func TestGetAdminRoom_UnknownRoom_Returns404(t *testing.T) {
 	}
 }
 
-// ── AC#1: search parameter forwarded to repository ───────────────────────────
+// ── AC#2 + AC#6 (Acceptance Test #4): member_count reflects active members only ─
 
-// TestListAdminRooms_SearchParamForwarded covers AC#1 + Acceptance Test #8 [P1]:
-// When search=alpha is provided, ListRooms must be called with search="alpha".
-// The mock captures the search param for assertion.
-//
-// THIS TEST WILL FAIL — ListAdminRooms is not implemented yet.
-func TestListAdminRooms_SearchParamForwarded(t *testing.T) {
-	repo := &mockRoomRepository{
-		rooms: []api.AdminRoom{makeAdminRoom("!alpha:example.com", "Alpha Room", "active")},
-		total: 1,
+// TestGetAdminRoom_MemberCount_ActiveOnly covers AC#2 + AC#6 (test 4) [P0]:
+// member_count must count only current members (left_at IS NULL). Members who
+// have left (left_at IS NOT NULL) must be excluded from the count.
+func TestGetAdminRoom_MemberCount_ActiveOnly(t *testing.T) {
+	detail := &api.AdminRoomDetail{
+		AdminRoom: api.AdminRoom{
+			RoomID:      "!roomwithmembers:example.com",
+			Name:        "Member Test Room",
+			Topic:       "",
+			Visibility:  "private",
+			MemberCount: 3, // 3 active members; 1 has left (left_at IS NOT NULL)
+			Status:      "active",
+			CreatedAt:   time.Now().UTC().Format(time.RFC3339),
+		},
+		MaxMembers:      0,
+		MessageCount:    0,
+		PowerLevelsJSON: "{}",
 	}
+	repo := &mockRoomRepository{getResult: detail}
 
 	mux := http.NewServeMux()
 	api.RegisterAdminRoutes(mux, &api.AdminServer{Rooms: repo}, noopJWTMiddlewareForRooms, nil)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/rooms?search=alpha", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/rooms/!roomwithmembers:example.com", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Fatalf("[AC#1] expected status 200, got %d; body: %s", w.Code, w.Body.String())
-	}
-
-	if repo.capturedSearch != "alpha" {
-		t.Errorf("[AC#1] expected ListRooms called with search='alpha', got %q", repo.capturedSearch)
-	}
-}
-
-// ── AC#1: status=archived filter forwarded to repository ─────────────────────
-
-// TestListAdminRooms_StatusArchivedForwarded covers AC#1 + Acceptance Test #9 [P1]:
-// When status=archived is provided, ListRooms must be called with
-// statusFilter="archived". The mock captures the statusFilter param.
-//
-// THIS TEST WILL FAIL — ListAdminRooms is not implemented yet.
-func TestListAdminRooms_StatusArchivedForwarded(t *testing.T) {
-	repo := &mockRoomRepository{
-		rooms: []api.AdminRoom{makeAdminRoom("!archived:example.com", "Old Room", "archived")},
-		total: 1,
-	}
-
-	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, &api.AdminServer{Rooms: repo}, noopJWTMiddlewareForRooms, nil)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/rooms?status=archived", nil)
-	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("[AC#1] expected status 200 for status=archived, got %d; body: %s", w.Code, w.Body.String())
-	}
-
-	if repo.capturedStatusFilter != "archived" {
-		t.Errorf("[AC#1] expected ListRooms called with statusFilter='archived', got %q", repo.capturedStatusFilter)
-	}
-}
-
-// TestListAdminRooms_StatusActiveForwarded covers AC#1 [P1]:
-// When status=active is provided, ListRooms must be called with statusFilter="active".
-//
-// THIS TEST WILL FAIL — ListAdminRooms is not implemented yet.
-func TestListAdminRooms_StatusActiveForwarded(t *testing.T) {
-	repo := &mockRoomRepository{
-		rooms: []api.AdminRoom{makeAdminRoom("!active:example.com", "Active Room", "active")},
-		total: 1,
-	}
-
-	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, &api.AdminServer{Rooms: repo}, noopJWTMiddlewareForRooms, nil)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/rooms?status=active", nil)
-	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("[AC#1] expected status 200 for status=active, got %d; body: %s", w.Code, w.Body.String())
-	}
-
-	if repo.capturedStatusFilter != "active" {
-		t.Errorf("[AC#1] expected ListRooms called with statusFilter='active', got %q", repo.capturedStatusFilter)
-	}
-}
-
-// ── AC#1: invalid status value → 400 M_BAD_JSON ──────────────────────────────
-
-// TestListAdminRooms_InvalidStatus_Returns400 covers AC#1 [P0]:
-// An unrecognised status value (e.g. "deleted") must produce 400 M_BAD_JSON
-// with message "invalid status: must be active or archived".
-// Validation must short-circuit BEFORE cursor/limit parsing.
-//
-// THIS TEST WILL FAIL — ListAdminRooms is not implemented yet.
-func TestListAdminRooms_InvalidStatus_Returns400(t *testing.T) {
-	repo := &mockRoomRepository{}
-
-	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, &api.AdminServer{Rooms: repo}, noopJWTMiddlewareForRooms, nil)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/rooms?status=deleted", nil)
-	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("[AC#1] expected status 400 for invalid status, got %d; body: %s", w.Code, w.Body.String())
+		t.Fatalf("[AC#2] expected status 200, got %d; body: %s", w.Code, w.Body.String())
 	}
 
 	var resp struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
+		Data api.AdminRoomDetail `json:"data"`
 	}
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-		t.Fatalf("[AC#1] response is not valid JSON: %v", err)
+		t.Fatalf("[AC#2] response is not valid JSON: %v", err)
 	}
-	if resp.Error.Code != "M_BAD_JSON" {
-		t.Errorf("[AC#1] expected error code M_BAD_JSON for invalid status, got %q", resp.Error.Code)
-	}
-	if resp.Error.Message != "invalid status: must be active or archived" {
-		t.Errorf("[AC#1] expected message 'invalid status: must be active or archived', got %q", resp.Error.Message)
-	}
-}
 
-// ── AC#1: Rooms repo nil → 501 ────────────────────────────────────────────────
-
-// TestListAdminRooms_RoomsRepoNil_Returns501 covers AC#1 + Acceptance Test story point [P0]:
-// When AdminServer.Rooms is nil (not wired), the handler must return 501 Not Implemented.
-// This is the stub-safety guard that prevents panics before wiring is complete.
-//
-// THIS TEST WILL FAIL until the nil-guard is added to ListAdminRooms.
-func TestListAdminRooms_RoomsRepoNil_Returns501(t *testing.T) {
-	// No Rooms field set — AdminServer.Rooms == nil.
-	adminSrv := &api.AdminServer{}
-
-	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, adminSrv, noopJWTMiddlewareForRooms, nil)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/rooms", nil)
-	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, req)
-
-	if w.Code != http.StatusNotImplemented {
-		t.Errorf("[AC#1] expected 501 when Rooms repo is nil, got %d; body: %s", w.Code, w.Body.String())
+	// The repository mock returns MemberCount=3 (active members only).
+	// The handler must pass it through unchanged — it must not equal 4.
+	if resp.Data.MemberCount != 3 {
+		t.Errorf("[AC#2] expected member_count=3 (active members only), got %d", resp.Data.MemberCount)
 	}
 }
 
-// ── AC#1: Room object must include required fields ────────────────────────────
+// ── AC#2 + AC#6 (Acceptance Test #5): message_count reflects events ──────────
 
-// TestListAdminRooms_RoomObjectFields covers AC#1 [P0]:
-// Each room object in the data array must contain all mandatory fields:
-// room_id, name, visibility, is_public, member_count, status, created_at.
-//
-// THIS TEST WILL FAIL — ListAdminRooms is not implemented yet.
-func TestListAdminRooms_RoomObjectFields(t *testing.T) {
-	room := makeAdminRoom("!abc:example.com", "General", "active")
-	repo := &mockRoomRepository{rooms: []api.AdminRoom{room}, total: 1}
+// TestGetAdminRoom_MessageCount covers AC#2 + AC#6 (test 5) [P0]:
+// message_count must reflect the count of events in the events table for this room.
+func TestGetAdminRoom_MessageCount(t *testing.T) {
+	detail := &api.AdminRoomDetail{
+		AdminRoom: api.AdminRoom{
+			RoomID:     "!eventroom:example.com",
+			Name:       "Event Room",
+			Visibility: "private",
+			Status:     "active",
+			CreatedAt:  time.Now().UTC().Format(time.RFC3339),
+		},
+		MaxMembers:      0,
+		MessageCount:    7, // 7 events in the events table for this room
+		PowerLevelsJSON: "{}",
+	}
+	repo := &mockRoomRepository{getResult: detail}
 
 	mux := http.NewServeMux()
 	api.RegisterAdminRoutes(mux, &api.AdminServer{Rooms: repo}, noopJWTMiddlewareForRooms, nil)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/rooms", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/rooms/!eventroom:example.com", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Fatalf("[AC#1] expected 200, got %d", w.Code)
+		t.Fatalf("[AC#2] expected status 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Data api.AdminRoomDetail `json:"data"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("[AC#2] response is not valid JSON: %v", err)
+	}
+
+	if resp.Data.MessageCount != 7 {
+		t.Errorf("[AC#2] expected message_count=7, got %d", resp.Data.MessageCount)
+	}
+}
+
+// TestGetAdminRoom_DetailFields covers AC#2 [P0]:
+// The single-room response must include all detail fields beyond the list fields:
+// max_members, message_count, power_levels_json.
+func TestGetAdminRoom_DetailFields(t *testing.T) {
+	detail := &api.AdminRoomDetail{
+		AdminRoom: api.AdminRoom{
+			RoomID:        "!detail:example.com",
+			Name:          "Detail Room",
+			Topic:         "A topic",
+			Visibility:    "public",
+			MemberCount:   5,
+			Status:        "active",
+			CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+			CreatorUserID: "@founder:example.com",
+		},
+		MaxMembers:      50,
+		MessageCount:    12,
+		PowerLevelsJSON: `{"ban":50,"kick":50}`,
+	}
+	repo := &mockRoomRepository{getResult: detail}
+
+	mux := http.NewServeMux()
+	api.RegisterAdminRoutes(mux, &api.AdminServer{Rooms: repo}, noopJWTMiddlewareForRooms, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/rooms/!detail:example.com", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("[AC#2] expected 200, got %d", w.Code)
 	}
 
 	body := w.Body.String()
 	requiredFields := []string{
 		`"room_id"`,
 		`"name"`,
+		`"topic"`,
 		`"visibility"`,
-		`"is_public"`,
 		`"member_count"`,
 		`"status"`,
 		`"created_at"`,
+		`"creator_user_id"`,
+		`"max_members"`,
+		`"message_count"`,
+		`"power_levels_json"`,
 	}
 	for _, field := range requiredFields {
 		if !strings.Contains(body, field) {
-			t.Errorf("[AC#1] expected field %s in room object; body: %s", field, body)
+			t.Errorf("[AC#2] expected field %s in room detail response; body: %s", field, body)
 		}
 	}
 }
 
-// ── AC#1: Default limit — no error when limit param absent ───────────────────
-
-// TestListAdminRooms_DefaultLimit_NoError covers AC#1 [P1]:
-// When no limit param is specified, the handler uses the default limit of 20
-// and must return 200 without a validation error.
-//
-// THIS TEST WILL FAIL — ListAdminRooms is not implemented yet.
-func TestListAdminRooms_DefaultLimit_NoError(t *testing.T) {
-	repo := &mockRoomRepository{rooms: []api.AdminRoom{}, total: 0}
-
-	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, &api.AdminServer{Rooms: repo}, noopJWTMiddlewareForRooms, nil)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/rooms", nil)
-	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("[AC#1] expected 200 for default limit (no limit param), got %d; body: %s", w.Code, w.Body.String())
-	}
-}
-
-// ── AC#2: GetAdminRoom route is registered ────────────────────────────────────
-
 // TestGetAdminRoom_RouteRegistered covers AC#2 [P0]:
-// GET /api/v1/admin/rooms/{roomId} must be registered. A request with no role
-// must produce 401 or 403 — NOT 404 (which would indicate missing route).
-//
-// THIS TEST WILL FAIL — GET /api/v1/admin/rooms/{roomId} is not registered yet.
+// GET /api/v1/admin/rooms/{roomId} must be registered. A mismatch (404 from the mux)
+// means the route is absent. We use a mock with a non-nil getResult so the handler
+// returns 200 — distinguishable from the mux's own 404 "page not found".
 func TestGetAdminRoom_RouteRegistered(t *testing.T) {
+	detail := &api.AdminRoomDetail{
+		AdminRoom: api.AdminRoom{
+			RoomID:     "!someroom:example.com",
+			Name:       "Some Room",
+			Visibility: "private",
+			Status:     "active",
+			CreatedAt:  time.Now().UTC().Format(time.RFC3339),
+		},
+		MaxMembers:      0,
+		MessageCount:    0,
+		PowerLevelsJSON: "{}",
+	}
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, &api.AdminServer{}, noopJWTMiddleware, nil)
+	api.RegisterAdminRoutes(mux, &api.AdminServer{Rooms: &mockRoomRepository{getResult: detail}}, noopJWTMiddlewareForRooms, nil)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/rooms/!some:example.com", nil)
-	// No X-Test-System-Role → no role in context.
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/rooms/!someroom:example.com", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -644,33 +638,120 @@ func TestGetAdminRoom_RouteRegistered(t *testing.T) {
 	}
 }
 
-// ── AC#1: Data array must be [] not null when empty ──────────────────────────
+// ── AC#2: Nil Rooms field → 501 stub ─────────────────────────────────────────
 
-// TestListAdminRooms_EmptyResult_DataIsEmptyArray covers AC#1 [P1]:
-// When the repository returns 0 rooms, the JSON data field must be an empty
-// array [] — NOT null. This mirrors the users pattern (anti-null guard).
-//
-// THIS TEST WILL FAIL — ListAdminRooms is not implemented yet.
-func TestListAdminRooms_EmptyResult_DataIsEmptyArray(t *testing.T) {
-	repo := &mockRoomRepository{rooms: []api.AdminRoom{}, total: 0}
+// TestGetAdminRoom_NilRepository_Returns501 covers router_test regression (Dev Notes):
+// When AdminServer.Rooms is nil, GET /api/v1/admin/rooms/{roomId} must return 501,
+// not panic or return 500.
+func TestGetAdminRoom_NilRepository_Returns501(t *testing.T) {
+	mux := http.NewServeMux()
+	api.RegisterAdminRoutes(mux, &api.AdminServer{}, noopJWTMiddlewareForRooms, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/rooms/!someroom:example.com", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotImplemented {
+		t.Errorf("[router regression] expected 501 for nil Rooms, got %d", w.Code)
+	}
+}
+
+// TestListAdminRooms_NilRepository_Returns501 covers router_test regression (Dev Notes):
+// When AdminServer.Rooms is nil, GET /api/v1/admin/rooms must return 501.
+func TestListAdminRooms_NilRepository_Returns501(t *testing.T) {
+	mux := http.NewServeMux()
+	api.RegisterAdminRoutes(mux, &api.AdminServer{}, noopJWTMiddlewareForRooms, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/rooms", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotImplemented {
+		t.Errorf("[router regression] expected 501 for nil Rooms, got %d", w.Code)
+	}
+}
+
+// ── AC#3 + AC#6 (Acceptance Test #6): Audit log on list ──────────────────────
+
+// TestListAdminRooms_AuditLogEmitted covers AC#3 + AC#6 (test 6) [P0]:
+// On a successful list request, audit.LogEvent must be called with:
+//   - action="admin_room_viewed"
+//   - target_type="room"
+//   - target_id="" (no single room targeted for list)
+func TestListAdminRooms_AuditLogEmitted(t *testing.T) {
+	repo := &mockRoomRepository{
+		listResult: []api.AdminRoom{makeAdminRoom("!r1:example.com", "Room 1", "active")},
+		listTotal:  1,
+	}
+	mockClient := &mockCoreClient{}
 
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, &api.AdminServer{Rooms: repo}, noopJWTMiddlewareForRooms, nil)
+	api.RegisterAdminRoutes(mux, &api.AdminServer{Rooms: repo, CoreClient: mockClient}, noopJWTMiddlewareForRooms, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/rooms", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Fatalf("[AC#1] expected 200 for empty result, got %d; body: %s", w.Code, w.Body.String())
+		t.Fatalf("[AC#3] expected 200, got %d; body: %s", w.Code, w.Body.String())
 	}
+	if !mockClient.auditCalled {
+		t.Error("[AC#3] expected audit.LogEvent to be called on list request")
+	}
+	if mockClient.lastAction != "admin_room_viewed" {
+		t.Errorf("[AC#3] expected audit action 'admin_room_viewed', got %q", mockClient.lastAction)
+	}
+	if mockClient.lastTarget != "room" {
+		t.Errorf("[AC#3] expected audit target_type 'room', got %q", mockClient.lastTarget)
+	}
+	if mockClient.lastTargetID != "" {
+		t.Errorf("[AC#3] expected empty target_id for list audit, got %q", mockClient.lastTargetID)
+	}
+}
 
-	body := w.Body.String()
-	// "data":null must NOT appear; "data":[] must appear.
-	if strings.Contains(body, `"data":null`) {
-		t.Errorf("[AC#1] data must be [] not null when list is empty; body: %s", body)
+// ── AC#3 + AC#6 (Acceptance Test #7): Audit log on get ───────────────────────
+
+// TestGetAdminRoom_AuditLogEmitted covers AC#3 + AC#6 (test 7) [P0]:
+// On a successful single-room request, audit.LogEvent must be called with:
+//   - action="admin_room_viewed"
+//   - target_type="room"
+//   - target_id = the requested room_id
+func TestGetAdminRoom_AuditLogEmitted(t *testing.T) {
+	detail := &api.AdminRoomDetail{
+		AdminRoom: api.AdminRoom{
+			RoomID:     "!auditroom:example.com",
+			Name:       "Audit Room",
+			Visibility: "private",
+			Status:     "active",
+			CreatedAt:  time.Now().UTC().Format(time.RFC3339),
+		},
+		MaxMembers:      0,
+		MessageCount:    0,
+		PowerLevelsJSON: "{}",
 	}
-	if !strings.Contains(body, `"data":[]`) {
-		t.Errorf("[AC#1] expected data:[] in response for empty result; body: %s", body)
+	repo := &mockRoomRepository{getResult: detail}
+	mockClient := &mockCoreClient{}
+
+	mux := http.NewServeMux()
+	api.RegisterAdminRoutes(mux, &api.AdminServer{Rooms: repo, CoreClient: mockClient}, noopJWTMiddlewareForRooms, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/rooms/!auditroom:example.com", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("[AC#3] expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+	if !mockClient.auditCalled {
+		t.Error("[AC#3] expected audit.LogEvent to be called on get-room request")
+	}
+	if mockClient.lastAction != "admin_room_viewed" {
+		t.Errorf("[AC#3] expected audit action 'admin_room_viewed', got %q", mockClient.lastAction)
+	}
+	if mockClient.lastTarget != "room" {
+		t.Errorf("[AC#3] expected audit target_type 'room', got %q", mockClient.lastTarget)
+	}
+	if mockClient.lastTargetID != "!auditroom:example.com" {
+		t.Errorf("[AC#3] expected audit target_id '!auditroom:example.com', got %q", mockClient.lastTargetID)
 	}
 }

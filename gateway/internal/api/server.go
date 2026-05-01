@@ -25,7 +25,7 @@ import (
 // Users is the UserRepository for Admin user queries (Story 6.4).
 // Deactivation is the DeactivationRepository for user deactivation/reactivation (Story 6.5).
 // Roles is the RoleOverrideRepository for role grant/revoke and override merging (Story 6.6).
-// Rooms is the RoomRepository for Admin room list/get queries (Story 6.7).
+// Rooms is the RoomRepository for Admin room queries (Story 6.7).
 type AdminServer struct {
 	DB           *sql.DB
 	CoreClient   pb.CoreServiceClient
@@ -47,7 +47,7 @@ func (s *AdminServer) GetAdminMetrics(_ context.Context, _ GetAdminMetricsReques
 }
 
 // ListAdminRooms implements AC#1: GET /api/v1/admin/rooms
-// Query params: cursor (optional), limit (1–100, default 20), search (optional), status (optional: active|archived).
+// Query params: cursor (optional), limit (1–100, default 20), search (optional), status (optional).
 // Emits an audit log event on success (never-raise: audit failure does not block the response).
 // Returns 501 if no RoomRepository is wired (pre-Story-6.7 stub behaviour).
 func (s *AdminServer) ListAdminRooms(ctx context.Context, request ListAdminRoomsRequestObject) (ListAdminRoomsResponseObject, error) {
@@ -56,17 +56,7 @@ func (s *AdminServer) ListAdminRooms(ctx context.Context, request ListAdminRooms
 		return ListAdminRooms501Response{}, nil
 	}
 
-	// ── 1. Validate status param first (short-circuit before cursor/limit) ───────
-	statusFilter := ""
-	if request.Params.Status != nil && *request.Params.Status != "" {
-		s := *request.Params.Status
-		if s != "active" && s != "archived" {
-			return &listRooms400Resp{msg: "invalid status: must be active or archived"}, nil
-		}
-		statusFilter = s
-	}
-
-	// ── 2. Parse limit ───────────────────────────────────────────────────────────
+	// ── Parse limit ──────────────────────────────────────────────────────────
 	limit := 20
 	if request.Params.Limit != nil {
 		limit = *request.Params.Limit
@@ -75,7 +65,7 @@ func (s *AdminServer) ListAdminRooms(ctx context.Context, request ListAdminRooms
 		return &listRooms400Resp{msg: "limit must be between 1 and 100"}, nil
 	}
 
-	// ── 3. Parse cursor ──────────────────────────────────────────────────────────
+	// ── Parse cursor ─────────────────────────────────────────────────────────
 	var afterID, afterCreatedAt string
 	if request.Params.Cursor != nil && *request.Params.Cursor != "" {
 		var err error
@@ -85,19 +75,28 @@ func (s *AdminServer) ListAdminRooms(ctx context.Context, request ListAdminRooms
 		}
 	}
 
-	// ── 4. Parse search ──────────────────────────────────────────────────────────
+	// ── Parse search ─────────────────────────────────────────────────────────
 	search := ""
 	if request.Params.Search != nil {
 		search = *request.Params.Search
 	}
 
-	// ── 5. Repository call ────────────────────────────────────────────────────────
+	// ── Parse status ─────────────────────────────────────────────────────────
+	statusFilter := ""
+	if request.Params.Status != nil {
+		statusFilter = *request.Params.Status
+	}
+	if statusFilter != "" && statusFilter != "active" && statusFilter != "archived" {
+		return &listRooms400Resp{msg: "status must be 'active' or 'archived'"}, nil
+	}
+
+	// ── Repository call ───────────────────────────────────────────────────────
 	rooms, total, nextCursor, err := s.Rooms.ListRooms(ctx, afterID, afterCreatedAt, limit, search, statusFilter)
 	if err != nil {
 		return nil, err
 	}
 
-	// ── 6. Audit log (never-raise) ────────────────────────────────────────────────
+	// ── Audit log (never-raise) ───────────────────────────────────────────────
 	if s.CoreClient != nil {
 		actorID, _ := ctx.Value(middleware.ContextKeyUserID).(string)
 		_ = audit.LogEvent(ctx, s.CoreClient, actorID, "admin_room_viewed", "room", "", nil, "success", "")
@@ -114,17 +113,15 @@ func (s *AdminServer) ListAdminRooms(ctx context.Context, request ListAdminRooms
 
 // GetAdminRoom implements AC#2: GET /api/v1/admin/rooms/{roomId}
 // Returns a single AdminRoomDetail or 404 if not found.
-// Emits an audit log event on success (never-raise).
-// Returns 501 if no RoomRepository is wired.
+// Emits an audit log event on success.
+// Returns 501 if no RoomRepository is wired (safety fallback).
 func (s *AdminServer) GetAdminRoom(ctx context.Context, request GetAdminRoomRequestObject) (GetAdminRoomResponseObject, error) {
 	// Guard: if no RoomRepository is wired, fall back to 501 stub.
 	if s.Rooms == nil {
 		return GetAdminRoom501Response{}, nil
 	}
 
-	roomID := request.RoomId
-
-	detail, err := s.Rooms.GetRoom(ctx, roomID)
+	detail, err := s.Rooms.GetRoom(ctx, request.RoomId)
 	if err != nil {
 		return nil, err
 	}
@@ -135,9 +132,9 @@ func (s *AdminServer) GetAdminRoom(ctx context.Context, request GetAdminRoomRequ
 	// ── Audit log (never-raise) ───────────────────────────────────────────────
 	if s.CoreClient != nil {
 		actorID, _ := ctx.Value(middleware.ContextKeyUserID).(string)
-		_ = audit.LogEvent(ctx, s.CoreClient, actorID, "admin_room_viewed", "room", roomID, nil, "success", "")
+		_ = audit.LogEvent(ctx, s.CoreClient, actorID, "admin_room_viewed", "room", request.RoomId, nil, "success", "")
 	} else {
-		slog.Warn("GetAdminRoom audit skipped — CoreClient is nil", "room_id", roomID)
+		slog.Warn("GetAdminRoom audit skipped — CoreClient is nil", "room_id", request.RoomId)
 	}
 
 	return &getAdminRoomOKResponse{detail: detail}, nil
@@ -303,75 +300,6 @@ func (r *getAdminUser404Response) VisitGetAdminUserResponse(w http.ResponseWrite
 	w.WriteHeader(http.StatusNotFound)
 	return json.NewEncoder(w).Encode(map[string]any{
 		"error": map[string]string{"code": "M_NOT_FOUND", "message": "User not found"},
-	})
-}
-
-// ── Story 6.7: Room response types ────────────────────────────────────────────
-
-// listAdminRoomsOKResponse serialises AdminRoom list + pagination metadata as JSON.
-// Implements ListAdminRoomsResponseObject.
-type listAdminRoomsOKResponse struct {
-	rooms      []AdminRoom
-	total      int
-	nextCursor string
-}
-
-func (resp *listAdminRoomsOKResponse) VisitListAdminRoomsResponse(w http.ResponseWriter) error {
-	type meta struct {
-		Total      int    `json:"total"`
-		NextCursor string `json:"next_cursor,omitempty"`
-	}
-	type envelope struct {
-		Data []AdminRoom `json:"data"`
-		Meta meta        `json:"meta"`
-	}
-	data := resp.rooms
-	if data == nil {
-		data = []AdminRoom{}
-	}
-	body := envelope{
-		Data: data,
-		Meta: meta{Total: resp.total, NextCursor: resp.nextCursor},
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	return json.NewEncoder(w).Encode(body)
-}
-
-// listRooms400Resp writes a 400 M_BAD_JSON error.
-// Implements ListAdminRoomsResponseObject.
-type listRooms400Resp struct{ msg string }
-
-func (r *listRooms400Resp) VisitListAdminRoomsResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusBadRequest)
-	return json.NewEncoder(w).Encode(map[string]any{
-		"error": map[string]string{"code": "M_BAD_JSON", "message": r.msg},
-	})
-}
-
-// getAdminRoomOKResponse serialises AdminRoomDetail as JSON.
-// Implements GetAdminRoomResponseObject.
-type getAdminRoomOKResponse struct{ detail *AdminRoomDetail }
-
-func (resp *getAdminRoomOKResponse) VisitGetAdminRoomResponse(w http.ResponseWriter) error {
-	type envelope struct {
-		Data *AdminRoomDetail `json:"data"`
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	return json.NewEncoder(w).Encode(envelope{Data: resp.detail})
-}
-
-// getAdminRoom404Response writes a 404 M_NOT_FOUND error.
-// Implements GetAdminRoomResponseObject.
-type getAdminRoom404Response struct{}
-
-func (r *getAdminRoom404Response) VisitGetAdminRoomResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusNotFound)
-	return json.NewEncoder(w).Encode(map[string]any{
-		"error": map[string]string{"code": "M_NOT_FOUND", "message": "Room not found"},
 	})
 }
 
@@ -703,5 +631,73 @@ func (r *assignRole404Resp) VisitAssignAdminUserRoleResponse(w http.ResponseWrit
 	w.WriteHeader(http.StatusNotFound)
 	return json.NewEncoder(w).Encode(map[string]any{
 		"error": map[string]string{"code": "M_NOT_FOUND", "message": r.msg},
+	})
+}
+
+// ── Story 6.7: Room List + Get response types ─────────────────────────────────
+
+// listAdminRoomsOKResponse serialises AdminRoom list + pagination metadata as JSON.
+// Implements ListAdminRoomsResponseObject.
+type listAdminRoomsOKResponse struct {
+	rooms      []AdminRoom
+	total      int
+	nextCursor string
+}
+
+func (resp *listAdminRoomsOKResponse) VisitListAdminRoomsResponse(w http.ResponseWriter) error {
+	type meta struct {
+		Total      int    `json:"total"`
+		NextCursor string `json:"next_cursor,omitempty"`
+	}
+	type envelope struct {
+		Data []AdminRoom `json:"data"`
+		Meta meta        `json:"meta"`
+	}
+	data := resp.rooms
+	if data == nil {
+		data = []AdminRoom{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	return json.NewEncoder(w).Encode(envelope{
+		Data: data,
+		Meta: meta{Total: resp.total, NextCursor: resp.nextCursor},
+	})
+}
+
+// listRooms400Resp writes a 400 M_BAD_REQUEST error.
+// Implements ListAdminRoomsResponseObject.
+type listRooms400Resp struct{ msg string }
+
+func (r *listRooms400Resp) VisitListAdminRoomsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusBadRequest)
+	return json.NewEncoder(w).Encode(map[string]any{
+		"error": map[string]string{"code": "M_BAD_REQUEST", "message": r.msg},
+	})
+}
+
+// getAdminRoomOKResponse serialises AdminRoomDetail as JSON.
+// Implements GetAdminRoomResponseObject.
+type getAdminRoomOKResponse struct{ detail *AdminRoomDetail }
+
+func (r *getAdminRoomOKResponse) VisitGetAdminRoomResponse(w http.ResponseWriter) error {
+	type envelope struct {
+		Data *AdminRoomDetail `json:"data"`
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	return json.NewEncoder(w).Encode(envelope{Data: r.detail})
+}
+
+// getAdminRoom404Response writes a 404 M_NOT_FOUND error.
+// Implements GetAdminRoomResponseObject.
+type getAdminRoom404Response struct{}
+
+func (r *getAdminRoom404Response) VisitGetAdminRoomResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusNotFound)
+	return json.NewEncoder(w).Encode(map[string]any{
+		"error": map[string]string{"code": "M_NOT_FOUND", "message": "Room not found"},
 	})
 }

@@ -11,41 +11,39 @@ import (
 	"fmt"
 )
 
-// AdminRoom is the JSON-serialisable representation of a room for the Admin API (Story 6.7).
-// Fields that are not yet stored in the DB are returned as defaults with TODO comments.
+// AdminRoom is the list-view representation of a room for the Admin API.
+// Fields match AC#1 room object: room_id, name, topic, visibility, member_count,
+// status, created_at (ISO 8601), creator_user_id.
 type AdminRoom struct {
-	RoomID         string `json:"room_id"`
-	Name           string `json:"name"`
-	Topic          string `json:"topic"`          // "" — not in DB yet (Story 6.8)
-	CanonicalAlias string `json:"canonical_alias"` // "" — not in DB yet
-	Visibility     string `json:"visibility"`      // "public" | "private"
-	IsPublic       bool   `json:"is_public"`       // derived: visibility == "public"
-	MemberCount    int    `json:"member_count"`
-	Status         string `json:"status"`          // "active" | "archived"
-	CreatedAt      string `json:"created_at"`      // ISO 8601 (uses epochMsToISO8601)
-	CreatorUserID  string `json:"creator_user_id"` // "" — not in DB yet
-	AdminNote      string `json:"admin_note"`      // "" — not in DB yet
+	RoomID        string `json:"room_id"`
+	Name          string `json:"name"`
+	Topic         string `json:"topic"`
+	Visibility    string `json:"visibility"`
+	MemberCount   int    `json:"member_count"`
+	Status        string `json:"status"`
+	CreatedAt     string `json:"created_at"` // ISO 8601 from epoch ms
+	CreatorUserID string `json:"creator_user_id"`
 }
 
-// AdminRoomDetail extends AdminRoom with detail-only fields.
-// TODO(story-6.8): MaxMembers will be populated after rooms.max_members column is added.
+// AdminRoomDetail extends AdminRoom for the single-room GET endpoint (AC#2).
 type AdminRoomDetail struct {
 	AdminRoom
-	MaxMembers      int    `json:"max_members"`       // 0 until Story 6.8 adds the column
+	MaxMembers      int    `json:"max_members"`       // 0 = no limit
 	MessageCount    int    `json:"message_count"`
-	PowerLevelsJSON string `json:"power_levels_json"` // raw JSON string from DB
+	PowerLevelsJSON string `json:"power_levels_json"`
 }
 
 // RoomRepository abstracts database access for Admin room queries.
-// The interface is consumer-defined (same pattern as UserRepository in users_repo.go).
+// The interface is defined here so that unit tests can provide a mock implementation
+// without a real PostgreSQL connection.
 //
-// ListRooms signature: (ctx, afterID, afterCreatedAt, limit, search, statusFilter) →
+// ListRooms signature: (ctx, afterID, afterCreatedAt, limit, search, status) →
 //
 //	(rooms, total, nextCursor, error)
 //
 // GetRoom returns (nil, nil) when the room does not exist.
 type RoomRepository interface {
-	ListRooms(ctx context.Context, afterID, afterCreatedAt string, limit int, search, statusFilter string) ([]AdminRoom, int, string, error)
+	ListRooms(ctx context.Context, afterID, afterCreatedAt string, limit int, search, status string) ([]AdminRoom, int, string, error)
 	GetRoom(ctx context.Context, roomID string) (*AdminRoomDetail, error)
 }
 
@@ -60,16 +58,14 @@ func NewRoomRepo(db *sql.DB) RoomRepository {
 }
 
 // ListRooms queries the rooms table with optional cursor pagination, search, and status filter.
-//
-// member_count is derived via a correlated sub-select (left_at IS NULL = still member).
-// created_at is stored as epoch ms (BIGINT), converted to ISO 8601 via epochMsToISO8601.
-// Cursor pagination uses (created_at DESC, room_id) keyset — identical to users pattern.
-func (r *dbRoomRepo) ListRooms(ctx context.Context, afterID, afterCreatedAt string, limit int, search, statusFilter string) ([]AdminRoom, int, string, error) {
-	// Build argument list and WHERE clauses progressively.
+// Ordering: (created_at DESC, room_id DESC) — newest rooms first, tie-broken by room_id.
+// member_count: count from room_members where left_at IS NULL (active members only).
+func (r *dbRoomRepo) ListRooms(ctx context.Context, afterID, afterCreatedAt string, limit int, search, status string) ([]AdminRoom, int, string, error) {
 	args := []any{}
+	searchClause := ""
+	statusClause := ""
+	cursorClause := ""
 	n := 1
-
-	var searchClause, statusClause, cursorClause string
 
 	if search != "" {
 		searchClause = fmt.Sprintf(` AND r.name ILIKE '%%' || $%d || '%%'`, n)
@@ -77,14 +73,13 @@ func (r *dbRoomRepo) ListRooms(ctx context.Context, afterID, afterCreatedAt stri
 		n++
 	}
 
-	switch statusFilter {
-	case "active":
-		statusClause = ` AND r.archived_at IS NULL`
-	case "archived":
-		statusClause = ` AND r.archived_at IS NOT NULL`
+	if status != "" {
+		statusClause = fmt.Sprintf(` AND r.status = $%d`, n)
+		args = append(args, status)
+		n++
 	}
 
-	// Count query: same filters but no cursor (cursor is pagination-relative, not filter-relative).
+	// Count query uses the same search/status filters but no cursor.
 	countArgs := make([]any, len(args))
 	copy(countArgs, args)
 
@@ -105,17 +100,21 @@ func (r *dbRoomRepo) ListRooms(ctx context.Context, afterID, afterCreatedAt stri
 		return nil, 0, "", fmt.Errorf("ListRooms count: %w", err)
 	}
 
-	// Main list query with keyset pagination and correlated sub-select for member_count.
+	// Main list query with keyset pagination.
 	limitPlaceholder := fmt.Sprintf(`$%d`, n)
 	listSQL := `
 		SELECT r.room_id,
 		       COALESCE(r.name, ''),
+		       COALESCE(r.topic, ''),
 		       r.visibility,
+		       COUNT(rm.user_id) FILTER (WHERE rm.left_at IS NULL) AS member_count,
+		       r.status,
 		       r.created_at,
-		       r.archived_at,
-		       (SELECT COUNT(*) FROM room_members rm WHERE rm.room_id = r.room_id AND rm.left_at IS NULL) AS member_count
+		       COALESCE(r.creator_user_id, '')
 		FROM rooms r
+		LEFT JOIN room_members rm ON rm.room_id = r.room_id
 		WHERE 1=1` + searchClause + statusClause + cursorClause + `
+		GROUP BY r.room_id, r.name, r.topic, r.visibility, r.status, r.created_at, r.creator_user_id
 		ORDER BY r.created_at DESC, r.room_id DESC
 		LIMIT ` + limitPlaceholder
 
@@ -133,35 +132,30 @@ func (r *dbRoomRepo) ListRooms(ctx context.Context, afterID, afterCreatedAt stri
 
 	for rows.Next() {
 		var (
-			roomID      string
-			name        string
-			visibility  string
-			createdAt   int64
-			archivedAt  sql.NullInt64
-			memberCount int
+			roomID        string
+			name          string
+			topic         string
+			visibility    string
+			memberCount   int
+			roomStatus    string
+			createdAt     int64
+			creatorUserID string
 		)
-		if err := rows.Scan(&roomID, &name, &visibility, &createdAt, &archivedAt, &memberCount); err != nil {
+		if err := rows.Scan(&roomID, &name, &topic, &visibility, &memberCount, &roomStatus, &createdAt, &creatorUserID); err != nil {
 			return nil, 0, "", fmt.Errorf("ListRooms scan: %w", err)
 		}
 
-		status := "active"
-		if archivedAt.Valid {
-			status = "archived"
+		rm := AdminRoom{
+			RoomID:        roomID,
+			Name:          name,
+			Topic:         topic,
+			Visibility:    visibility,
+			MemberCount:   memberCount,
+			Status:        roomStatus,
+			CreatedAt:     epochMsToISO8601(createdAt),
+			CreatorUserID: creatorUserID,
 		}
-
-		rooms = append(rooms, AdminRoom{
-			RoomID:         roomID,
-			Name:           name,
-			Topic:          "",   // TODO(story-6.8): not in DB yet
-			CanonicalAlias: "",   // TODO(story-6.8): not in DB yet
-			Visibility:     visibility,
-			IsPublic:       visibility == "public",
-			MemberCount:    memberCount,
-			Status:         status,
-			CreatedAt:      epochMsToISO8601(createdAt),
-			CreatorUserID:  "",   // TODO(story-6.8): not in DB yet
-			AdminNote:      "",   // TODO(story-6.8): not in DB yet
-		})
+		rooms = append(rooms, rm)
 		lastCreatedAt = createdAt
 		lastRoomID = roomID
 	}
@@ -169,7 +163,7 @@ func (r *dbRoomRepo) ListRooms(ctx context.Context, afterID, afterCreatedAt stri
 		return nil, 0, "", fmt.Errorf("ListRooms rows: %w", err)
 	}
 
-	// Encode next cursor only for a full page (partial page = end of result set).
+	// Encode next cursor from the last returned row (only if the page was full).
 	var nextCursor string
 	if len(rooms) == limit && len(rooms) > 0 {
 		nextCursor = EncodeCursor(lastRoomID, epochMsToISO8601(lastCreatedAt))
@@ -178,34 +172,45 @@ func (r *dbRoomRepo) ListRooms(ctx context.Context, afterID, afterCreatedAt stri
 	return rooms, total, nextCursor, nil
 }
 
-// GetRoom fetches a single room with message_count and power_levels_json.
-// Returns (nil, nil) if the room does not exist (sql.ErrNoRows).
+// GetRoom fetches a single room with member_count, message_count, and power_levels_json.
+// Returns (nil, nil) if the room does not exist.
 func (r *dbRoomRepo) GetRoom(ctx context.Context, roomID string) (*AdminRoomDetail, error) {
 	const q = `
 		SELECT r.room_id,
 		       COALESCE(r.name, ''),
+		       COALESCE(r.topic, ''),
 		       r.visibility,
+		       COUNT(rm.user_id) FILTER (WHERE rm.left_at IS NULL) AS member_count,
+		       r.status,
 		       r.created_at,
-		       r.archived_at,
-		       r.power_levels_json,
-		       (SELECT COUNT(*) FROM room_members rm WHERE rm.room_id = r.room_id AND rm.left_at IS NULL) AS member_count,
-		       (SELECT COUNT(*) FROM events e WHERE e.room_id = r.room_id) AS message_count
+		       COALESCE(r.creator_user_id, ''),
+		       r.max_members,
+		       COUNT(e.event_id) AS message_count,
+		       r.power_levels_json
 		FROM rooms r
-		WHERE r.room_id = $1`
+		LEFT JOIN room_members rm ON rm.room_id = r.room_id
+		LEFT JOIN events e ON e.room_id = r.room_id
+		WHERE r.room_id = $1
+		GROUP BY r.room_id, r.name, r.topic, r.visibility, r.status,
+		         r.created_at, r.creator_user_id, r.max_members, r.power_levels_json`
 
 	var (
-		rid             string
-		name            string
-		visibility      string
-		createdAt       int64
-		archivedAt      sql.NullInt64
-		powerLevelsJSON string
-		memberCount     int
-		messageCount    int
+		rid           string
+		name          string
+		topic         string
+		visibility    string
+		memberCount   int
+		roomStatus    string
+		createdAt     int64
+		creatorUserID string
+		maxMembers    int
+		messageCount  int
+		powerLevels   string
 	)
 
 	err := r.db.QueryRowContext(ctx, q, roomID).Scan(
-		&rid, &name, &visibility, &createdAt, &archivedAt, &powerLevelsJSON, &memberCount, &messageCount,
+		&rid, &name, &topic, &visibility, &memberCount, &roomStatus,
+		&createdAt, &creatorUserID, &maxMembers, &messageCount, &powerLevels,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -214,29 +219,19 @@ func (r *dbRoomRepo) GetRoom(ctx context.Context, roomID string) (*AdminRoomDeta
 		return nil, fmt.Errorf("GetRoom query: %w", err)
 	}
 
-	status := "active"
-	if archivedAt.Valid {
-		status = "archived"
-	}
-
-	room := AdminRoom{
-		RoomID:         rid,
-		Name:           name,
-		Topic:          "",   // TODO(story-6.8): not in DB yet
-		CanonicalAlias: "",   // TODO(story-6.8): not in DB yet
-		Visibility:     visibility,
-		IsPublic:       visibility == "public",
-		MemberCount:    memberCount,
-		Status:         status,
-		CreatedAt:      epochMsToISO8601(createdAt),
-		CreatorUserID:  "",   // TODO(story-6.8): not in DB yet
-		AdminNote:      "",   // TODO(story-6.8): not in DB yet
-	}
-
 	return &AdminRoomDetail{
-		AdminRoom:       room,
-		MaxMembers:      0, // TODO(story-6.8): rooms.max_members column not yet added
+		AdminRoom: AdminRoom{
+			RoomID:        rid,
+			Name:          name,
+			Topic:         topic,
+			Visibility:    visibility,
+			MemberCount:   memberCount,
+			Status:        roomStatus,
+			CreatedAt:     epochMsToISO8601(createdAt),
+			CreatorUserID: creatorUserID,
+		},
+		MaxMembers:      maxMembers,
 		MessageCount:    messageCount,
-		PowerLevelsJSON: powerLevelsJSON,
+		PowerLevelsJSON: powerLevels,
 	}, nil
 }

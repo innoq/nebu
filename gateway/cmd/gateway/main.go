@@ -1120,8 +1120,8 @@ func main() {
 	//   - POST /api/v1/admin/users/{userId}/deactivate     → deactivate user (Story 6.5)
 	//   - POST /api/v1/admin/users/{userId}/reactivate     → reactivate user (Story 6.5)
 	// GET /api/v1/compliance/access-requests is owned by main.go above (Story 5.4 live handler).
-	rolesRepo := apihandler.NewRoleOverrideRepo(bootstrapDB)  // Story 6.6
-	roomsRepo := apihandler.NewRoomRepo(bootstrapDB)           // Story 6.7
+	rolesRepo := apihandler.NewRoleOverrideRepo(bootstrapDB) // Story 6.6
+	roomsRepo := apihandler.NewRoomRepo(bootstrapDB)          // Story 6.7
 	adminSrv := &apihandler.AdminServer{
 		DB:           bootstrapDB,
 		CoreClient:   coreClient.CoreServiceClient(),
