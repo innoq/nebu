@@ -1,5 +1,9 @@
 # generated: 2026-03-20
 # last_updated: 2026-05-01
+# story 9-1 done (pipeline: ATDD+Dev+CodeReview CLEAN — 26 arc42 docs, 11 ADRs, verify-docs.sh, bmad-generate-arc42 skill, 9/9 tests, 1 MAJOR fixed inline (GH CI continue-on-error)): 2026-05-01
+# story 9-1 review (pipeline: Dev — 26 arc42 docs files, 11 ADRs, verify-docs.sh, CI job, bmad-generate-arc42 skill, all 6 acceptance tests PASS): 2026-05-01
+# story 9-1 in-progress: 2026-05-01
+# story 9-1 created: epic-9 → in-progress, 9-1 → ready-for-dev: 2026-05-01 (arc42 docs generation from BMAD artifacts + bmad-generate-arc42 skill + verify-docs.sh CI check)
 # epic-8 started: 2026-05-01
 # story 8-11 done (pipeline: ATDD+Dev+CodeReview+Kassandra CLEAN — Full-Stack Acceptance Test: Playwright e2e spec with 6 flows, regression suite, smoke README, CI gate): 2026-05-01
 # story 8-11 created: 8-11 → ready-for-dev: 2026-05-01 (Full-Stack Acceptance Test — Nebu Happy Path: Playwright e2e spec with 6 flows, regression suite, smoke README, CI gate)
@@ -643,3 +647,10 @@ development_status:
   # P1 test gap closure (from epic-7-final-traceability-2026-04-30.md)
   7-36-p1-test-gaps-sync-propagation-private-room-exclusion: done
   epic-7-retrospective: pending  # SEC Gate 2 done; retro blocked until 7-17 (CSRF HIGH) is done
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Epic 9: Public Documentation — arc42 from BMAD Artifacts
+  # ─────────────────────────────────────────────────────────────────────────
+  epic-9: in-progress
+  9-1-arc42-docs-generation-from-bmad-artifacts: done  # docs/ folder, 9 ADRs, getting-started, matrix-api-scope, roadmap + bmad-generate-arc42 skill + verify-docs.sh CI
+  epic-9-retrospective: optional

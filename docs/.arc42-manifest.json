@@ -1,0 +1,171 @@
+{
+  "generated_at": "2026-05-01T00:00:00Z",
+  "generator": "bmad-generate-arc42 skill (Story 9-1)",
+  "source_artifacts": [
+    "_bmad-output/planning-artifacts/architecture.md",
+    "_bmad-output/planning-artifacts/prd.md",
+    "_bmad-output/planning-artifacts/epics.md",
+    "_bmad-output/implementation-artifacts/sprint-status.yaml",
+    "CLAUDE.md",
+    "README.md",
+    "gateway/cmd/gateway/main.go"
+  ],
+  "files": {
+    "docs/architecture/README.md": {
+      "editable": false,
+      "generated_at": "2026-05-01T00:00:00Z",
+      "source": "_bmad-output/planning-artifacts/prd.md",
+      "arc42_section": "01 Introduction and Goals"
+    },
+    "docs/architecture/02-constraints.md": {
+      "editable": false,
+      "generated_at": "2026-05-01T00:00:00Z",
+      "source": "_bmad-output/planning-artifacts/architecture.md",
+      "arc42_section": "02 Architecture Constraints"
+    },
+    "docs/architecture/03-context.md": {
+      "editable": false,
+      "generated_at": "2026-05-01T00:00:00Z",
+      "source": "_bmad-output/planning-artifacts/architecture.md",
+      "arc42_section": "03 Context and Scope"
+    },
+    "docs/architecture/04-solution-strategy.md": {
+      "editable": false,
+      "generated_at": "2026-05-01T00:00:00Z",
+      "source": "_bmad-output/planning-artifacts/architecture.md",
+      "arc42_section": "04 Solution Strategy"
+    },
+    "docs/architecture/05-building-blocks.md": {
+      "editable": false,
+      "generated_at": "2026-05-01T00:00:00Z",
+      "source": "_bmad-output/planning-artifacts/architecture.md",
+      "arc42_section": "05 Building Block View"
+    },
+    "docs/architecture/06-runtime.md": {
+      "editable": false,
+      "generated_at": "2026-05-01T00:00:00Z",
+      "source": "_bmad-output/planning-artifacts/architecture.md",
+      "arc42_section": "06 Runtime View"
+    },
+    "docs/architecture/07-deployment.md": {
+      "editable": false,
+      "generated_at": "2026-05-01T00:00:00Z",
+      "source": "_bmad-output/planning-artifacts/architecture.md",
+      "arc42_section": "07 Deployment View"
+    },
+    "docs/architecture/08-concepts.md": {
+      "editable": false,
+      "generated_at": "2026-05-01T00:00:00Z",
+      "source": "_bmad-output/planning-artifacts/architecture.md",
+      "arc42_section": "08 Cross-cutting Concepts"
+    },
+    "docs/architecture/09-decisions.md": {
+      "editable": false,
+      "generated_at": "2026-05-01T00:00:00Z",
+      "source": "CLAUDE.md",
+      "arc42_section": "09 Architecture Decisions"
+    },
+    "docs/architecture/10-quality.md": {
+      "editable": false,
+      "generated_at": "2026-05-01T00:00:00Z",
+      "source": "_bmad-output/planning-artifacts/prd.md",
+      "arc42_section": "10 Quality Requirements"
+    },
+    "docs/architecture/11-risks.md": {
+      "editable": false,
+      "generated_at": "2026-05-01T00:00:00Z",
+      "source": "_bmad-output/implementation-artifacts/sprint-status.yaml",
+      "arc42_section": "11 Risks and Technical Debt"
+    },
+    "docs/architecture/12-glossary.md": {
+      "editable": false,
+      "generated_at": "2026-05-01T00:00:00Z",
+      "source": "CLAUDE.md",
+      "arc42_section": "12 Glossary"
+    },
+    "docs/architecture/adr/ADR-001-elixir-otp.md": {
+      "editable": false,
+      "generated_at": "2026-05-01T00:00:00Z",
+      "source": "_bmad-output/planning-artifacts/architecture.md",
+      "arc42_section": "ADR-001"
+    },
+    "docs/architecture/adr/ADR-002-no-redis-nats.md": {
+      "editable": false,
+      "generated_at": "2026-05-01T00:00:00Z",
+      "source": "_bmad-output/planning-artifacts/architecture.md",
+      "arc42_section": "ADR-002"
+    },
+    "docs/architecture/adr/ADR-003-content-hash-event-id.md": {
+      "editable": false,
+      "generated_at": "2026-05-01T00:00:00Z",
+      "source": "_bmad-output/planning-artifacts/architecture.md",
+      "arc42_section": "ADR-003"
+    },
+    "docs/architecture/adr/ADR-004-horde-registry.md": {
+      "editable": false,
+      "generated_at": "2026-05-01T00:00:00Z",
+      "source": "_bmad-output/planning-artifacts/architecture.md",
+      "arc42_section": "ADR-004"
+    },
+    "docs/architecture/adr/ADR-005-grpc-eventbus.md": {
+      "editable": false,
+      "generated_at": "2026-05-01T00:00:00Z",
+      "source": "_bmad-output/planning-artifacts/architecture.md",
+      "arc42_section": "ADR-005"
+    },
+    "docs/architecture/adr/ADR-006-message-buffer-drain.md": {
+      "editable": false,
+      "generated_at": "2026-05-01T00:00:00Z",
+      "source": "_bmad-output/planning-artifacts/architecture.md",
+      "arc42_section": "ADR-006"
+    },
+    "docs/architecture/adr/ADR-007-ed25519-x25519-keypairs.md": {
+      "editable": false,
+      "generated_at": "2026-05-01T00:00:00Z",
+      "source": "_bmad-output/planning-artifacts/architecture.md",
+      "arc42_section": "ADR-007"
+    },
+    "docs/architecture/adr/ADR-008-node-registration-psk.md": {
+      "editable": false,
+      "generated_at": "2026-05-01T00:00:00Z",
+      "source": "_bmad-output/planning-artifacts/architecture.md",
+      "arc42_section": "ADR-008"
+    },
+    "docs/architecture/adr/ADR-009-openapi-spec-first.md": {
+      "editable": false,
+      "generated_at": "2026-05-01T00:00:00Z",
+      "source": "_bmad-output/planning-artifacts/architecture.md",
+      "arc42_section": "ADR-009"
+    },
+    "docs/architecture/adr/ADR-010-fts-strategy.md": {
+      "editable": true,
+      "generated_at": "2026-05-01T00:00:00Z",
+      "source": "Story 9-1 Dev Notes",
+      "arc42_section": "ADR-010 (Proposed)"
+    },
+    "docs/architecture/adr/ADR-011-managed-e2ee-key-escrow.md": {
+      "editable": true,
+      "generated_at": "2026-05-01T00:00:00Z",
+      "source": "Story 9-1 Dev Notes",
+      "arc42_section": "ADR-011 (Proposed)"
+    },
+    "docs/getting-started.md": {
+      "editable": true,
+      "generated_at": "2026-05-01T00:00:00Z",
+      "source": "README.md",
+      "arc42_section": "Getting Started"
+    },
+    "docs/matrix-api-scope.md": {
+      "editable": false,
+      "generated_at": "2026-05-01T00:00:00Z",
+      "source": "gateway/cmd/gateway/main.go",
+      "arc42_section": "Matrix API Scope"
+    },
+    "docs/roadmap.md": {
+      "editable": false,
+      "generated_at": "2026-05-01T00:00:00Z",
+      "source": "_bmad-output/planning-artifacts/epics.md",
+      "arc42_section": "Roadmap"
+    }
+  }
+}

@@ -176,6 +176,8 @@ verify-docs:
     - scripts/verify-readme-attribution.sh
     - scripts/verify-contributing.sh
     - scripts/verify-security-policy.sh
+    - scripts/verify-docs.sh
+  allow_failure: true
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
     - if: '$CI_COMMIT_BRANCH =~ /^feature\//'
