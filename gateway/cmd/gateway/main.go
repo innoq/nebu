@@ -941,7 +941,10 @@ func main() {
 		complianceRL(bodyLimit64KiB(jwtMiddleware(http.HandlerFunc(accessRequestHandler.PostAccessRequest)))))
 
 	// Story 5.4 — Four-Eyes Approval API
-	// GET: no body, so no bodyLimit needed
+	// GET: no body, so no bodyLimit needed.
+	// NOTE: RegisterAdminRoutes (Story 6.3) intentionally does NOT register this GET route;
+	// main.go owns it to preserve the working accessRequestHandler with complianceRL.
+	// Story 6.11 will migrate it under the generated StrictHandler.
 	mux.Handle("GET /api/v1/compliance/access-requests",
 		complianceRL(jwtMiddleware(http.HandlerFunc(accessRequestHandler.GetAccessRequests))))
 
@@ -1101,6 +1104,13 @@ func main() {
 	// Serves the raw openapi.yaml embedded at build time so API tooling can fetch it
 	// without credentials. Must NOT be placed behind jwtMiddleware or sessionGuard.
 	mux.HandleFunc("GET /api/v1/openapi.yaml", apihandler.OpenAPIYAMLHandler)
+
+	// Story 6.3 — Admin API Router + Role-Auth Middleware.
+	// Registers generated Admin API stub routes with role-based access control:
+	//   - GET /api/v1/health        → unauthenticated
+	//   - GET /api/v1/admin/*       → instance_admin role required (501 stubs until 6.4+)
+	// GET /api/v1/compliance/access-requests is owned by main.go above (Story 5.4 live handler).
+	apihandler.RegisterAdminRoutes(mux, &apihandler.AdminServer{}, jwtMiddleware)
 
 	// Story 5.14: Wrap the main mux so that every /admin/* response carries security headers.
 	// SecurityHeadersMiddleware is the outermost layer — even 302 redirects emitted by

@@ -17,6 +17,7 @@ package api_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -41,7 +42,8 @@ func noopJWTMiddleware(next http.Handler) http.Handler {
 
 // TestRegisterAdminRoutes_HealthEndpoint_Unauthenticated covers AC#3 + AC#5:
 // GET /api/v1/health must respond without any JWT or role check.
-// A request with no Authorization header and no role context must return 200.
+// A request with no Authorization header and no role context must return 200
+// with body {"status":"ok"}.
 //
 // [P0] — health check must always be reachable by load balancers / orchestrators.
 func TestRegisterAdminRoutes_HealthEndpoint_Unauthenticated(t *testing.T) {
@@ -54,12 +56,16 @@ func TestRegisterAdminRoutes_HealthEndpoint_Unauthenticated(t *testing.T) {
 	mux.ServeHTTP(w, req)
 
 	// AdminServer.GetHealth returns 200 {"status":"ok"} even as a stub.
-	if w.Code == http.StatusNotFound {
-		t.Errorf("GET /api/v1/health is not registered — got 404")
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200 for /api/v1/health, got %d", w.Code)
 	}
-	// Must NOT return an auth error (401/403).
-	if w.Code == http.StatusUnauthorized || w.Code == http.StatusForbidden {
-		t.Errorf("GET /api/v1/health must be unauthenticated, got %d", w.Code)
+
+	var body map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+		t.Fatalf("response body is not valid JSON: %v", err)
+	}
+	if body["status"] != "ok" {
+		t.Errorf("expected body status=ok, got %q", body["status"])
 	}
 }
 
@@ -137,30 +143,13 @@ func TestRegisterAdminRoutes_AdminRoutes_CorrectRole_Passes(t *testing.T) {
 	}
 }
 
-// TestRegisterAdminRoutes_ComplianceRoute_RequireComplianceOfficer covers AC#3:
-// GET /api/v1/compliance/access-requests with role = "instance_admin" must return 403.
+// TestRegisterAdminRoutes_ComplianceRoute_NotRegisteredByRouter covers AC#3 (regression guard):
+// RegisterAdminRoutes intentionally does NOT register GET /api/v1/compliance/access-requests.
+// main.go owns that pattern (Story 5.4 live handler + complianceRL) until Story 6.11 migrates it.
+// Registering it here would cause a ServeMux duplicate-pattern panic at startup.
 //
-// [P1] — compliance routes are isolated from admin role.
-func TestRegisterAdminRoutes_ComplianceRoute_RequireComplianceOfficer(t *testing.T) {
-	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, &api.AdminServer{}, noopJWTMiddleware)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/compliance/access-requests", nil)
-	req.Header.Set("X-Test-System-Role", "instance_admin")
-	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, req)
-
-	if w.Code != http.StatusForbidden {
-		t.Errorf("expected 403 for instance_admin on compliance route, got %d", w.Code)
-	}
-}
-
-// TestRegisterAdminRoutes_ComplianceRoute_CorrectRole_Passes covers AC#3:
-// GET /api/v1/compliance/access-requests with role = "compliance_officer" must
-// pass the middleware and reach the AdminServer stub (which returns 501).
-//
-// [P1] — compliance officer must reach compliance handlers.
-func TestRegisterAdminRoutes_ComplianceRoute_CorrectRole_Passes(t *testing.T) {
+// [P1] — guard against future dev accidentally re-adding the route to RegisterAdminRoutes.
+func TestRegisterAdminRoutes_ComplianceRoute_NotRegisteredByRouter(t *testing.T) {
 	mux := http.NewServeMux()
 	api.RegisterAdminRoutes(mux, &api.AdminServer{}, noopJWTMiddleware)
 
@@ -169,11 +158,11 @@ func TestRegisterAdminRoutes_ComplianceRoute_CorrectRole_Passes(t *testing.T) {
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
-	if w.Code == http.StatusUnauthorized || w.Code == http.StatusForbidden {
-		t.Errorf("compliance_officer on compliance route must NOT get auth rejection, got %d", w.Code)
-	}
-	if w.Code != http.StatusNotImplemented {
-		t.Errorf("expected stub 501, got %d", w.Code)
+	// 404 is expected: the route is NOT in RegisterAdminRoutes by design (owned by main.go).
+	// If this test ever gets 403 or 501, someone re-added the route here — check for
+	// duplicate-pattern panic risk before merging.
+	if w.Code != http.StatusNotFound {
+		t.Errorf("[AC#3] compliance/access-requests must not be registered by RegisterAdminRoutes (expected 404, got %d); if 403/501, remove the duplicate registration to avoid ServeMux panic", w.Code)
 	}
 }
 
