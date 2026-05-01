@@ -937,6 +937,8 @@ claude-sonnet-4-6
 
 ### Completion Notes List
 
+- DEFERRED: AC#2 downstream integration (PostCreateRoom reading room_defaults) is deferred to a follow-up story (6-8b). The admin write endpoint (PUT /api/v1/admin/config/room-defaults) is fully implemented and tested. The consumer path (createRoom using defaults) requires changes to the Matrix handler path and is scoped separately.
+
 - All 12 acceptance test cases pass (Go unit tests: rooms_patch_handler_test.go + room_defaults_handler_test.go).
 - Proto `UpdateRoomSettings` RPC added; Go protobuf stubs regenerated via `make proto`. All mock implementations of `pb.CoreServiceClient` across test files updated with `UpdateRoomSettings` stub.
 - `room_defaults` table introduced via migration 000037 to sidestep `server_config` INSERT-only RLS constraint. `PutAdminRoomDefaults` does `UPDATE room_defaults SET ... WHERE id = 1`.

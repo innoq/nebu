@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nebu/nebu/internal/audit"
 	pb "github.com/nebu/nebu/internal/grpc/pb"
@@ -742,7 +743,10 @@ func (s *AdminServer) PatchAdminRoom(ctx context.Context, req PatchAdminRoomRequ
 	}
 	if body.Name != nil {
 		v := *body.Name
-		if len(v) < 1 || len(v) > 255 {
+		// MINOR-1 (review): use UTF-8 rune count, not byte length, for "1–255 chars".
+		// Consistent with profile.go:126 (Displayname) and admin/users.go:220 (DisplayName).
+		runes := utf8.RuneCountInString(v)
+		if runes < 1 || runes > 255 {
 			return &patchRoom400Resp{msg: "name must be between 1 and 255 characters"}, nil
 		}
 		patch.Name = &v
@@ -750,7 +754,8 @@ func (s *AdminServer) PatchAdminRoom(ctx context.Context, req PatchAdminRoomRequ
 	}
 	if body.Topic != nil {
 		v := *body.Topic
-		if len(v) > 1000 {
+		// MINOR-1 (review): use UTF-8 rune count, not byte length, for "0–1000 chars".
+		if utf8.RuneCountInString(v) > 1000 {
 			return &patchRoom400Resp{msg: "topic must be at most 1000 characters"}, nil
 		}
 		patch.Topic = &v
@@ -780,12 +785,16 @@ func (s *AdminServer) PatchAdminRoom(ctx context.Context, req PatchAdminRoomRequ
 	}
 
 	// ── Audit log (never-raise) ───────────────────────────────────────────────
-	if s.CoreClient != nil {
-		actorID, _ := ctx.Value(middleware.ContextKeyUserID).(string)
-		_ = audit.LogEvent(ctx, s.CoreClient, actorID, "room_settings_updated", "room", roomID,
-			map[string]any{"changes": changedFields}, "success", "")
-	} else {
-		slog.Warn("PatchAdminRoom audit skipped — CoreClient is nil", "room_id", roomID)
+	// MINOR-2 (review): skip audit for no-op PATCH (empty body / no changed fields)
+	// to avoid polluting the audit trail with non-events.
+	if len(changedFields) > 0 {
+		if s.CoreClient != nil {
+			actorID, _ := ctx.Value(middleware.ContextKeyUserID).(string)
+			_ = audit.LogEvent(ctx, s.CoreClient, actorID, "room_settings_updated", "room", roomID,
+				map[string]any{"changes": changedFields}, "success", "")
+		} else {
+			slog.Warn("PatchAdminRoom audit skipped — CoreClient is nil", "room_id", roomID)
+		}
 	}
 
 	return &patchRoom200Resp{detail: updated}, nil

@@ -597,7 +597,39 @@ func TestPostJoinRoom_CoreError(t *testing.T) {
 	}
 }
 
-// ─── Test 12: Invite user → 200 {} ───────────────────────────────────────────
+// ─── Test 12 (MAJOR-3): Room full (gRPC RESOURCE_EXHAUSTED) → 403 M_ROOM_FULL ─
+//
+// Story 6.8 AC — Room GenServer enforces max_members limit; when the limit is
+// reached, Core.JoinRoom returns gRPC ResourceExhausted.
+// Go handler must map that to HTTP 403 with errcode M_ROOM_FULL.
+
+func TestPostJoinRoom_RoomFull(t *testing.T) {
+	mock := &mockJoinRoomCoreClient{
+		err: status.Error(codes.ResourceExhausted, "room is full"),
+	}
+
+	mux, makeToken := buildAuthedJoinRoomHandler(t, mock)
+
+	req := httptest.NewRequest(http.MethodPost, "/!full:test.local", http.NoBody)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var errResp matrixError
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+	if errResp.ErrCode != "M_ROOM_FULL" {
+		t.Errorf("expected errcode M_ROOM_FULL, got %s", errResp.ErrCode)
+	}
+}
+
+// ─── Test 13: Invite user → 200 {} ───────────────────────────────────────────
 //
 // AC #6 — POST /rooms/{roomId}/invite with valid JWT + valid body → 200 {}.
 // Asserts the gRPC request carries roomId, inviterId (caller), and inviteeId.

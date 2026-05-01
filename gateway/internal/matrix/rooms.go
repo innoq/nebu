@@ -66,6 +66,11 @@ func NewCreateRoomHandler(cfg CreateRoomConfig) *CreateRoomHandler {
 //  3. Build userID and attach gRPC metadata.
 //  4. Call Core.CreateRoom — map gRPC errors to Matrix error codes.
 //  5. Return 200 {"room_id": ...} on success.
+//
+// TODO(6-8b): Read room_defaults (max_members, visibility) from the DB and apply
+// them to grpcReq when the caller does not provide explicit overrides. This
+// downstream integration is deferred to story 6-8b. See Dev Agent Record in
+// 6-8-room-settings-update-api-max-members-visibility-serverweite-defaults.md.
 func (h *CreateRoomHandler) PostCreateRoom(w http.ResponseWriter, r *http.Request) {
 	if !requireJSON(w, r) {
 		return

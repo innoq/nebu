@@ -90,6 +90,7 @@ defmodule Nebu.RoomTest do
 
   # Fake DB that always returns a DB error on writes — for testing fail-safe behavior
   defmodule FailingWriteDB do
+    @behaviour Nebu.Room.DBBehaviour
     def load_members(_room_id), do: {:error, :not_found}
     def insert_room(_room_id), do: {:ok, System.system_time(:millisecond)}
     def insert_member(_room_id, _user_id), do: {:error, :db_connection_lost}
@@ -98,6 +99,12 @@ defmodule Nebu.RoomTest do
     def set_power_levels(_room_id, _json), do: {:error, :db_connection_lost}
     # Story 6.8: fail-open — if load_room_settings fails, GenServer defaults to 0.
     def load_room_settings(_room_id), do: {:error, :db_connection_lost}
+    # Unused by write-error tests — stubs required to satisfy @behaviour contract.
+    def get_rooms_for_user(_user_id), do: {:error, :db_connection_lost}
+    def fetch_events(_room_id, _dir, _limit, _from), do: {:error, :db_connection_lost}
+    def fetch_events_since(_room_id, _last_event_id, _limit), do: {:error, :db_connection_lost}
+    def get_event_timestamp(_event_id), do: {:error, :db_connection_lost}
+    def get_room_name(_room_id), do: {:error, :db_connection_lost}
   end
 
   # ─── Setup ──────────────────────────────────────────────────────────────────
@@ -516,8 +523,8 @@ defmodule Nebu.RoomTest do
       # Set max_members=2 via update_settings (mirrors Admin PATCH + gRPC flow)
       :ok = Nebu.Room.Server.update_settings(room_id, %{max_members: 2})
 
-      # Allow the cast to be processed by the GenServer
-      Process.sleep(20)
+      # Synchronization barrier: GenServer.call flushes any preceding casts.
+      _state = Nebu.Room.Server.get_state(room_id)
 
       # Third join must be blocked
       assert {:error, :room_full} = Nebu.Room.Server.join(room_id, "@charlie:nebu.local")
@@ -537,7 +544,8 @@ defmodule Nebu.RoomTest do
 
       # Set limit to 3 — one slot still available
       :ok = Nebu.Room.Server.update_settings(room_id, %{max_members: 3})
-      Process.sleep(20)
+      # Synchronization barrier: GenServer.call flushes any preceding casts.
+      _state = Nebu.Room.Server.get_state(room_id)
 
       assert :ok = Nebu.Room.Server.join(room_id, "@charlie:nebu.local")
 
@@ -555,7 +563,8 @@ defmodule Nebu.RoomTest do
 
       # Set max_members=1 — room is now full
       :ok = Nebu.Room.Server.update_settings(room_id, %{max_members: 1})
-      Process.sleep(20)
+      # Synchronization barrier: GenServer.call flushes any preceding casts.
+      _state = Nebu.Room.Server.get_state(room_id)
 
       # Alice is already a member — must get :already_member, not :room_full
       assert {:error, :already_member} = Nebu.Room.Server.join(room_id, "@alice:nebu.local")
@@ -578,7 +587,6 @@ defmodule Nebu.RoomTest do
       assert Map.get(state_before, :max_members, 0) == 0
 
       :ok = Nebu.Room.Server.update_settings(room_id, %{max_members: 42})
-      Process.sleep(20)
 
       state_after = Nebu.Room.Server.get_state(room_id)
       assert state_after.max_members == 42
@@ -592,14 +600,16 @@ defmodule Nebu.RoomTest do
       # Fill the room to capacity 1
       assert :ok = Nebu.Room.Server.join(room_id, "@alice:nebu.local")
       :ok = Nebu.Room.Server.update_settings(room_id, %{max_members: 1})
-      Process.sleep(20)
+      # Synchronization barrier: GenServer.call flushes any preceding casts.
+      _state = Nebu.Room.Server.get_state(room_id)
 
       # Bob is blocked
       assert {:error, :room_full} = Nebu.Room.Server.join(room_id, "@bob:nebu.local")
 
       # Remove the limit
       :ok = Nebu.Room.Server.update_settings(room_id, %{max_members: 0})
-      Process.sleep(20)
+      # Synchronization barrier: GenServer.call flushes any preceding casts.
+      _state = Nebu.Room.Server.get_state(room_id)
 
       # Bob can now join
       assert :ok = Nebu.Room.Server.join(room_id, "@bob:nebu.local")
