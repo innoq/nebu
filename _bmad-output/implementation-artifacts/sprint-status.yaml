@@ -644,3 +644,10 @@ development_status:
   # P1 test gap closure (from epic-7-final-traceability-2026-04-30.md)
   7-36-p1-test-gaps-sync-propagation-private-room-exclusion: done
   epic-7-retrospective: pending  # SEC Gate 2 done; retro blocked until 7-17 (CSRF HIGH) is done
+# story 6-11 done (pipeline: ATDD+Dev+CodeReview CLEAN — Godog E2E admin lifecycle/role/archive, compliance officer auth): 2026-05-02
+# story 6-10 done (pipeline: ATDD+Dev+CodeReview+Kassandra HIGH-1-fixed (CWE-209 ResponseErrorHandlerFunc) — GET/PATCH /admin/config + GET /admin/metrics + AES-256-GCM oidc_client_secret): 2026-05-02
+# story 6-9 done (pipeline: ATDD+Dev+CodeReview+Kassandra HIGH-1 (archive race window) as follow-up 6-9b — archive/unarchive endpoints, Horde GenServer guard): 2026-05-02
+# story 6-8 done (pipeline: ATDD+Dev+CodeReview+Kassandra CLEAN — PATCH /admin/rooms, PUT room-defaults, max_members GenServer, room_full 403): 2026-05-02
+# story 6-7 done (pipeline: ATDD+Dev+CodeReview+Kassandra CLEAN — GET /admin/rooms + GET /admin/rooms/{roomId}, cursor pagination, RoomRepository): 2026-05-02
+# epic-6 SEC Gate 2 done — Kassandra HIGH (HIGH-1 RequireRole fail-closed FIXED inline; HIGH-2 Core send_event archive-race as follow-up 6-9b); 4 MEDIUM + 2 LOW follow-ups: 2026-05-02
+# epic-6 SEC Gate 2 HIGH-2 follow-up: story 6-9b created (Core send_event archived-status check to close TOCTOU race window): 2026-05-02
