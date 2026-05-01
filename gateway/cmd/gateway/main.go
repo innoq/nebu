@@ -1106,11 +1106,19 @@ func main() {
 	mux.HandleFunc("GET /api/v1/openapi.yaml", apihandler.OpenAPIYAMLHandler)
 
 	// Story 6.3 — Admin API Router + Role-Auth Middleware.
+	// Story 6.4 — Admin API User List + Get: AdminServer gains DB + CoreClient + Users.
 	// Registers generated Admin API stub routes with role-based access control:
-	//   - GET /api/v1/health        → unauthenticated
-	//   - GET /api/v1/admin/*       → instance_admin role required (501 stubs until 6.4+)
+	//   - GET /api/v1/health                    → unauthenticated
+	//   - GET /api/v1/admin/*                   → instance_admin role required
+	//   - GET /api/v1/admin/users               → list users (Story 6.4)
+	//   - GET /api/v1/admin/users/{userId}      → get single user (Story 6.4)
 	// GET /api/v1/compliance/access-requests is owned by main.go above (Story 5.4 live handler).
-	apihandler.RegisterAdminRoutes(mux, &apihandler.AdminServer{}, jwtMiddleware)
+	adminSrv := &apihandler.AdminServer{
+		DB:         bootstrapDB,
+		CoreClient: coreClient.CoreServiceClient(),
+		Users:      apihandler.NewUserRepo(bootstrapDB),
+	}
+	apihandler.RegisterAdminRoutes(mux, adminSrv, jwtMiddleware)
 
 	// Story 5.14: Wrap the main mux so that every /admin/* response carries security headers.
 	// SecurityHeadersMiddleware is the outermost layer — even 302 redirects emitted by

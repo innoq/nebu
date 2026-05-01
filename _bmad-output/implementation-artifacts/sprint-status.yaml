@@ -1,6 +1,8 @@
 # generated: 2026-03-20
 # last_updated: 2026-05-01
+# story 6-4 created: 6-4 → ready-for-dev: 2026-05-01 (User List + Get API — ListAdminUsers real impl + GetAdminUser new endpoint, spec-first with make gen-api, UserRepository, cursor pagination, email masking MVP, audit log)
 # story 6-3 created: 6-3 → ready-for-dev: 2026-05-01 (Admin API Router + RequireRole middleware — wires oapi-codegen StrictHandler + role-gate for instance_admin/compliance_officer groups)
+# story 6-4 done (pipeline: ATDD+Dev+CodeReview+Kassandra CLEAN — UserList/GetUser, cursor pagination, email-mask MVP, audit log, errors.Is fix): 2026-05-01
 # story 6-3 done (pipeline: ATDD+Dev+CodeReview MAJOR-fixed (compliance route regression)+Kassandra CLEAN — RequireRole, RegisterAdminRoutes, compliance-route owned by main.go): 2026-05-01
 # story 6-2 done (pipeline: ATDD+Dev+CodeReview CLEAN — APIResponse[T], EncodeCursor/DecodeCursor, ErrInvalidCursor sentinel): 2026-05-01
 # story 6-2 created: 6-2 → ready-for-dev: 2026-05-01 (Admin API response envelope + cursor pagination helpers)
@@ -572,7 +574,7 @@ development_status:
   6-1-openapi-spec-first-setup-codegen-pipeline-strictserverinterface-live-endpoint: done
   6-2-admin-api-response-format-cursor-pagination: done
   6-3-admin-api-router-role-auth-middleware: done
-  6-4-user-list-get-api: backlog
+  6-4-user-list-get-api: done
   6-5-user-deactivation-reactivation-session-invalidierung: backlog
   6-6-user-role-assignment-api-role-overrides-tabelle-middleware-integration: backlog
   6-7-room-list-get-api: backlog

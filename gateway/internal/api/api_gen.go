@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/oapi-codegen/runtime"
 	strictnethttp "github.com/oapi-codegen/runtime/strictmiddleware/nethttp"
 )
 
@@ -33,6 +34,27 @@ type HealthResponse struct {
 	Status string `json:"status"`
 }
 
+// UserDetailResponse defines model for UserDetailResponse.
+type UserDetailResponse struct {
+	Data map[string]interface{} `json:"data"`
+}
+
+// UserListResponse defines model for UserListResponse.
+type UserListResponse struct {
+	Data []map[string]interface{} `json:"data"`
+	Meta struct {
+		NextCursor *string `json:"next_cursor,omitempty"`
+		Total      int     `json:"total"`
+	} `json:"meta"`
+}
+
+// ListAdminUsersParams defines parameters for ListAdminUsers.
+type ListAdminUsersParams struct {
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Search *string `form:"search,omitempty" json:"search,omitempty"`
+}
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// Get server config (placeholder — Story 6.10)
@@ -44,9 +66,12 @@ type ServerInterface interface {
 	// List rooms (placeholder — Story 6.7)
 	// (GET /admin/rooms)
 	ListAdminRooms(w http.ResponseWriter, r *http.Request)
-	// List users (placeholder — Story 6.4)
+	// List users (instance_admin required)
 	// (GET /admin/users)
-	ListAdminUsers(w http.ResponseWriter, r *http.Request)
+	ListAdminUsers(w http.ResponseWriter, r *http.Request, params ListAdminUsersParams)
+	// Get single user (instance_admin required)
+	// (GET /admin/users/{userId})
+	GetAdminUser(w http.ResponseWriter, r *http.Request, userId string)
 	// List compliance access requests (placeholder — Story 6.x)
 	// (GET /compliance/access-requests)
 	ListComplianceAccessRequests(w http.ResponseWriter, r *http.Request)
@@ -127,6 +152,66 @@ func (siw *ServerInterfaceWrapper) ListAdminRooms(w http.ResponseWriter, r *http
 // ListAdminUsers operation middleware
 func (siw *ServerInterfaceWrapper) ListAdminUsers(w http.ResponseWriter, r *http.Request) {
 
+	var err error
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListAdminUsersParams
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "search" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "search", r.URL.Query(), &params.Search, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "search", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAdminUsers(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAdminUser operation middleware
+func (siw *ServerInterfaceWrapper) GetAdminUser(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "userId" -------------
+	var userId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "userId", r.PathValue("userId"), &userId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "userId", Err: err})
+		return
+	}
+
 	ctx := r.Context()
 
 	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
@@ -134,7 +219,7 @@ func (siw *ServerInterfaceWrapper) ListAdminUsers(w http.ResponseWriter, r *http
 	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListAdminUsers(w, r)
+		siw.Handler.GetAdminUser(w, r, userId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -302,6 +387,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("GET "+options.BaseURL+"/admin/metrics", wrapper.GetAdminMetrics)
 	m.HandleFunc("GET "+options.BaseURL+"/admin/rooms", wrapper.ListAdminRooms)
 	m.HandleFunc("GET "+options.BaseURL+"/admin/users", wrapper.ListAdminUsers)
+	m.HandleFunc("GET "+options.BaseURL+"/admin/users/{userId}", wrapper.GetAdminUser)
 	m.HandleFunc("GET "+options.BaseURL+"/compliance/access-requests", wrapper.ListComplianceAccessRequests)
 	m.HandleFunc("GET "+options.BaseURL+"/health", wrapper.GetHealth)
 
@@ -381,17 +467,27 @@ func (response ListAdminRooms501Response) VisitListAdminRoomsResponse(w http.Res
 }
 
 type ListAdminUsersRequestObject struct {
+	Params ListAdminUsersParams
 }
 
 type ListAdminUsersResponseObject interface {
 	VisitListAdminUsersResponse(w http.ResponseWriter) error
 }
 
-type ListAdminUsers200JSONResponse EmptyResponse
+type ListAdminUsers200JSONResponse UserListResponse
 
 func (response ListAdminUsers200JSONResponse) VisitListAdminUsersResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListAdminUsers400JSONResponse EmptyResponse
+
+func (response ListAdminUsers400JSONResponse) VisitListAdminUsersResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -402,6 +498,32 @@ type ListAdminUsers501Response struct {
 func (response ListAdminUsers501Response) VisitListAdminUsersResponse(w http.ResponseWriter) error {
 	w.WriteHeader(501)
 	return nil
+}
+
+type GetAdminUserRequestObject struct {
+	UserId string `json:"userId"`
+}
+
+type GetAdminUserResponseObject interface {
+	VisitGetAdminUserResponse(w http.ResponseWriter) error
+}
+
+type GetAdminUser200JSONResponse UserDetailResponse
+
+func (response GetAdminUser200JSONResponse) VisitGetAdminUserResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetAdminUser404JSONResponse EmptyResponse
+
+func (response GetAdminUser404JSONResponse) VisitGetAdminUserResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
 }
 
 type ListComplianceAccessRequestsRequestObject struct {
@@ -455,9 +577,12 @@ type StrictServerInterface interface {
 	// List rooms (placeholder — Story 6.7)
 	// (GET /admin/rooms)
 	ListAdminRooms(ctx context.Context, request ListAdminRoomsRequestObject) (ListAdminRoomsResponseObject, error)
-	// List users (placeholder — Story 6.4)
+	// List users (instance_admin required)
 	// (GET /admin/users)
 	ListAdminUsers(ctx context.Context, request ListAdminUsersRequestObject) (ListAdminUsersResponseObject, error)
+	// Get single user (instance_admin required)
+	// (GET /admin/users/{userId})
+	GetAdminUser(ctx context.Context, request GetAdminUserRequestObject) (GetAdminUserResponseObject, error)
 	// List compliance access requests (placeholder — Story 6.x)
 	// (GET /compliance/access-requests)
 	ListComplianceAccessRequests(ctx context.Context, request ListComplianceAccessRequestsRequestObject) (ListComplianceAccessRequestsResponseObject, error)
@@ -568,8 +693,10 @@ func (sh *strictHandler) ListAdminRooms(w http.ResponseWriter, r *http.Request) 
 }
 
 // ListAdminUsers operation middleware
-func (sh *strictHandler) ListAdminUsers(w http.ResponseWriter, r *http.Request) {
+func (sh *strictHandler) ListAdminUsers(w http.ResponseWriter, r *http.Request, params ListAdminUsersParams) {
 	var request ListAdminUsersRequestObject
+
+	request.Params = params
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.ListAdminUsers(ctx, request.(ListAdminUsersRequestObject))
@@ -584,6 +711,32 @@ func (sh *strictHandler) ListAdminUsers(w http.ResponseWriter, r *http.Request) 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ListAdminUsersResponseObject); ok {
 		if err := validResponse.VisitListAdminUsersResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetAdminUser operation middleware
+func (sh *strictHandler) GetAdminUser(w http.ResponseWriter, r *http.Request, userId string) {
+	var request GetAdminUserRequestObject
+
+	request.UserId = userId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetAdminUser(ctx, request.(GetAdminUserRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetAdminUser")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetAdminUserResponseObject); ok {
+		if err := validResponse.VisitGetAdminUserResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -642,17 +795,21 @@ func (sh *strictHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"H4sIAAAAAAAC/8SV327UOhDGX8Wacy5aKd1k+VOkcLVUBYqgqloQF9VeeJ1p45LYxp5UrKpIPARPyJOg",
-	"sbPtLmVL1QrtVRJ7Zvx9v4w8V6Bs66xBQwHKKwiqxlbG1/3W0fwYg7MmIC9UGJTXjrQ1UMJRIxXWtqnQ",
-	"Cz9EvRQeHa9XQhux77QSuyJ0s51A1msMkAHNHUIJdnaBiqDP4C3Khurlc5y3Dj1xPCsiSV18G1IDeW3O",
-	"oe8z8Pi10x4rKE8XcdNbR/QZBFSd1zQ/YXep7CuUHv2ko5q/ZvHrtfWtJCjh3eePkCUWXCnt3oiviRz0",
-	"XFibMxulaWp45xBnnZhUrTZicnQAGVyiD4nXeFSMCjZsHRrpNJTwdDQeFZCBk1RHUbnk1FxZc6bPeeEc",
-	"iR/MQzL3gwpKeIMUj9hLYYwhwYs1nhQFP5Q1hCZmS+carWJ+fhFYzOI/89v/Hs+ghP/ym0bIhy7IV1sg",
-	"Ol5tgkFCn8HzYny7Rw4tCd26Bls0hFX6F13bSj9PPkRAf4leJMdiyy011c/vP8QJWT8Xu6NxsR2TB0At",
-	"ktcq/JXQhyFuk4gWGh7OaHB7bzre2nY9m/c6JDjHMWyTaFiBaHSgB8JhKyK6Xc/mxQqaLqC/B5pPMWyT",
-	"aFjBo9FEt+vRPBvQsL5GS6Mwl0phCDt8r2Kgu0ntXadNYtbxImmT3JIUcW3gEfRusAi5WnU90m8D0joO",
-	"tbvupzT2/iWr3wbrH2ClCDFMzuVBCeXpdBnIEKlqVF/EVmdkRzUaYmFYbafaS7mr4/V02nOxeNOHuNv5",
-	"BkrIpdP55Rj6af8rAAD//8jPf6KHCAAA",
+	"H4sIAAAAAAAC/8RW227cNhN+FWL+/8IBlNVum6aAeuWkaeuiDQKnQS+MRUBT4xVTiWSGIyMLY4E+RJ+w",
+	"T1IMqbW1Xq0dJEh8pQPn+M03w7kC47vgHTqOUF1BNA12Or2+6AKvTzEG7yLKjxqjIRvYegcVvGq1wca3",
+	"NZKiQeoHRRjkf62sUy+CNeqpiv3548ieLEYogNcBoQJ//g4Nw6aAX1C33Iz9BPIBiUVeImLNfXobVCOT",
+	"dSvYbAogfN9bwhqqs63ccsLFm4j0I7K27WE3tWY9crJVvuUkSR1y8ZuNfL8Dy9jFCU/XRjWRXst3h1lj",
+	"147DD/zW9BQ9TYBSAHvW7ejEOsYV0l4qWW4/l6mMh1gmhSOaniyvXwtzcojPUBPScc+NfJ2nr588dZqh",
+	"gl///AOKzDOxlE9viNEwB9iIYesufMrDcisnL/G8V8d1Z506fnUCBVwixczFxWw+m0vyPqDTwUIF384W",
+	"szkUEDQ3KahSi2ppvLuwK/mxQpaHYKuF0yc1VPAzcnLxPIsJFrmgycY387k8jHeMLmnrEFprkn75Lkow",
+	"2x6St/8TXkAF/ytvmqwcOqzcba+U8W6DDSFsCvhuvtjvv5eele1Cix06xjrXou86Teuch4pIl0gqZ6yO",
+	"wqhh//37H/WaPa3V09li/igpDwB1yGRNvBeh3we5h4RoG8OnYzRk+9HokPfdYWxkAiRwTpPYQ0IjEajW",
+	"Rv5EcCQVlbI9jM33O9D0EekjoHmTxKQxSXfISefsCqyE9L5HWkMBTqfZMEy5YoTJ3h0wrdnazvKU4mga",
+	"TmtG1GSaO30uv2Bd9+6RidKKzHVpn3xNUj3TtZLLASOrI+sudWtrlaukvMTUWX70OYRLHBLTkbUz+DYx",
+	"S23vo326lVfyOKk3944rAe0A6+SKuCFANgjjW5Cpx4ckxK3d5RAl6iQWMyuefD1WJOfOs7rwvZu8iKxb",
+	"tZiKe19txX9r5bzUxmCMjwe+3T1Znl+rHSet063SQ47gHIq6TuAz+uIGFqV3rR6ezh8GSJu0YN/VIHkF",
+	"/5JY3VryJ8DKEmrY4seLJVRnyzEgg6Rp0Pyljnqne27QsQSWabSru7uOni2lW/NmlEdATy1UUOpgy8sF",
+	"bJab/wIAAP//hL0gshMNAAA=",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

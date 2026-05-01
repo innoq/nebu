@@ -21,6 +21,32 @@ components:
     EmptyResponse:
       type: object
       description: Placeholder response; replaced in Epic 6 sub-stories
+    UserListResponse:
+      type: object
+      required:
+        - data
+        - meta
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+        meta:
+          type: object
+          required:
+            - total
+          properties:
+            total:
+              type: integer
+            next_cursor:
+              type: string
+    UserDetailResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
 security:
   - BearerAuth: []
 paths:
@@ -39,16 +65,61 @@ paths:
   /admin/users:
     get:
       operationId: ListAdminUsers
-      summary: List users (placeholder — Story 6.4)
+      summary: List users (instance_admin required)
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
       responses:
         "200":
           description: User list
           content:
             application/json:
               schema:
+                $ref: "#/components/schemas/UserListResponse"
+        "400":
+          description: Bad request (invalid cursor or limit)
+          content:
+            application/json:
+              schema:
                 $ref: "#/components/schemas/EmptyResponse"
         "501":
           description: Not implemented
+  /admin/users/{userId}:
+    get:
+      operationId: GetAdminUser
+      summary: Get single user (instance_admin required)
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserDetailResponse"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
   /admin/rooms:
     get:
       operationId: ListAdminRooms
