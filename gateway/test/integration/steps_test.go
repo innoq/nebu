@@ -110,4 +110,5 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	initializeEventContextSteps(sc)      // event context step definitions (Story 7-28)
 	initializeNotificationsSteps(sc)     // notifications API step definitions (Story 7-29)
 	initializePushRulesSteps(sc)          // push rules + pushers API step definitions (Story 7-30)
+	initializeAdminAPISteps(sc)           // Admin API step definitions (Story 6-11)
 }
