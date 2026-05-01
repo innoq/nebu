@@ -1,5 +1,6 @@
 # generated: 2026-03-20
-# last_updated: 2026-04-30
+# last_updated: 2026-05-01
+# story 6-1 done (pipeline: ATDD+Dev+CodeReview+Kassandra CLEAN — oapi-codegen StrictServerInterface, openapi.yaml 3.1, GET /api/v1/openapi.yaml embedded): 2026-05-01
 # story 7-36 done (pipeline: ATDD+Dev+CodeReview CLEAN — sync propagation Godog + private room exclusion + theResponseBodyIs compile fix): 2026-04-30
 # story 7-36 created: 7-36 → ready-for-dev: 2026-04-30 (P1 test gap closure: sync propagation for account_data+tags + private room exclusion from publicRooms)
 # story 7-35 done (pipeline: ATDD+Dev+CodeReview MINOR-FIXED — withUserDB helper, SET LOCAL GUC, RLS migration 000033): 2026-04-30
@@ -115,7 +116,8 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-20
-last_updated: 2026-04-30
+last_updated: 2026-05-01
+# story 6-1 created: epic-6 → in-progress, 6-1 → ready-for-dev: 2026-05-01
 # story 5-1 review: 2026-04-23 (audit-log schema + RLS + retention cleanup)
 # story 5-29 created as follow-up of 5-27 scope reduction (code-review MAJOR-B): 2026-04-23
 # story 5-27 done (pipeline: 1 MAJOR-A fixed, 1 MAJOR-B deferred to 5-29, 8 MINOR fixed, Kassandra CLEAN): 2026-04-23
@@ -562,8 +564,8 @@ development_status:
   # Epic 6: Instance Admins Can Manage the Instance Programmatically via Admin API
   # (skipped by user decision 2026-04-29 — Epic 7 UI is MVP priority; Epic 6 API stays backlog)
   # ─────────────────────────────────────────────────────────────────────────
-  epic-6: backlog
-  6-1-openapi-spec-first-setup-codegen-pipeline-strictserverinterface-live-endpoint: backlog
+  epic-6: in-progress
+  6-1-openapi-spec-first-setup-codegen-pipeline-strictserverinterface-live-endpoint: done
   6-2-admin-api-response-format-cursor-pagination: backlog
   6-3-admin-api-router-role-auth-middleware: backlog
   6-4-user-list-get-api: backlog

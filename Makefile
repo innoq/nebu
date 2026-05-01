@@ -44,7 +44,7 @@ build-admin-css:
 			--minify"
 
 ## build-gateway: Build the Go Gateway Docker image (multi-stage)
-build-gateway: build-admin-css download-vendor
+build-gateway: gen-api build-admin-css download-vendor
 	docker build -t nebu-gateway:dev ./gateway
 
 ## build-core: Compile the Elixir/OTP Core inside container (mix compile)
@@ -191,10 +191,8 @@ proto:
 		mkdir -p ../core/apps/event_dispatcher/lib/pb && \
 		protoc --plugin=protoc-gen-elixir=/root/.mix/escripts/protoc-gen-elixir --elixir_out=../core/apps/event_dispatcher/lib/pb --proto_path=. core.proto'
 
-## gen-api: Generate Go server stubs from openapi.yaml (oapi-codegen)
+## gen-api: Generate Go server stubs from openapi.yaml (oapi-codegen, strict-server)
 gen-api:
 	$(DOCKER_GO) sh -c "go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest \
-		-generate types,std-http-server \
-		-package admin \
-		-o gateway/internal/admin/api_gen.go \
+		--config gateway/api/oapi-codegen.yaml \
 		gateway/api/openapi.yaml"

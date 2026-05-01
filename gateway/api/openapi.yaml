@@ -1,20 +1,15 @@
-openapi: "3.0.3"
+openapi: "3.1.0"
 info:
-  title: Nebu Admin API
-  version: "0.1.0"
-paths:
-  /api/v1/health:
-    get:
-      operationId: GetApiV1Health
-      summary: Admin health check
-      responses:
-        "200":
-          description: Health status
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/HealthResponse"
+  title: "Nebu Admin API"
+  version: "1.0.0"
+servers:
+  - url: "/api/v1"
 components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
   schemas:
     HealthResponse:
       type: object
@@ -23,3 +18,86 @@ components:
       properties:
         status:
           type: string
+    EmptyResponse:
+      type: object
+      description: Placeholder response; replaced in Epic 6 sub-stories
+security:
+  - BearerAuth: []
+paths:
+  /health:
+    get:
+      operationId: GetHealth
+      summary: Health check (unauthenticated)
+      security: []
+      responses:
+        "200":
+          description: Health status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /admin/users:
+    get:
+      operationId: ListAdminUsers
+      summary: List users (placeholder — Story 6.4)
+      responses:
+        "200":
+          description: User list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "501":
+          description: Not implemented
+  /admin/rooms:
+    get:
+      operationId: ListAdminRooms
+      summary: List rooms (placeholder — Story 6.7)
+      responses:
+        "200":
+          description: Room list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "501":
+          description: Not implemented
+  /admin/config:
+    get:
+      operationId: GetAdminConfig
+      summary: Get server config (placeholder — Story 6.10)
+      responses:
+        "200":
+          description: Config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "501":
+          description: Not implemented
+  /admin/metrics:
+    get:
+      operationId: GetAdminMetrics
+      summary: Get metrics (placeholder — Story 6.10)
+      responses:
+        "200":
+          description: Metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "501":
+          description: Not implemented
+  /compliance/access-requests:
+    get:
+      operationId: ListComplianceAccessRequests
+      summary: List compliance access requests (placeholder — Story 6.x)
+      responses:
+        "200":
+          description: Access requests
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "501":
+          description: Not implemented

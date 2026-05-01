@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/nebu/nebu/internal/admin"
+	apihandler "github.com/nebu/nebu/internal/api"
 	"github.com/nebu/nebu/internal/audit"
 	"github.com/nebu/nebu/internal/auth"
 	"github.com/nebu/nebu/internal/buffer"
@@ -1095,6 +1096,11 @@ func main() {
 			}
 			w.Write([]byte(`{}`))
 		}))))
+
+	// Story 6.1 — Admin API OpenAPI spec endpoint (unauthenticated, FR51).
+	// Serves the raw openapi.yaml embedded at build time so API tooling can fetch it
+	// without credentials. Must NOT be placed behind jwtMiddleware or sessionGuard.
+	mux.HandleFunc("GET /api/v1/openapi.yaml", apihandler.OpenAPIYAMLHandler)
 
 	// Story 5.14: Wrap the main mux so that every /admin/* response carries security headers.
 	// SecurityHeadersMiddleware is the outermost layer — even 302 redirects emitted by
