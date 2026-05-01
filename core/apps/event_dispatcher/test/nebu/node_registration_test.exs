@@ -1,5 +1,8 @@
 defmodule Nebu.NodeRegistrationTest do
-  use ExUnit.Case, async: true
+  # async: false — all three tests mutate global env vars (NEBU_INTERNAL_SECRET_FILE,
+  # NEBU_GATEWAY_INTERNAL_URL) via System.put_env/delete_env. Running async would
+  # race against other tests reading the same env vars concurrently.
+  use ExUnit.Case, async: false
 
   # Tests for Nebu.NodeRegistration.
   #
