@@ -8,7 +8,11 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/nebu/nebu/internal/audit"
 	pb "github.com/nebu/nebu/internal/grpc/pb"
@@ -19,12 +23,14 @@ import (
 //
 // DB and CoreClient are populated in main.go (Option A from Dev Notes: fields on AdminServer).
 // Users is the UserRepository for Admin user queries (Story 6.4).
+// Deactivation is the DeactivationRepository for user deactivation/reactivation (Story 6.5).
 //
 // TODO(Story 6.6): Users will also need to merge role_overrides table once it exists.
 type AdminServer struct {
-	DB         *sql.DB
-	CoreClient pb.CoreServiceClient
-	Users      UserRepository
+	DB           *sql.DB
+	CoreClient   pb.CoreServiceClient
+	Users        UserRepository
+	Deactivation DeactivationRepository // Story 6.5
 }
 
 // Ensure AdminServer satisfies the generated StrictServerInterface at compile time.
@@ -202,5 +208,203 @@ func (r *getAdminUser404Response) VisitGetAdminUserResponse(w http.ResponseWrite
 	w.WriteHeader(http.StatusNotFound)
 	return json.NewEncoder(w).Encode(map[string]any{
 		"error": map[string]string{"code": "M_NOT_FOUND", "message": "User not found"},
+	})
+}
+
+// ── Story 6.5: Deactivate / Reactivate handlers ───────────────────────────────
+
+// DeactivateAdminUser implements AC#1: POST /api/v1/admin/users/{userId}/deactivate.
+// Validates the reason, checks user state, calls DeactivateUser, invalidates sessions,
+// and emits an audit log. Returns 501 if Deactivation repository is not wired.
+func (s *AdminServer) DeactivateAdminUser(ctx context.Context, req DeactivateAdminUserRequestObject) (DeactivateAdminUserResponseObject, error) {
+	if s.Deactivation == nil {
+		return DeactivateAdminUser501Response{}, nil
+	}
+
+	userID := req.UserId
+
+	// 1. Parse + validate body — reason must be at least 10 chars.
+	reason := ""
+	if req.Body != nil {
+		reason = strings.TrimSpace(req.Body.Reason)
+	}
+	if len(reason) < 10 {
+		return &deactivate400Resp{msg: "reason must be at least 10 characters"}, nil
+	}
+
+	// 2. Check current user status.
+	isActive, _, _, err := s.Deactivation.GetUserStatus(ctx, userID)
+	if errors.Is(err, ErrUserNotFound) {
+		return &deactivate404Resp{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !isActive {
+		return &deactivate409Resp{msg: "User is already deactivated"}, nil
+	}
+
+	// 3. Persist deactivation in DB.
+	nowMs := time.Now().UnixMilli()
+	if err := s.Deactivation.DeactivateUser(ctx, userID, reason, nowMs); err != nil {
+		return nil, err
+	}
+
+	// 4. gRPC: invalidate all active sessions (best-effort — log on failure, do not block).
+	if s.CoreClient != nil {
+		_, grpcErr := s.CoreClient.InvalidateUserSessions(ctx, &pb.InvalidateUserSessionsRequest{UserId: userID})
+		if grpcErr != nil {
+			slog.Warn("InvalidateUserSessions failed", "user_id", userID, "err", grpcErr)
+		}
+	} else {
+		// MINOR-1 fix (Story 6.5 code review): warn on misconfiguration so a missing
+		// CoreClient leaves an audit trail instead of silently skipping session invalidation.
+		slog.Warn("InvalidateUserSessions skipped — CoreClient is nil", "user_id", userID)
+	}
+
+	// 5. Audit log (never-raise).
+	if s.CoreClient != nil {
+		actorID, _ := ctx.Value(middleware.ContextKeyUserID).(string)
+		_ = audit.LogEvent(ctx, s.CoreClient, actorID, "user_deactivated", "user", userID,
+			map[string]any{"reason": reason}, "success", "")
+	}
+
+	return &deactivate200Resp{userID: userID, status: "deactivated"}, nil
+}
+
+// ReactivateAdminUser implements AC#2: POST /api/v1/admin/users/{userId}/reactivate.
+// Checks blocked states (anonymized, keys_deleted) and current active state,
+// then updates DB and emits audit log. Returns 501 if Deactivation repository is not wired.
+func (s *AdminServer) ReactivateAdminUser(ctx context.Context, req ReactivateAdminUserRequestObject) (ReactivateAdminUserResponseObject, error) {
+	if s.Deactivation == nil {
+		return ReactivateAdminUser501Response{}, nil
+	}
+
+	userID := req.UserId
+
+	// Check current user status.
+	isActive, deletionStatus, anonymizedAt, err := s.Deactivation.GetUserStatus(ctx, userID)
+	if errors.Is(err, ErrUserNotFound) {
+		return &reactivate404Resp{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	// Reactivation check order (AC#2 state machine):
+	// 1. anonymized_at IS NOT NULL → blocked
+	// 2. deletion_status='keys_deleted' → blocked
+	// 3. is_active=true → already active
+	if anonymizedAt != 0 {
+		return &reactivate409Resp{msg: "Cannot reactivate: user is in anonymized state"}, nil
+	}
+	if deletionStatus == "keys_deleted" {
+		return &reactivate409Resp{msg: "Cannot reactivate: user is in keys_deleted state"}, nil
+	}
+	if isActive {
+		return &reactivate409Resp{msg: "User is already active"}, nil
+	}
+
+	// Persist reactivation in DB.
+	if err := s.Deactivation.ReactivateUser(ctx, userID); err != nil {
+		return nil, err
+	}
+
+	// Audit log (never-raise).
+	if s.CoreClient != nil {
+		actorID, _ := ctx.Value(middleware.ContextKeyUserID).(string)
+		_ = audit.LogEvent(ctx, s.CoreClient, actorID, "user_reactivated", "user", userID, nil, "success", "")
+	}
+
+	return &reactivate200Resp{userID: userID, status: "active"}, nil
+}
+
+// ── Deactivate response types ─────────────────────────────────────────────────
+
+type deactivate200Resp struct {
+	userID string
+	status string
+}
+
+func (r *deactivate200Resp) VisitDeactivateAdminUserResponse(w http.ResponseWriter) error {
+	type dataObj struct {
+		UserID string `json:"user_id"`
+		Status string `json:"status"`
+	}
+	type envelope struct {
+		Data dataObj `json:"data"`
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	return json.NewEncoder(w).Encode(envelope{Data: dataObj{UserID: r.userID, Status: r.status}})
+}
+
+type deactivate400Resp struct{ msg string }
+
+func (r *deactivate400Resp) VisitDeactivateAdminUserResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusBadRequest)
+	return json.NewEncoder(w).Encode(map[string]any{
+		"error": map[string]string{"code": "M_BAD_JSON", "message": r.msg},
+	})
+}
+
+type deactivate404Resp struct{}
+
+func (r *deactivate404Resp) VisitDeactivateAdminUserResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusNotFound)
+	return json.NewEncoder(w).Encode(map[string]any{
+		"error": map[string]string{"code": "M_NOT_FOUND", "message": "User not found"},
+	})
+}
+
+type deactivate409Resp struct{ msg string }
+
+func (r *deactivate409Resp) VisitDeactivateAdminUserResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusConflict)
+	return json.NewEncoder(w).Encode(map[string]any{
+		"error": map[string]string{"code": "M_CONFLICT", "message": r.msg},
+	})
+}
+
+// ── Reactivate response types ─────────────────────────────────────────────────
+
+type reactivate200Resp struct {
+	userID string
+	status string
+}
+
+func (r *reactivate200Resp) VisitReactivateAdminUserResponse(w http.ResponseWriter) error {
+	type dataObj struct {
+		UserID string `json:"user_id"`
+		Status string `json:"status"`
+	}
+	type envelope struct {
+		Data dataObj `json:"data"`
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	return json.NewEncoder(w).Encode(envelope{Data: dataObj{UserID: r.userID, Status: r.status}})
+}
+
+type reactivate404Resp struct{}
+
+func (r *reactivate404Resp) VisitReactivateAdminUserResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusNotFound)
+	return json.NewEncoder(w).Encode(map[string]any{
+		"error": map[string]string{"code": "M_NOT_FOUND", "message": "User not found"},
+	})
+}
+
+type reactivate409Resp struct{ msg string }
+
+func (r *reactivate409Resp) VisitReactivateAdminUserResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusConflict)
+	return json.NewEncoder(w).Encode(map[string]any{
+		"error": map[string]string{"code": "M_CONFLICT", "message": r.msg},
 	})
 }

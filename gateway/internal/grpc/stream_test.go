@@ -138,6 +138,9 @@ func (m *mockCoreClient) GetEventContext(_ context.Context, _ *pb.GetEventContex
 func (m *mockCoreClient) ListPublicRooms(_ context.Context, _ *pb.ListPublicRoomsRequest, _ ...grpc.CallOption) (*pb.ListPublicRoomsResponse, error) {
 	return nil, nil
 }
+func (m *mockCoreClient) InvalidateUserSessions(_ context.Context, _ *pb.InvalidateUserSessionsRequest, _ ...grpc.CallOption) (*pb.InvalidateUserSessionsResponse, error) {
+	return &pb.InvalidateUserSessionsResponse{Ok: true}, nil
+}
 
 // ─── Mock server-streaming client ────────────────────────────────────────────
 

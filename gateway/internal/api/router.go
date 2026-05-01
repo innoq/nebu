@@ -42,6 +42,13 @@ func RegisterAdminRoutes(mux *http.ServeMux, adminServer *AdminServer, jwtMW fun
 	// Story 6.4: GetAdminUser — new route (AC#3).
 	// Go 1.22 ServeMux: the more-specific {userId} pattern wins over the list route — no conflict.
 	mux.Handle("GET /api/v1/admin/users/{userId}", jwtMW(RequireRole("instance_admin")(getAdminUserHandler(sh))))
+
+	// Story 6.5: Deactivate + Reactivate user — instance_admin required.
+	// Routes use {userId} path value; wrapper functions extract it before delegating.
+	mux.Handle("POST /api/v1/admin/users/{userId}/deactivate",
+		jwtMW(RequireRole("instance_admin")(deactivateAdminUserHandler(sh))))
+	mux.Handle("POST /api/v1/admin/users/{userId}/reactivate",
+		jwtMW(RequireRole("instance_admin")(reactivateAdminUserHandler(sh))))
 }
 
 // listAdminUsersHandler returns an http.Handler that parses the cursor/limit/search query
@@ -89,5 +96,40 @@ func getAdminUserHandler(sh ServerInterface) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		userID := r.PathValue("userId")
 		sh.GetAdminUser(w, r, userID)
+	})
+}
+
+// deactivateAdminUserHandler returns an http.Handler that extracts {userId} and delegates
+// to sh.DeactivateAdminUser(w, r, userId).
+//
+// Story 6.5: POST /api/v1/admin/users/{userId}/deactivate
+//
+// MINOR-6 fix (Story 6.5 code review): The strict handler decodes the body via
+// json.NewDecoder; on missing/empty body it surfaces a plain-text http.Error 400
+// rather than the M_BAD_JSON Matrix envelope required by AC#1. We pre-check the
+// body length here and emit the correct envelope before delegating.
+func deactivateAdminUserHandler(sh ServerInterface) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		userID := r.PathValue("userId")
+		// Body is required for AC#1; missing body must return M_BAD_JSON in Matrix
+		// envelope format, not the strict-handler default plain-text 400.
+		if r.Body == nil || r.ContentLength == 0 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":{"code":"M_BAD_JSON","message":"request body is required"}}`))
+			return
+		}
+		sh.DeactivateAdminUser(w, r, userID)
+	})
+}
+
+// reactivateAdminUserHandler returns an http.Handler that extracts {userId} and delegates
+// to sh.ReactivateAdminUser(w, r, userId).
+//
+// Story 6.5: POST /api/v1/admin/users/{userId}/reactivate
+func reactivateAdminUserHandler(sh ServerInterface) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		userID := r.PathValue("userId")
+		sh.ReactivateAdminUser(w, r, userID)
 	})
 }

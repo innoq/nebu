@@ -77,6 +77,11 @@ service CoreService {
   // and after it, a state snapshot, and pagination tokens compatible with GetMessages.
   // Story 7-28.
   rpc GetEventContext(GetEventContextRequest) returns (GetEventContextResponse);
+
+  // InvalidateUserSessions — Story 6.5: revoke all sessions for a user (admin deactivation).
+  // Calls SessionManager.destroy_session/1 for the target user.
+  // Returns ok=true on success; gRPC error on DB failure.
+  rpc InvalidateUserSessions(InvalidateUserSessionsRequest) returns (InvalidateUserSessionsResponse);
 }
 
 // Shared event type used across multiple RPCs
@@ -411,4 +416,15 @@ message GetEventContextResponse {
   repeated ContextStateEvent state         = 4;  // state snapshot at event time
   string                     start_token   = 5;  // pagination token — use as `to` in GET /messages
   string                     end_token     = 6;  // pagination token — use as `from` in GET /messages
+}
+
+// InvalidateUserSessions — Story 6.5: Admin deactivation revokes all active sessions.
+// Calls SessionManager.destroy_session/1 for the target user.
+// Returns ok=true on success; gRPC error on DB failure.
+message InvalidateUserSessionsRequest {
+  string user_id = 1;  // Matrix user ID (@localpart:server)
+}
+
+message InvalidateUserSessionsResponse {
+  bool ok = 1;
 }

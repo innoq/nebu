@@ -61,7 +61,7 @@ func TestGetEventContext_HappyPath(t *testing.T) {
 				{EventId: "$evt0:nebu.local", EventType: "m.room.message", SenderId: "@kai:nebu.local"},
 			},
 			EventsAfter: []*pb.Event{},
-			State:       []*pb.SyncRoomStateEvent{},
+			State:       []*pb.ContextStateEvent{},
 		},
 	}
 	mux := newEventContextTestMux(mock)
@@ -119,7 +119,7 @@ func TestGetEventContext_LimitClamped(t *testing.T) {
 		resp: &pb.GetEventContextResponse{
 			StartToken: "t1", EndToken: "t2",
 			Event:        &pb.Event{EventId: "$evt:nebu.local", EventType: "m.room.message", SenderId: "@kai:nebu.local"},
-			EventsBefore: []*pb.Event{}, EventsAfter: []*pb.Event{}, State: []*pb.SyncRoomStateEvent{},
+			EventsBefore: []*pb.Event{}, EventsAfter: []*pb.Event{}, State: []*pb.ContextStateEvent{},
 		},
 	}
 	mux := newEventContextTestMux(mock)

@@ -57,6 +57,12 @@ defmodule Nebu.EventDispatcher.Server do
     Application.get_env(:compliance, :audit_writer, Compliance.AuditWriter)
   end
 
+  # ─── Configurable SessionSupervisor module for testability ─────────────────
+  # Override via Application.put_env(:event_dispatcher, :session_supervisor_module, FakeModule) in tests.
+  defp session_supervisor_module do
+    Application.get_env(:event_dispatcher, :session_supervisor_module, Nebu.Session.SessionSupervisor)
+  end
+
   def send_event(request, _stream) do
     room_id = request.room_id
     sender_id = request.sender_id
@@ -645,6 +651,28 @@ defmodule Nebu.EventDispatcher.Server do
         raise GRPC.RPCError,
           status: GRPC.Status.internal(),
           message: "deletion failed: #{inspect(reason)}"
+    end
+  end
+
+  # ─── InvalidateUserSessions — Story 6.5: Admin deactivation revokes all sessions ─
+  #
+  # Called by the Go gateway after a successful user deactivation.
+  # Delegates to session_supervisor_module().destroy_session/1 which handles:
+  #   - Nebu.Session.PgStore.invalidate_session/1 → deletes sync_tokens + sessions rows in a DB tx
+  #   - Nebu.Session.EtsStore.delete_session/1 → evicts ETS entry (after DB commit)
+  #
+  # Returns %Core.InvalidateUserSessionsResponse{ok: true} on success.
+  # Raises GRPC.RPCError with status=internal on failure (Go logs as warning, does not block).
+
+  def invalidate_user_sessions(%Core.InvalidateUserSessionsRequest{} = req, _stream) do
+    case session_supervisor_module().destroy_session(req.user_id) do
+      :ok ->
+        %Core.InvalidateUserSessionsResponse{ok: true}
+
+      {:error, reason} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.internal(),
+          message: "session invalidation failed: #{inspect(reason)}"
     end
   end
 

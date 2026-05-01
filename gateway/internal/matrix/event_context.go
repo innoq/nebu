@@ -166,7 +166,7 @@ func (h *GetEventContextHandler) GetEventContext(w http.ResponseWriter, r *http.
 			content = map[string]any{}
 		}
 		stateEvents = append(stateEvents, eventContextStateEvent{
-			Type:     se.Type,
+			Type:     se.EventType,
 			StateKey: se.StateKey,
 			Content:  content,
 			Sender:   se.Sender,

@@ -21,6 +21,29 @@ components:
     EmptyResponse:
       type: object
       description: Placeholder response; replaced in Epic 6 sub-stories
+    DeactivateUserRequest:
+      type: object
+      required:
+        - reason
+      properties:
+        reason:
+          type: string
+          minLength: 10
+    UserStatusResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
+          required:
+            - user_id
+            - status
+          properties:
+            user_id:
+              type: string
+            status:
+              type: string
     UserListResponse:
       type: object
       required:
@@ -120,6 +143,80 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EmptyResponse"
+  /admin/users/{userId}/deactivate:
+    post:
+      operationId: DeactivateAdminUser
+      summary: Deactivate user account (instance_admin required)
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeactivateUserRequest"
+      responses:
+        "200":
+          description: User deactivated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserStatusResponse"
+        "400":
+          description: Bad request (missing/short reason)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "409":
+          description: Conflict (already deactivated)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "501":
+          description: Not implemented
+  /admin/users/{userId}/reactivate:
+    post:
+      operationId: ReactivateAdminUser
+      summary: Reactivate user account (instance_admin required)
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User reactivated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserStatusResponse"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "409":
+          description: Conflict (irreversible state or already active)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "501":
+          description: Not implemented
   /admin/rooms:
     get:
       operationId: ListAdminRooms

@@ -621,3 +621,110 @@ defmodule Core.ForgetRoomResponse do
     protoc_gen_elixir_version: "0.16.0",
     syntax: :proto3
 end
+
+defmodule Core.ListPublicRoomsRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.ListPublicRoomsRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :limit, 1, type: :int32
+  field :since, 2, type: :string
+  field :filter_term, 3, type: :string, json_name: "filterTerm"
+end
+
+defmodule Core.RoomSummary do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.RoomSummary",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :room_id, 1, type: :string, json_name: "roomId"
+  field :name, 2, type: :string
+  field :topic, 3, type: :string
+  field :num_joined_members, 4, type: :int32, json_name: "numJoinedMembers"
+  field :world_readable, 5, type: :bool, json_name: "worldReadable"
+  field :guest_can_join, 6, type: :bool, json_name: "guestCanJoin"
+end
+
+defmodule Core.ListPublicRoomsResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.ListPublicRoomsResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :rooms, 1, repeated: true, type: Core.RoomSummary
+  field :next_cursor, 2, type: :string, json_name: "nextCursor"
+  field :total_estimate, 3, type: :int32, json_name: "totalEstimate"
+end
+
+defmodule Core.GetEventContextRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.GetEventContextRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :room_id, 1, type: :string, json_name: "roomId"
+  field :event_id, 2, type: :string, json_name: "eventId"
+  field :limit, 3, type: :int32
+end
+
+defmodule Core.ContextStateEvent do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.ContextStateEvent",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :event_type, 1, type: :string, json_name: "eventType"
+  field :state_key, 2, type: :string, json_name: "stateKey"
+  field :content, 3, type: :bytes
+  field :sender, 4, type: :string
+end
+
+defmodule Core.GetEventContextResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.GetEventContextResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :event, 1, type: Core.Event
+  field :events_before, 2, repeated: true, type: Core.Event, json_name: "eventsBefore"
+  field :events_after, 3, repeated: true, type: Core.Event, json_name: "eventsAfter"
+  field :state, 4, repeated: true, type: Core.ContextStateEvent
+  field :start_token, 5, type: :string, json_name: "startToken"
+  field :end_token, 6, type: :string, json_name: "endToken"
+end
+
+defmodule Core.InvalidateUserSessionsRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.InvalidateUserSessionsRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :user_id, 1, type: :string, json_name: "userId"
+end
+
+defmodule Core.InvalidateUserSessionsResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.InvalidateUserSessionsResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :ok, 1, type: :bool
+end

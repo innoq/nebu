@@ -19,31 +19,34 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	CoreService_SendEvent_FullMethodName        = "/core.CoreService/SendEvent"
-	CoreService_CreateRoom_FullMethodName       = "/core.CoreService/CreateRoom"
-	CoreService_JoinRoom_FullMethodName         = "/core.CoreService/JoinRoom"
-	CoreService_LeaveRoom_FullMethodName        = "/core.CoreService/LeaveRoom"
-	CoreService_GetMessages_FullMethodName      = "/core.CoreService/GetMessages"
-	CoreService_SetPresence_FullMethodName      = "/core.CoreService/SetPresence"
-	CoreService_SetTyping_FullMethodName        = "/core.CoreService/SetTyping"
-	CoreService_ValidateToken_FullMethodName    = "/core.CoreService/ValidateToken"
-	CoreService_GetPendingEvents_FullMethodName = "/core.CoreService/GetPendingEvents"
-	CoreService_EventBus_FullMethodName         = "/core.CoreService/EventBus"
-	CoreService_GetMetrics_FullMethodName       = "/core.CoreService/GetMetrics"
-	CoreService_GetRoomState_FullMethodName     = "/core.CoreService/GetRoomState"
-	CoreService_InviteUser_FullMethodName       = "/core.CoreService/InviteUser"
-	CoreService_SetPowerLevels_FullMethodName   = "/core.CoreService/SetPowerLevels"
-	CoreService_SendReceipt_FullMethodName      = "/core.CoreService/SendReceipt"
-	CoreService_GetInitialSync_FullMethodName   = "/core.CoreService/GetInitialSync"
-	CoreService_GetSyncDelta_FullMethodName     = "/core.CoreService/GetSyncDelta"
-	CoreService_GetPresence_FullMethodName      = "/core.CoreService/GetPresence"
-	CoreService_UpdateProfile_FullMethodName    = "/core.CoreService/UpdateProfile"
-	CoreService_WriteAuditLog_FullMethodName    = "/core.CoreService/WriteAuditLog"
-	CoreService_DeleteUserKeys_FullMethodName   = "/core.CoreService/DeleteUserKeys"
-	CoreService_KickUser_FullMethodName         = "/core.CoreService/KickUser"
-	CoreService_BanUser_FullMethodName          = "/core.CoreService/BanUser"
-	CoreService_UnbanUser_FullMethodName        = "/core.CoreService/UnbanUser"
-	CoreService_ForgetRoom_FullMethodName       = "/core.CoreService/ForgetRoom"
+	CoreService_SendEvent_FullMethodName              = "/core.CoreService/SendEvent"
+	CoreService_CreateRoom_FullMethodName             = "/core.CoreService/CreateRoom"
+	CoreService_JoinRoom_FullMethodName               = "/core.CoreService/JoinRoom"
+	CoreService_LeaveRoom_FullMethodName              = "/core.CoreService/LeaveRoom"
+	CoreService_GetMessages_FullMethodName            = "/core.CoreService/GetMessages"
+	CoreService_SetPresence_FullMethodName            = "/core.CoreService/SetPresence"
+	CoreService_SetTyping_FullMethodName              = "/core.CoreService/SetTyping"
+	CoreService_ValidateToken_FullMethodName          = "/core.CoreService/ValidateToken"
+	CoreService_GetPendingEvents_FullMethodName       = "/core.CoreService/GetPendingEvents"
+	CoreService_EventBus_FullMethodName               = "/core.CoreService/EventBus"
+	CoreService_GetMetrics_FullMethodName             = "/core.CoreService/GetMetrics"
+	CoreService_GetRoomState_FullMethodName           = "/core.CoreService/GetRoomState"
+	CoreService_InviteUser_FullMethodName             = "/core.CoreService/InviteUser"
+	CoreService_SetPowerLevels_FullMethodName         = "/core.CoreService/SetPowerLevels"
+	CoreService_SendReceipt_FullMethodName            = "/core.CoreService/SendReceipt"
+	CoreService_GetInitialSync_FullMethodName         = "/core.CoreService/GetInitialSync"
+	CoreService_GetSyncDelta_FullMethodName           = "/core.CoreService/GetSyncDelta"
+	CoreService_GetPresence_FullMethodName            = "/core.CoreService/GetPresence"
+	CoreService_UpdateProfile_FullMethodName          = "/core.CoreService/UpdateProfile"
+	CoreService_WriteAuditLog_FullMethodName          = "/core.CoreService/WriteAuditLog"
+	CoreService_DeleteUserKeys_FullMethodName         = "/core.CoreService/DeleteUserKeys"
+	CoreService_KickUser_FullMethodName               = "/core.CoreService/KickUser"
+	CoreService_BanUser_FullMethodName                = "/core.CoreService/BanUser"
+	CoreService_UnbanUser_FullMethodName              = "/core.CoreService/UnbanUser"
+	CoreService_ForgetRoom_FullMethodName             = "/core.CoreService/ForgetRoom"
+	CoreService_ListPublicRooms_FullMethodName        = "/core.CoreService/ListPublicRooms"
+	CoreService_GetEventContext_FullMethodName        = "/core.CoreService/GetEventContext"
+	CoreService_InvalidateUserSessions_FullMethodName = "/core.CoreService/InvalidateUserSessions"
 )
 
 // CoreServiceClient is the client API for CoreService service.
@@ -101,9 +104,14 @@ type CoreServiceClient interface {
 	// ListPublicRooms — returns paginated public rooms (join_rule=public) with live member counts.
 	// Story 7-27: GET/POST /_matrix/client/v3/publicRooms.
 	ListPublicRooms(ctx context.Context, in *ListPublicRoomsRequest, opts ...grpc.CallOption) (*ListPublicRoomsResponse, error)
-	// GetEventContext — returns target event, surrounding events, state snapshot, and pagination tokens.
+	// GetEventContext — returns the target event plus up to `limit` events before
+	// and after it, a state snapshot, and pagination tokens compatible with GetMessages.
 	// Story 7-28.
 	GetEventContext(ctx context.Context, in *GetEventContextRequest, opts ...grpc.CallOption) (*GetEventContextResponse, error)
+	// InvalidateUserSessions — Story 6.5: revoke all sessions for a user (admin deactivation).
+	// Calls SessionManager.destroy_session/1 for the target user.
+	// Returns ok=true on success; gRPC error on DB failure.
+	InvalidateUserSessions(ctx context.Context, in *InvalidateUserSessionsRequest, opts ...grpc.CallOption) (*InvalidateUserSessionsResponse, error)
 }
 
 type coreServiceClient struct {
@@ -376,7 +384,7 @@ func (c *coreServiceClient) ForgetRoom(ctx context.Context, in *ForgetRoomReques
 func (c *coreServiceClient) ListPublicRooms(ctx context.Context, in *ListPublicRoomsRequest, opts ...grpc.CallOption) (*ListPublicRoomsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListPublicRoomsResponse)
-	err := c.cc.Invoke(ctx, "/core.CoreService/ListPublicRooms", in, out, cOpts...)
+	err := c.cc.Invoke(ctx, CoreService_ListPublicRooms_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -386,7 +394,17 @@ func (c *coreServiceClient) ListPublicRooms(ctx context.Context, in *ListPublicR
 func (c *coreServiceClient) GetEventContext(ctx context.Context, in *GetEventContextRequest, opts ...grpc.CallOption) (*GetEventContextResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetEventContextResponse)
-	err := c.cc.Invoke(ctx, "/core.CoreService/GetEventContext", in, out, cOpts...)
+	err := c.cc.Invoke(ctx, CoreService_GetEventContext_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) InvalidateUserSessions(ctx context.Context, in *InvalidateUserSessionsRequest, opts ...grpc.CallOption) (*InvalidateUserSessionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InvalidateUserSessionsResponse)
+	err := c.cc.Invoke(ctx, CoreService_InvalidateUserSessions_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -448,9 +466,14 @@ type CoreServiceServer interface {
 	// ListPublicRooms — returns paginated public rooms (join_rule=public) with live member counts.
 	// Story 7-27: GET/POST /_matrix/client/v3/publicRooms.
 	ListPublicRooms(context.Context, *ListPublicRoomsRequest) (*ListPublicRoomsResponse, error)
-	// GetEventContext — returns target event, surrounding events, state snapshot, and pagination tokens.
+	// GetEventContext — returns the target event plus up to `limit` events before
+	// and after it, a state snapshot, and pagination tokens compatible with GetMessages.
 	// Story 7-28.
 	GetEventContext(context.Context, *GetEventContextRequest) (*GetEventContextResponse, error)
+	// InvalidateUserSessions — Story 6.5: revoke all sessions for a user (admin deactivation).
+	// Calls SessionManager.destroy_session/1 for the target user.
+	// Returns ok=true on success; gRPC error on DB failure.
+	InvalidateUserSessions(context.Context, *InvalidateUserSessionsRequest) (*InvalidateUserSessionsResponse, error)
 	mustEmbedUnimplementedCoreServiceServer()
 }
 
@@ -541,6 +564,9 @@ func (UnimplementedCoreServiceServer) ListPublicRooms(context.Context, *ListPubl
 }
 func (UnimplementedCoreServiceServer) GetEventContext(context.Context, *GetEventContextRequest) (*GetEventContextResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetEventContext not implemented")
+}
+func (UnimplementedCoreServiceServer) InvalidateUserSessions(context.Context, *InvalidateUserSessionsRequest) (*InvalidateUserSessionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method InvalidateUserSessions not implemented")
 }
 func (UnimplementedCoreServiceServer) mustEmbedUnimplementedCoreServiceServer() {}
 func (UnimplementedCoreServiceServer) testEmbeddedByValue()                     {}
@@ -1016,7 +1042,7 @@ func _CoreService_ListPublicRooms_Handler(srv interface{}, ctx context.Context, 
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/core.CoreService/ListPublicRooms",
+		FullMethod: CoreService_ListPublicRooms_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(CoreServiceServer).ListPublicRooms(ctx, req.(*ListPublicRoomsRequest))
@@ -1034,10 +1060,28 @@ func _CoreService_GetEventContext_Handler(srv interface{}, ctx context.Context, 
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/core.CoreService/GetEventContext",
+		FullMethod: CoreService_GetEventContext_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(CoreServiceServer).GetEventContext(ctx, req.(*GetEventContextRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_InvalidateUserSessions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InvalidateUserSessionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).InvalidateUserSessions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_InvalidateUserSessions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).InvalidateUserSessions(ctx, req.(*InvalidateUserSessionsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1152,6 +1196,10 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetEventContext",
 			Handler:    _CoreService_GetEventContext_Handler,
+		},
+		{
+			MethodName: "InvalidateUserSessions",
+			Handler:    _CoreService_InvalidateUserSessions_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

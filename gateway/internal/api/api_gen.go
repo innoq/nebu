@@ -26,6 +26,11 @@ const (
 	BearerAuthScopes = "BearerAuth.Scopes"
 )
 
+// DeactivateUserRequest defines model for DeactivateUserRequest.
+type DeactivateUserRequest struct {
+	Reason string `json:"reason"`
+}
+
 // EmptyResponse Placeholder response; replaced in Epic 6 sub-stories
 type EmptyResponse = map[string]interface{}
 
@@ -48,12 +53,23 @@ type UserListResponse struct {
 	} `json:"meta"`
 }
 
+// UserStatusResponse defines model for UserStatusResponse.
+type UserStatusResponse struct {
+	Data struct {
+		Status string `json:"status"`
+		UserId string `json:"user_id"`
+	} `json:"data"`
+}
+
 // ListAdminUsersParams defines parameters for ListAdminUsers.
 type ListAdminUsersParams struct {
 	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
 	Search *string `form:"search,omitempty" json:"search,omitempty"`
 }
+
+// DeactivateAdminUserJSONRequestBody defines body for DeactivateAdminUser for application/json ContentType.
+type DeactivateAdminUserJSONRequestBody = DeactivateUserRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -72,6 +88,12 @@ type ServerInterface interface {
 	// Get single user (instance_admin required)
 	// (GET /admin/users/{userId})
 	GetAdminUser(w http.ResponseWriter, r *http.Request, userId string)
+	// Deactivate user account (instance_admin required)
+	// (POST /admin/users/{userId}/deactivate)
+	DeactivateAdminUser(w http.ResponseWriter, r *http.Request, userId string)
+	// Reactivate user account (instance_admin required)
+	// (POST /admin/users/{userId}/reactivate)
+	ReactivateAdminUser(w http.ResponseWriter, r *http.Request, userId string)
 	// List compliance access requests (placeholder — Story 6.x)
 	// (GET /compliance/access-requests)
 	ListComplianceAccessRequests(w http.ResponseWriter, r *http.Request)
@@ -220,6 +242,68 @@ func (siw *ServerInterfaceWrapper) GetAdminUser(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetAdminUser(w, r, userId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeactivateAdminUser operation middleware
+func (siw *ServerInterfaceWrapper) DeactivateAdminUser(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "userId" -------------
+	var userId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "userId", r.PathValue("userId"), &userId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "userId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeactivateAdminUser(w, r, userId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReactivateAdminUser operation middleware
+func (siw *ServerInterfaceWrapper) ReactivateAdminUser(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "userId" -------------
+	var userId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "userId", r.PathValue("userId"), &userId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "userId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReactivateAdminUser(w, r, userId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -388,6 +472,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("GET "+options.BaseURL+"/admin/rooms", wrapper.ListAdminRooms)
 	m.HandleFunc("GET "+options.BaseURL+"/admin/users", wrapper.ListAdminUsers)
 	m.HandleFunc("GET "+options.BaseURL+"/admin/users/{userId}", wrapper.GetAdminUser)
+	m.HandleFunc("POST "+options.BaseURL+"/admin/users/{userId}/deactivate", wrapper.DeactivateAdminUser)
+	m.HandleFunc("POST "+options.BaseURL+"/admin/users/{userId}/reactivate", wrapper.ReactivateAdminUser)
 	m.HandleFunc("GET "+options.BaseURL+"/compliance/access-requests", wrapper.ListComplianceAccessRequests)
 	m.HandleFunc("GET "+options.BaseURL+"/health", wrapper.GetHealth)
 
@@ -526,6 +612,102 @@ func (response GetAdminUser404JSONResponse) VisitGetAdminUserResponse(w http.Res
 	return json.NewEncoder(w).Encode(response)
 }
 
+type DeactivateAdminUserRequestObject struct {
+	UserId string `json:"userId"`
+	Body   *DeactivateAdminUserJSONRequestBody
+}
+
+type DeactivateAdminUserResponseObject interface {
+	VisitDeactivateAdminUserResponse(w http.ResponseWriter) error
+}
+
+type DeactivateAdminUser200JSONResponse UserStatusResponse
+
+func (response DeactivateAdminUser200JSONResponse) VisitDeactivateAdminUserResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type DeactivateAdminUser400JSONResponse EmptyResponse
+
+func (response DeactivateAdminUser400JSONResponse) VisitDeactivateAdminUserResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type DeactivateAdminUser404JSONResponse EmptyResponse
+
+func (response DeactivateAdminUser404JSONResponse) VisitDeactivateAdminUserResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type DeactivateAdminUser409JSONResponse EmptyResponse
+
+func (response DeactivateAdminUser409JSONResponse) VisitDeactivateAdminUserResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type DeactivateAdminUser501Response struct {
+}
+
+func (response DeactivateAdminUser501Response) VisitDeactivateAdminUserResponse(w http.ResponseWriter) error {
+	w.WriteHeader(501)
+	return nil
+}
+
+type ReactivateAdminUserRequestObject struct {
+	UserId string `json:"userId"`
+}
+
+type ReactivateAdminUserResponseObject interface {
+	VisitReactivateAdminUserResponse(w http.ResponseWriter) error
+}
+
+type ReactivateAdminUser200JSONResponse UserStatusResponse
+
+func (response ReactivateAdminUser200JSONResponse) VisitReactivateAdminUserResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ReactivateAdminUser404JSONResponse EmptyResponse
+
+func (response ReactivateAdminUser404JSONResponse) VisitReactivateAdminUserResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ReactivateAdminUser409JSONResponse EmptyResponse
+
+func (response ReactivateAdminUser409JSONResponse) VisitReactivateAdminUserResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ReactivateAdminUser501Response struct {
+}
+
+func (response ReactivateAdminUser501Response) VisitReactivateAdminUserResponse(w http.ResponseWriter) error {
+	w.WriteHeader(501)
+	return nil
+}
+
 type ListComplianceAccessRequestsRequestObject struct {
 }
 
@@ -583,6 +765,12 @@ type StrictServerInterface interface {
 	// Get single user (instance_admin required)
 	// (GET /admin/users/{userId})
 	GetAdminUser(ctx context.Context, request GetAdminUserRequestObject) (GetAdminUserResponseObject, error)
+	// Deactivate user account (instance_admin required)
+	// (POST /admin/users/{userId}/deactivate)
+	DeactivateAdminUser(ctx context.Context, request DeactivateAdminUserRequestObject) (DeactivateAdminUserResponseObject, error)
+	// Reactivate user account (instance_admin required)
+	// (POST /admin/users/{userId}/reactivate)
+	ReactivateAdminUser(ctx context.Context, request ReactivateAdminUserRequestObject) (ReactivateAdminUserResponseObject, error)
 	// List compliance access requests (placeholder — Story 6.x)
 	// (GET /compliance/access-requests)
 	ListComplianceAccessRequests(ctx context.Context, request ListComplianceAccessRequestsRequestObject) (ListComplianceAccessRequestsResponseObject, error)
@@ -744,6 +932,65 @@ func (sh *strictHandler) GetAdminUser(w http.ResponseWriter, r *http.Request, us
 	}
 }
 
+// DeactivateAdminUser operation middleware
+func (sh *strictHandler) DeactivateAdminUser(w http.ResponseWriter, r *http.Request, userId string) {
+	var request DeactivateAdminUserRequestObject
+
+	request.UserId = userId
+
+	var body DeactivateAdminUserJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeactivateAdminUser(ctx, request.(DeactivateAdminUserRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeactivateAdminUser")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeactivateAdminUserResponseObject); ok {
+		if err := validResponse.VisitDeactivateAdminUserResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ReactivateAdminUser operation middleware
+func (sh *strictHandler) ReactivateAdminUser(w http.ResponseWriter, r *http.Request, userId string) {
+	var request ReactivateAdminUserRequestObject
+
+	request.UserId = userId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ReactivateAdminUser(ctx, request.(ReactivateAdminUserRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ReactivateAdminUser")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ReactivateAdminUserResponseObject); ok {
+		if err := validResponse.VisitReactivateAdminUserResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListComplianceAccessRequests operation middleware
 func (sh *strictHandler) ListComplianceAccessRequests(w http.ResponseWriter, r *http.Request) {
 	var request ListComplianceAccessRequestsRequestObject
@@ -795,21 +1042,24 @@ func (sh *strictHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"H4sIAAAAAAAC/8RW227cNhN+FWL+/8IBlNVum6aAeuWkaeuiDQKnQS+MRUBT4xVTiWSGIyMLY4E+RJ+w",
-	"T1IMqbW1Xq0dJEh8pQPn+M03w7kC47vgHTqOUF1BNA12Or2+6AKvTzEG7yLKjxqjIRvYegcVvGq1wca3",
-	"NZKiQeoHRRjkf62sUy+CNeqpiv3548ieLEYogNcBoQJ//g4Nw6aAX1C33Iz9BPIBiUVeImLNfXobVCOT",
-	"dSvYbAogfN9bwhqqs63ccsLFm4j0I7K27WE3tWY9crJVvuUkSR1y8ZuNfL8Dy9jFCU/XRjWRXst3h1lj",
-	"147DD/zW9BQ9TYBSAHvW7ejEOsYV0l4qWW4/l6mMh1gmhSOaniyvXwtzcojPUBPScc+NfJ2nr588dZqh",
-	"gl///AOKzDOxlE9viNEwB9iIYesufMrDcisnL/G8V8d1Z506fnUCBVwixczFxWw+m0vyPqDTwUIF384W",
-	"szkUEDQ3KahSi2ppvLuwK/mxQpaHYKuF0yc1VPAzcnLxPIsJFrmgycY387k8jHeMLmnrEFprkn75Lkow",
-	"2x6St/8TXkAF/ytvmqwcOqzcba+U8W6DDSFsCvhuvtjvv5eele1Cix06xjrXou86Teuch4pIl0gqZ6yO",
-	"wqhh//37H/WaPa3V09li/igpDwB1yGRNvBeh3we5h4RoG8OnYzRk+9HokPfdYWxkAiRwTpPYQ0IjEajW",
-	"Rv5EcCQVlbI9jM33O9D0EekjoHmTxKQxSXfISefsCqyE9L5HWkMBTqfZMEy5YoTJ3h0wrdnazvKU4mga",
-	"TmtG1GSaO30uv2Bd9+6RidKKzHVpn3xNUj3TtZLLASOrI+sudWtrlaukvMTUWX70OYRLHBLTkbUz+DYx",
-	"S23vo326lVfyOKk3944rAe0A6+SKuCFANgjjW5Cpx4ckxK3d5RAl6iQWMyuefD1WJOfOs7rwvZu8iKxb",
-	"tZiKe19txX9r5bzUxmCMjwe+3T1Znl+rHSet063SQ47gHIq6TuAz+uIGFqV3rR6ezh8GSJu0YN/VIHkF",
-	"/5JY3VryJ8DKEmrY4seLJVRnyzEgg6Rp0Pyljnqne27QsQSWabSru7uOni2lW/NmlEdATy1UUOpgy8sF",
-	"bJab/wIAAP//hL0gshMNAAA=",
+	"H4sIAAAAAAAC/+RYX2/cNgz/KoK2hwRw47ut6zDvKWm7LUNXFJcVewiCQJGZszpbcig66CEwsA+xT7hP",
+	"MlDy/cvZSXBd7h72dD6bFMkfyZ8o3UntqtpZsORldie9LqBS4fENKE3mVhF89IATuGnAE3+o0dWAZCCI",
+	"ISjvLD9Vxr4DO6VCZuNRImlWg8ykJzR2Kts2kQg3jUHIZXY+V7tYyLmrT6BJtol8W9U0m4CvnfXAC+fg",
+	"NZqaDNuRH0qloXBlDiiwk/pRINT8PhfGire10eKV8M3VC08O2dEeM7+AKqlYtbMemCdFTXh6OJJOri8S",
+	"Bu4NkDLlsJlckVoxMle+ZyRIDZl4Zzw9bsAQVL7H0mJRhahm/L+CqLG+joXPdKkb9A57QEkkOVLlyhdj",
+	"CaaAG6FEuc1Y+iLufBkK/CxA/3joT0xsIhsPeGnyx5M+F0yG0/+0DLaJ9KAbNDQ7496LLp6AQsDjhnvp",
+	"Tl6Ffz85rBTJTP76x+9sN0jLrPu6rPCCqJYtL2zstQuhGCr5y3u4asRxXhkrjj+cykTeAvrYVOOj0dGI",
+	"EXA1WFUbmclvj8ZHI5nIWlERnEoVq6ba2Wsz5RdTCHzA2CpuztNcZvJnoGDidRRjEGJ6whrfjEb8o50l",
+	"sEFb1XVpdNBPP3VMElmIn75GuJaZ/Cpd0lTacVS6zhMh4nWm6FxoE/ndaLxJJO8dCVPVJVRgCfKYi6aq",
+	"FM5iHMID3gKKGLE4qFeY55+//hZn5HAmXh2NR4dBuQOoAkKj/aMI/dbJ7ROiuQ/bY9RF+2R00LlqGBum",
+	"sgDOJIjtExr2QJTG05bgcCgiRDuMzfdr0DCpPAGaj0GMGxNVBRR0zu+kYZduGsCZTKRVgRs6uk5WMNng",
+	"tX7N0lSG+hRXaL1f04NCXTxo8+IZ87qxIfaklmUWqX25y6I6UbnAOEqJA2NvVWlyEbMkHPtUGTr8koIL",
+	"NcRLe1JWw2WoLDHfiDbLLb3jn9O8fZSuGLSBquMtYlkAcUG5uv0RNrDPgrg3hA2VRB7EfKyKl7urimDc",
+	"OhLXrrG9G5Gx0xJCcrfJbZovZvkwDjnfk+flvL+bdIcmOHH57D/Duf/E0q5PYuxb+8zldm8uHS63ub/5",
+	"fomoMp4rLPWFQxLxaHa49y5g8z/sdlosjSZxoEoElc9W87MtJy9LMjav0to1lrZqYnxCE0923MT7byK8",
+	"30T/x4o1iBAOc1clCD6RAk8T8zoOAMG2JTzZroQ5oNLw91RpDd6/6Ojm4Qn39ULtOGhN5kr7PApEV8Qi",
+	"gC+Yz5awCLW+6vAp4XMHaRFurB4a1OKd1nNide/WrAesKCG6e5HVCw6ZnV+sAtJJ6gL0n+KgsaqhAiyx",
+	"Y7GM1nXXr0XOL5iB4gk90lqDpcxkqmqT3o5le9H+GwAA//8xKtXg3RQAAA==",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file
