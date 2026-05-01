@@ -31,7 +31,7 @@ type roleOverrideCacheEntry struct {
 //   - If JWT systemRole matches → allow immediately (no DB lookup)
 //   - If JWT systemRole is absent or mismatched AND userID is set:
 //     check role_overrides via checker (cached 60s per-instance sync.Map TTL)
-//   - DB error → fail-open (log warning, allow through — prevents DB outage lockout)
+//   - DB error → fail-closed (log error, return 503 M_UNAVAILABLE)
 //   - DB returns hasRole=false → 403 M_FORBIDDEN
 //
 // Error responses use the Matrix error format ({"errcode": ..., "error": ...}),
@@ -81,10 +81,10 @@ func RequireRole(role string, checker RoleOverrideChecker) func(http.Handler) ht
 				if userID != "" {
 					hasOverride, err := checkFn(r.Context(), userID)
 					if err != nil {
-						// Fail-open: DB outage must not lock out all users.
-						slog.Warn("RequireRole DB override check failed — failing open",
-							"user_id", userID, "role", role, "err", err)
-						next.ServeHTTP(w, r)
+						// Fail-closed: a DB error is a security-relevant failure.
+						// Log at Error level and return 503 so the caller can retry.
+						slog.ErrorContext(r.Context(), "role check db error", "error", err)
+						writeAdminError(w, http.StatusServiceUnavailable, "M_UNAVAILABLE", "Service temporarily unavailable")
 						return
 					}
 					if hasOverride {

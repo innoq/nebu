@@ -167,17 +167,16 @@ func TestRequireRole_JWTRoleMatch_SkipsDBLookup(t *testing.T) {
 	}
 }
 
-// ── DB error fail-open ────────────────────────────────────────────────────────
+// ── DB error fail-closed (HIGH-1 security fix) ───────────────────────────────
 
-// TestRequireRole_DBError_FailsOpen covers AC#3:
-// When the DB checker returns an error, RequireRole must fail-open
-// (allow the request through) and log a warning.
-// This prevents a DB outage from locking out all users.
+// TestRequireRole_DBError_Returns503 covers the HIGH-1 security finding:
+// When the DB checker returns an error, RequireRole must fail-closed —
+// return 503 M_UNAVAILABLE and NOT call the next handler.
+// Fail-open on DB errors is a security vulnerability: a transient DB fault
+// could allow unauthorized access to privileged endpoints.
 //
-// [P1] — resilience: DB outage must not create a global lockout.
-func TestRequireRole_DBError_FailsOpen(t *testing.T) {
-	// THIS TEST WILL FAIL — RequireRole does not yet accept a second argument.
-
+// [P0] — security: DB error must never grant access.
+func TestRequireRole_DBError_Returns503(t *testing.T) {
 	nextCalled := false
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		nextCalled = true
@@ -199,9 +198,63 @@ func TestRequireRole_DBError_FailsOpen(t *testing.T) {
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
-	// On DB error: fail-open (allow through, log warning).
-	if !nextCalled {
-		t.Error("next handler must be called on DB error (fail-open policy)")
+	// On DB error: fail-closed — 503, next handler must NOT be called.
+	if nextCalled {
+		t.Error("next handler must NOT be called on DB error (fail-closed policy)")
+	}
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected status 503, got %d", w.Code)
+	}
+
+	var body map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+		t.Fatalf("response body is not valid JSON: %v", err)
+	}
+	if body["errcode"] != "M_UNAVAILABLE" {
+		t.Errorf("expected errcode M_UNAVAILABLE, got %q", body["errcode"])
+	}
+	if body["error"] == "" {
+		t.Error("expected non-empty error message")
+	}
+}
+
+// TestRequireRole_NoJWTRole_NoDBOverride_Returns403_WithChecker covers AC#3:
+// When checker is set but the DB has no override for the user → 403 M_FORBIDDEN,
+// not a DB error. This distinguishes the "no role" case from the "DB unavailable" case.
+//
+// [P0] — security: absence of override must be a hard deny, not a 503.
+func TestRequireRole_DBReachable_NoOverride_Returns403(t *testing.T) {
+	nextCalled := false
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nextCalled = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// DB is reachable and returns hasRole=false (no override granted).
+	checker := &mockRoleOverrideChecker{hasRole: false, err: nil}
+	handler := api.RequireRole("instance_admin", checker)(next)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/users", nil)
+	ctx := context.WithValue(req.Context(), middleware.ContextKeySystemRole, "")
+	ctx = context.WithValue(ctx, middleware.ContextKeyUserID, "@bob:example.com")
+	req = req.WithContext(ctx)
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if nextCalled {
+		t.Error("next handler must NOT be called when DB confirms no override")
+	}
+	if w.Code != http.StatusForbidden {
+		t.Errorf("expected status 403, got %d", w.Code)
+	}
+
+	var body map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+		t.Fatalf("response body is not valid JSON: %v", err)
+	}
+	if body["errcode"] != "M_FORBIDDEN" {
+		t.Errorf("expected errcode M_FORBIDDEN, got %q", body["errcode"])
 	}
 }
 
