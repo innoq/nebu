@@ -1120,14 +1120,17 @@ func main() {
 	//   - POST /api/v1/admin/users/{userId}/deactivate     → deactivate user (Story 6.5)
 	//   - POST /api/v1/admin/users/{userId}/reactivate     → reactivate user (Story 6.5)
 	// GET /api/v1/compliance/access-requests is owned by main.go above (Story 5.4 live handler).
+	rolesRepo := apihandler.NewRoleOverrideRepo(bootstrapDB) // Story 6.6
 	adminSrv := &apihandler.AdminServer{
 		DB:           bootstrapDB,
 		CoreClient:   coreClient.CoreServiceClient(),
-		Users:        apihandler.NewUserRepo(bootstrapDB),
-		Deactivation: apihandler.NewDeactivationRepo(bootstrapDB), // Story 6.5
+		Users:        apihandler.NewUserRepoWithRoles(bootstrapDB, rolesRepo), // Story 6.6: merge overrides
+		Deactivation: apihandler.NewDeactivationRepo(bootstrapDB),             // Story 6.5
+		Roles:        rolesRepo,                                               // Story 6.6
 	}
 	// jwtWithStatusCheck is defined early (after jwtMiddleware, line ~445) and wraps ALL routes.
-	apihandler.RegisterAdminRoutes(mux, adminSrv, jwtWithStatusCheck)
+	// rolesRepo satisfies RoleOverrideChecker for RequireRole DB-override path (Story 6.6).
+	apihandler.RegisterAdminRoutes(mux, adminSrv, jwtWithStatusCheck, rolesRepo)
 
 	// Story 5.14: Wrap the main mux so that every /admin/* response carries security headers.
 	// SecurityHeadersMiddleware is the outermost layer — even 302 redirects emitted by

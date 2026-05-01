@@ -11,9 +11,14 @@ import (
 // RegisterAdminRoutes mounts all Admin API routes onto mux with role-based access control.
 //
 // Route protection:
-//   - GET /api/v1/health                             — unauthenticated
-//   - GET /api/v1/admin/{config,metrics,rooms,users} — instance_admin role required
-//   - GET /api/v1/admin/users/{userId}               — instance_admin role required (Story 6.4)
+//   - GET /api/v1/health                              — unauthenticated
+//   - GET /api/v1/admin/{config,metrics,rooms,users}  — instance_admin role required
+//   - GET /api/v1/admin/users/{userId}                — instance_admin role required (Story 6.4)
+//   - POST /api/v1/admin/users/{userId}/roles          — instance_admin required (Story 6.6)
+//
+// checker (Story 6.6): if non-nil, RequireRole will also query role_overrides for users
+// whose JWT claim does not carry the required role. Pass nil for JWT-only mode (tests,
+// or callers that have not yet wired the DB).
 //
 // The GET /api/v1/compliance/access-requests route is intentionally NOT registered here.
 // main.go still owns that pattern (complianceRL + accessRequestHandler.GetAccessRequests)
@@ -21,7 +26,7 @@ import (
 //
 // Middleware order: jwtMW runs outermost so it populates ContextKeySystemRole before
 // RequireRole reads it. Chain: jwtMW → RequireRole → handler.
-func RegisterAdminRoutes(mux *http.ServeMux, adminServer *AdminServer, jwtMW func(http.Handler) http.Handler) {
+func RegisterAdminRoutes(mux *http.ServeMux, adminServer *AdminServer, jwtMW func(http.Handler) http.Handler, checker RoleOverrideChecker) {
 	sh := NewStrictHandler(adminServer, nil)
 
 	// GET /api/v1/health — unauthenticated; no JWT or role middleware.
@@ -29,26 +34,30 @@ func RegisterAdminRoutes(mux *http.ServeMux, adminServer *AdminServer, jwtMW fun
 
 	// GET /api/v1/admin/* — instance_admin role required.
 	// Order: jwtMW(outermost) → RequireRole → strictHandler method
-	mux.Handle("GET /api/v1/admin/config", jwtMW(RequireRole("instance_admin")(http.HandlerFunc(sh.GetAdminConfig))))
-	mux.Handle("GET /api/v1/admin/metrics", jwtMW(RequireRole("instance_admin")(http.HandlerFunc(sh.GetAdminMetrics))))
-	mux.Handle("GET /api/v1/admin/rooms", jwtMW(RequireRole("instance_admin")(http.HandlerFunc(sh.ListAdminRooms))))
+	mux.Handle("GET /api/v1/admin/config", jwtMW(RequireRole("instance_admin", checker)(http.HandlerFunc(sh.GetAdminConfig))))
+	mux.Handle("GET /api/v1/admin/metrics", jwtMW(RequireRole("instance_admin", checker)(http.HandlerFunc(sh.GetAdminMetrics))))
+	mux.Handle("GET /api/v1/admin/rooms", jwtMW(RequireRole("instance_admin", checker)(http.HandlerFunc(sh.ListAdminRooms))))
 
 	// Story 6.4: ListAdminUsers — wraps sh.ListAdminUsers which requires params.
 	// The generated ServerInterfaceWrapper.ListAdminUsers parses query params; we
 	// need to call it through the wrapper, not as a bare http.HandlerFunc.
 	// We create a minimal http.Handler that parses params and delegates.
-	mux.Handle("GET /api/v1/admin/users", jwtMW(RequireRole("instance_admin")(listAdminUsersHandler(sh))))
+	mux.Handle("GET /api/v1/admin/users", jwtMW(RequireRole("instance_admin", checker)(listAdminUsersHandler(sh))))
 
 	// Story 6.4: GetAdminUser — new route (AC#3).
 	// Go 1.22 ServeMux: the more-specific {userId} pattern wins over the list route — no conflict.
-	mux.Handle("GET /api/v1/admin/users/{userId}", jwtMW(RequireRole("instance_admin")(getAdminUserHandler(sh))))
+	mux.Handle("GET /api/v1/admin/users/{userId}", jwtMW(RequireRole("instance_admin", checker)(getAdminUserHandler(sh))))
 
 	// Story 6.5: Deactivate + Reactivate user — instance_admin required.
 	// Routes use {userId} path value; wrapper functions extract it before delegating.
 	mux.Handle("POST /api/v1/admin/users/{userId}/deactivate",
-		jwtMW(RequireRole("instance_admin")(deactivateAdminUserHandler(sh))))
+		jwtMW(RequireRole("instance_admin", checker)(deactivateAdminUserHandler(sh))))
 	mux.Handle("POST /api/v1/admin/users/{userId}/reactivate",
-		jwtMW(RequireRole("instance_admin")(reactivateAdminUserHandler(sh))))
+		jwtMW(RequireRole("instance_admin", checker)(reactivateAdminUserHandler(sh))))
+
+	// Story 6.6: Assign / Revoke role override — instance_admin required.
+	mux.Handle("POST /api/v1/admin/users/{userId}/roles",
+		jwtMW(RequireRole("instance_admin", checker)(assignAdminUserRoleHandler(sh))))
 }
 
 // listAdminUsersHandler returns an http.Handler that parses the cursor/limit/search query
@@ -131,5 +140,26 @@ func reactivateAdminUserHandler(sh ServerInterface) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		userID := r.PathValue("userId")
 		sh.ReactivateAdminUser(w, r, userID)
+	})
+}
+
+// assignAdminUserRoleHandler returns an http.Handler that extracts {userId},
+// pre-validates the body is present, and delegates to sh.AssignAdminUserRole(w, r, userId).
+//
+// Story 6.6: POST /api/v1/admin/users/{userId}/roles
+//
+// The body pre-check mirrors the deactivateAdminUserHandler pattern (Story 6.5 MINOR-6 fix):
+// the strict handler's json.NewDecoder emits a plain-text 400 on missing body, not the
+// M_BAD_JSON Matrix envelope required by AC#2. We intercept before delegating.
+func assignAdminUserRoleHandler(sh ServerInterface) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		userID := r.PathValue("userId")
+		if r.Body == nil || r.ContentLength == 0 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":{"code":"M_BAD_JSON","message":"request body is required"}}`))
+			return
+		}
+		sh.AssignAdminUserRole(w, r, userID)
 	})
 }

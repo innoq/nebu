@@ -24,13 +24,13 @@ import (
 // DB and CoreClient are populated in main.go (Option A from Dev Notes: fields on AdminServer).
 // Users is the UserRepository for Admin user queries (Story 6.4).
 // Deactivation is the DeactivationRepository for user deactivation/reactivation (Story 6.5).
-//
-// TODO(Story 6.6): Users will also need to merge role_overrides table once it exists.
+// Roles is the RoleOverrideRepository for role grant/revoke and override merging (Story 6.6).
 type AdminServer struct {
 	DB           *sql.DB
 	CoreClient   pb.CoreServiceClient
 	Users        UserRepository
 	Deactivation DeactivationRepository // Story 6.5
+	Roles        RoleOverrideRepository // Story 6.6
 }
 
 // Ensure AdminServer satisfies the generated StrictServerInterface at compile time.
@@ -406,5 +406,138 @@ func (r *reactivate409Resp) VisitReactivateAdminUserResponse(w http.ResponseWrit
 	w.WriteHeader(http.StatusConflict)
 	return json.NewEncoder(w).Encode(map[string]any{
 		"error": map[string]string{"code": "M_CONFLICT", "message": r.msg},
+	})
+}
+
+// ── Story 6.6: AssignAdminUserRole handler ────────────────────────────────────
+
+// AssignAdminUserRole implements AC#2: POST /api/v1/admin/users/{userId}/roles.
+// Grants or revokes a role override for a user independent of their OIDC claims.
+//
+// Validation order:
+//  1. Roles repo must be wired — otherwise 501 stub.
+//  2. Body must be present and role/action must be valid enum values → 400.
+//  3. User must exist → 404 "User not found".
+//  4. Self-revoke of instance_admin is blocked → 403.
+//  5. grant: upsert into role_overrides → 200.
+//  6. revoke: delete from role_overrides → 200; ErrRoleOverrideNotFound → 404.
+//  7. Audit log (never-raise).
+func (s *AdminServer) AssignAdminUserRole(ctx context.Context, req AssignAdminUserRoleRequestObject) (AssignAdminUserRoleResponseObject, error) {
+	if s.Roles == nil {
+		return AssignAdminUserRole501Response{}, nil
+	}
+
+	userID := req.UserId
+
+	// 1. Validate body — role and action must be present and valid.
+	if req.Body == nil {
+		return &assignRole400Resp{msg: "request body is required"}, nil
+	}
+	if !req.Body.Role.Valid() {
+		return &assignRole400Resp{msg: "invalid role: must be instance_admin or compliance_officer"}, nil
+	}
+	if !req.Body.Action.Valid() {
+		return &assignRole400Resp{msg: "invalid action: must be grant or revoke"}, nil
+	}
+	role := string(req.Body.Role)
+	action := string(req.Body.Action)
+
+	// 2. User must exist.
+	exists, err := s.Roles.UserExists(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return &assignRole404Resp{msg: "User not found"}, nil
+	}
+
+	// 3. Self-revoke protection: admin cannot revoke their own instance_admin.
+	actorID, _ := ctx.Value(middleware.ContextKeyUserID).(string)
+	if action == string(Revoke) && role == string(InstanceAdmin) && actorID == userID {
+		return &assignRole403Resp{msg: "Cannot revoke your own admin role"}, nil
+	}
+
+	// 4. Perform grant or revoke.
+	var auditAction string
+	var responseAction string
+	switch AssignUserRoleRequestAction(action) {
+	case Grant:
+		if err := s.Roles.GrantRoleOverride(ctx, userID, role, actorID); err != nil {
+			return nil, err
+		}
+		auditAction = "role_granted"
+		responseAction = "granted"
+
+	case Revoke:
+		if err := s.Roles.RevokeRoleOverride(ctx, userID, role); err != nil {
+			if errors.Is(err, ErrRoleOverrideNotFound) {
+				return &assignRole404Resp{msg: "Role override not found"}, nil
+			}
+			return nil, err
+		}
+		auditAction = "role_revoked"
+		responseAction = "revoked"
+	}
+
+	// 5. Audit log (never-raise).
+	if s.CoreClient != nil {
+		_ = audit.LogEvent(ctx, s.CoreClient, actorID, auditAction, "user", userID,
+			map[string]any{"role": role}, "success", "")
+	} else {
+		slog.Warn("AssignAdminUserRole audit skipped — CoreClient is nil", "user_id", userID, "action", auditAction)
+	}
+
+	return &assignRole200Resp{userID: userID, role: role, action: responseAction}, nil
+}
+
+// ── AssignAdminUserRole response types ───────────────────────────────────────
+
+type assignRole200Resp struct {
+	userID string
+	role   string
+	action string
+}
+
+func (r *assignRole200Resp) VisitAssignAdminUserRoleResponse(w http.ResponseWriter) error {
+	type dataObj struct {
+		UserID string `json:"user_id"`
+		Role   string `json:"role"`
+		Action string `json:"action"`
+	}
+	type envelope struct {
+		Data dataObj `json:"data"`
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	return json.NewEncoder(w).Encode(envelope{Data: dataObj{UserID: r.userID, Role: r.role, Action: r.action}})
+}
+
+type assignRole400Resp struct{ msg string }
+
+func (r *assignRole400Resp) VisitAssignAdminUserRoleResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusBadRequest)
+	return json.NewEncoder(w).Encode(map[string]any{
+		"error": map[string]string{"code": "M_BAD_JSON", "message": r.msg},
+	})
+}
+
+type assignRole403Resp struct{ msg string }
+
+func (r *assignRole403Resp) VisitAssignAdminUserRoleResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusForbidden)
+	return json.NewEncoder(w).Encode(map[string]any{
+		"error": map[string]string{"code": "M_FORBIDDEN", "message": r.msg},
+	})
+}
+
+type assignRole404Resp struct{ msg string }
+
+func (r *assignRole404Resp) VisitAssignAdminUserRoleResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusNotFound)
+	return json.NewEncoder(w).Encode(map[string]any{
+		"error": map[string]string{"code": "M_NOT_FOUND", "message": r.msg},
 	})
 }

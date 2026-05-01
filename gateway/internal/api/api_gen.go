@@ -26,6 +26,63 @@ const (
 	BearerAuthScopes = "BearerAuth.Scopes"
 )
 
+// Defines values for AssignUserRoleRequestAction.
+const (
+	Grant  AssignUserRoleRequestAction = "grant"
+	Revoke AssignUserRoleRequestAction = "revoke"
+)
+
+// Valid indicates whether the value is a known member of the AssignUserRoleRequestAction enum.
+func (e AssignUserRoleRequestAction) Valid() bool {
+	switch e {
+	case Grant:
+		return true
+	case Revoke:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssignUserRoleRequestRole.
+const (
+	ComplianceOfficer AssignUserRoleRequestRole = "compliance_officer"
+	InstanceAdmin     AssignUserRoleRequestRole = "instance_admin"
+)
+
+// Valid indicates whether the value is a known member of the AssignUserRoleRequestRole enum.
+func (e AssignUserRoleRequestRole) Valid() bool {
+	switch e {
+	case ComplianceOfficer:
+		return true
+	case InstanceAdmin:
+		return true
+	default:
+		return false
+	}
+}
+
+// AssignUserRoleRequest defines model for AssignUserRoleRequest.
+type AssignUserRoleRequest struct {
+	Action AssignUserRoleRequestAction `json:"action"`
+	Role   AssignUserRoleRequestRole   `json:"role"`
+}
+
+// AssignUserRoleRequestAction defines model for AssignUserRoleRequest.Action.
+type AssignUserRoleRequestAction string
+
+// AssignUserRoleRequestRole defines model for AssignUserRoleRequest.Role.
+type AssignUserRoleRequestRole string
+
+// AssignUserRoleResponse defines model for AssignUserRoleResponse.
+type AssignUserRoleResponse struct {
+	Data struct {
+		Action string `json:"action"`
+		Role   string `json:"role"`
+		UserId string `json:"user_id"`
+	} `json:"data"`
+}
+
 // DeactivateUserRequest defines model for DeactivateUserRequest.
 type DeactivateUserRequest struct {
 	Reason string `json:"reason"`
@@ -71,6 +128,9 @@ type ListAdminUsersParams struct {
 // DeactivateAdminUserJSONRequestBody defines body for DeactivateAdminUser for application/json ContentType.
 type DeactivateAdminUserJSONRequestBody = DeactivateUserRequest
 
+// AssignAdminUserRoleJSONRequestBody defines body for AssignAdminUserRole for application/json ContentType.
+type AssignAdminUserRoleJSONRequestBody = AssignUserRoleRequest
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// Get server config (placeholder — Story 6.10)
@@ -94,6 +154,9 @@ type ServerInterface interface {
 	// Reactivate user account (instance_admin required)
 	// (POST /admin/users/{userId}/reactivate)
 	ReactivateAdminUser(w http.ResponseWriter, r *http.Request, userId string)
+	// Grant or revoke a role override for a user (instance_admin required)
+	// (POST /admin/users/{userId}/roles)
+	AssignAdminUserRole(w http.ResponseWriter, r *http.Request, userId string)
 	// List compliance access requests (placeholder — Story 6.x)
 	// (GET /compliance/access-requests)
 	ListComplianceAccessRequests(w http.ResponseWriter, r *http.Request)
@@ -313,6 +376,37 @@ func (siw *ServerInterfaceWrapper) ReactivateAdminUser(w http.ResponseWriter, r 
 	handler.ServeHTTP(w, r)
 }
 
+// AssignAdminUserRole operation middleware
+func (siw *ServerInterfaceWrapper) AssignAdminUserRole(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "userId" -------------
+	var userId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "userId", r.PathValue("userId"), &userId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "userId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AssignAdminUserRole(w, r, userId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListComplianceAccessRequests operation middleware
 func (siw *ServerInterfaceWrapper) ListComplianceAccessRequests(w http.ResponseWriter, r *http.Request) {
 
@@ -474,6 +568,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("GET "+options.BaseURL+"/admin/users/{userId}", wrapper.GetAdminUser)
 	m.HandleFunc("POST "+options.BaseURL+"/admin/users/{userId}/deactivate", wrapper.DeactivateAdminUser)
 	m.HandleFunc("POST "+options.BaseURL+"/admin/users/{userId}/reactivate", wrapper.ReactivateAdminUser)
+	m.HandleFunc("POST "+options.BaseURL+"/admin/users/{userId}/roles", wrapper.AssignAdminUserRole)
 	m.HandleFunc("GET "+options.BaseURL+"/compliance/access-requests", wrapper.ListComplianceAccessRequests)
 	m.HandleFunc("GET "+options.BaseURL+"/health", wrapper.GetHealth)
 
@@ -708,6 +803,59 @@ func (response ReactivateAdminUser501Response) VisitReactivateAdminUserResponse(
 	return nil
 }
 
+type AssignAdminUserRoleRequestObject struct {
+	UserId string `json:"userId"`
+	Body   *AssignAdminUserRoleJSONRequestBody
+}
+
+type AssignAdminUserRoleResponseObject interface {
+	VisitAssignAdminUserRoleResponse(w http.ResponseWriter) error
+}
+
+type AssignAdminUserRole200JSONResponse AssignUserRoleResponse
+
+func (response AssignAdminUserRole200JSONResponse) VisitAssignAdminUserRoleResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type AssignAdminUserRole400JSONResponse EmptyResponse
+
+func (response AssignAdminUserRole400JSONResponse) VisitAssignAdminUserRoleResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type AssignAdminUserRole403JSONResponse EmptyResponse
+
+func (response AssignAdminUserRole403JSONResponse) VisitAssignAdminUserRoleResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type AssignAdminUserRole404JSONResponse EmptyResponse
+
+func (response AssignAdminUserRole404JSONResponse) VisitAssignAdminUserRoleResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type AssignAdminUserRole501Response struct {
+}
+
+func (response AssignAdminUserRole501Response) VisitAssignAdminUserRoleResponse(w http.ResponseWriter) error {
+	w.WriteHeader(501)
+	return nil
+}
+
 type ListComplianceAccessRequestsRequestObject struct {
 }
 
@@ -771,6 +919,9 @@ type StrictServerInterface interface {
 	// Reactivate user account (instance_admin required)
 	// (POST /admin/users/{userId}/reactivate)
 	ReactivateAdminUser(ctx context.Context, request ReactivateAdminUserRequestObject) (ReactivateAdminUserResponseObject, error)
+	// Grant or revoke a role override for a user (instance_admin required)
+	// (POST /admin/users/{userId}/roles)
+	AssignAdminUserRole(ctx context.Context, request AssignAdminUserRoleRequestObject) (AssignAdminUserRoleResponseObject, error)
 	// List compliance access requests (placeholder — Story 6.x)
 	// (GET /compliance/access-requests)
 	ListComplianceAccessRequests(ctx context.Context, request ListComplianceAccessRequestsRequestObject) (ListComplianceAccessRequestsResponseObject, error)
@@ -991,6 +1142,39 @@ func (sh *strictHandler) ReactivateAdminUser(w http.ResponseWriter, r *http.Requ
 	}
 }
 
+// AssignAdminUserRole operation middleware
+func (sh *strictHandler) AssignAdminUserRole(w http.ResponseWriter, r *http.Request, userId string) {
+	var request AssignAdminUserRoleRequestObject
+
+	request.UserId = userId
+
+	var body AssignAdminUserRoleJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AssignAdminUserRole(ctx, request.(AssignAdminUserRoleRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AssignAdminUserRole")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AssignAdminUserRoleResponseObject); ok {
+		if err := validResponse.VisitAssignAdminUserRoleResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListComplianceAccessRequests operation middleware
 func (sh *strictHandler) ListComplianceAccessRequests(w http.ResponseWriter, r *http.Request) {
 	var request ListComplianceAccessRequestsRequestObject
@@ -1042,24 +1226,27 @@ func (sh *strictHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"H4sIAAAAAAAC/+RYX2/cNgz/KoK2hwRw47ut6zDvKWm7LUNXFJcVewiCQJGZszpbcig66CEwsA+xT7hP",
-	"MlDy/cvZSXBd7h72dD6bFMkfyZ8o3UntqtpZsORldie9LqBS4fENKE3mVhF89IATuGnAE3+o0dWAZCCI",
-	"ISjvLD9Vxr4DO6VCZuNRImlWg8ykJzR2Kts2kQg3jUHIZXY+V7tYyLmrT6BJtol8W9U0m4CvnfXAC+fg",
-	"NZqaDNuRH0qloXBlDiiwk/pRINT8PhfGire10eKV8M3VC08O2dEeM7+AKqlYtbMemCdFTXh6OJJOri8S",
-	"Bu4NkDLlsJlckVoxMle+ZyRIDZl4Zzw9bsAQVL7H0mJRhahm/L+CqLG+joXPdKkb9A57QEkkOVLlyhdj",
-	"CaaAG6FEuc1Y+iLufBkK/CxA/3joT0xsIhsPeGnyx5M+F0yG0/+0DLaJ9KAbNDQ7496LLp6AQsDjhnvp",
-	"Tl6Ffz85rBTJTP76x+9sN0jLrPu6rPCCqJYtL2zstQuhGCr5y3u4asRxXhkrjj+cykTeAvrYVOOj0dGI",
-	"EXA1WFUbmclvj8ZHI5nIWlERnEoVq6ba2Wsz5RdTCHzA2CpuztNcZvJnoGDidRRjEGJ6whrfjEb8o50l",
-	"sEFb1XVpdNBPP3VMElmIn75GuJaZ/Cpd0lTacVS6zhMh4nWm6FxoE/ndaLxJJO8dCVPVJVRgCfKYi6aq",
-	"FM5iHMID3gKKGLE4qFeY55+//hZn5HAmXh2NR4dBuQOoAkKj/aMI/dbJ7ROiuQ/bY9RF+2R00LlqGBum",
-	"sgDOJIjtExr2QJTG05bgcCgiRDuMzfdr0DCpPAGaj0GMGxNVBRR0zu+kYZduGsCZTKRVgRs6uk5WMNng",
-	"tX7N0lSG+hRXaL1f04NCXTxo8+IZ87qxIfaklmUWqX25y6I6UbnAOEqJA2NvVWlyEbMkHPtUGTr8koIL",
-	"NcRLe1JWw2WoLDHfiDbLLb3jn9O8fZSuGLSBquMtYlkAcUG5uv0RNrDPgrg3hA2VRB7EfKyKl7urimDc",
-	"OhLXrrG9G5Gx0xJCcrfJbZovZvkwDjnfk+flvL+bdIcmOHH57D/Duf/E0q5PYuxb+8zldm8uHS63ub/5",
-	"fomoMp4rLPWFQxLxaHa49y5g8z/sdlosjSZxoEoElc9W87MtJy9LMjav0to1lrZqYnxCE0923MT7byK8",
-	"30T/x4o1iBAOc1clCD6RAk8T8zoOAMG2JTzZroQ5oNLw91RpDd6/6Ojm4Qn39ULtOGhN5kr7PApEV8Qi",
-	"gC+Yz5awCLW+6vAp4XMHaRFurB4a1OKd1nNide/WrAesKCG6e5HVCw6ZnV+sAtJJ6gL0n+KgsaqhAiyx",
-	"Y7GM1nXXr0XOL5iB4gk90lqDpcxkqmqT3o5le9H+GwAA//8xKtXg3RQAAA==",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

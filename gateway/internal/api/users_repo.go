@@ -52,12 +52,20 @@ type UserRepository interface {
 
 // userRepo is the real PostgreSQL implementation of UserRepository.
 type userRepo struct {
-	db *sql.DB
+	db    *sql.DB
+	roles RoleOverrideRepository // optional; nil disables role_overrides merge (Story 6.6)
 }
 
 // NewUserRepo constructs a new DB-backed UserRepository.
+// Pass rolesRepo (non-nil) to merge role_overrides into every user's Roles field.
+// Pass nil to disable role override merging (tests, or callers that have not yet wired the table).
 func NewUserRepo(db *sql.DB) UserRepository {
 	return &userRepo{db: db}
+}
+
+// NewUserRepoWithRoles constructs a UserRepository that also merges role_overrides (Story 6.6).
+func NewUserRepoWithRoles(db *sql.DB, roles RoleOverrideRepository) UserRepository {
+	return &userRepo{db: db, roles: roles}
 }
 
 // deriveStatus maps the three lifecycle columns to the canonical status string.
@@ -103,8 +111,8 @@ func epochMsToISO8601(epochMs int64) string {
 
 // ListUsers queries the users + profiles tables with optional cursor pagination and search.
 // For MVP, email_masked is always "" (encrypted, no decryption key available in Admin context).
-//
-// TODO(Story 6.6): merge role_overrides when that table is created.
+// Story 6.6: if r.roles is non-nil, batch-loads role_overrides for all returned users and
+// merges them into each user's Roles field (deduped, system_role always present).
 func (r *userRepo) ListUsers(ctx context.Context, afterID, afterCreatedAt string, limit int, search string) ([]AdminUser, int, string, error) {
 	// Build argument list and WHERE clauses progressively.
 	// Argument index tracks the $N placeholder position in the SQL.
@@ -210,6 +218,23 @@ func (r *userRepo) ListUsers(ctx context.Context, afterID, afterCreatedAt string
 		return nil, 0, "", fmt.Errorf("ListUsers rows: %w", err)
 	}
 
+	// Story 6.6: merge role_overrides for all returned users (batch lookup).
+	if r.roles != nil && len(users) > 0 {
+		userIDs := make([]string, len(users))
+		for i, u := range users {
+			userIDs[i] = u.UserID
+		}
+		overrideMap, ovErr := r.roles.GetAllRoleOverridesForUsers(ctx, userIDs)
+		if ovErr == nil {
+			for i := range users {
+				if extras, ok := overrideMap[users[i].UserID]; ok {
+					users[i].Roles = mergeRoles(users[i].Roles, extras)
+				}
+			}
+		}
+		// On DB error: fail-open — return users with system_role only, no additional overrides.
+	}
+
 	// Encode next cursor from the last returned row (only if the page was full —
 	// a partial page means we have reached the end of the result set).
 	var nextCursor string
@@ -220,10 +245,29 @@ func (r *userRepo) ListUsers(ctx context.Context, afterID, afterCreatedAt string
 	return users, total, nextCursor, nil
 }
 
+// mergeRoles returns a deduped slice with all roles from base plus extras.
+// The base slice is never modified.
+func mergeRoles(base, extras []string) []string {
+	seen := make(map[string]struct{}, len(base)+len(extras))
+	merged := make([]string, 0, len(base)+len(extras))
+	for _, r := range base {
+		if _, dup := seen[r]; !dup {
+			seen[r] = struct{}{}
+			merged = append(merged, r)
+		}
+	}
+	for _, r := range extras {
+		if _, dup := seen[r]; !dup {
+			seen[r] = struct{}{}
+			merged = append(merged, r)
+		}
+	}
+	return merged
+}
+
 // GetUser fetches a single user with room_count.
 // Returns (nil, nil) if the user does not exist.
-//
-// TODO(Story 6.6): merge role_overrides table when available.
+// Story 6.6: if r.roles is non-nil, merges role_overrides into the returned user's Roles field.
 func (r *userRepo) GetUser(ctx context.Context, userID string) (*AdminUserDetail, error) {
 	const q = `
 		SELECT u.user_id, COALESCE(p.displayname, ''), u.system_role,
@@ -277,6 +321,14 @@ func (r *userRepo) GetUser(ctx context.Context, userID string) (*AdminUserDetail
 	if lastSeenAt.Valid {
 		s := epochMsToISO8601(lastSeenAt.Int64)
 		u.LastSeenAt = &s
+	}
+
+	// Story 6.6: merge role_overrides for this user.
+	if r.roles != nil {
+		if overrides, ovErr := r.roles.GetRoleOverrides(ctx, uid); ovErr == nil {
+			u.Roles = mergeRoles(u.Roles, overrides)
+		}
+		// On DB error: fail-open — return user with system_role only.
 	}
 
 	return &AdminUserDetail{AdminUser: u, RoomCount: roomCount}, nil

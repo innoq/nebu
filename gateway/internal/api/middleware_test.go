@@ -36,7 +36,7 @@ func TestRequireRole_MissingToken_Returns401(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	handler := api.RequireRole("instance_admin")(next)
+	handler := api.RequireRole("instance_admin", nil)(next)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/users", nil)
 	// No context value for ContextKeySystemRole — simulates a request that bypassed JWTMiddleware.
@@ -81,7 +81,7 @@ func TestRequireRole_WrongRole_Returns403(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	handler := api.RequireRole("instance_admin")(next)
+	handler := api.RequireRole("instance_admin", nil)(next)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/users", nil)
 	ctx := context.WithValue(req.Context(), middleware.ContextKeySystemRole, "user")
@@ -123,7 +123,7 @@ func TestRequireRole_CorrectRole_CallsNext(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	handler := api.RequireRole("instance_admin")(next)
+	handler := api.RequireRole("instance_admin", nil)(next)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/users", nil)
 	ctx := context.WithValue(req.Context(), middleware.ContextKeySystemRole, "instance_admin")
@@ -154,7 +154,7 @@ func TestRequireRole_CrossRoleRejection_Returns403(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	handler := api.RequireRole("compliance_officer")(next)
+	handler := api.RequireRole("compliance_officer", nil)(next)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/compliance/access-requests", nil)
 	ctx := context.WithValue(req.Context(), middleware.ContextKeySystemRole, "instance_admin")
@@ -191,7 +191,7 @@ func TestRequireRole_ForbiddenErrorMessage_ContainsRoleName(t *testing.T) {
 	})
 
 	const requiredRole = "instance_admin"
-	handler := api.RequireRole(requiredRole)(next)
+	handler := api.RequireRole(requiredRole, nil)(next)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/config", nil)
 	ctx := context.WithValue(req.Context(), middleware.ContextKeySystemRole, "compliance_officer")
@@ -226,7 +226,7 @@ func TestRequireRole_EmptyStringRole_Returns401(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	handler := api.RequireRole("instance_admin")(next)
+	handler := api.RequireRole("instance_admin", nil)(next)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/users", nil)
 	// Explicitly set empty string — simulates JWTMiddleware running but JWT has no role claim.

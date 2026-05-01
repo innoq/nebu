@@ -70,6 +70,36 @@ components:
       properties:
         data:
           type: object
+    AssignUserRoleRequest:
+      type: object
+      required:
+        - role
+        - action
+      properties:
+        role:
+          type: string
+          enum: [instance_admin, compliance_officer]
+        action:
+          type: string
+          enum: [grant, revoke]
+    AssignUserRoleResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
+          required:
+            - user_id
+            - role
+            - action
+          properties:
+            user_id:
+              type: string
+            role:
+              type: string
+            action:
+              type: string
 security:
   - BearerAuth: []
 paths:
@@ -211,6 +241,49 @@ paths:
                 $ref: "#/components/schemas/EmptyResponse"
         "409":
           description: Conflict (irreversible state or already active)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "501":
+          description: Not implemented
+  /admin/users/{userId}/roles:
+    post:
+      operationId: AssignAdminUserRole
+      summary: Grant or revoke a role override for a user (instance_admin required)
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignUserRoleRequest"
+      responses:
+        "200":
+          description: Role assigned or revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignUserRoleResponse"
+        "400":
+          description: Bad request (invalid role or action)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "403":
+          description: Forbidden (self-revoke protection)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "404":
+          description: User or role override not found
           content:
             application/json:
               schema:

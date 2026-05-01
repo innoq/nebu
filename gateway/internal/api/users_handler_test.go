@@ -156,7 +156,7 @@ func TestListAdminUsers_PaginatedResults(t *testing.T) {
 	}
 
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, buildAdminServer(repo, nil), noopJWTMiddlewareForUsers)
+	api.RegisterAdminRoutes(mux, buildAdminServer(repo, nil), noopJWTMiddlewareForUsers, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/users?limit=2", nil)
 	w := httptest.NewRecorder()
@@ -204,7 +204,7 @@ func TestListAdminUsers_EmailMasked(t *testing.T) {
 	}
 
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, buildAdminServer(repo, nil), noopJWTMiddlewareForUsers)
+	api.RegisterAdminRoutes(mux, buildAdminServer(repo, nil), noopJWTMiddlewareForUsers, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/users", nil)
 	w := httptest.NewRecorder()
@@ -239,7 +239,7 @@ func TestListAdminUsers_SearchFiltersByDisplayName(t *testing.T) {
 	}
 
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, buildAdminServer(repo, nil), noopJWTMiddlewareForUsers)
+	api.RegisterAdminRoutes(mux, buildAdminServer(repo, nil), noopJWTMiddlewareForUsers, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/users?search=ali", nil)
 	w := httptest.NewRecorder()
@@ -275,7 +275,7 @@ func TestListAdminUsers_InvalidCursor_Returns400(t *testing.T) {
 	repo := &mockUserRepository{}
 
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, buildAdminServer(repo, nil), noopJWTMiddlewareForUsers)
+	api.RegisterAdminRoutes(mux, buildAdminServer(repo, nil), noopJWTMiddlewareForUsers, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/users?cursor=not-valid-base64!!", nil)
 	w := httptest.NewRecorder()
@@ -308,7 +308,7 @@ func TestListAdminUsers_LimitZero_Returns400(t *testing.T) {
 	repo := &mockUserRepository{}
 
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, buildAdminServer(repo, nil), noopJWTMiddlewareForUsers)
+	api.RegisterAdminRoutes(mux, buildAdminServer(repo, nil), noopJWTMiddlewareForUsers, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/users?limit=0", nil)
 	w := httptest.NewRecorder()
@@ -341,7 +341,7 @@ func TestListAdminUsers_LimitAbove100_Returns400(t *testing.T) {
 	repo := &mockUserRepository{}
 
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, buildAdminServer(repo, nil), noopJWTMiddlewareForUsers)
+	api.RegisterAdminRoutes(mux, buildAdminServer(repo, nil), noopJWTMiddlewareForUsers, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/users?limit=101", nil)
 	w := httptest.NewRecorder()
@@ -378,7 +378,7 @@ func TestListAdminUsers_StatusFields(t *testing.T) {
 	repo := &mockUserRepository{users: users, total: 4}
 
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, buildAdminServer(repo, nil), noopJWTMiddlewareForUsers)
+	api.RegisterAdminRoutes(mux, buildAdminServer(repo, nil), noopJWTMiddlewareForUsers, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/users", nil)
 	w := httptest.NewRecorder()
@@ -434,7 +434,7 @@ func TestGetAdminUser_KnownUser_Returns200WithRoomCount(t *testing.T) {
 	repo := &mockUserRepository{detail: detail}
 
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, buildAdminServer(repo, nil), noopJWTMiddlewareForUsers)
+	api.RegisterAdminRoutes(mux, buildAdminServer(repo, nil), noopJWTMiddlewareForUsers, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/users/@alice:example.com", nil)
 	w := httptest.NewRecorder()
@@ -467,7 +467,7 @@ func TestGetAdminUser_UnknownUser_Returns404(t *testing.T) {
 	repo := &mockUserRepository{detail: nil}
 
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, buildAdminServer(repo, nil), noopJWTMiddlewareForUsers)
+	api.RegisterAdminRoutes(mux, buildAdminServer(repo, nil), noopJWTMiddlewareForUsers, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/users/@doesnotexist:example.com", nil)
 	w := httptest.NewRecorder()
@@ -501,7 +501,7 @@ func TestGetAdminUser_UnknownUser_Returns404(t *testing.T) {
 // must be rejected (401 or 403), not 404 — 404 means the route is missing.
 func TestGetAdminUser_RouteRegistered(t *testing.T) {
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, buildAdminServer(&mockUserRepository{}, nil), noopJWTMiddlewareForUsers)
+	api.RegisterAdminRoutes(mux, buildAdminServer(&mockUserRepository{}, nil), noopJWTMiddlewareForUsers, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/users/@some:example.com", nil)
 	// No role set — use a middleware that injects no role to check for 401/403, not 404.
@@ -511,7 +511,7 @@ func TestGetAdminUser_RouteRegistered(t *testing.T) {
 		})
 	}
 	mux2 := http.NewServeMux()
-	api.RegisterAdminRoutes(mux2, buildAdminServer(&mockUserRepository{}, nil), noAuthMW)
+	api.RegisterAdminRoutes(mux2, buildAdminServer(&mockUserRepository{}, nil), noAuthMW, nil)
 	w := httptest.NewRecorder()
 	mux2.ServeHTTP(w, req)
 
@@ -533,7 +533,7 @@ func TestListAdminUsers_AuditLogEmitted(t *testing.T) {
 	mockClient := &mockCoreClient{}
 
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, buildAdminServer(repo, mockClient), noopJWTMiddlewareForUsers)
+	api.RegisterAdminRoutes(mux, buildAdminServer(repo, mockClient), noopJWTMiddlewareForUsers, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/users", nil)
 	w := httptest.NewRecorder()
@@ -577,7 +577,7 @@ func TestGetAdminUser_AuditLogEmitted(t *testing.T) {
 	mockClient := &mockCoreClient{}
 
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, buildAdminServer(repo, mockClient), noopJWTMiddlewareForUsers)
+	api.RegisterAdminRoutes(mux, buildAdminServer(repo, mockClient), noopJWTMiddlewareForUsers, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/users/@alice:example.com", nil)
 	w := httptest.NewRecorder()
@@ -607,7 +607,7 @@ func TestListAdminUsers_UserObjectFields(t *testing.T) {
 	repo := &mockUserRepository{users: []api.AdminUser{user}, total: 1}
 
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, buildAdminServer(repo, nil), noopJWTMiddlewareForUsers)
+	api.RegisterAdminRoutes(mux, buildAdminServer(repo, nil), noopJWTMiddlewareForUsers, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/users", nil)
 	w := httptest.NewRecorder()
@@ -643,7 +643,7 @@ func TestListAdminUsers_DefaultLimit_NoError(t *testing.T) {
 	repo := &mockUserRepository{users: []api.AdminUser{}, total: 0}
 
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, buildAdminServer(repo, nil), noopJWTMiddlewareForUsers)
+	api.RegisterAdminRoutes(mux, buildAdminServer(repo, nil), noopJWTMiddlewareForUsers, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/users", nil)
 	w := httptest.NewRecorder()

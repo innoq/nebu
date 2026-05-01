@@ -1,5 +1,7 @@
 # generated: 2026-03-20
 # last_updated: 2026-05-01
+# story 6-6 done (pipeline: ATDD+Dev+CodeReview+Kassandra CLEAN — role_overrides migration 000035, POST /roles grant/revoke, RequireRole DB-override, 60s TTL cache): 2026-05-01
+# story 6-6 created: 6-6 → ready-for-dev: 2026-05-01 (User Role Assignment API — role_overrides migration 000035, POST /roles grant/revoke, RequireRole DB-override extension with 60s TTL cache, roles merge in ListUsers/GetUser)
 # story 6-5 created: 6-5 → ready-for-dev: 2026-05-01 (User Deactivation + Reactivation + Session-Invalidierung — POST deactivate/reactivate, proto InvalidateUserSessions, JWT middleware is_active check, migration 000034)
 # story 6-4 created: 6-4 → ready-for-dev: 2026-05-01 (User List + Get API — ListAdminUsers real impl + GetAdminUser new endpoint, spec-first with make gen-api, UserRepository, cursor pagination, email masking MVP, audit log)
 # story 6-3 created: 6-3 → ready-for-dev: 2026-05-01 (Admin API Router + RequireRole middleware — wires oapi-codegen StrictHandler + role-gate for instance_admin/compliance_officer groups)
@@ -578,7 +580,7 @@ development_status:
   6-3-admin-api-router-role-auth-middleware: done
   6-4-user-list-get-api: done
   6-5-user-deactivation-reactivation-session-invalidierung: done
-  6-6-user-role-assignment-api-role-overrides-tabelle-middleware-integration: backlog
+  6-6-user-role-assignment-api-role-overrides-tabelle-middleware-integration: done
   6-7-room-list-get-api: backlog
   6-8-room-settings-update-api-max-members-visibility-serverweite-defaults: backlog
   6-9-room-archivierung-kein-physisches-loschen-events-bleiben-erhalten: backlog

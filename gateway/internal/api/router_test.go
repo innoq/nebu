@@ -48,7 +48,7 @@ func noopJWTMiddleware(next http.Handler) http.Handler {
 // [P0] — health check must always be reachable by load balancers / orchestrators.
 func TestRegisterAdminRoutes_HealthEndpoint_Unauthenticated(t *testing.T) {
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, &api.AdminServer{}, noopJWTMiddleware)
+	api.RegisterAdminRoutes(mux, &api.AdminServer{}, noopJWTMiddleware, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
 	// No Authorization header, no role header — must still reach the handler.
@@ -76,7 +76,7 @@ func TestRegisterAdminRoutes_HealthEndpoint_Unauthenticated(t *testing.T) {
 // [P0] — /api/v1/admin/* must not be accessible without the instance_admin role.
 func TestRegisterAdminRoutes_AdminRoutes_RequireInstanceAdmin_NoAuth(t *testing.T) {
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, &api.AdminServer{}, noopJWTMiddleware)
+	api.RegisterAdminRoutes(mux, &api.AdminServer{}, noopJWTMiddleware, nil)
 
 	routes := []string{
 		"/api/v1/admin/users",
@@ -108,7 +108,7 @@ func TestRegisterAdminRoutes_AdminRoutes_RequireInstanceAdmin_NoAuth(t *testing.
 // [P0] — cross-role isolation must be enforced at router level.
 func TestRegisterAdminRoutes_AdminRoutes_WrongRole_Returns403(t *testing.T) {
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, &api.AdminServer{}, noopJWTMiddleware)
+	api.RegisterAdminRoutes(mux, &api.AdminServer{}, noopJWTMiddleware, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/users", nil)
 	req.Header.Set("X-Test-System-Role", "compliance_officer")
@@ -127,7 +127,7 @@ func TestRegisterAdminRoutes_AdminRoutes_WrongRole_Returns403(t *testing.T) {
 // [P0] — authorised admins must reach the handlers.
 func TestRegisterAdminRoutes_AdminRoutes_CorrectRole_Passes(t *testing.T) {
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, &api.AdminServer{}, noopJWTMiddleware)
+	api.RegisterAdminRoutes(mux, &api.AdminServer{}, noopJWTMiddleware, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/users", nil)
 	req.Header.Set("X-Test-System-Role", "instance_admin")
@@ -151,7 +151,7 @@ func TestRegisterAdminRoutes_AdminRoutes_CorrectRole_Passes(t *testing.T) {
 // [P1] — guard against future dev accidentally re-adding the route to RegisterAdminRoutes.
 func TestRegisterAdminRoutes_ComplianceRoute_NotRegisteredByRouter(t *testing.T) {
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, &api.AdminServer{}, noopJWTMiddleware)
+	api.RegisterAdminRoutes(mux, &api.AdminServer{}, noopJWTMiddleware, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/compliance/access-requests", nil)
 	req.Header.Set("X-Test-System-Role", "compliance_officer")
@@ -179,7 +179,7 @@ func TestRegisterAdminRoutes_JWTRunsBeforeRole(t *testing.T) {
 	// We verify this by using noopJWTMiddleware (which sets the role from header)
 	// and confirming that an admin request with a valid role header passes.
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, &api.AdminServer{}, noopJWTMiddleware)
+	api.RegisterAdminRoutes(mux, &api.AdminServer{}, noopJWTMiddleware, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/config", nil)
 	// noopJWTMiddleware reads this header and sets ContextKeySystemRole.

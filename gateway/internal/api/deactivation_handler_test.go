@@ -155,7 +155,7 @@ func TestDeactivateAdminUser_ActiveUser_Returns200(t *testing.T) {
 	coreClient := &mockCoreClientForDeactivation{}
 
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, buildDeactivationServer(repo, coreClient), noopJWTMiddlewareForDeactivation)
+	api.RegisterAdminRoutes(mux, buildDeactivationServer(repo, coreClient), noopJWTMiddlewareForDeactivation, nil)
 
 	body := deactivateBody("Security incident")
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/users/@alice:example.com/deactivate", body)
@@ -195,7 +195,7 @@ func TestDeactivateAdminUser_AlreadyDeactivated_Returns409(t *testing.T) {
 	}
 
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, buildDeactivationServer(repo, nil), noopJWTMiddlewareForDeactivation)
+	api.RegisterAdminRoutes(mux, buildDeactivationServer(repo, nil), noopJWTMiddlewareForDeactivation, nil)
 
 	body := deactivateBody("Security incident")
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/users/@alice:example.com/deactivate", body)
@@ -235,7 +235,7 @@ func TestDeactivateAdminUser_UserNotFound_Returns404(t *testing.T) {
 	}
 
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, buildDeactivationServer(repo, nil), noopJWTMiddlewareForDeactivation)
+	api.RegisterAdminRoutes(mux, buildDeactivationServer(repo, nil), noopJWTMiddlewareForDeactivation, nil)
 
 	body := deactivateBody("Security incident")
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/users/@ghost:example.com/deactivate", body)
@@ -270,7 +270,7 @@ func TestDeactivateAdminUser_ShortReason_Returns400(t *testing.T) {
 	repo := &mockDeactivationRepository{isActive: true}
 
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, buildDeactivationServer(repo, nil), noopJWTMiddlewareForDeactivation)
+	api.RegisterAdminRoutes(mux, buildDeactivationServer(repo, nil), noopJWTMiddlewareForDeactivation, nil)
 
 	body := deactivateBody("too short") // 9 chars — below 10 char minimum
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/users/@alice:example.com/deactivate", body)
@@ -307,7 +307,7 @@ func TestDeactivateAdminUser_MissingBody_Returns400(t *testing.T) {
 	repo := &mockDeactivationRepository{isActive: true}
 
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, buildDeactivationServer(repo, nil), noopJWTMiddlewareForDeactivation)
+	api.RegisterAdminRoutes(mux, buildDeactivationServer(repo, nil), noopJWTMiddlewareForDeactivation, nil)
 
 	// No body at all
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/users/@alice:example.com/deactivate", nil)
@@ -331,7 +331,7 @@ func TestDeactivateAdminUser_AuditLogEmitted(t *testing.T) {
 	coreClient := &mockCoreClientForDeactivation{}
 
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, buildDeactivationServer(repo, coreClient), noopJWTMiddlewareForDeactivation)
+	api.RegisterAdminRoutes(mux, buildDeactivationServer(repo, coreClient), noopJWTMiddlewareForDeactivation, nil)
 
 	body := deactivateBody("Security incident for audit")
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/users/@alice:example.com/deactivate", body)
@@ -367,7 +367,7 @@ func TestDeactivateAdminUser_InvalidateSessionsCalled(t *testing.T) {
 	coreClient := &mockCoreClientForDeactivation{}
 
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, buildDeactivationServer(repo, coreClient), noopJWTMiddlewareForDeactivation)
+	api.RegisterAdminRoutes(mux, buildDeactivationServer(repo, coreClient), noopJWTMiddlewareForDeactivation, nil)
 
 	body := deactivateBody("Security incident check")
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/users/@alice:example.com/deactivate", body)
@@ -402,7 +402,7 @@ func TestReactivateAdminUser_DeactivatedUser_Returns200(t *testing.T) {
 	coreClient := &mockCoreClientForDeactivation{}
 
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, buildDeactivationServer(repo, coreClient), noopJWTMiddlewareForDeactivation)
+	api.RegisterAdminRoutes(mux, buildDeactivationServer(repo, coreClient), noopJWTMiddlewareForDeactivation, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/users/@alice:example.com/reactivate", nil)
 	w := httptest.NewRecorder()
@@ -441,7 +441,7 @@ func TestReactivateAdminUser_AnonymizedUser_Returns409(t *testing.T) {
 	}
 
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, buildDeactivationServer(repo, nil), noopJWTMiddlewareForDeactivation)
+	api.RegisterAdminRoutes(mux, buildDeactivationServer(repo, nil), noopJWTMiddlewareForDeactivation, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/users/@alice:example.com/reactivate", nil)
 	w := httptest.NewRecorder()
@@ -481,7 +481,7 @@ func TestReactivateAdminUser_KeysDeletedUser_Returns409(t *testing.T) {
 	}
 
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, buildDeactivationServer(repo, nil), noopJWTMiddlewareForDeactivation)
+	api.RegisterAdminRoutes(mux, buildDeactivationServer(repo, nil), noopJWTMiddlewareForDeactivation, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/users/@alice:example.com/reactivate", nil)
 	w := httptest.NewRecorder()
@@ -521,7 +521,7 @@ func TestReactivateAdminUser_AlreadyActive_Returns409(t *testing.T) {
 	}
 
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, buildDeactivationServer(repo, nil), noopJWTMiddlewareForDeactivation)
+	api.RegisterAdminRoutes(mux, buildDeactivationServer(repo, nil), noopJWTMiddlewareForDeactivation, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/users/@alice:example.com/reactivate", nil)
 	w := httptest.NewRecorder()
@@ -555,7 +555,7 @@ func TestReactivateAdminUser_UserNotFound_Returns404(t *testing.T) {
 	}
 
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, buildDeactivationServer(repo, nil), noopJWTMiddlewareForDeactivation)
+	api.RegisterAdminRoutes(mux, buildDeactivationServer(repo, nil), noopJWTMiddlewareForDeactivation, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/users/@ghost:example.com/reactivate", nil)
 	w := httptest.NewRecorder()
@@ -592,7 +592,7 @@ func TestReactivateAdminUser_AuditLogEmitted(t *testing.T) {
 	coreClient := &mockCoreClientForDeactivation{}
 
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, buildDeactivationServer(repo, coreClient), noopJWTMiddlewareForDeactivation)
+	api.RegisterAdminRoutes(mux, buildDeactivationServer(repo, coreClient), noopJWTMiddlewareForDeactivation, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/users/@alice:example.com/reactivate", nil)
 	w := httptest.NewRecorder()
@@ -633,7 +633,7 @@ func TestDeactivateRoutes_Registered(t *testing.T) {
 	}
 
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, buildDeactivationServer(&mockDeactivationRepository{}, nil), noRoleMW)
+	api.RegisterAdminRoutes(mux, buildDeactivationServer(&mockDeactivationRepository{}, nil), noRoleMW, nil)
 
 	routes := []struct {
 		method string
@@ -679,7 +679,7 @@ func TestDeactivateRoutes_RequireInstanceAdmin(t *testing.T) {
 	}
 
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, buildDeactivationServer(&mockDeactivationRepository{}, nil), wrongRoleMW)
+	api.RegisterAdminRoutes(mux, buildDeactivationServer(&mockDeactivationRepository{}, nil), wrongRoleMW, nil)
 
 	routes := []string{
 		"/api/v1/admin/users/@alice:example.com/deactivate",
@@ -710,7 +710,7 @@ func TestDeactivateAdminUser_NilDeactivationRepo_Returns501(t *testing.T) {
 	srv := &api.AdminServer{}
 
 	mux := http.NewServeMux()
-	api.RegisterAdminRoutes(mux, srv, noopJWTMiddlewareForDeactivation)
+	api.RegisterAdminRoutes(mux, srv, noopJWTMiddlewareForDeactivation, nil)
 
 	body := deactivateBody("Security incident guard")
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/users/@alice:example.com/deactivate", body)
