@@ -1,5 +1,7 @@
 # generated: 2026-03-20
 # last_updated: 2026-05-01
+# story 6-2 done (pipeline: ATDD+Dev+CodeReview CLEAN — APIResponse[T], EncodeCursor/DecodeCursor, ErrInvalidCursor sentinel): 2026-05-01
+# story 6-2 created: 6-2 → ready-for-dev: 2026-05-01 (Admin API response envelope + cursor pagination helpers)
 # story 6-1 done (pipeline: ATDD+Dev+CodeReview+Kassandra CLEAN — oapi-codegen StrictServerInterface, openapi.yaml 3.1, GET /api/v1/openapi.yaml embedded): 2026-05-01
 # story 7-36 done (pipeline: ATDD+Dev+CodeReview CLEAN — sync propagation Godog + private room exclusion + theResponseBodyIs compile fix): 2026-04-30
 # story 7-36 created: 7-36 → ready-for-dev: 2026-04-30 (P1 test gap closure: sync propagation for account_data+tags + private room exclusion from publicRooms)
@@ -566,7 +568,7 @@ development_status:
   # ─────────────────────────────────────────────────────────────────────────
   epic-6: in-progress
   6-1-openapi-spec-first-setup-codegen-pipeline-strictserverinterface-live-endpoint: done
-  6-2-admin-api-response-format-cursor-pagination: backlog
+  6-2-admin-api-response-format-cursor-pagination: done
   6-3-admin-api-router-role-auth-middleware: backlog
   6-4-user-list-get-api: backlog
   6-5-user-deactivation-reactivation-session-invalidierung: backlog
