@@ -3687,6 +3687,87 @@ func (x *UnarchiveRoomResponse) GetOk() bool {
 	return false
 }
 
+// InvalidateAllAdminSessions — Story 6.10
+type InvalidateAllAdminSessionsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InvalidateAllAdminSessionsRequest) Reset() {
+	*x = InvalidateAllAdminSessionsRequest{}
+	mi := &file_core_proto_msgTypes[66]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InvalidateAllAdminSessionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InvalidateAllAdminSessionsRequest) ProtoMessage() {}
+
+func (x *InvalidateAllAdminSessionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[66]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InvalidateAllAdminSessionsRequest.ProtoReflect.Descriptor instead.
+func (*InvalidateAllAdminSessionsRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{66}
+}
+
+type InvalidateAllAdminSessionsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InvalidateAllAdminSessionsResponse) Reset() {
+	*x = InvalidateAllAdminSessionsResponse{}
+	mi := &file_core_proto_msgTypes[67]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InvalidateAllAdminSessionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InvalidateAllAdminSessionsResponse) ProtoMessage() {}
+
+func (x *InvalidateAllAdminSessionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[67]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InvalidateAllAdminSessionsResponse.ProtoReflect.Descriptor instead.
+func (*InvalidateAllAdminSessionsResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{67}
+}
+
+func (x *InvalidateAllAdminSessionsResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
 var File_core_proto protoreflect.FileDescriptor
 
 const file_core_proto_rawDesc = "" +
@@ -3946,7 +4027,10 @@ const file_core_proto_rawDesc = "" +
 	"\x14UnarchiveRoomRequest\x12\x17\n" +
 	"\aroom_id\x18\x01 \x01(\tR\x06roomId\"'\n" +
 	"\x15UnarchiveRoomResponse\x12\x0e\n" +
-	"\x02ok\x18\x01 \x01(\bR\x02ok2\x8b\x11\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\"#\n" +
+	"!InvalidateAllAdminSessionsRequest\"4\n" +
+	"\"InvalidateAllAdminSessionsResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok2\xfc\x11\n" +
 	"\vCoreService\x12<\n" +
 	"\tSendEvent\x12\x16.core.SendEventRequest\x1a\x17.core.SendEventResponse\x12?\n" +
 	"\n" +
@@ -3982,7 +4066,8 @@ const file_core_proto_rawDesc = "" +
 	"\x16InvalidateUserSessions\x12#.core.InvalidateUserSessionsRequest\x1a$.core.InvalidateUserSessionsResponse\x12W\n" +
 	"\x12UpdateRoomSettings\x12\x1f.core.UpdateRoomSettingsRequest\x1a .core.UpdateRoomSettingsResponse\x12B\n" +
 	"\vArchiveRoom\x12\x18.core.ArchiveRoomRequest\x1a\x19.core.ArchiveRoomResponse\x12H\n" +
-	"\rUnarchiveRoom\x12\x1a.core.UnarchiveRoomRequest\x1a\x1b.core.UnarchiveRoomResponseB'Z%github.com/nebu/nebu/internal/grpc/pbb\x06proto3"
+	"\rUnarchiveRoom\x12\x1a.core.UnarchiveRoomRequest\x1a\x1b.core.UnarchiveRoomResponse\x12o\n" +
+	"\x1aInvalidateAllAdminSessions\x12'.core.InvalidateAllAdminSessionsRequest\x1a(.core.InvalidateAllAdminSessionsResponseB'Z%github.com/nebu/nebu/internal/grpc/pbb\x06proto3"
 
 var (
 	file_core_proto_rawDescOnce sync.Once
@@ -3996,74 +4081,76 @@ func file_core_proto_rawDescGZIP() []byte {
 	return file_core_proto_rawDescData
 }
 
-var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 66)
+var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 68)
 var file_core_proto_goTypes = []any{
-	(*Event)(nil),                          // 0: core.Event
-	(*SendEventRequest)(nil),               // 1: core.SendEventRequest
-	(*SendEventResponse)(nil),              // 2: core.SendEventResponse
-	(*CreateRoomRequest)(nil),              // 3: core.CreateRoomRequest
-	(*CreateRoomResponse)(nil),             // 4: core.CreateRoomResponse
-	(*JoinRoomRequest)(nil),                // 5: core.JoinRoomRequest
-	(*JoinRoomResponse)(nil),               // 6: core.JoinRoomResponse
-	(*LeaveRoomRequest)(nil),               // 7: core.LeaveRoomRequest
-	(*LeaveRoomResponse)(nil),              // 8: core.LeaveRoomResponse
-	(*GetMessagesRequest)(nil),             // 9: core.GetMessagesRequest
-	(*GetMessagesResponse)(nil),            // 10: core.GetMessagesResponse
-	(*SetPresenceRequest)(nil),             // 11: core.SetPresenceRequest
-	(*SetPresenceResponse)(nil),            // 12: core.SetPresenceResponse
-	(*SetTypingRequest)(nil),               // 13: core.SetTypingRequest
-	(*SetTypingResponse)(nil),              // 14: core.SetTypingResponse
-	(*ValidateTokenRequest)(nil),           // 15: core.ValidateTokenRequest
-	(*ValidateTokenResponse)(nil),          // 16: core.ValidateTokenResponse
-	(*GetPendingEventsRequest)(nil),        // 17: core.GetPendingEventsRequest
-	(*GetPendingEventsResponse)(nil),       // 18: core.GetPendingEventsResponse
-	(*EventBusRequest)(nil),                // 19: core.EventBusRequest
-	(*GetMetricsRequest)(nil),              // 20: core.GetMetricsRequest
-	(*GetMetricsResponse)(nil),             // 21: core.GetMetricsResponse
-	(*InviteUserRequest)(nil),              // 22: core.InviteUserRequest
-	(*InviteUserResponse)(nil),             // 23: core.InviteUserResponse
-	(*GetRoomStateRequest)(nil),            // 24: core.GetRoomStateRequest
-	(*GetRoomStateResponse)(nil),           // 25: core.GetRoomStateResponse
-	(*SetPowerLevelsRequest)(nil),          // 26: core.SetPowerLevelsRequest
-	(*SetPowerLevelsResponse)(nil),         // 27: core.SetPowerLevelsResponse
-	(*SendReceiptRequest)(nil),             // 28: core.SendReceiptRequest
-	(*SendReceiptResponse)(nil),            // 29: core.SendReceiptResponse
-	(*GetInitialSyncRequest)(nil),          // 30: core.GetInitialSyncRequest
-	(*GetInitialSyncResponse)(nil),         // 31: core.GetInitialSyncResponse
-	(*SyncRoomStateEvent)(nil),             // 32: core.SyncRoomStateEvent
-	(*GetSyncDeltaRequest)(nil),            // 33: core.GetSyncDeltaRequest
-	(*GetSyncDeltaResponse)(nil),           // 34: core.GetSyncDeltaResponse
-	(*SyncRoom)(nil),                       // 35: core.SyncRoom
-	(*GetPresenceRequest)(nil),             // 36: core.GetPresenceRequest
-	(*GetPresenceResponse)(nil),            // 37: core.GetPresenceResponse
-	(*UpdateProfileRequest)(nil),           // 38: core.UpdateProfileRequest
-	(*UpdateProfileResponse)(nil),          // 39: core.UpdateProfileResponse
-	(*WriteAuditLogRequest)(nil),           // 40: core.WriteAuditLogRequest
-	(*WriteAuditLogResponse)(nil),          // 41: core.WriteAuditLogResponse
-	(*DeleteUserKeysRequest)(nil),          // 42: core.DeleteUserKeysRequest
-	(*DeleteUserKeysResponse)(nil),         // 43: core.DeleteUserKeysResponse
-	(*KickUserRequest)(nil),                // 44: core.KickUserRequest
-	(*KickUserResponse)(nil),               // 45: core.KickUserResponse
-	(*BanUserRequest)(nil),                 // 46: core.BanUserRequest
-	(*BanUserResponse)(nil),                // 47: core.BanUserResponse
-	(*UnbanUserRequest)(nil),               // 48: core.UnbanUserRequest
-	(*UnbanUserResponse)(nil),              // 49: core.UnbanUserResponse
-	(*ForgetRoomRequest)(nil),              // 50: core.ForgetRoomRequest
-	(*ForgetRoomResponse)(nil),             // 51: core.ForgetRoomResponse
-	(*ListPublicRoomsRequest)(nil),         // 52: core.ListPublicRoomsRequest
-	(*RoomSummary)(nil),                    // 53: core.RoomSummary
-	(*ListPublicRoomsResponse)(nil),        // 54: core.ListPublicRoomsResponse
-	(*GetEventContextRequest)(nil),         // 55: core.GetEventContextRequest
-	(*ContextStateEvent)(nil),              // 56: core.ContextStateEvent
-	(*GetEventContextResponse)(nil),        // 57: core.GetEventContextResponse
-	(*InvalidateUserSessionsRequest)(nil),  // 58: core.InvalidateUserSessionsRequest
-	(*InvalidateUserSessionsResponse)(nil), // 59: core.InvalidateUserSessionsResponse
-	(*UpdateRoomSettingsRequest)(nil),      // 60: core.UpdateRoomSettingsRequest
-	(*UpdateRoomSettingsResponse)(nil),     // 61: core.UpdateRoomSettingsResponse
-	(*ArchiveRoomRequest)(nil),             // 62: core.ArchiveRoomRequest
-	(*ArchiveRoomResponse)(nil),            // 63: core.ArchiveRoomResponse
-	(*UnarchiveRoomRequest)(nil),           // 64: core.UnarchiveRoomRequest
-	(*UnarchiveRoomResponse)(nil),          // 65: core.UnarchiveRoomResponse
+	(*Event)(nil),                              // 0: core.Event
+	(*SendEventRequest)(nil),                   // 1: core.SendEventRequest
+	(*SendEventResponse)(nil),                  // 2: core.SendEventResponse
+	(*CreateRoomRequest)(nil),                  // 3: core.CreateRoomRequest
+	(*CreateRoomResponse)(nil),                 // 4: core.CreateRoomResponse
+	(*JoinRoomRequest)(nil),                    // 5: core.JoinRoomRequest
+	(*JoinRoomResponse)(nil),                   // 6: core.JoinRoomResponse
+	(*LeaveRoomRequest)(nil),                   // 7: core.LeaveRoomRequest
+	(*LeaveRoomResponse)(nil),                  // 8: core.LeaveRoomResponse
+	(*GetMessagesRequest)(nil),                 // 9: core.GetMessagesRequest
+	(*GetMessagesResponse)(nil),                // 10: core.GetMessagesResponse
+	(*SetPresenceRequest)(nil),                 // 11: core.SetPresenceRequest
+	(*SetPresenceResponse)(nil),                // 12: core.SetPresenceResponse
+	(*SetTypingRequest)(nil),                   // 13: core.SetTypingRequest
+	(*SetTypingResponse)(nil),                  // 14: core.SetTypingResponse
+	(*ValidateTokenRequest)(nil),               // 15: core.ValidateTokenRequest
+	(*ValidateTokenResponse)(nil),              // 16: core.ValidateTokenResponse
+	(*GetPendingEventsRequest)(nil),            // 17: core.GetPendingEventsRequest
+	(*GetPendingEventsResponse)(nil),           // 18: core.GetPendingEventsResponse
+	(*EventBusRequest)(nil),                    // 19: core.EventBusRequest
+	(*GetMetricsRequest)(nil),                  // 20: core.GetMetricsRequest
+	(*GetMetricsResponse)(nil),                 // 21: core.GetMetricsResponse
+	(*InviteUserRequest)(nil),                  // 22: core.InviteUserRequest
+	(*InviteUserResponse)(nil),                 // 23: core.InviteUserResponse
+	(*GetRoomStateRequest)(nil),                // 24: core.GetRoomStateRequest
+	(*GetRoomStateResponse)(nil),               // 25: core.GetRoomStateResponse
+	(*SetPowerLevelsRequest)(nil),              // 26: core.SetPowerLevelsRequest
+	(*SetPowerLevelsResponse)(nil),             // 27: core.SetPowerLevelsResponse
+	(*SendReceiptRequest)(nil),                 // 28: core.SendReceiptRequest
+	(*SendReceiptResponse)(nil),                // 29: core.SendReceiptResponse
+	(*GetInitialSyncRequest)(nil),              // 30: core.GetInitialSyncRequest
+	(*GetInitialSyncResponse)(nil),             // 31: core.GetInitialSyncResponse
+	(*SyncRoomStateEvent)(nil),                 // 32: core.SyncRoomStateEvent
+	(*GetSyncDeltaRequest)(nil),                // 33: core.GetSyncDeltaRequest
+	(*GetSyncDeltaResponse)(nil),               // 34: core.GetSyncDeltaResponse
+	(*SyncRoom)(nil),                           // 35: core.SyncRoom
+	(*GetPresenceRequest)(nil),                 // 36: core.GetPresenceRequest
+	(*GetPresenceResponse)(nil),                // 37: core.GetPresenceResponse
+	(*UpdateProfileRequest)(nil),               // 38: core.UpdateProfileRequest
+	(*UpdateProfileResponse)(nil),              // 39: core.UpdateProfileResponse
+	(*WriteAuditLogRequest)(nil),               // 40: core.WriteAuditLogRequest
+	(*WriteAuditLogResponse)(nil),              // 41: core.WriteAuditLogResponse
+	(*DeleteUserKeysRequest)(nil),              // 42: core.DeleteUserKeysRequest
+	(*DeleteUserKeysResponse)(nil),             // 43: core.DeleteUserKeysResponse
+	(*KickUserRequest)(nil),                    // 44: core.KickUserRequest
+	(*KickUserResponse)(nil),                   // 45: core.KickUserResponse
+	(*BanUserRequest)(nil),                     // 46: core.BanUserRequest
+	(*BanUserResponse)(nil),                    // 47: core.BanUserResponse
+	(*UnbanUserRequest)(nil),                   // 48: core.UnbanUserRequest
+	(*UnbanUserResponse)(nil),                  // 49: core.UnbanUserResponse
+	(*ForgetRoomRequest)(nil),                  // 50: core.ForgetRoomRequest
+	(*ForgetRoomResponse)(nil),                 // 51: core.ForgetRoomResponse
+	(*ListPublicRoomsRequest)(nil),             // 52: core.ListPublicRoomsRequest
+	(*RoomSummary)(nil),                        // 53: core.RoomSummary
+	(*ListPublicRoomsResponse)(nil),            // 54: core.ListPublicRoomsResponse
+	(*GetEventContextRequest)(nil),             // 55: core.GetEventContextRequest
+	(*ContextStateEvent)(nil),                  // 56: core.ContextStateEvent
+	(*GetEventContextResponse)(nil),            // 57: core.GetEventContextResponse
+	(*InvalidateUserSessionsRequest)(nil),      // 58: core.InvalidateUserSessionsRequest
+	(*InvalidateUserSessionsResponse)(nil),     // 59: core.InvalidateUserSessionsResponse
+	(*UpdateRoomSettingsRequest)(nil),          // 60: core.UpdateRoomSettingsRequest
+	(*UpdateRoomSettingsResponse)(nil),         // 61: core.UpdateRoomSettingsResponse
+	(*ArchiveRoomRequest)(nil),                 // 62: core.ArchiveRoomRequest
+	(*ArchiveRoomResponse)(nil),                // 63: core.ArchiveRoomResponse
+	(*UnarchiveRoomRequest)(nil),               // 64: core.UnarchiveRoomRequest
+	(*UnarchiveRoomResponse)(nil),              // 65: core.UnarchiveRoomResponse
+	(*InvalidateAllAdminSessionsRequest)(nil),  // 66: core.InvalidateAllAdminSessionsRequest
+	(*InvalidateAllAdminSessionsResponse)(nil), // 67: core.InvalidateAllAdminSessionsResponse
 }
 var file_core_proto_depIdxs = []int32{
 	0,  // 0: core.GetMessagesResponse.events:type_name -> core.Event
@@ -4109,39 +4196,41 @@ var file_core_proto_depIdxs = []int32{
 	60, // 40: core.CoreService.UpdateRoomSettings:input_type -> core.UpdateRoomSettingsRequest
 	62, // 41: core.CoreService.ArchiveRoom:input_type -> core.ArchiveRoomRequest
 	64, // 42: core.CoreService.UnarchiveRoom:input_type -> core.UnarchiveRoomRequest
-	2,  // 43: core.CoreService.SendEvent:output_type -> core.SendEventResponse
-	4,  // 44: core.CoreService.CreateRoom:output_type -> core.CreateRoomResponse
-	6,  // 45: core.CoreService.JoinRoom:output_type -> core.JoinRoomResponse
-	8,  // 46: core.CoreService.LeaveRoom:output_type -> core.LeaveRoomResponse
-	10, // 47: core.CoreService.GetMessages:output_type -> core.GetMessagesResponse
-	12, // 48: core.CoreService.SetPresence:output_type -> core.SetPresenceResponse
-	14, // 49: core.CoreService.SetTyping:output_type -> core.SetTypingResponse
-	16, // 50: core.CoreService.ValidateToken:output_type -> core.ValidateTokenResponse
-	18, // 51: core.CoreService.GetPendingEvents:output_type -> core.GetPendingEventsResponse
-	0,  // 52: core.CoreService.EventBus:output_type -> core.Event
-	21, // 53: core.CoreService.GetMetrics:output_type -> core.GetMetricsResponse
-	25, // 54: core.CoreService.GetRoomState:output_type -> core.GetRoomStateResponse
-	23, // 55: core.CoreService.InviteUser:output_type -> core.InviteUserResponse
-	27, // 56: core.CoreService.SetPowerLevels:output_type -> core.SetPowerLevelsResponse
-	29, // 57: core.CoreService.SendReceipt:output_type -> core.SendReceiptResponse
-	31, // 58: core.CoreService.GetInitialSync:output_type -> core.GetInitialSyncResponse
-	34, // 59: core.CoreService.GetSyncDelta:output_type -> core.GetSyncDeltaResponse
-	37, // 60: core.CoreService.GetPresence:output_type -> core.GetPresenceResponse
-	39, // 61: core.CoreService.UpdateProfile:output_type -> core.UpdateProfileResponse
-	41, // 62: core.CoreService.WriteAuditLog:output_type -> core.WriteAuditLogResponse
-	43, // 63: core.CoreService.DeleteUserKeys:output_type -> core.DeleteUserKeysResponse
-	45, // 64: core.CoreService.KickUser:output_type -> core.KickUserResponse
-	47, // 65: core.CoreService.BanUser:output_type -> core.BanUserResponse
-	49, // 66: core.CoreService.UnbanUser:output_type -> core.UnbanUserResponse
-	51, // 67: core.CoreService.ForgetRoom:output_type -> core.ForgetRoomResponse
-	54, // 68: core.CoreService.ListPublicRooms:output_type -> core.ListPublicRoomsResponse
-	57, // 69: core.CoreService.GetEventContext:output_type -> core.GetEventContextResponse
-	59, // 70: core.CoreService.InvalidateUserSessions:output_type -> core.InvalidateUserSessionsResponse
-	61, // 71: core.CoreService.UpdateRoomSettings:output_type -> core.UpdateRoomSettingsResponse
-	63, // 72: core.CoreService.ArchiveRoom:output_type -> core.ArchiveRoomResponse
-	65, // 73: core.CoreService.UnarchiveRoom:output_type -> core.UnarchiveRoomResponse
-	43, // [43:74] is the sub-list for method output_type
-	12, // [12:43] is the sub-list for method input_type
+	66, // 43: core.CoreService.InvalidateAllAdminSessions:input_type -> core.InvalidateAllAdminSessionsRequest
+	2,  // 44: core.CoreService.SendEvent:output_type -> core.SendEventResponse
+	4,  // 45: core.CoreService.CreateRoom:output_type -> core.CreateRoomResponse
+	6,  // 46: core.CoreService.JoinRoom:output_type -> core.JoinRoomResponse
+	8,  // 47: core.CoreService.LeaveRoom:output_type -> core.LeaveRoomResponse
+	10, // 48: core.CoreService.GetMessages:output_type -> core.GetMessagesResponse
+	12, // 49: core.CoreService.SetPresence:output_type -> core.SetPresenceResponse
+	14, // 50: core.CoreService.SetTyping:output_type -> core.SetTypingResponse
+	16, // 51: core.CoreService.ValidateToken:output_type -> core.ValidateTokenResponse
+	18, // 52: core.CoreService.GetPendingEvents:output_type -> core.GetPendingEventsResponse
+	0,  // 53: core.CoreService.EventBus:output_type -> core.Event
+	21, // 54: core.CoreService.GetMetrics:output_type -> core.GetMetricsResponse
+	25, // 55: core.CoreService.GetRoomState:output_type -> core.GetRoomStateResponse
+	23, // 56: core.CoreService.InviteUser:output_type -> core.InviteUserResponse
+	27, // 57: core.CoreService.SetPowerLevels:output_type -> core.SetPowerLevelsResponse
+	29, // 58: core.CoreService.SendReceipt:output_type -> core.SendReceiptResponse
+	31, // 59: core.CoreService.GetInitialSync:output_type -> core.GetInitialSyncResponse
+	34, // 60: core.CoreService.GetSyncDelta:output_type -> core.GetSyncDeltaResponse
+	37, // 61: core.CoreService.GetPresence:output_type -> core.GetPresenceResponse
+	39, // 62: core.CoreService.UpdateProfile:output_type -> core.UpdateProfileResponse
+	41, // 63: core.CoreService.WriteAuditLog:output_type -> core.WriteAuditLogResponse
+	43, // 64: core.CoreService.DeleteUserKeys:output_type -> core.DeleteUserKeysResponse
+	45, // 65: core.CoreService.KickUser:output_type -> core.KickUserResponse
+	47, // 66: core.CoreService.BanUser:output_type -> core.BanUserResponse
+	49, // 67: core.CoreService.UnbanUser:output_type -> core.UnbanUserResponse
+	51, // 68: core.CoreService.ForgetRoom:output_type -> core.ForgetRoomResponse
+	54, // 69: core.CoreService.ListPublicRooms:output_type -> core.ListPublicRoomsResponse
+	57, // 70: core.CoreService.GetEventContext:output_type -> core.GetEventContextResponse
+	59, // 71: core.CoreService.InvalidateUserSessions:output_type -> core.InvalidateUserSessionsResponse
+	61, // 72: core.CoreService.UpdateRoomSettings:output_type -> core.UpdateRoomSettingsResponse
+	63, // 73: core.CoreService.ArchiveRoom:output_type -> core.ArchiveRoomResponse
+	65, // 74: core.CoreService.UnarchiveRoom:output_type -> core.UnarchiveRoomResponse
+	67, // 75: core.CoreService.InvalidateAllAdminSessions:output_type -> core.InvalidateAllAdminSessionsResponse
+	44, // [44:76] is the sub-list for method output_type
+	12, // [12:44] is the sub-list for method input_type
 	12, // [12:12] is the sub-list for extension type_name
 	12, // [12:12] is the sub-list for extension extendee
 	0,  // [0:12] is the sub-list for field type_name
@@ -4162,7 +4251,7 @@ func file_core_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_core_proto_rawDesc), len(file_core_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   66,
+			NumMessages:   68,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

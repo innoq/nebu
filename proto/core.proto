@@ -98,6 +98,12 @@ service CoreService {
   // The Go gateway has already updated rooms.status='active' in DB before calling this.
   // Core restarts the GenServer via RoomSupervisor.start_room/1.
   rpc UnarchiveRoom(UnarchiveRoomRequest) returns (UnarchiveRoomResponse);
+
+  // InvalidateAllAdminSessions — Story 6.10: destroys all active admin UI sessions in ETS.
+  // Called by Go gateway after OIDC config changes (oidc_issuer, oidc_client_id, oidc_client_secret).
+  // Iterates EtsStore.list_user_ids/0 and calls SessionSupervisor.destroy_session/1 for each.
+  // Returns ok=true always (best-effort — OIDC config is already updated in DB).
+  rpc InvalidateAllAdminSessions(InvalidateAllAdminSessionsRequest) returns (InvalidateAllAdminSessionsResponse);
 }
 
 // Shared event type used across multiple RPCs
@@ -467,5 +473,12 @@ message UnarchiveRoomRequest {
   string room_id = 1;
 }
 message UnarchiveRoomResponse {
+  bool ok = 1;
+}
+
+// InvalidateAllAdminSessions — Story 6.10
+message InvalidateAllAdminSessionsRequest {}
+
+message InvalidateAllAdminSessionsResponse {
   bool ok = 1;
 }

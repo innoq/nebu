@@ -6,11 +6,18 @@ package api
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -28,25 +35,338 @@ import (
 // Roles is the RoleOverrideRepository for role grant/revoke and override merging (Story 6.6).
 // Rooms is the RoomRepository for Admin room queries (Story 6.7).
 // RoomDefaults is the RoomDefaultsRepository for server-wide room defaults (Story 6.8).
+// ServerConfig is the ServerConfigRepository for server config read/write (Story 6.10).
+// Metrics is the MetricsRepository for DB-derived metric counts (Story 6.10).
+// Secret is the AES-256-GCM master key used to encrypt oidc_client_secret (Story 6.10).
 type AdminServer struct {
 	DB           *sql.DB
 	CoreClient   pb.CoreServiceClient
 	Users        UserRepository
-	Deactivation DeactivationRepository  // Story 6.5
-	Roles        RoleOverrideRepository  // Story 6.6
-	Rooms        RoomRepository          // Story 6.7
-	RoomDefaults RoomDefaultsRepository  // Story 6.8
+	Deactivation DeactivationRepository // Story 6.5
+	Roles        RoleOverrideRepository // Story 6.6
+	Rooms        RoomRepository         // Story 6.7
+	RoomDefaults RoomDefaultsRepository // Story 6.8
+	ServerConfig ServerConfigRepository // Story 6.10
+	Metrics      MetricsRepository      // Story 6.10
+	Secret       []byte                 // Story 6.10: AES-256-GCM key for oidc_client_secret encryption
 }
 
 // Ensure AdminServer satisfies the generated StrictServerInterface at compile time.
 var _ StrictServerInterface = (*AdminServer)(nil)
 
-func (s *AdminServer) GetAdminConfig(_ context.Context, _ GetAdminConfigRequestObject) (GetAdminConfigResponseObject, error) {
-	return GetAdminConfig501Response{}, nil
+// GetAdminConfig implements AC#1: GET /api/v1/admin/config
+// Returns all readable server_config keys combined with room_defaults.
+// SECURITY: oidc_client_secret is NEVER included in the response (write-only field).
+// Returns 501 if ServerConfig or RoomDefaults repositories are not wired.
+func (s *AdminServer) GetAdminConfig(ctx context.Context, _ GetAdminConfigRequestObject) (GetAdminConfigResponseObject, error) {
+	if s.ServerConfig == nil || s.RoomDefaults == nil {
+		return GetAdminConfig501Response{}, nil
+	}
+
+	cfgData, err := s.ServerConfig.GetServerConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	maxMembers, visibility, err := s.RoomDefaults.GetRoomDefaults(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return &getAdminConfigOKResponse{
+		instanceName:          cfgData.InstanceName,
+		oidcIssuer:            cfgData.OIDCIssuer,
+		oidcClientID:          cfgData.OIDCClientID,
+		roomDefaultMaxMembers: maxMembers,
+		roomDefaultVisibility: visibility,
+		auditLogRetentionDays: cfgData.AuditLogRetentionDays,
+	}, nil
 }
 
-func (s *AdminServer) GetAdminMetrics(_ context.Context, _ GetAdminMetricsRequestObject) (GetAdminMetricsResponseObject, error) {
-	return GetAdminMetrics501Response{}, nil
+// PatchAdminConfig implements AC#2: PATCH /api/v1/admin/config
+// Partial update: any subset of updatable keys may be provided.
+// oidc_client_secret is encrypted with AES-256-GCM before storage.
+// If oidc_issuer, oidc_client_id, or oidc_client_secret changes → calls InvalidateAllAdminSessions.
+// Emits audit log (never-raise).
+// Returns 501 if ServerConfig repository is not wired.
+func (s *AdminServer) PatchAdminConfig(ctx context.Context, req PatchAdminConfigRequestObject) (PatchAdminConfigResponseObject, error) {
+	if s.ServerConfig == nil {
+		return PatchAdminConfig501Response{}, nil
+	}
+
+	body := req.Body
+	if body == nil {
+		return &patchAdminConfig400Resp{msg: "request body is required"}, nil
+	}
+
+	// Validate audit_log_retention_days range (1–36500) before any writes.
+	if body.AuditLogRetentionDays != nil {
+		days := *body.AuditLogRetentionDays
+		if days < 1 || days > 36500 {
+			return &patchAdminConfig400Resp{msg: "audit_log_retention_days must be between 1 and 36500"}, nil
+		}
+	}
+
+	// Upsert each changed key and track which keys were changed for audit + OIDC invalidation.
+	changedKeys := []string{}
+	oidcChanged := false
+
+	if body.InstanceName != nil {
+		if err := s.ServerConfig.UpsertServerConfigKey(ctx, "instance_name", *body.InstanceName); err != nil {
+			return nil, err
+		}
+		changedKeys = append(changedKeys, "instance_name")
+	}
+
+	if body.OidcIssuer != nil {
+		if err := s.ServerConfig.UpsertServerConfigKey(ctx, "oidc_issuer", *body.OidcIssuer); err != nil {
+			return nil, err
+		}
+		changedKeys = append(changedKeys, "oidc_issuer")
+		oidcChanged = true
+	}
+
+	if body.OidcClientId != nil {
+		if err := s.ServerConfig.UpsertServerConfigKey(ctx, "oidc_client_id", *body.OidcClientId); err != nil {
+			return nil, err
+		}
+		changedKeys = append(changedKeys, "oidc_client_id")
+		oidcChanged = true
+	}
+
+	if body.OidcClientSecret != nil {
+		// Encrypt oidc_client_secret with AES-256-GCM before storing.
+		// Never log or return the plaintext secret.
+		// MINOR fix (review): bubble up encryption errors as 500 rather than silently
+		// returning 200 with the secret unstored — that would let callers believe the
+		// PATCH succeeded while leaving the OIDC config in an inconsistent state.
+		encrypted, err := encryptAES256GCMForAPI(s.Secret, *body.OidcClientSecret)
+		if err != nil {
+			slog.Error("PatchAdminConfig: failed to encrypt oidc_client_secret", "err", err)
+			return nil, err
+		}
+		if storeErr := s.ServerConfig.UpsertServerConfigKey(ctx, "oidc_client_secret", encrypted); storeErr != nil {
+			return nil, storeErr
+		}
+		changedKeys = append(changedKeys, "oidc_client_secret")
+		oidcChanged = true
+	}
+
+	if body.AuditLogRetentionDays != nil {
+		daysStr := strconv.Itoa(*body.AuditLogRetentionDays)
+		if err := s.ServerConfig.UpsertServerConfigKey(ctx, "audit_log_retention_days", daysStr); err != nil {
+			return nil, err
+		}
+		changedKeys = append(changedKeys, "audit_log_retention_days")
+	}
+
+	// Invalidate all admin sessions if any OIDC field changed (best-effort — log on error, do not fail).
+	if oidcChanged && s.CoreClient != nil {
+		_, grpcErr := s.CoreClient.InvalidateAllAdminSessions(ctx, &pb.InvalidateAllAdminSessionsRequest{})
+		if grpcErr != nil {
+			slog.Warn("PatchAdminConfig: InvalidateAllAdminSessions failed — admin sessions may still be valid",
+				"err", grpcErr)
+		}
+	}
+
+	// Audit log (never-raise).
+	if s.CoreClient != nil && len(changedKeys) > 0 {
+		actorID, _ := ctx.Value(middleware.ContextKeyUserID).(string)
+		_ = audit.LogEvent(ctx, s.CoreClient, actorID, "server_config_updated", "server", "config",
+			map[string]any{"changed_keys": changedKeys}, "success", "")
+	} else if s.CoreClient == nil {
+		slog.Warn("PatchAdminConfig audit skipped — CoreClient is nil")
+	}
+
+	// Return full updated config (same as GET) — reuse the GET logic but adapt the response type.
+	getResp, err := s.GetAdminConfig(ctx, GetAdminConfigRequestObject{})
+	if err != nil {
+		return nil, err
+	}
+	// Wrap the GET response as a PATCH 200 response.
+	// getAdminConfigOKResponse implements VisitGetAdminConfigResponse but not VisitPatchAdminConfigResponse.
+	// We use a bridge wrapper to avoid code duplication.
+	if okResp, ok := getResp.(*getAdminConfigOKResponse); ok {
+		return &patchAdminConfig200Resp{inner: okResp}, nil
+	}
+	// Fallback: 501 if something unexpected happened (e.g. repos became nil between calls).
+	return PatchAdminConfig501Response{}, nil
+}
+
+// GetAdminMetrics implements AC#3: GET /api/v1/admin/metrics
+// Returns DB-derived counts from MetricsRepository combined with gRPC-derived
+// active_sessions and msg_per_sec from GetMetrics.
+// Returns 501 if Metrics repository is not wired.
+func (s *AdminServer) GetAdminMetrics(ctx context.Context, _ GetAdminMetricsRequestObject) (GetAdminMetricsResponseObject, error) {
+	if s.Metrics == nil {
+		return GetAdminMetrics501Response{}, nil
+	}
+
+	counts, err := s.Metrics.GetMetricsCounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// gRPC-derived fields: active_sessions and msg_per_sec (best-effort — zero on error/nil CoreClient).
+	var activeSessions int
+	var msgPerSec float64
+	if s.CoreClient != nil {
+		resp, grpcErr := s.CoreClient.GetMetrics(ctx, &pb.GetMetricsRequest{})
+		if grpcErr != nil {
+			slog.Warn("GetAdminMetrics: GetMetrics gRPC failed — using zero values", "err", grpcErr)
+		} else if resp != nil {
+			activeSessions = int(resp.ActiveSessions)
+			msgPerSec = float64(resp.MsgPerSec)
+		}
+	} else {
+		slog.Warn("GetAdminMetrics: CoreClient is nil — active_sessions and msg_per_sec will be zero")
+	}
+
+	return &getAdminMetricsOKResponse{
+		activeSessions:    activeSessions,
+		roomCount:         counts.RoomCount,
+		archivedRoomCount: counts.ArchivedRoomCount,
+		msgPerSec1m:       msgPerSec,
+		registeredUsers:   counts.RegisteredUsers,
+		deactivatedUsers:  counts.DeactivatedUsers,
+	}, nil
+}
+
+// ── Story 6.10: encryption helper ────────────────────────────────────────────
+
+// errEncryptionKeyMissing is returned by encryptAES256GCMForAPI when the
+// AES-256-GCM master key is not configured. The PatchAdminConfig handler maps
+// this to a 500 Internal Server Error so misconfiguration is surfaced rather
+// than masked by a silent plaintext fallback.
+var errEncryptionKeyMissing = errors.New("oidc_client_secret encryption key not configured")
+
+
+// encryptAES256GCMForAPI encrypts plaintext using AES-256-GCM with a SHA-256 derived key.
+// Returns hex-encoded nonce||ciphertext. Mirrors admin.encryptAES256GCM for package isolation.
+//
+// SECURITY: returns errEncryptionKeyMissing when secret is empty. Storing the
+// OIDC client secret in plaintext would defeat the entire encrypted-storage
+// invariant of Story 5.29c, so the handler MUST refuse to write rather than
+// silently fall back. main.go always wires Secret=internalSecret (non-empty);
+// the empty-secret path only fires on misconfiguration or in unit tests that
+// PATCH non-secret fields.
+func encryptAES256GCMForAPI(secret []byte, plaintext string) (string, error) {
+	if len(secret) == 0 {
+		return "", errEncryptionKeyMissing
+	}
+	keyHash := sha256.Sum256(secret)
+	block, err := aes.NewCipher(keyHash[:])
+	if err != nil {
+		return "", err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", err
+	}
+	ciphertext := gcm.Seal(nonce, nonce, []byte(plaintext), nil)
+	return hex.EncodeToString(ciphertext), nil
+}
+
+// ── Story 6.10: GetAdminConfig / PatchAdminConfig response types ─────────────
+
+// adminConfigResponseBody is the JSON wire format for GET /admin/config and PATCH /admin/config.
+// All 6 fields are always present (omitempty is intentionally NOT used — tests verify all keys exist).
+// oidc_client_secret is intentionally absent from this struct (AC#1 security invariant).
+type adminConfigResponseBody struct {
+	InstanceName          string `json:"instance_name"`
+	OIDCIssuer            string `json:"oidc_issuer"`
+	OIDCClientID          string `json:"oidc_client_id"`
+	RoomDefaultMaxMembers int    `json:"room_default_max_members"`
+	RoomDefaultVisibility string `json:"room_default_visibility"`
+	AuditLogRetentionDays int    `json:"audit_log_retention_days"`
+}
+
+// getAdminConfigOKResponse — 200 OK for GET /admin/config.
+// Implements GetAdminConfigResponseObject.
+type getAdminConfigOKResponse struct {
+	instanceName          string
+	oidcIssuer            string
+	oidcClientID          string
+	roomDefaultMaxMembers int
+	roomDefaultVisibility string
+	auditLogRetentionDays int
+}
+
+func (r *getAdminConfigOKResponse) VisitGetAdminConfigResponse(w http.ResponseWriter) error {
+	body := adminConfigResponseBody{
+		InstanceName:          r.instanceName,
+		OIDCIssuer:            r.oidcIssuer,
+		OIDCClientID:          r.oidcClientID,
+		RoomDefaultMaxMembers: r.roomDefaultMaxMembers,
+		RoomDefaultVisibility: r.roomDefaultVisibility,
+		AuditLogRetentionDays: r.auditLogRetentionDays,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	return json.NewEncoder(w).Encode(body)
+}
+
+// patchAdminConfig200Resp — 200 OK for PATCH /admin/config.
+// Wraps getAdminConfigOKResponse and adapts it to PatchAdminConfigResponseObject.
+// Implements PatchAdminConfigResponseObject.
+type patchAdminConfig200Resp struct{ inner *getAdminConfigOKResponse }
+
+func (r *patchAdminConfig200Resp) VisitPatchAdminConfigResponse(w http.ResponseWriter) error {
+	return r.inner.VisitGetAdminConfigResponse(w)
+}
+
+// patchAdminConfig400Resp — 400 M_BAD_JSON validation error.
+// Implements PatchAdminConfigResponseObject.
+type patchAdminConfig400Resp struct{ msg string }
+
+func (r *patchAdminConfig400Resp) VisitPatchAdminConfigResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusBadRequest)
+	return json.NewEncoder(w).Encode(map[string]any{
+		"error": map[string]string{"code": "M_BAD_JSON", "message": r.msg},
+	})
+}
+
+// ── Story 6.10: GetAdminMetrics response types ───────────────────────────────
+
+// adminMetricsResponseBody is the JSON wire format for GET /admin/metrics.
+// All 6 fields are always present (zero is a valid value per AC#3).
+type adminMetricsResponseBody struct {
+	ActiveSessions    int     `json:"active_sessions"`
+	RoomCount         int     `json:"room_count"`
+	ArchivedRoomCount int     `json:"archived_room_count"`
+	MsgPerSec1m       float64 `json:"msg_per_sec_1m"`
+	RegisteredUsers   int     `json:"registered_users"`
+	DeactivatedUsers  int     `json:"deactivated_users"`
+}
+
+// getAdminMetricsOKResponse — 200 OK for GET /admin/metrics.
+// Implements GetAdminMetricsResponseObject.
+type getAdminMetricsOKResponse struct {
+	activeSessions    int
+	roomCount         int
+	archivedRoomCount int
+	msgPerSec1m       float64
+	registeredUsers   int
+	deactivatedUsers  int
+}
+
+func (r *getAdminMetricsOKResponse) VisitGetAdminMetricsResponse(w http.ResponseWriter) error {
+	body := adminMetricsResponseBody{
+		ActiveSessions:    r.activeSessions,
+		RoomCount:         r.roomCount,
+		ArchivedRoomCount: r.archivedRoomCount,
+		MsgPerSec1m:       r.msgPerSec1m,
+		RegisteredUsers:   r.registeredUsers,
+		DeactivatedUsers:  r.deactivatedUsers,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	return json.NewEncoder(w).Encode(body)
 }
 
 // ListAdminRooms implements AC#1: GET /api/v1/admin/rooms

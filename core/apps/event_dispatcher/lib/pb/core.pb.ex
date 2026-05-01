@@ -795,3 +795,23 @@ defmodule Core.UnarchiveRoomResponse do
 
   field :ok, 1, type: :bool
 end
+
+defmodule Core.InvalidateAllAdminSessionsRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.InvalidateAllAdminSessionsRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+end
+
+defmodule Core.InvalidateAllAdminSessionsResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.InvalidateAllAdminSessionsResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :ok, 1, type: :bool
+end

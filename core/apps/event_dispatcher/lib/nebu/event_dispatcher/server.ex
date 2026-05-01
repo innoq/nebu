@@ -708,6 +708,35 @@ defmodule Nebu.EventDispatcher.Server do
     end
   end
 
+  # ─── InvalidateAllAdminSessions — Story 6.10: Admin config OIDC change ────────
+  #
+  # Called by the Go gateway when OIDC issuer/client_id/client_secret changes in
+  # PATCH /admin/config. Forces all active sessions to re-authenticate.
+  #
+  # Flow:
+  #   1. List all active user_ids from ETS via Nebu.Session.EtsStore.list_user_ids/0.
+  #   2. Call session_supervisor_module().destroy_session/1 for each user (best-effort).
+  #   3. Always return %Core.InvalidateAllAdminSessionsResponse{ok: true} — no-op if ETS empty.
+  #
+  # Never raises — individual session failures are silently ignored (best-effort).
+  # Returns ok: true even if ETS is empty (idempotent no-op).
+
+  def invalidate_all_admin_sessions(%Core.InvalidateAllAdminSessionsRequest{} = _req, _stream) do
+    user_ids = Nebu.Session.EtsStore.list_user_ids()
+
+    Enum.each(user_ids, fn user_id ->
+      case session_supervisor_module().destroy_session(user_id) do
+        :ok ->
+          :ok
+
+        {:error, reason} ->
+          Logger.warning("InvalidateAllAdminSessions: failed to destroy session for #{user_id}: #{inspect(reason)}")
+      end
+    end)
+
+    %Core.InvalidateAllAdminSessionsResponse{ok: true}
+  end
+
   def get_pending_events(_request, _stream) do
     %Core.GetPendingEventsResponse{}
   end

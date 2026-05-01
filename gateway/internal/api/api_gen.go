@@ -98,6 +98,26 @@ func (e PutRoomDefaultsRequestDefaultVisibility) Valid() bool {
 	}
 }
 
+// AdminConfigResponse defines model for AdminConfigResponse.
+type AdminConfigResponse struct {
+	AuditLogRetentionDays *int    `json:"audit_log_retention_days,omitempty"`
+	InstanceName          *string `json:"instance_name,omitempty"`
+	OidcClientId          *string `json:"oidc_client_id,omitempty"`
+	OidcIssuer            *string `json:"oidc_issuer,omitempty"`
+	RoomDefaultMaxMembers *int    `json:"room_default_max_members,omitempty"`
+	RoomDefaultVisibility *string `json:"room_default_visibility,omitempty"`
+}
+
+// AdminMetricsResponse defines model for AdminMetricsResponse.
+type AdminMetricsResponse struct {
+	ActiveSessions    *int     `json:"active_sessions,omitempty"`
+	ArchivedRoomCount *int     `json:"archived_room_count,omitempty"`
+	DeactivatedUsers  *int     `json:"deactivated_users,omitempty"`
+	MsgPerSec1m       *float32 `json:"msg_per_sec_1m,omitempty"`
+	RegisteredUsers   *int     `json:"registered_users,omitempty"`
+	RoomCount         *int     `json:"room_count,omitempty"`
+}
+
 // AdminRoomDetailObject defines model for AdminRoomDetailObject.
 type AdminRoomDetailObject struct {
 	CreatedAt       string `json:"created_at"`
@@ -168,6 +188,15 @@ type EmptyResponse = map[string]interface{}
 // HealthResponse defines model for HealthResponse.
 type HealthResponse struct {
 	Status string `json:"status"`
+}
+
+// PatchAdminConfigRequest defines model for PatchAdminConfigRequest.
+type PatchAdminConfigRequest struct {
+	AuditLogRetentionDays *int    `json:"audit_log_retention_days,omitempty"`
+	InstanceName          *string `json:"instance_name,omitempty"`
+	OidcClientId          *string `json:"oidc_client_id,omitempty"`
+	OidcClientSecret      *string `json:"oidc_client_secret,omitempty"`
+	OidcIssuer            *string `json:"oidc_issuer,omitempty"`
 }
 
 // PatchAdminRoomRequest defines model for PatchAdminRoomRequest.
@@ -253,6 +282,9 @@ type ListAdminUsersParams struct {
 	Search *string `form:"search,omitempty" json:"search,omitempty"`
 }
 
+// PatchAdminConfigJSONRequestBody defines body for PatchAdminConfig for application/json ContentType.
+type PatchAdminConfigJSONRequestBody = PatchAdminConfigRequest
+
 // PutAdminRoomDefaultsJSONRequestBody defines body for PutAdminRoomDefaults for application/json ContentType.
 type PutAdminRoomDefaultsJSONRequestBody = PutRoomDefaultsRequest
 
@@ -270,13 +302,16 @@ type AssignAdminUserRoleJSONRequestBody = AssignUserRoleRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
-	// Get server config (placeholder — Story 6.10)
+	// Get server config (instance_admin required)
 	// (GET /admin/config)
 	GetAdminConfig(w http.ResponseWriter, r *http.Request)
+	// Update server config (instance_admin required)
+	// (PATCH /admin/config)
+	PatchAdminConfig(w http.ResponseWriter, r *http.Request)
 	// Set server-wide room defaults (instance_admin required)
 	// (PUT /admin/config/room-defaults)
 	PutAdminRoomDefaults(w http.ResponseWriter, r *http.Request)
-	// Get metrics (placeholder — Story 6.10)
+	// Get instance metrics (instance_admin required)
 	// (GET /admin/metrics)
 	GetAdminMetrics(w http.ResponseWriter, r *http.Request)
 	// List rooms (instance_admin required)
@@ -337,6 +372,26 @@ func (siw *ServerInterfaceWrapper) GetAdminConfig(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetAdminConfig(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PatchAdminConfig operation middleware
+func (siw *ServerInterfaceWrapper) PatchAdminConfig(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PatchAdminConfig(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -940,6 +995,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	}
 
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/admin/config", wrapper.GetAdminConfig)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/admin/config", wrapper.PatchAdminConfig)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/admin/config/room-defaults", wrapper.PutAdminRoomDefaults)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/admin/metrics", wrapper.GetAdminMetrics)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/admin/rooms", wrapper.ListAdminRooms)
@@ -965,7 +1021,7 @@ type GetAdminConfigResponseObject interface {
 	VisitGetAdminConfigResponse(w http.ResponseWriter) error
 }
 
-type GetAdminConfig200JSONResponse EmptyResponse
+type GetAdminConfig200JSONResponse AdminConfigResponse
 
 func (response GetAdminConfig200JSONResponse) VisitGetAdminConfigResponse(w http.ResponseWriter) error {
 
@@ -983,6 +1039,50 @@ type GetAdminConfig501Response struct {
 }
 
 func (response GetAdminConfig501Response) VisitGetAdminConfigResponse(w http.ResponseWriter) error {
+	w.WriteHeader(501)
+	return nil
+}
+
+type PatchAdminConfigRequestObject struct {
+	Body *PatchAdminConfigJSONRequestBody
+}
+
+type PatchAdminConfigResponseObject interface {
+	VisitPatchAdminConfigResponse(w http.ResponseWriter) error
+}
+
+type PatchAdminConfig200JSONResponse AdminConfigResponse
+
+func (response PatchAdminConfig200JSONResponse) VisitPatchAdminConfigResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PatchAdminConfig400JSONResponse EmptyResponse
+
+func (response PatchAdminConfig400JSONResponse) VisitPatchAdminConfigResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PatchAdminConfig501Response struct {
+}
+
+func (response PatchAdminConfig501Response) VisitPatchAdminConfigResponse(w http.ResponseWriter) error {
 	w.WriteHeader(501)
 	return nil
 }
@@ -1038,7 +1138,7 @@ type GetAdminMetricsResponseObject interface {
 	VisitGetAdminMetricsResponse(w http.ResponseWriter) error
 }
 
-type GetAdminMetrics200JSONResponse EmptyResponse
+type GetAdminMetrics200JSONResponse AdminMetricsResponse
 
 func (response GetAdminMetrics200JSONResponse) VisitGetAdminMetricsResponse(w http.ResponseWriter) error {
 
@@ -1674,13 +1774,16 @@ func (response GetHealth200JSONResponse) VisitGetHealthResponse(w http.ResponseW
 
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
-	// Get server config (placeholder — Story 6.10)
+	// Get server config (instance_admin required)
 	// (GET /admin/config)
 	GetAdminConfig(ctx context.Context, request GetAdminConfigRequestObject) (GetAdminConfigResponseObject, error)
+	// Update server config (instance_admin required)
+	// (PATCH /admin/config)
+	PatchAdminConfig(ctx context.Context, request PatchAdminConfigRequestObject) (PatchAdminConfigResponseObject, error)
 	// Set server-wide room defaults (instance_admin required)
 	// (PUT /admin/config/room-defaults)
 	PutAdminRoomDefaults(ctx context.Context, request PutAdminRoomDefaultsRequestObject) (PutAdminRoomDefaultsResponseObject, error)
-	// Get metrics (placeholder — Story 6.10)
+	// Get instance metrics (instance_admin required)
 	// (GET /admin/metrics)
 	GetAdminMetrics(ctx context.Context, request GetAdminMetricsRequestObject) (GetAdminMetricsResponseObject, error)
 	// List rooms (instance_admin required)
@@ -1767,6 +1870,37 @@ func (sh *strictHandler) GetAdminConfig(w http.ResponseWriter, r *http.Request) 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetAdminConfigResponseObject); ok {
 		if err := validResponse.VisitGetAdminConfigResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PatchAdminConfig operation middleware
+func (sh *strictHandler) PatchAdminConfig(w http.ResponseWriter, r *http.Request) {
+	var request PatchAdminConfigRequestObject
+
+	var body PatchAdminConfigJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PatchAdminConfig(ctx, request.(PatchAdminConfigRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PatchAdminConfig")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PatchAdminConfigResponseObject); ok {
+		if err := validResponse.VisitPatchAdminConfigResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -2170,36 +2304,40 @@ func (sh *strictHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

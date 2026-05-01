@@ -130,6 +130,7 @@
 
 generated: 2026-03-20
 last_updated: 2026-05-01
+# story 6-10 created: 6-10 → ready-for-dev: 2026-05-01 (Server Config API + Metrics API — GET/PATCH /admin/config, GET /admin/metrics, proto InvalidateAllAdminSessions, ServerConfigRepository, MetricsRepository, oidc_client_secret encryption, session invalidation on OIDC change)
 # story 6-1 created: epic-6 → in-progress, 6-1 → ready-for-dev: 2026-05-01
 # story 5-1 review: 2026-04-23 (audit-log schema + RLS + retention cleanup)
 # story 5-29 created as follow-up of 5-27 scope reduction (code-review MAJOR-B): 2026-04-23
@@ -587,7 +588,7 @@ development_status:
   6-7-room-list-get-api: review
   6-8-room-settings-update-api-max-members-visibility-serverweite-defaults: review
   6-9-room-archivierung-kein-physisches-loschen-events-bleiben-erhalten: review
-  6-10-server-config-api-metrics-api: backlog
+  6-10-server-config-api-metrics-api: review
   6-11-gherkin-admin-api-crud-flow: backlog
   epic-6-retrospective: optional
 

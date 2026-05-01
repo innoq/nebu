@@ -19,37 +19,38 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	CoreService_SendEvent_FullMethodName              = "/core.CoreService/SendEvent"
-	CoreService_CreateRoom_FullMethodName             = "/core.CoreService/CreateRoom"
-	CoreService_JoinRoom_FullMethodName               = "/core.CoreService/JoinRoom"
-	CoreService_LeaveRoom_FullMethodName              = "/core.CoreService/LeaveRoom"
-	CoreService_GetMessages_FullMethodName            = "/core.CoreService/GetMessages"
-	CoreService_SetPresence_FullMethodName            = "/core.CoreService/SetPresence"
-	CoreService_SetTyping_FullMethodName              = "/core.CoreService/SetTyping"
-	CoreService_ValidateToken_FullMethodName          = "/core.CoreService/ValidateToken"
-	CoreService_GetPendingEvents_FullMethodName       = "/core.CoreService/GetPendingEvents"
-	CoreService_EventBus_FullMethodName               = "/core.CoreService/EventBus"
-	CoreService_GetMetrics_FullMethodName             = "/core.CoreService/GetMetrics"
-	CoreService_GetRoomState_FullMethodName           = "/core.CoreService/GetRoomState"
-	CoreService_InviteUser_FullMethodName             = "/core.CoreService/InviteUser"
-	CoreService_SetPowerLevels_FullMethodName         = "/core.CoreService/SetPowerLevels"
-	CoreService_SendReceipt_FullMethodName            = "/core.CoreService/SendReceipt"
-	CoreService_GetInitialSync_FullMethodName         = "/core.CoreService/GetInitialSync"
-	CoreService_GetSyncDelta_FullMethodName           = "/core.CoreService/GetSyncDelta"
-	CoreService_GetPresence_FullMethodName            = "/core.CoreService/GetPresence"
-	CoreService_UpdateProfile_FullMethodName          = "/core.CoreService/UpdateProfile"
-	CoreService_WriteAuditLog_FullMethodName          = "/core.CoreService/WriteAuditLog"
-	CoreService_DeleteUserKeys_FullMethodName         = "/core.CoreService/DeleteUserKeys"
-	CoreService_KickUser_FullMethodName               = "/core.CoreService/KickUser"
-	CoreService_BanUser_FullMethodName                = "/core.CoreService/BanUser"
-	CoreService_UnbanUser_FullMethodName              = "/core.CoreService/UnbanUser"
-	CoreService_ForgetRoom_FullMethodName             = "/core.CoreService/ForgetRoom"
-	CoreService_ListPublicRooms_FullMethodName        = "/core.CoreService/ListPublicRooms"
-	CoreService_GetEventContext_FullMethodName        = "/core.CoreService/GetEventContext"
-	CoreService_InvalidateUserSessions_FullMethodName = "/core.CoreService/InvalidateUserSessions"
-	CoreService_UpdateRoomSettings_FullMethodName     = "/core.CoreService/UpdateRoomSettings"
-	CoreService_ArchiveRoom_FullMethodName            = "/core.CoreService/ArchiveRoom"
-	CoreService_UnarchiveRoom_FullMethodName          = "/core.CoreService/UnarchiveRoom"
+	CoreService_SendEvent_FullMethodName                  = "/core.CoreService/SendEvent"
+	CoreService_CreateRoom_FullMethodName                 = "/core.CoreService/CreateRoom"
+	CoreService_JoinRoom_FullMethodName                   = "/core.CoreService/JoinRoom"
+	CoreService_LeaveRoom_FullMethodName                  = "/core.CoreService/LeaveRoom"
+	CoreService_GetMessages_FullMethodName                = "/core.CoreService/GetMessages"
+	CoreService_SetPresence_FullMethodName                = "/core.CoreService/SetPresence"
+	CoreService_SetTyping_FullMethodName                  = "/core.CoreService/SetTyping"
+	CoreService_ValidateToken_FullMethodName              = "/core.CoreService/ValidateToken"
+	CoreService_GetPendingEvents_FullMethodName           = "/core.CoreService/GetPendingEvents"
+	CoreService_EventBus_FullMethodName                   = "/core.CoreService/EventBus"
+	CoreService_GetMetrics_FullMethodName                 = "/core.CoreService/GetMetrics"
+	CoreService_GetRoomState_FullMethodName               = "/core.CoreService/GetRoomState"
+	CoreService_InviteUser_FullMethodName                 = "/core.CoreService/InviteUser"
+	CoreService_SetPowerLevels_FullMethodName             = "/core.CoreService/SetPowerLevels"
+	CoreService_SendReceipt_FullMethodName                = "/core.CoreService/SendReceipt"
+	CoreService_GetInitialSync_FullMethodName             = "/core.CoreService/GetInitialSync"
+	CoreService_GetSyncDelta_FullMethodName               = "/core.CoreService/GetSyncDelta"
+	CoreService_GetPresence_FullMethodName                = "/core.CoreService/GetPresence"
+	CoreService_UpdateProfile_FullMethodName              = "/core.CoreService/UpdateProfile"
+	CoreService_WriteAuditLog_FullMethodName              = "/core.CoreService/WriteAuditLog"
+	CoreService_DeleteUserKeys_FullMethodName             = "/core.CoreService/DeleteUserKeys"
+	CoreService_KickUser_FullMethodName                   = "/core.CoreService/KickUser"
+	CoreService_BanUser_FullMethodName                    = "/core.CoreService/BanUser"
+	CoreService_UnbanUser_FullMethodName                  = "/core.CoreService/UnbanUser"
+	CoreService_ForgetRoom_FullMethodName                 = "/core.CoreService/ForgetRoom"
+	CoreService_ListPublicRooms_FullMethodName            = "/core.CoreService/ListPublicRooms"
+	CoreService_GetEventContext_FullMethodName            = "/core.CoreService/GetEventContext"
+	CoreService_InvalidateUserSessions_FullMethodName     = "/core.CoreService/InvalidateUserSessions"
+	CoreService_UpdateRoomSettings_FullMethodName         = "/core.CoreService/UpdateRoomSettings"
+	CoreService_ArchiveRoom_FullMethodName                = "/core.CoreService/ArchiveRoom"
+	CoreService_UnarchiveRoom_FullMethodName              = "/core.CoreService/UnarchiveRoom"
+	CoreService_InvalidateAllAdminSessions_FullMethodName = "/core.CoreService/InvalidateAllAdminSessions"
 )
 
 // CoreServiceClient is the client API for CoreService service.
@@ -128,6 +129,11 @@ type CoreServiceClient interface {
 	// The Go gateway has already updated rooms.status='active' in DB before calling this.
 	// Core restarts the GenServer via RoomSupervisor.start_room/1.
 	UnarchiveRoom(ctx context.Context, in *UnarchiveRoomRequest, opts ...grpc.CallOption) (*UnarchiveRoomResponse, error)
+	// InvalidateAllAdminSessions — Story 6.10: destroys all active admin UI sessions in ETS.
+	// Called by Go gateway after OIDC config changes (oidc_issuer, oidc_client_id, oidc_client_secret).
+	// Iterates EtsStore.list_user_ids/0 and calls SessionSupervisor.destroy_session/1 for each.
+	// Returns ok=true always (best-effort — OIDC config is already updated in DB).
+	InvalidateAllAdminSessions(ctx context.Context, in *InvalidateAllAdminSessionsRequest, opts ...grpc.CallOption) (*InvalidateAllAdminSessionsResponse, error)
 }
 
 type coreServiceClient struct {
@@ -457,6 +463,16 @@ func (c *coreServiceClient) UnarchiveRoom(ctx context.Context, in *UnarchiveRoom
 	return out, nil
 }
 
+func (c *coreServiceClient) InvalidateAllAdminSessions(ctx context.Context, in *InvalidateAllAdminSessionsRequest, opts ...grpc.CallOption) (*InvalidateAllAdminSessionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InvalidateAllAdminSessionsResponse)
+	err := c.cc.Invoke(ctx, CoreService_InvalidateAllAdminSessions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CoreServiceServer is the server API for CoreService service.
 // All implementations must embed UnimplementedCoreServiceServer
 // for forward compatibility.
@@ -533,6 +549,11 @@ type CoreServiceServer interface {
 	// The Go gateway has already updated rooms.status='active' in DB before calling this.
 	// Core restarts the GenServer via RoomSupervisor.start_room/1.
 	UnarchiveRoom(context.Context, *UnarchiveRoomRequest) (*UnarchiveRoomResponse, error)
+	// InvalidateAllAdminSessions — Story 6.10: destroys all active admin UI sessions in ETS.
+	// Called by Go gateway after OIDC config changes (oidc_issuer, oidc_client_id, oidc_client_secret).
+	// Iterates EtsStore.list_user_ids/0 and calls SessionSupervisor.destroy_session/1 for each.
+	// Returns ok=true always (best-effort — OIDC config is already updated in DB).
+	InvalidateAllAdminSessions(context.Context, *InvalidateAllAdminSessionsRequest) (*InvalidateAllAdminSessionsResponse, error)
 	mustEmbedUnimplementedCoreServiceServer()
 }
 
@@ -635,6 +656,9 @@ func (UnimplementedCoreServiceServer) ArchiveRoom(context.Context, *ArchiveRoomR
 }
 func (UnimplementedCoreServiceServer) UnarchiveRoom(context.Context, *UnarchiveRoomRequest) (*UnarchiveRoomResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method UnarchiveRoom not implemented")
+}
+func (UnimplementedCoreServiceServer) InvalidateAllAdminSessions(context.Context, *InvalidateAllAdminSessionsRequest) (*InvalidateAllAdminSessionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method InvalidateAllAdminSessions not implemented")
 }
 func (UnimplementedCoreServiceServer) mustEmbedUnimplementedCoreServiceServer() {}
 func (UnimplementedCoreServiceServer) testEmbeddedByValue()                     {}
@@ -1208,6 +1232,24 @@ func _CoreService_UnarchiveRoom_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_InvalidateAllAdminSessions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InvalidateAllAdminSessionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).InvalidateAllAdminSessions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_InvalidateAllAdminSessions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).InvalidateAllAdminSessions(ctx, req.(*InvalidateAllAdminSessionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CoreService_ServiceDesc is the grpc.ServiceDesc for CoreService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1334,6 +1376,10 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UnarchiveRoom",
 			Handler:    _CoreService_UnarchiveRoom_Handler,
+		},
+		{
+			MethodName: "InvalidateAllAdminSessions",
+			Handler:    _CoreService_InvalidateAllAdminSessions_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

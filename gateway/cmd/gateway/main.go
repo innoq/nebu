@@ -1129,6 +1129,8 @@ func main() {
 	rolesRepo := apihandler.NewRoleOverrideRepo(bootstrapDB)        // Story 6.6
 	roomsRepo := apihandler.NewRoomRepo(bootstrapDB)                // Story 6.7
 	roomDefaultsRepo := apihandler.NewRoomDefaultsRepo(bootstrapDB) // Story 6.8
+	serverConfigRepo := apihandler.NewServerConfigRepo(bootstrapDB) // Story 6.10
+	metricsRepo := apihandler.NewMetricsRepo(bootstrapDB)           // Story 6.10
 	adminSrv := &apihandler.AdminServer{
 		DB:           bootstrapDB,
 		CoreClient:   coreClient.CoreServiceClient(),
@@ -1137,6 +1139,9 @@ func main() {
 		Roles:        rolesRepo,                                               // Story 6.6
 		Rooms:        roomsRepo,                                               // Story 6.7
 		RoomDefaults: roomDefaultsRepo,                                        // Story 6.8
+		ServerConfig: serverConfigRepo,                                        // Story 6.10
+		Metrics:      metricsRepo,                                             // Story 6.10
+		Secret:       []byte(internalSecret),                                  // Story 6.10: AES-256-GCM key for oidc_client_secret
 	}
 	// jwtWithStatusCheck is defined early (after jwtMiddleware, line ~445) and wraps ALL routes.
 	// rolesRepo satisfies RoleOverrideChecker for RequireRole DB-override path (Story 6.6).

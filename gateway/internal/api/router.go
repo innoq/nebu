@@ -4,6 +4,7 @@
 package api
 
 import (
+	"log/slog"
 	"net/http"
 	"strconv"
 )
@@ -27,7 +28,25 @@ import (
 // Middleware order: jwtMW runs outermost so it populates ContextKeySystemRole before
 // RequireRole reads it. Chain: jwtMW → RequireRole → handler.
 func RegisterAdminRoutes(mux *http.ServeMux, adminServer *AdminServer, jwtMW func(http.Handler) http.Handler, checker RoleOverrideChecker) {
-	sh := NewStrictHandler(adminServer, nil)
+	// HIGH fix (CWE-209): sanitize handler errors before writing to the response body.
+	// The oapi-codegen default ResponseErrorHandlerFunc calls http.Error(w, err.Error(), 500)
+	// which leaks internal DB error messages (e.g. "pq: duplicate key...") verbatim.
+	// We replace it with a generic JSON envelope and log the real error server-side.
+	strictOpts := StrictHTTPServerOptions{
+		RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
+			slog.ErrorContext(r.Context(), "admin API request error", "error", err)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":{"code":"M_BAD_JSON","message":"Bad request"}}`))
+		},
+		ResponseErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
+			slog.ErrorContext(r.Context(), "admin API handler error", "error", err)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"error":{"code":"M_UNKNOWN","message":"Internal server error"}}`))
+		},
+	}
+	sh := NewStrictHandlerWithOptions(adminServer, nil, strictOpts)
 
 	// GET /api/v1/health — unauthenticated; no JWT or role middleware.
 	mux.HandleFunc("GET /api/v1/health", sh.GetHealth)
@@ -75,6 +94,11 @@ func RegisterAdminRoutes(mux *http.ServeMux, adminServer *AdminServer, jwtMW fun
 		jwtMW(RequireRole("instance_admin", checker)(archiveAdminRoomHandler(sh, adminServer))))
 	mux.Handle("POST /api/v1/admin/rooms/{roomId}/unarchive",
 		jwtMW(RequireRole("instance_admin", checker)(unarchiveAdminRoomHandler(sh, adminServer))))
+
+	// Story 6.10: PATCH /api/v1/admin/config — update server config (instance_admin required).
+	// GET /api/v1/admin/config and GET /api/v1/admin/metrics are already registered above (line 37–38).
+	mux.Handle("PATCH /api/v1/admin/config",
+		jwtMW(RequireRole("instance_admin", checker)(patchAdminConfigHandler(sh, adminServer))))
 }
 
 // listAdminUsersHandler returns an http.Handler that parses the cursor/limit/search query
@@ -264,6 +288,35 @@ func putAdminRoomDefaultsHandler(sh ServerInterface) http.Handler {
 			return
 		}
 		sh.PutAdminRoomDefaults(w, r)
+	})
+}
+
+// patchAdminConfigHandler checks nil ServerConfig (→501), pre-validates body is present,
+// and delegates to sh.PatchAdminConfig(w, r).
+//
+// Story 6.10: PATCH /api/v1/admin/config
+//
+// Nil-guard fires first so TestPatchAdminConfig_NilServerConfigRepo_Returns501 passes
+// even before the body is read. The body pre-check mirrors the deactivateAdminUserHandler
+// pattern (Story 6.5 MINOR-6 fix): the strict handler's json.NewDecoder emits a plain-text
+// 400 on missing body, not the M_BAD_JSON Matrix envelope required by AC#2.
+func patchAdminConfigHandler(sh ServerInterface, adminServer *AdminServer) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Nil-guard first — returns 501 before body check.
+		if adminServer == nil || adminServer.ServerConfig == nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotImplemented)
+			_, _ = w.Write([]byte(`{"error":{"code":"M_NOT_IMPLEMENTED","message":"server config not configured"}}`))
+			return
+		}
+		// Body pre-check: PATCH without a body is a bad request.
+		if r.Body == nil || r.ContentLength == 0 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":{"code":"M_BAD_JSON","message":"request body is required"}}`))
+			return
+		}
+		sh.PatchAdminConfig(w, r)
 	})
 }
 

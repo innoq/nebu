@@ -183,6 +183,9 @@ func (m *mockCoreClient) ArchiveRoom(_ context.Context, _ *pb.ArchiveRoomRequest
 func (m *mockCoreClient) UnarchiveRoom(_ context.Context, _ *pb.UnarchiveRoomRequest, _ ...grpc.CallOption) (*pb.UnarchiveRoomResponse, error) {
 	return &pb.UnarchiveRoomResponse{Ok: true}, nil
 }
+func (m *mockCoreClient) InvalidateAllAdminSessions(_ context.Context, _ *pb.InvalidateAllAdminSessionsRequest, _ ...grpc.CallOption) (*pb.InvalidateAllAdminSessionsResponse, error) {
+	return &pb.InvalidateAllAdminSessionsResponse{Ok: true}, nil
+}
 
 // ─── fakeDB driver ────────────────────────────────────────────────────────────
 //

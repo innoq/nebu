@@ -206,6 +206,54 @@ components:
               type: integer
             default_visibility:
               type: string
+    AdminConfigResponse:
+      type: object
+      properties:
+        instance_name:
+          type: string
+        oidc_issuer:
+          type: string
+        oidc_client_id:
+          type: string
+        room_default_max_members:
+          type: integer
+        room_default_visibility:
+          type: string
+        audit_log_retention_days:
+          type: integer
+      # NOTE: oidc_client_secret intentionally absent — write-only field
+    PatchAdminConfigRequest:
+      type: object
+      properties:
+        instance_name:
+          type: string
+        oidc_issuer:
+          type: string
+        oidc_client_id:
+          type: string
+        oidc_client_secret:
+          type: string
+        audit_log_retention_days:
+          type: integer
+          minimum: 1
+          maximum: 36500
+      # All fields optional — partial update semantics
+    AdminMetricsResponse:
+      type: object
+      properties:
+        active_sessions:
+          type: integer
+        room_count:
+          type: integer
+        archived_room_count:
+          type: integer
+        msg_per_sec_1m:
+          type: number
+          format: float
+        registered_users:
+          type: integer
+        deactivated_users:
+          type: integer
     ArchiveRoomRequest:
       type: object
       required:
@@ -627,10 +675,34 @@ paths:
   /admin/config:
     get:
       operationId: GetAdminConfig
-      summary: Get server config (placeholder — Story 6.10)
+      summary: Get server config (instance_admin required)
       responses:
         "200":
-          description: Config
+          description: Server configuration (oidc_client_secret is never returned)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminConfigResponse"
+        "501":
+          description: Not implemented
+    patch:
+      operationId: PatchAdminConfig
+      summary: Update server config (instance_admin required)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchAdminConfigRequest"
+      responses:
+        "200":
+          description: Updated server configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminConfigResponse"
+        "400":
+          description: Validation error (e.g. audit_log_retention_days out of range)
           content:
             application/json:
               schema:
@@ -640,14 +712,14 @@ paths:
   /admin/metrics:
     get:
       operationId: GetAdminMetrics
-      summary: Get metrics (placeholder — Story 6.10)
+      summary: Get instance metrics (instance_admin required)
       responses:
         "200":
-          description: Metrics
+          description: Live instance metrics
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/EmptyResponse"
+                $ref: "#/components/schemas/AdminMetricsResponse"
         "501":
           description: Not implemented
   /compliance/access-requests:
