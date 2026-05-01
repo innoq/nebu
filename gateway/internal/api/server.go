@@ -26,13 +26,15 @@ import (
 // Deactivation is the DeactivationRepository for user deactivation/reactivation (Story 6.5).
 // Roles is the RoleOverrideRepository for role grant/revoke and override merging (Story 6.6).
 // Rooms is the RoomRepository for Admin room queries (Story 6.7).
+// RoomDefaults is the RoomDefaultsRepository for server-wide room defaults (Story 6.8).
 type AdminServer struct {
 	DB           *sql.DB
 	CoreClient   pb.CoreServiceClient
 	Users        UserRepository
-	Deactivation DeactivationRepository // Story 6.5
-	Roles        RoleOverrideRepository // Story 6.6
-	Rooms        RoomRepository         // Story 6.7
+	Deactivation DeactivationRepository  // Story 6.5
+	Roles        RoleOverrideRepository  // Story 6.6
+	Rooms        RoomRepository          // Story 6.7
+	RoomDefaults RoomDefaultsRepository  // Story 6.8
 }
 
 // Ensure AdminServer satisfies the generated StrictServerInterface at compile time.
@@ -699,5 +701,214 @@ func (r *getAdminRoom404Response) VisitGetAdminRoomResponse(w http.ResponseWrite
 	w.WriteHeader(http.StatusNotFound)
 	return json.NewEncoder(w).Encode(map[string]any{
 		"error": map[string]string{"code": "M_NOT_FOUND", "message": "Room not found"},
+	})
+}
+
+// ── Story 6.8: PatchAdminRoom handler ────────────────────────────────────────
+
+// PatchAdminRoom implements AC#1: PATCH /api/v1/admin/rooms/{roomId}.
+// Validates optional fields, applies DB patch, notifies Room GenServer via gRPC,
+// and emits an audit log. Returns 501 if Rooms repository is not wired.
+func (s *AdminServer) PatchAdminRoom(ctx context.Context, req PatchAdminRoomRequestObject) (PatchAdminRoomResponseObject, error) {
+	if s.Rooms == nil {
+		return PatchAdminRoom501Response{}, nil
+	}
+
+	roomID := req.RoomId
+	body := req.Body
+	if body == nil {
+		return &patchRoom400Resp{msg: "request body is required"}, nil
+	}
+
+	// ── Validate and build patch ─────────────────────────────────────────────
+	patch := RoomPatch{}
+	changedFields := map[string]any{}
+
+	if body.MaxMembers != nil {
+		v := *body.MaxMembers
+		if v < 2 || v > 100000 {
+			return &patchRoom400Resp{msg: "max_members must be between 2 and 100000"}, nil
+		}
+		patch.MaxMembers = &v
+		changedFields["max_members"] = v
+	}
+	if body.Visibility != nil {
+		v := string(*body.Visibility)
+		if !body.Visibility.Valid() {
+			return &patchRoom400Resp{msg: "visibility must be 'public' or 'private'"}, nil
+		}
+		patch.Visibility = &v
+		changedFields["visibility"] = v
+	}
+	if body.Name != nil {
+		v := *body.Name
+		if len(v) < 1 || len(v) > 255 {
+			return &patchRoom400Resp{msg: "name must be between 1 and 255 characters"}, nil
+		}
+		patch.Name = &v
+		changedFields["name"] = v
+	}
+	if body.Topic != nil {
+		v := *body.Topic
+		if len(v) > 1000 {
+			return &patchRoom400Resp{msg: "topic must be at most 1000 characters"}, nil
+		}
+		patch.Topic = &v
+		changedFields["topic"] = v
+	}
+
+	// ── Apply patch (also checks existence) ──────────────────────────────────
+	updated, err := s.Rooms.UpdateRoom(ctx, roomID, patch)
+	if err != nil {
+		return nil, err
+	}
+	if updated == nil {
+		return &patchRoom404Resp{}, nil
+	}
+
+	// ── Notify Room GenServer via gRPC (only if max_members changed) ─────────
+	if patch.MaxMembers != nil && s.CoreClient != nil {
+		_, grpcErr := s.CoreClient.UpdateRoomSettings(ctx, &pb.UpdateRoomSettingsRequest{
+			RoomId:     roomID,
+			MaxMembers: int32(*patch.MaxMembers),
+		})
+		if grpcErr != nil {
+			slog.Warn("UpdateRoomSettings gRPC failed — GenServer state not updated in real time",
+				"room_id", roomID, "err", grpcErr)
+			// Best-effort: continue (DB is already updated; GenServer will load from DB on next start)
+		}
+	}
+
+	// ── Audit log (never-raise) ───────────────────────────────────────────────
+	if s.CoreClient != nil {
+		actorID, _ := ctx.Value(middleware.ContextKeyUserID).(string)
+		_ = audit.LogEvent(ctx, s.CoreClient, actorID, "room_settings_updated", "room", roomID,
+			map[string]any{"changes": changedFields}, "success", "")
+	} else {
+		slog.Warn("PatchAdminRoom audit skipped — CoreClient is nil", "room_id", roomID)
+	}
+
+	return &patchRoom200Resp{detail: updated}, nil
+}
+
+// ── Story 6.8: PutAdminRoomDefaults handler ───────────────────────────────────
+
+// PutAdminRoomDefaults implements AC#2: PUT /api/v1/admin/config/room-defaults.
+// Validates the body, upserts into room_defaults table, and returns the new defaults.
+// Returns 501 if RoomDefaults repository is not wired.
+func (s *AdminServer) PutAdminRoomDefaults(ctx context.Context, req PutAdminRoomDefaultsRequestObject) (PutAdminRoomDefaultsResponseObject, error) {
+	if s.RoomDefaults == nil {
+		return PutAdminRoomDefaults501Response{}, nil
+	}
+
+	body := req.Body
+	if body == nil {
+		return &putRoomDefaults400Resp{msg: "request body is required"}, nil
+	}
+
+	// ── Validate fields ───────────────────────────────────────────────────────
+	if body.DefaultMaxMembers < 0 {
+		return &putRoomDefaults400Resp{msg: "default_max_members must be >= 0"}, nil
+	}
+	if !body.DefaultVisibility.Valid() {
+		return &putRoomDefaults400Resp{msg: "default_visibility must be 'public' or 'private'"}, nil
+	}
+
+	// ── Upsert into room_defaults ─────────────────────────────────────────────
+	if err := s.RoomDefaults.UpsertRoomDefaults(ctx, body.DefaultMaxMembers, string(body.DefaultVisibility)); err != nil {
+		return nil, err
+	}
+
+	// ── Read back updated values ──────────────────────────────────────────────
+	maxMembers, visibility, err := s.RoomDefaults.GetRoomDefaults(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// ── Audit log (never-raise) ───────────────────────────────────────────────
+	if s.CoreClient != nil {
+		actorID, _ := ctx.Value(middleware.ContextKeyUserID).(string)
+		_ = audit.LogEvent(ctx, s.CoreClient, actorID, "room_defaults_updated", "room", "",
+			map[string]any{"default_max_members": maxMembers, "default_visibility": visibility}, "success", "")
+	} else {
+		slog.Warn("PutAdminRoomDefaults audit skipped — CoreClient is nil")
+	}
+
+	return &putRoomDefaults200Resp{maxMembers: maxMembers, visibility: visibility}, nil
+}
+
+// ── Story 6.8: PatchAdminRoom response types ──────────────────────────────────
+
+// patchRoom200Resp — 200 OK with updated AdminRoomDetail.
+// Implements PatchAdminRoomResponseObject.
+type patchRoom200Resp struct{ detail *AdminRoomDetail }
+
+func (r *patchRoom200Resp) VisitPatchAdminRoomResponse(w http.ResponseWriter) error {
+	type envelope struct {
+		Data *AdminRoomDetail `json:"data"`
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	return json.NewEncoder(w).Encode(envelope{Data: r.detail})
+}
+
+// patchRoom400Resp — 400 M_BAD_JSON validation error.
+// Implements PatchAdminRoomResponseObject.
+type patchRoom400Resp struct{ msg string }
+
+func (r *patchRoom400Resp) VisitPatchAdminRoomResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusBadRequest)
+	return json.NewEncoder(w).Encode(map[string]any{
+		"error": map[string]string{"code": "M_BAD_JSON", "message": r.msg},
+	})
+}
+
+// patchRoom404Resp — 404 M_NOT_FOUND.
+// Implements PatchAdminRoomResponseObject.
+type patchRoom404Resp struct{}
+
+func (r *patchRoom404Resp) VisitPatchAdminRoomResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusNotFound)
+	return json.NewEncoder(w).Encode(map[string]any{
+		"error": map[string]string{"code": "M_NOT_FOUND", "message": "Room not found"},
+	})
+}
+
+// ── Story 6.8: PutAdminRoomDefaults response types ────────────────────────────
+
+// putRoomDefaults200Resp — 200 OK with room defaults.
+// Implements PutAdminRoomDefaultsResponseObject.
+type putRoomDefaults200Resp struct {
+	maxMembers int
+	visibility string
+}
+
+func (r *putRoomDefaults200Resp) VisitPutAdminRoomDefaultsResponse(w http.ResponseWriter) error {
+	type dataObj struct {
+		DefaultMaxMembers int    `json:"default_max_members"`
+		DefaultVisibility string `json:"default_visibility"`
+	}
+	type envelope struct {
+		Data dataObj `json:"data"`
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	return json.NewEncoder(w).Encode(envelope{Data: dataObj{
+		DefaultMaxMembers: r.maxMembers,
+		DefaultVisibility: r.visibility,
+	}})
+}
+
+// putRoomDefaults400Resp — 400 M_BAD_JSON validation error.
+// Implements PutAdminRoomDefaultsResponseObject.
+type putRoomDefaults400Resp struct{ msg string }
+
+func (r *putRoomDefaults400Resp) VisitPutAdminRoomDefaultsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusBadRequest)
+	return json.NewEncoder(w).Encode(map[string]any{
+		"error": map[string]string{"code": "M_BAD_JSON", "message": r.msg},
 	})
 }

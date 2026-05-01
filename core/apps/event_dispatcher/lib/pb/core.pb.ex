@@ -728,3 +728,26 @@ defmodule Core.InvalidateUserSessionsResponse do
 
   field :ok, 1, type: :bool
 end
+
+defmodule Core.UpdateRoomSettingsRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.UpdateRoomSettingsRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :room_id, 1, type: :string, json_name: "roomId"
+  field :max_members, 2, type: :int32, json_name: "maxMembers"
+end
+
+defmodule Core.UpdateRoomSettingsResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.UpdateRoomSettingsResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :ok, 1, type: :bool
+end

@@ -47,6 +47,7 @@ const (
 	CoreService_ListPublicRooms_FullMethodName        = "/core.CoreService/ListPublicRooms"
 	CoreService_GetEventContext_FullMethodName        = "/core.CoreService/GetEventContext"
 	CoreService_InvalidateUserSessions_FullMethodName = "/core.CoreService/InvalidateUserSessions"
+	CoreService_UpdateRoomSettings_FullMethodName     = "/core.CoreService/UpdateRoomSettings"
 )
 
 // CoreServiceClient is the client API for CoreService service.
@@ -112,6 +113,10 @@ type CoreServiceClient interface {
 	// Calls SessionManager.destroy_session/1 for the target user.
 	// Returns ok=true on success; gRPC error on DB failure.
 	InvalidateUserSessions(ctx context.Context, in *InvalidateUserSessionsRequest, opts ...grpc.CallOption) (*InvalidateUserSessionsResponse, error)
+	// UpdateRoomSettings — Story 6.8: Admin API notifies Room GenServer of settings change.
+	// max_members = 0 means "no limit". Go gateway sends this after updating rooms table.
+	// Elixir Core updates in-memory GenServer state; no-op if GenServer not running (will load from DB on next start).
+	UpdateRoomSettings(ctx context.Context, in *UpdateRoomSettingsRequest, opts ...grpc.CallOption) (*UpdateRoomSettingsResponse, error)
 }
 
 type coreServiceClient struct {
@@ -411,6 +416,16 @@ func (c *coreServiceClient) InvalidateUserSessions(ctx context.Context, in *Inva
 	return out, nil
 }
 
+func (c *coreServiceClient) UpdateRoomSettings(ctx context.Context, in *UpdateRoomSettingsRequest, opts ...grpc.CallOption) (*UpdateRoomSettingsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateRoomSettingsResponse)
+	err := c.cc.Invoke(ctx, CoreService_UpdateRoomSettings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CoreServiceServer is the server API for CoreService service.
 // All implementations must embed UnimplementedCoreServiceServer
 // for forward compatibility.
@@ -474,6 +489,10 @@ type CoreServiceServer interface {
 	// Calls SessionManager.destroy_session/1 for the target user.
 	// Returns ok=true on success; gRPC error on DB failure.
 	InvalidateUserSessions(context.Context, *InvalidateUserSessionsRequest) (*InvalidateUserSessionsResponse, error)
+	// UpdateRoomSettings — Story 6.8: Admin API notifies Room GenServer of settings change.
+	// max_members = 0 means "no limit". Go gateway sends this after updating rooms table.
+	// Elixir Core updates in-memory GenServer state; no-op if GenServer not running (will load from DB on next start).
+	UpdateRoomSettings(context.Context, *UpdateRoomSettingsRequest) (*UpdateRoomSettingsResponse, error)
 	mustEmbedUnimplementedCoreServiceServer()
 }
 
@@ -567,6 +586,9 @@ func (UnimplementedCoreServiceServer) GetEventContext(context.Context, *GetEvent
 }
 func (UnimplementedCoreServiceServer) InvalidateUserSessions(context.Context, *InvalidateUserSessionsRequest) (*InvalidateUserSessionsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method InvalidateUserSessions not implemented")
+}
+func (UnimplementedCoreServiceServer) UpdateRoomSettings(context.Context, *UpdateRoomSettingsRequest) (*UpdateRoomSettingsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateRoomSettings not implemented")
 }
 func (UnimplementedCoreServiceServer) mustEmbedUnimplementedCoreServiceServer() {}
 func (UnimplementedCoreServiceServer) testEmbeddedByValue()                     {}
@@ -1086,6 +1108,24 @@ func _CoreService_InvalidateUserSessions_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_UpdateRoomSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateRoomSettingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).UpdateRoomSettings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_UpdateRoomSettings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).UpdateRoomSettings(ctx, req.(*UpdateRoomSettingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CoreService_ServiceDesc is the grpc.ServiceDesc for CoreService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1200,6 +1240,10 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "InvalidateUserSessions",
 			Handler:    _CoreService_InvalidateUserSessions_Handler,
+		},
+		{
+			MethodName: "UpdateRoomSettings",
+			Handler:    _CoreService_UpdateRoomSettings_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

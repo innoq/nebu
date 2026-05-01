@@ -129,4 +129,16 @@ defmodule Nebu.Room.DBBehaviour do
   """
   @callback get_room_name(room_id :: String.t()) ::
               {:ok, String.t()} | {:error, :not_found | term()}
+
+  @doc """
+  Loads the mutable settings for `room_id` — currently only max_members.
+
+  Returns `{:ok, max_members}` where `max_members` is 0 (no limit) or a positive integer.
+  Returns `{:error, reason}` on DB error.
+
+  Story 6.8: Called by Room.Server.init/1 to restore max_members after a GenServer restart.
+  Fail-open: if this call fails, GenServer defaults to 0 (no limit).
+  """
+  @callback load_room_settings(room_id :: String.t()) ::
+              {:ok, non_neg_integer()} | {:error, term()}
 end

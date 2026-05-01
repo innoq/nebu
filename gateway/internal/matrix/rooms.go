@@ -187,6 +187,9 @@ func (h *JoinRoomHandler) postJoinRoomWithID(w http.ResponseWriter, r *http.Requ
 			writeMatrixError(w, http.StatusNotFound, "M_NOT_FOUND", "Room not found")
 		case codes.PermissionDenied:
 			writeMatrixError(w, http.StatusForbidden, "M_FORBIDDEN", "Not allowed to join this room")
+		case codes.ResourceExhausted:
+			// Story 6.8: Room GenServer enforces max_members limit — room is full.
+			writeMatrixError(w, http.StatusForbidden, "M_ROOM_FULL", "Room is full")
 		default:
 			writeMatrixError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
 		}

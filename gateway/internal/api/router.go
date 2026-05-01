@@ -63,6 +63,12 @@ func RegisterAdminRoutes(mux *http.ServeMux, adminServer *AdminServer, jwtMW fun
 	// Story 6.6: Assign / Revoke role override — instance_admin required.
 	mux.Handle("POST /api/v1/admin/users/{userId}/roles",
 		jwtMW(RequireRole("instance_admin", checker)(assignAdminUserRoleHandler(sh))))
+
+	// Story 6.8: PATCH room settings + PUT room defaults — instance_admin required.
+	mux.Handle("PATCH /api/v1/admin/rooms/{roomId}",
+		jwtMW(RequireRole("instance_admin", checker)(patchAdminRoomHandler(sh))))
+	mux.Handle("PUT /api/v1/admin/config/room-defaults",
+		jwtMW(RequireRole("instance_admin", checker)(putAdminRoomDefaultsHandler(sh))))
 }
 
 // listAdminUsersHandler returns an http.Handler that parses the cursor/limit/search query
@@ -216,5 +222,41 @@ func getAdminRoomHandler(sh ServerInterface) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		roomID := r.PathValue("roomId")
 		sh.GetAdminRoom(w, r, roomID)
+	})
+}
+
+// patchAdminRoomHandler extracts {roomId}, pre-validates body is present, and delegates
+// to sh.PatchAdminRoom(w, r, roomId).
+//
+// Story 6.8: PATCH /api/v1/admin/rooms/{roomId}
+//
+// The body pre-check mirrors the deactivateAdminUserHandler pattern (Story 6.5 MINOR-6 fix):
+// the strict handler's json.NewDecoder emits a plain-text 400 on missing body, not the
+// M_BAD_JSON Matrix envelope required by AC#1.
+func patchAdminRoomHandler(sh ServerInterface) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		roomID := r.PathValue("roomId")
+		if r.Body == nil || r.ContentLength == 0 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":{"code":"M_BAD_JSON","message":"request body is required"}}`))
+			return
+		}
+		sh.PatchAdminRoom(w, r, roomID)
+	})
+}
+
+// putAdminRoomDefaultsHandler checks body is present and delegates to sh.PutAdminRoomDefaults(w, r).
+//
+// Story 6.8: PUT /api/v1/admin/config/room-defaults
+func putAdminRoomDefaultsHandler(sh ServerInterface) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Body == nil || r.ContentLength == 0 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":{"code":"M_BAD_JSON","message":"request body is required"}}`))
+			return
+		}
+		sh.PutAdminRoomDefaults(w, r)
 	})
 }

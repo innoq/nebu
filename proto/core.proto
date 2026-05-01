@@ -82,6 +82,11 @@ service CoreService {
   // Calls SessionManager.destroy_session/1 for the target user.
   // Returns ok=true on success; gRPC error on DB failure.
   rpc InvalidateUserSessions(InvalidateUserSessionsRequest) returns (InvalidateUserSessionsResponse);
+
+  // UpdateRoomSettings — Story 6.8: Admin API notifies Room GenServer of settings change.
+  // max_members = 0 means "no limit". Go gateway sends this after updating rooms table.
+  // Elixir Core updates in-memory GenServer state; no-op if GenServer not running (will load from DB on next start).
+  rpc UpdateRoomSettings(UpdateRoomSettingsRequest) returns (UpdateRoomSettingsResponse);
 }
 
 // Shared event type used across multiple RPCs
@@ -426,5 +431,14 @@ message InvalidateUserSessionsRequest {
 }
 
 message InvalidateUserSessionsResponse {
+  bool ok = 1;
+}
+
+// UpdateRoomSettings — Story 6.8
+message UpdateRoomSettingsRequest {
+  string room_id     = 1;
+  int32  max_members = 2;  // 0 = no limit; always sent (even if unchanged) for simplicity
+}
+message UpdateRoomSettingsResponse {
   bool ok = 1;
 }

@@ -82,6 +82,9 @@ defmodule Nebu.EventDispatcher.JoinRoomTest do
       :ets.insert(:join_room_test_db, {{:power_levels, room_id}, power_levels_json})
       :ok
     end
+
+    # Story 6.8: load_room_settings/1 returns {:ok, 0} (no limit) for unit tests.
+    def load_room_settings(_room_id), do: {:ok, 0}
   end
 
   # ─── FakeInviteDB ─────────────────────────────────────────────────────────────

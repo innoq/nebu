@@ -161,6 +161,9 @@ func (m *mockCoreClient) ListPublicRooms(_ context.Context, _ *pb.ListPublicRoom
 func (m *mockCoreClient) InvalidateUserSessions(_ context.Context, _ *pb.InvalidateUserSessionsRequest, _ ...grpc.CallOption) (*pb.InvalidateUserSessionsResponse, error) {
 	return &pb.InvalidateUserSessionsResponse{Ok: true}, nil
 }
+func (m *mockCoreClient) UpdateRoomSettings(_ context.Context, _ *pb.UpdateRoomSettingsRequest, _ ...grpc.CallOption) (*pb.UpdateRoomSettingsResponse, error) {
+	return &pb.UpdateRoomSettingsResponse{Ok: true}, nil
+}
 
 // lastReceived returns the most recently recorded request (nil if none).
 func (m *mockCoreClient) lastReceived() *pb.WriteAuditLogRequest {

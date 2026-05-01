@@ -162,6 +162,50 @@ components:
               type: integer
             next_cursor:
               type: string
+    PatchAdminRoomRequest:
+      type: object
+      properties:
+        max_members:
+          type: integer
+          minimum: 2
+          maximum: 100000
+        visibility:
+          type: string
+          enum: [public, private]
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        topic:
+          type: string
+          maxLength: 1000
+    PutRoomDefaultsRequest:
+      type: object
+      required:
+        - default_max_members
+        - default_visibility
+      properties:
+        default_max_members:
+          type: integer
+          minimum: 0
+        default_visibility:
+          type: string
+          enum: [public, private]
+    RoomDefaultsResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
+          required:
+            - default_max_members
+            - default_visibility
+          properties:
+            default_max_members:
+              type: integer
+            default_visibility:
+              type: string
 security:
   - BearerAuth: []
 paths:
@@ -411,6 +455,67 @@ paths:
                 $ref: "#/components/schemas/AdminRoomDetailObject"
         "404":
           description: Room not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "501":
+          description: Not implemented
+    patch:
+      operationId: PatchAdminRoom
+      summary: Update room settings (instance_admin required)
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchAdminRoomRequest"
+      responses:
+        "200":
+          description: Updated room
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminRoomDetailObject"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "404":
+          description: Room not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "501":
+          description: Not implemented
+  /admin/config/room-defaults:
+    put:
+      operationId: PutAdminRoomDefaults
+      summary: Set server-wide room defaults (instance_admin required)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PutRoomDefaultsRequest"
+      responses:
+        "200":
+          description: Room defaults
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomDefaultsResponse"
+        "400":
+          description: Validation error
           content:
             application/json:
               schema:

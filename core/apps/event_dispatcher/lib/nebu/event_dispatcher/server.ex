@@ -228,12 +228,44 @@ defmodule Nebu.EventDispatcher.Server do
             # No audit log for idempotent joins (AC9 scope decision).
             %Core.JoinRoomResponse{room_id: room_id}
 
+          {:error, :room_full} ->
+            # Story 6.8: room has reached max_members capacity.
+            # Go gateway maps codes.ResourceExhausted → 403 M_ROOM_FULL.
+            raise GRPC.RPCError,
+              status: GRPC.Status.resource_exhausted(),
+              message: "room is full"
+
           {:error, reason} ->
             raise GRPC.RPCError,
               status: GRPC.Status.internal(),
               message: "join failed: #{inspect(reason)}"
         end
     end
+  end
+
+  # ─── UpdateRoomSettings — Story 6.8: Admin PATCH /admin/rooms/{roomId} ─────────
+  #
+  # Called by the Go gateway after a successful DB update of room settings.
+  # Delegates to Nebu.Room.Server.update_settings/2 (best-effort fire-and-forget cast).
+  # Returns UpdateRoomSettingsResponse{ok: true} always — failure to find the running
+  # GenServer is non-fatal (room may not be started, or settings will be loaded on next init).
+
+  def update_room_settings(%Core.UpdateRoomSettingsRequest{} = req, _stream) do
+    room_id = req.room_id
+    max_members = req.max_members
+
+    # Best-effort: call update_settings only if the room GenServer is running.
+    # If the room is not started, the new max_members will be loaded from DB on next init.
+    case Nebu.Room.RoomSupervisor.lookup_room(room_id) do
+      {:ok, _pid} ->
+        Nebu.Room.Server.update_settings(room_id, %{max_members: max_members})
+
+      {:error, :not_found} ->
+        # Room GenServer not running — settings will be applied on next init/1.
+        :ok
+    end
+
+    %Core.UpdateRoomSettingsResponse{ok: true}
   end
 
   def leave_room(request, _stream) do

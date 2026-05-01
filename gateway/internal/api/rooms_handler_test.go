@@ -78,6 +78,16 @@ func (m *mockRoomRepository) GetRoom(
 	return m.getResult, m.getErr
 }
 
+// UpdateRoom satisfies the updated RoomRepository interface (Story 6.8).
+// rooms_handler_test.go only tests GET/LIST endpoints, so UpdateRoom is a no-op stub here.
+func (m *mockRoomRepository) UpdateRoom(
+	_ context.Context,
+	_ string,
+	_ api.RoomPatch,
+) (*api.AdminRoomDetail, error) {
+	return m.getResult, m.getErr
+}
+
 // noopJWTMiddlewareForRooms injects an instance_admin role and a test actor
 // user ID into the request context, simulating the real JWT middleware.
 func noopJWTMiddlewareForRooms(next http.Handler) http.Handler {

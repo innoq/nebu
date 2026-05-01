@@ -49,7 +49,9 @@ defmodule Nebu.Room.DBBehaviourTest do
         {:fetch_events, 4},
         {:fetch_events_since, 3},
         {:get_event_timestamp, 1},
-        {:get_room_name, 1}
+        {:get_room_name, 1},
+        # Story 6.8: load_room_settings/1 callback for max_members recovery on restart.
+        {:load_room_settings, 1}
       ]
 
       for {fun, arity} <- required do

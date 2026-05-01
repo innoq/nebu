@@ -1120,8 +1120,9 @@ func main() {
 	//   - POST /api/v1/admin/users/{userId}/deactivate     → deactivate user (Story 6.5)
 	//   - POST /api/v1/admin/users/{userId}/reactivate     → reactivate user (Story 6.5)
 	// GET /api/v1/compliance/access-requests is owned by main.go above (Story 5.4 live handler).
-	rolesRepo := apihandler.NewRoleOverrideRepo(bootstrapDB) // Story 6.6
-	roomsRepo := apihandler.NewRoomRepo(bootstrapDB)          // Story 6.7
+	rolesRepo := apihandler.NewRoleOverrideRepo(bootstrapDB)        // Story 6.6
+	roomsRepo := apihandler.NewRoomRepo(bootstrapDB)                // Story 6.7
+	roomDefaultsRepo := apihandler.NewRoomDefaultsRepo(bootstrapDB) // Story 6.8
 	adminSrv := &apihandler.AdminServer{
 		DB:           bootstrapDB,
 		CoreClient:   coreClient.CoreServiceClient(),
@@ -1129,6 +1130,7 @@ func main() {
 		Deactivation: apihandler.NewDeactivationRepo(bootstrapDB),             // Story 6.5
 		Roles:        rolesRepo,                                               // Story 6.6
 		Rooms:        roomsRepo,                                               // Story 6.7
+		RoomDefaults: roomDefaultsRepo,                                        // Story 6.8
 	}
 	// jwtWithStatusCheck is defined early (after jwtMiddleware, line ~445) and wraps ALL routes.
 	// rolesRepo satisfies RoleOverrideChecker for RequireRole DB-override path (Story 6.6).

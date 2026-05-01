@@ -413,6 +413,28 @@ defmodule Nebu.Room.DB do
 
   defp decode_token(_), do: :empty
 
+  @sql_load_room_settings """
+  SELECT COALESCE(max_members, 0) FROM rooms WHERE room_id = $1
+  """
+
+  @doc """
+  Loads mutable room settings (currently only max_members) for the given `room_id`.
+
+  Returns `{:ok, max_members}` where max_members=0 means no limit.
+  Returns `{:error, reason}` on DB error.
+
+  Story 6.8: Called by Room.Server.init/1 to recover max_members after a GenServer restart.
+  Fail-open: if this call fails, the GenServer defaults to 0 (no limit).
+  """
+  @spec load_room_settings(String.t()) :: {:ok, non_neg_integer()} | {:error, term()}
+  def load_room_settings(room_id) do
+    case Ecto.Adapters.SQL.query(Nebu.Repo, @sql_load_room_settings, [room_id]) do
+      {:ok, %{rows: [[max_members]]}} -> {:ok, max_members}
+      {:ok, %{rows: []}} -> {:ok, 0}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   @doc """
   Returns the room name from the most recent m.room.name event, or {:error, :not_found}.
 

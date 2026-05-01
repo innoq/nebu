@@ -126,6 +126,9 @@ func (m *mockCoreClient) ListPublicRooms(_ context.Context, _ *pb.ListPublicRoom
 func (m *mockCoreClient) InvalidateUserSessions(_ context.Context, _ *pb.InvalidateUserSessionsRequest, _ ...grpc.CallOption) (*pb.InvalidateUserSessionsResponse, error) {
 	panic("unexpected call: InvalidateUserSessions")
 }
+func (m *mockCoreClient) UpdateRoomSettings(_ context.Context, _ *pb.UpdateRoomSettingsRequest, _ ...grpc.CallOption) (*pb.UpdateRoomSettingsResponse, error) {
+	panic("unexpected call: UpdateRoomSettings")
+}
 
 // ─── AC11 Test 5: LogEvent_Success ───────────────────────────────────────────
 //

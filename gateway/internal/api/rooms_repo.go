@@ -1,7 +1,7 @@
 //go:build go1.22
 
 // Package api provides the RoomRepository interface and its PostgreSQL implementation
-// for the Admin Room List + Get API (Story 6.7).
+// for the Admin Room List + Get API (Story 6.7) and Room Settings Update API (Story 6.8).
 package api
 
 import (
@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // AdminRoom is the list-view representation of a room for the Admin API.
@@ -33,6 +34,15 @@ type AdminRoomDetail struct {
 	PowerLevelsJSON string `json:"power_levels_json"`
 }
 
+// RoomPatch holds the optional fields for a PATCH /admin/rooms/{roomId} request.
+// Only non-nil fields are applied to the rooms table.
+type RoomPatch struct {
+	MaxMembers *int
+	Visibility *string
+	Name       *string
+	Topic      *string
+}
+
 // RoomRepository abstracts database access for Admin room queries.
 // The interface is defined here so that unit tests can provide a mock implementation
 // without a real PostgreSQL connection.
@@ -42,9 +52,12 @@ type AdminRoomDetail struct {
 //	(rooms, total, nextCursor, error)
 //
 // GetRoom returns (nil, nil) when the room does not exist.
+// UpdateRoom applies the non-nil fields in patch and returns the updated room.
+// Returns (nil, nil) if the room does not exist.
 type RoomRepository interface {
 	ListRooms(ctx context.Context, afterID, afterCreatedAt string, limit int, search, status string) ([]AdminRoom, int, string, error)
 	GetRoom(ctx context.Context, roomID string) (*AdminRoomDetail, error)
+	UpdateRoom(ctx context.Context, roomID string, patch RoomPatch) (*AdminRoomDetail, error)
 }
 
 // dbRoomRepo is the real PostgreSQL implementation of RoomRepository.
@@ -234,4 +247,52 @@ func (r *dbRoomRepo) GetRoom(ctx context.Context, roomID string) (*AdminRoomDeta
 		MessageCount:    messageCount,
 		PowerLevelsJSON: powerLevels,
 	}, nil
+}
+
+// UpdateRoom applies only the non-nil fields in patch to the rooms table, then
+// returns the full updated AdminRoomDetail by calling GetRoom.
+//
+// Returns (nil, nil) when the room does not exist (UPDATE affects 0 rows).
+// When patch has no non-nil fields (empty patch), skips UPDATE and falls through
+// to GetRoom — the result is the current room state, or (nil, nil) if not found.
+func (r *dbRoomRepo) UpdateRoom(ctx context.Context, roomID string, patch RoomPatch) (*AdminRoomDetail, error) {
+	setClauses := []string{}
+	args := []any{roomID} // $1 = room_id for WHERE
+	n := 2
+
+	if patch.MaxMembers != nil {
+		setClauses = append(setClauses, fmt.Sprintf("max_members = $%d", n))
+		args = append(args, *patch.MaxMembers)
+		n++
+	}
+	if patch.Visibility != nil {
+		setClauses = append(setClauses, fmt.Sprintf("visibility = $%d", n))
+		args = append(args, *patch.Visibility)
+		n++
+	}
+	if patch.Name != nil {
+		setClauses = append(setClauses, fmt.Sprintf("name = $%d", n))
+		args = append(args, *patch.Name)
+		n++
+	}
+	if patch.Topic != nil {
+		setClauses = append(setClauses, fmt.Sprintf("topic = $%d", n))
+		args = append(args, *patch.Topic)
+		n++
+	}
+
+	if len(setClauses) > 0 {
+		q := fmt.Sprintf("UPDATE rooms SET %s WHERE room_id = $1", strings.Join(setClauses, ", "))
+		result, err := r.db.ExecContext(ctx, q, args...)
+		if err != nil {
+			return nil, fmt.Errorf("UpdateRoom: %w", err)
+		}
+		rowsAffected, _ := result.RowsAffected()
+		if rowsAffected == 0 {
+			return nil, nil // room not found
+		}
+	}
+
+	// Fetch updated state (also handles the no-op case and not-found when no SET clauses).
+	return r.GetRoom(ctx, roomID)
 }
