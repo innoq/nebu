@@ -141,4 +141,21 @@ defmodule Nebu.Room.DBBehaviour do
   """
   @callback load_room_settings(room_id :: String.t()) ::
               {:ok, non_neg_integer()} | {:error, term()}
+
+  @doc """
+  Returns the current archival status of `room_id` from the `rooms` table.
+
+  Returns `{:ok, "active"}` for active (non-archived) rooms.
+  Returns `{:ok, "archived"}` for archived rooms.
+  Returns `{:error, :not_found}` when the room does not exist in the table.
+  Returns `{:error, reason}` on DB error.
+
+  Story 6.9: Called by Room.Server.init/1 before initialising state. When the result
+  is `{:ok, "archived"}`, init/1 returns `{:stop, :normal}` so that Horde's `:transient`
+  restart strategy does not restart the GenServer, preventing a restart loop. Any
+  other return value (including `{:error, :not_found}` and DB errors) falls through
+  to the normal init flow.
+  """
+  @callback get_room_status(room_id :: String.t()) ::
+              {:ok, String.t()} | {:error, :not_found | term()}
 end

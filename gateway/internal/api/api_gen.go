@@ -125,6 +125,17 @@ type AdminRoomObject struct {
 	Visibility    string `json:"visibility"`
 }
 
+// ArchiveRoomRequest defines model for ArchiveRoomRequest.
+type ArchiveRoomRequest struct {
+	Reason string `json:"reason"`
+}
+
+// ArchiveRoomResponse defines model for ArchiveRoomResponse.
+type ArchiveRoomResponse struct {
+	RoomId string `json:"room_id"`
+	Status string `json:"status"`
+}
+
 // AssignUserRoleRequest defines model for AssignUserRoleRequest.
 type AssignUserRoleRequest struct {
 	Action AssignUserRoleRequestAction `json:"action"`
@@ -196,18 +207,10 @@ type RoomListResponse struct {
 	} `json:"meta"`
 }
 
-// RoomDetailResponse defines model for RoomDetailResponse.
-type RoomDetailResponse struct {
-	Data map[string]interface{} `json:"data"`
-}
-
-// RoomListResponse defines model for RoomListResponse.
-type RoomListResponse struct {
-	Data []map[string]interface{} `json:"data"`
-	Meta struct {
-		NextCursor *string `json:"next_cursor,omitempty"`
-		Total      int     `json:"total"`
-	} `json:"meta"`
+// UnarchiveRoomResponse defines model for UnarchiveRoomResponse.
+type UnarchiveRoomResponse struct {
+	RoomId string `json:"room_id"`
+	Status string `json:"status"`
 }
 
 // UserDetailResponse defines model for UserDetailResponse.
@@ -256,6 +259,9 @@ type PutAdminRoomDefaultsJSONRequestBody = PutRoomDefaultsRequest
 // PatchAdminRoomJSONRequestBody defines body for PatchAdminRoom for application/json ContentType.
 type PatchAdminRoomJSONRequestBody = PatchAdminRoomRequest
 
+// ArchiveAdminRoomJSONRequestBody defines body for ArchiveAdminRoom for application/json ContentType.
+type ArchiveAdminRoomJSONRequestBody = ArchiveRoomRequest
+
 // DeactivateAdminUserJSONRequestBody defines body for DeactivateAdminUser for application/json ContentType.
 type DeactivateAdminUserJSONRequestBody = DeactivateUserRequest
 
@@ -282,6 +288,12 @@ type ServerInterface interface {
 	// Update room settings (instance_admin required)
 	// (PATCH /admin/rooms/{roomId})
 	PatchAdminRoom(w http.ResponseWriter, r *http.Request, roomId string)
+	// Archive a room (instance_admin required)
+	// (POST /admin/rooms/{roomId}/archive)
+	ArchiveAdminRoom(w http.ResponseWriter, r *http.Request, roomId string)
+	// Unarchive a room (instance_admin required)
+	// (POST /admin/rooms/{roomId}/unarchive)
+	UnarchiveAdminRoom(w http.ResponseWriter, r *http.Request, roomId string)
 	// List users (instance_admin required)
 	// (GET /admin/users)
 	ListAdminUsers(w http.ResponseWriter, r *http.Request, params ListAdminUsersParams)
@@ -507,6 +519,70 @@ func (siw *ServerInterfaceWrapper) PatchAdminRoom(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PatchAdminRoom(w, r, roomId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ArchiveAdminRoom operation middleware
+func (siw *ServerInterfaceWrapper) ArchiveAdminRoom(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "roomId" -------------
+	var roomId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "roomId", r.PathValue("roomId"), &roomId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "roomId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ArchiveAdminRoom(w, r, roomId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UnarchiveAdminRoom operation middleware
+func (siw *ServerInterfaceWrapper) UnarchiveAdminRoom(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "roomId" -------------
+	var roomId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "roomId", r.PathValue("roomId"), &roomId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "roomId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UnarchiveAdminRoom(w, r, roomId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -869,6 +945,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/admin/rooms", wrapper.ListAdminRooms)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/admin/rooms/{roomId}", wrapper.GetAdminRoom)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/admin/rooms/{roomId}", wrapper.PatchAdminRoom)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/admin/rooms/{roomId}/archive", wrapper.ArchiveAdminRoom)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/admin/rooms/{roomId}/unarchive", wrapper.UnarchiveAdminRoom)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/admin/users", wrapper.ListAdminUsers)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/admin/users/{userId}", wrapper.GetAdminUser)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/admin/users/{userId}/deactivate", wrapper.DeactivateAdminUser)
@@ -1125,6 +1203,137 @@ type PatchAdminRoom501Response struct {
 }
 
 func (response PatchAdminRoom501Response) VisitPatchAdminRoomResponse(w http.ResponseWriter) error {
+	w.WriteHeader(501)
+	return nil
+}
+
+type ArchiveAdminRoomRequestObject struct {
+	RoomId string `json:"roomId"`
+	Body   *ArchiveAdminRoomJSONRequestBody
+}
+
+type ArchiveAdminRoomResponseObject interface {
+	VisitArchiveAdminRoomResponse(w http.ResponseWriter) error
+}
+
+type ArchiveAdminRoom200JSONResponse ArchiveRoomResponse
+
+func (response ArchiveAdminRoom200JSONResponse) VisitArchiveAdminRoomResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ArchiveAdminRoom400JSONResponse EmptyResponse
+
+func (response ArchiveAdminRoom400JSONResponse) VisitArchiveAdminRoomResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ArchiveAdminRoom404JSONResponse EmptyResponse
+
+func (response ArchiveAdminRoom404JSONResponse) VisitArchiveAdminRoomResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ArchiveAdminRoom409JSONResponse EmptyResponse
+
+func (response ArchiveAdminRoom409JSONResponse) VisitArchiveAdminRoomResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ArchiveAdminRoom501Response struct {
+}
+
+func (response ArchiveAdminRoom501Response) VisitArchiveAdminRoomResponse(w http.ResponseWriter) error {
+	w.WriteHeader(501)
+	return nil
+}
+
+type UnarchiveAdminRoomRequestObject struct {
+	RoomId string `json:"roomId"`
+}
+
+type UnarchiveAdminRoomResponseObject interface {
+	VisitUnarchiveAdminRoomResponse(w http.ResponseWriter) error
+}
+
+type UnarchiveAdminRoom200JSONResponse UnarchiveRoomResponse
+
+func (response UnarchiveAdminRoom200JSONResponse) VisitUnarchiveAdminRoomResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UnarchiveAdminRoom404JSONResponse EmptyResponse
+
+func (response UnarchiveAdminRoom404JSONResponse) VisitUnarchiveAdminRoomResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UnarchiveAdminRoom409JSONResponse EmptyResponse
+
+func (response UnarchiveAdminRoom409JSONResponse) VisitUnarchiveAdminRoomResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UnarchiveAdminRoom501Response struct {
+}
+
+func (response UnarchiveAdminRoom501Response) VisitUnarchiveAdminRoomResponse(w http.ResponseWriter) error {
 	w.WriteHeader(501)
 	return nil
 }
@@ -1483,6 +1692,12 @@ type StrictServerInterface interface {
 	// Update room settings (instance_admin required)
 	// (PATCH /admin/rooms/{roomId})
 	PatchAdminRoom(ctx context.Context, request PatchAdminRoomRequestObject) (PatchAdminRoomResponseObject, error)
+	// Archive a room (instance_admin required)
+	// (POST /admin/rooms/{roomId}/archive)
+	ArchiveAdminRoom(ctx context.Context, request ArchiveAdminRoomRequestObject) (ArchiveAdminRoomResponseObject, error)
+	// Unarchive a room (instance_admin required)
+	// (POST /admin/rooms/{roomId}/unarchive)
+	UnarchiveAdminRoom(ctx context.Context, request UnarchiveAdminRoomRequestObject) (UnarchiveAdminRoomResponseObject, error)
 	// List users (instance_admin required)
 	// (GET /admin/users)
 	ListAdminUsers(ctx context.Context, request ListAdminUsersRequestObject) (ListAdminUsersResponseObject, error)
@@ -1699,6 +1914,65 @@ func (sh *strictHandler) PatchAdminRoom(w http.ResponseWriter, r *http.Request, 
 	}
 }
 
+// ArchiveAdminRoom operation middleware
+func (sh *strictHandler) ArchiveAdminRoom(w http.ResponseWriter, r *http.Request, roomId string) {
+	var request ArchiveAdminRoomRequestObject
+
+	request.RoomId = roomId
+
+	var body ArchiveAdminRoomJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ArchiveAdminRoom(ctx, request.(ArchiveAdminRoomRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ArchiveAdminRoom")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ArchiveAdminRoomResponseObject); ok {
+		if err := validResponse.VisitArchiveAdminRoomResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UnarchiveAdminRoom operation middleware
+func (sh *strictHandler) UnarchiveAdminRoom(w http.ResponseWriter, r *http.Request, roomId string) {
+	var request UnarchiveAdminRoomRequestObject
+
+	request.RoomId = roomId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UnarchiveAdminRoom(ctx, request.(UnarchiveAdminRoomRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UnarchiveAdminRoom")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UnarchiveAdminRoomResponseObject); ok {
+		if err := validResponse.VisitUnarchiveAdminRoomResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListAdminUsers operation middleware
 func (sh *strictHandler) ListAdminUsers(w http.ResponseWriter, r *http.Request, params ListAdminUsersParams) {
 	var request ListAdminUsersRequestObject
@@ -1896,34 +2170,36 @@ func (sh *strictHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

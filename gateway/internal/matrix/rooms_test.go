@@ -1502,3 +1502,197 @@ func TestPutSetRoomState_RoomNotFound(t *testing.T) {
 		t.Errorf("expected errcode M_NOT_FOUND, got %s", errResp.ErrCode)
 	}
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Story 6.9: PUT send-event on archived room → 403 M_ROOM_ARCHIVED
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// Covered Acceptance Criteria:
+//   - AC#4  Gateway's PutSendEvent checks rooms.status before calling Core.SendEvent
+//   - AC#5  Unit test: PUT send-event on archived room → 403 M_ROOM_ARCHIVED
+//
+// RED PHASE — these tests fail until:
+//   - RoomStatusChecker interface is defined in gateway/internal/matrix/rooms.go
+//   - SendEventConfig gains StatusChecker RoomStatusChecker field
+//   - SendEventHandler.PutSendEvent checks status before gRPC call
+//   - If status == "archived" → 403 {"errcode":"M_ROOM_ARCHIVED","error":"Room is archived"}
+
+// mockRoomStatusChecker implements RoomStatusChecker for SendEvent tests.
+// Will not compile until RoomStatusChecker interface is defined in rooms.go.
+type mockRoomStatusChecker struct {
+	status string
+	err    error
+}
+
+func (m *mockRoomStatusChecker) GetRoomStatus(_ context.Context, _ string) (string, error) {
+	return m.status, m.err
+}
+
+// buildSendEventHandlerWithStatusChecker builds a SendEventHandler wired with
+// both a mock SendEventCoreClient and a mock RoomStatusChecker.
+//
+// RED: fails until SendEventConfig.StatusChecker field is added.
+func buildSendEventHandlerWithStatusChecker(
+	coreMock *mockSendEventCoreClient,
+	statusMock *mockRoomStatusChecker,
+) *SendEventHandler {
+	return NewSendEventHandler(SendEventConfig{
+		CoreClient:    coreMock,
+		ServerName:    "test.local",
+		StatusChecker: statusMock, // NEW field — fails until SendEventConfig is extended
+	})
+}
+
+// TestPutSendEvent_ArchivedRoom_Returns403 covers AC#4 + AC#5 (test 7) [P0]:
+// When StatusChecker.GetRoomStatus returns "archived", PutSendEvent must return
+// 403 with errcode M_ROOM_ARCHIVED and must NOT call Core.SendEvent gRPC.
+func TestPutSendEvent_ArchivedRoom_Returns403(t *testing.T) {
+	coreMock := &mockSendEventCoreClient{
+		resp: &pb.SendEventResponse{EventId: "$should-not-be-returned"},
+	}
+	statusMock := &mockRoomStatusChecker{status: "archived"}
+
+	handler := buildSendEventHandlerWithStatusChecker(coreMock, statusMock)
+
+	oidcSrv, privateKey := setupOIDCServer(t)
+	t.Cleanup(oidcSrv.Close)
+
+	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
+	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+		http.HandlerFunc(handler.PutSendEvent),
+	)
+
+	mux := http.NewServeMux()
+	mux.Handle("PUT /_matrix/client/v3/rooms/{roomId}/send/{eventType}/{txnId}", authedHandler)
+
+	token := signJWT(t, oidcSrv.URL, privateKey, time.Now().Add(time.Hour), nil)
+
+	req := httptest.NewRequest(http.MethodPut,
+		"/_matrix/client/v3/rooms/!roomA:server/send/m.room.message/txn1",
+		strings.NewReader(`{"msgtype":"m.text","body":"Hello"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("[AC#4] expected status 403 for archived room, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var errResp struct {
+		ErrCode string `json:"errcode"`
+		Error   string `json:"error"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("[AC#4] response is not valid JSON: %v", err)
+	}
+	if errResp.ErrCode != "M_ROOM_ARCHIVED" {
+		t.Errorf("[AC#4] expected errcode M_ROOM_ARCHIVED, got %q", errResp.ErrCode)
+	}
+	if errResp.Error == "" {
+		t.Error("[AC#4] expected non-empty error message in response")
+	}
+
+	// Core.SendEvent must NOT have been called on archived room
+	if coreMock.capturedReq != nil {
+		t.Error("[AC#4] Core.SendEvent must NOT be called when room is archived")
+	}
+}
+
+// TestPutSendEvent_ActiveRoom_CallsCore covers AC#4 [P1]:
+// When StatusChecker.GetRoomStatus returns "active", PutSendEvent proceeds
+// normally and calls Core.SendEvent gRPC.
+func TestPutSendEvent_ActiveRoom_CallsCore(t *testing.T) {
+	coreMock := &mockSendEventCoreClient{
+		resp: &pb.SendEventResponse{EventId: "$active-event-id"},
+	}
+	statusMock := &mockRoomStatusChecker{status: "active"}
+
+	handler := buildSendEventHandlerWithStatusChecker(coreMock, statusMock)
+
+	oidcSrv, privateKey := setupOIDCServer(t)
+	t.Cleanup(oidcSrv.Close)
+
+	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
+	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+		http.HandlerFunc(handler.PutSendEvent),
+	)
+
+	mux := http.NewServeMux()
+	mux.Handle("PUT /_matrix/client/v3/rooms/{roomId}/send/{eventType}/{txnId}", authedHandler)
+
+	token := signJWT(t, oidcSrv.URL, privateKey, time.Now().Add(time.Hour), nil)
+
+	req := httptest.NewRequest(http.MethodPut,
+		"/_matrix/client/v3/rooms/!roomA:server/send/m.room.message/txn2",
+		strings.NewReader(`{"msgtype":"m.text","body":"Hello"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	// Active room: Core.SendEvent must be called and return 200
+	if w.Code != http.StatusOK {
+		t.Fatalf("[AC#4] expected status 200 for active room, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	// Core must have been invoked
+	if coreMock.capturedReq == nil {
+		t.Error("[AC#4] expected Core.SendEvent to be called for active room")
+	}
+}
+
+// TestPutSendEvent_StatusCheckerError_FailOpen covers AC#4 [P1]:
+// When StatusChecker.GetRoomStatus returns an error, PutSendEvent must fail-open
+// (not block the request) and proceed to call Core.SendEvent.
+func TestPutSendEvent_StatusCheckerError_FailOpen(t *testing.T) {
+	coreMock := &mockSendEventCoreClient{
+		resp: &pb.SendEventResponse{EventId: "$fail-open-event"},
+	}
+	// Simulate a DB error on status check
+	statusMock := &mockRoomStatusChecker{
+		status: "",
+		err:    &testArchiveStatusError{msg: "db connection timeout"},
+	}
+
+	handler := buildSendEventHandlerWithStatusChecker(coreMock, statusMock)
+
+	oidcSrv, privateKey := setupOIDCServer(t)
+	t.Cleanup(oidcSrv.Close)
+
+	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
+	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+		http.HandlerFunc(handler.PutSendEvent),
+	)
+
+	mux := http.NewServeMux()
+	mux.Handle("PUT /_matrix/client/v3/rooms/{roomId}/send/{eventType}/{txnId}", authedHandler)
+
+	token := signJWT(t, oidcSrv.URL, privateKey, time.Now().Add(time.Hour), nil)
+
+	req := httptest.NewRequest(http.MethodPut,
+		"/_matrix/client/v3/rooms/!roomA:server/send/m.room.message/txn3",
+		strings.NewReader(`{"msgtype":"m.text","body":"Hello"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	// Fail-open: status check error must not block the request
+	if w.Code != http.StatusOK {
+		t.Fatalf("[AC#4] expected 200 (fail-open on status check error), got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	// Core.SendEvent must still have been called
+	if coreMock.capturedReq == nil {
+		t.Error("[AC#4] Core.SendEvent must be called even when status check fails (fail-open)")
+	}
+}
+
+// testArchiveStatusError is a minimal error for status checker error simulation.
+type testArchiveStatusError struct{ msg string }
+
+func (e *testArchiveStatusError) Error() string { return e.msg }

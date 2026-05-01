@@ -435,6 +435,29 @@ defmodule Nebu.Room.DB do
     end
   end
 
+  # room_id is the PRIMARY KEY of the rooms table — no LIMIT needed.
+  @sql_get_room_status "SELECT COALESCE(status, 'active') FROM rooms WHERE room_id = $1"
+
+  @doc """
+  Returns the archival status of `room_id` from the `rooms` table.
+
+  Returns `{:ok, "active"}` for active (non-archived) rooms.
+  Returns `{:ok, "archived"}` for archived rooms.
+  Returns `{:error, :not_found}` when the room does not exist in the table.
+  Returns `{:error, reason}` on DB error.
+
+  Story 6.9: Called by Room.Server.init/1 before initialising state.
+  When the result is `{:ok, "archived"}`, init/1 returns `{:stop, :normal}`.
+  """
+  @spec get_room_status(String.t()) :: {:ok, String.t()} | {:error, :not_found | term()}
+  def get_room_status(room_id) do
+    case Ecto.Adapters.SQL.query(Nebu.Repo, @sql_get_room_status, [room_id]) do
+      {:ok, %{rows: [[status]]}} -> {:ok, status}
+      {:ok, %{rows: []}} -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   @doc """
   Returns the room name from the most recent m.room.name event, or {:error, :not_found}.
 

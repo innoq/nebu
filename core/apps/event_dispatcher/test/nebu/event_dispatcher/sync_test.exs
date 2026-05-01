@@ -198,6 +198,9 @@ defmodule Nebu.EventDispatcher.SyncTest do
 
     # Story 6.8: load_room_settings/1 returns {:ok, 0} (no limit) for unit tests.
     def load_room_settings(_room_id), do: {:ok, 0}
+
+    # Story 6.9: get_room_status/1 — returns {:ok, "active"} so normal rooms start correctly.
+    def get_room_status(_room_id), do: {:ok, "active"}
   end
 
   # ─── SyncTestFakeInviteDB ────────────────────────────────────────────────────
@@ -750,6 +753,8 @@ defmodule Nebu.EventDispatcher.SyncTest do
     defdelegate get_room_name(room_id), to: SyncTestFakeDB
     # Story 6.8: delegate load_room_settings/1 to SyncTestFakeDB (returns {:ok, 0}).
     defdelegate load_room_settings(room_id), to: SyncTestFakeDB
+    # Story 6.9: delegate get_room_status/1 to SyncTestFakeDB (returns {:ok, "active"}).
+    defdelegate get_room_status(room_id), to: SyncTestFakeDB
 
     # ── New: fetch_events_since/3 (Story 4-15) ────────────────────────────────
     #

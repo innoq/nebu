@@ -396,6 +396,15 @@ type SendEventCoreClient interface {
 	SendEvent(ctx context.Context, req *pb.SendEventRequest) (*pb.SendEventResponse, error)
 }
 
+// RoomStatusChecker allows SendEventHandler to check room archive status before
+// forwarding an event to Core. Implemented by dbRoomRepo (via GetRoomStatus method).
+// Injected via SendEventConfig.StatusChecker.
+//
+// Story 6.9: AC#4 — PutSendEvent checks rooms.status before calling Core.SendEvent.
+type RoomStatusChecker interface {
+	GetRoomStatus(ctx context.Context, roomID string) (string, error)
+}
+
 // sendEventResponse is the JSON response for a successful event send.
 type sendEventResponse struct {
 	EventID string `json:"event_id"`
@@ -403,21 +412,24 @@ type sendEventResponse struct {
 
 // SendEventHandler handles PUT /_matrix/client/v3/rooms/{roomId}/send/{eventType}/{txnId}.
 type SendEventHandler struct {
-	coreClient SendEventCoreClient
-	serverName string
+	coreClient    SendEventCoreClient
+	serverName    string
+	statusChecker RoomStatusChecker // Story 6.9: archive status check (may be nil)
 }
 
 // SendEventConfig holds dependencies for NewSendEventHandler.
 type SendEventConfig struct {
-	CoreClient SendEventCoreClient
-	ServerName string
+	CoreClient    SendEventCoreClient
+	ServerName    string
+	StatusChecker RoomStatusChecker // Story 6.9: inject roomsRepo; nil = skip check
 }
 
 // NewSendEventHandler constructs a SendEventHandler from the provided config.
 func NewSendEventHandler(cfg SendEventConfig) *SendEventHandler {
 	return &SendEventHandler{
-		coreClient: cfg.CoreClient,
-		serverName: cfg.ServerName,
+		coreClient:    cfg.CoreClient,
+		serverName:    cfg.ServerName,
+		statusChecker: cfg.StatusChecker,
 	}
 }
 
@@ -438,6 +450,21 @@ func (h *SendEventHandler) PutSendEvent(w http.ResponseWriter, r *http.Request) 
 	userID, _ := r.Context().Value(middleware.ContextKeyUserID).(string)
 	systemRole, _ := r.Context().Value(middleware.ContextKeySystemRole).(string)
 	grpcCtx := coregrpc.WithUserMetadata(r.Context(), userID, systemRole)
+
+	// Story 6.9 AC#4: check room archive status BEFORE calling Core.SendEvent.
+	// Fail-fast: archived rooms must not accept new events.
+	// Fail-open on DB error (log and proceed) — Core will return NOT_FOUND for truly missing rooms.
+	if h.statusChecker != nil {
+		roomStatus, statusErr := h.statusChecker.GetRoomStatus(r.Context(), roomID)
+		if statusErr != nil {
+			slog.Warn("PutSendEvent: GetRoomStatus failed — proceeding (fail-open)",
+				"room_id", roomID, "err", statusErr)
+		} else if roomStatus == "archived" {
+			writeMatrixError(w, http.StatusForbidden, "M_ROOM_ARCHIVED", "Room is archived")
+			return
+		}
+		// roomStatus == "" means room not found — let Core.SendEvent return NOT_FOUND.
+	}
 
 	var content map[string]any
 	if err := json.NewDecoder(r.Body).Decode(&content); err != nil {

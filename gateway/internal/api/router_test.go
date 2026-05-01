@@ -196,3 +196,54 @@ func TestRegisterAdminRoutes_JWTRunsBeforeRole(t *testing.T) {
 		t.Error("got 403: role not visible to RequireRole — possible middleware order bug")
 	}
 }
+
+// ── Story 6.9: Archive / Unarchive routes registered ─────────────────────────
+
+// TestRegisterAdminRoutes_ArchiveRoom_RouteRegistered covers AC#5 (test 8) [P0]:
+// POST /api/v1/admin/rooms/{roomId}/archive must be registered in RegisterAdminRoutes.
+// When AdminServer.Rooms is nil, the handler must return 501 (not 404).
+// A 404 means the route is absent.
+//
+// RED: fails until POST /api/v1/admin/rooms/{roomId}/archive is registered in router.go.
+func TestRegisterAdminRoutes_ArchiveRoom_RouteRegistered(t *testing.T) {
+	mux := http.NewServeMux()
+	api.RegisterAdminRoutes(mux, &api.AdminServer{}, noopJWTMiddleware, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/rooms/someRoom/archive",
+		nil)
+	req.Header.Set("X-Test-System-Role", "instance_admin")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code == http.StatusNotFound {
+		t.Error("[AC#5] POST /api/v1/admin/rooms/{roomId}/archive is not registered — got 404")
+	}
+	// With nil Rooms, must return 501 (not panic, not 500)
+	if w.Code != http.StatusNotImplemented {
+		t.Errorf("[AC#5] expected 501 for nil Rooms on archive route, got %d", w.Code)
+	}
+}
+
+// TestRegisterAdminRoutes_UnarchiveRoom_RouteRegistered covers AC#5 (test 9) [P0]:
+// POST /api/v1/admin/rooms/{roomId}/unarchive must be registered in RegisterAdminRoutes.
+// When AdminServer.Rooms is nil, the handler must return 501 (not 404).
+//
+// RED: fails until POST /api/v1/admin/rooms/{roomId}/unarchive is registered in router.go.
+func TestRegisterAdminRoutes_UnarchiveRoom_RouteRegistered(t *testing.T) {
+	mux := http.NewServeMux()
+	api.RegisterAdminRoutes(mux, &api.AdminServer{}, noopJWTMiddleware, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/rooms/someRoom/unarchive", nil)
+	req.Header.Set("X-Test-System-Role", "instance_admin")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code == http.StatusNotFound {
+		t.Error("[AC#5] POST /api/v1/admin/rooms/{roomId}/unarchive is not registered — got 404")
+	}
+	// With nil Rooms, must return 501 (not panic, not 500)
+	if w.Code != http.StatusNotImplemented {
+		t.Errorf("[AC#5] expected 501 for nil Rooms on unarchive route, got %d", w.Code)
+	}
+}

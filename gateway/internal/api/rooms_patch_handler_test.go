@@ -97,6 +97,18 @@ func (m *mockRoomRepositoryWithUpdate) UpdateRoom(
 	return m.updateResult, nil
 }
 
+func (m *mockRoomRepositoryWithUpdate) ArchiveRoom(_ context.Context, _ string, _ string) (*api.ArchiveResult, error) {
+	return nil, nil
+}
+
+func (m *mockRoomRepositoryWithUpdate) UnarchiveRoom(_ context.Context, _ string) (*api.UnarchiveResult, error) {
+	return nil, nil
+}
+
+func (m *mockRoomRepositoryWithUpdate) GetRoomStatus(_ context.Context, _ string) (string, error) {
+	return "active", nil
+}
+
 // mockCoreClientForRoomPatch captures WriteAuditLog and UpdateRoomSettings calls.
 // Embeds pb.CoreServiceClient; only used methods are overridden.
 type mockCoreClientForRoomPatch struct {

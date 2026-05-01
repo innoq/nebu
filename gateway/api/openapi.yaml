@@ -206,6 +206,34 @@ components:
               type: integer
             default_visibility:
               type: string
+    ArchiveRoomRequest:
+      type: object
+      required:
+        - reason
+      properties:
+        reason:
+          type: string
+          minLength: 10
+    ArchiveRoomResponse:
+      type: object
+      required:
+        - room_id
+        - status
+      properties:
+        room_id:
+          type: string
+        status:
+          type: string
+    UnarchiveRoomResponse:
+      type: object
+      required:
+        - room_id
+        - status
+      properties:
+        room_id:
+          type: string
+        status:
+          type: string
 security:
   - BearerAuth: []
 paths:
@@ -516,6 +544,80 @@ paths:
                 $ref: "#/components/schemas/RoomDefaultsResponse"
         "400":
           description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "501":
+          description: Not implemented
+  /admin/rooms/{roomId}/archive:
+    post:
+      operationId: ArchiveAdminRoom
+      summary: Archive a room (instance_admin required)
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ArchiveRoomRequest"
+      responses:
+        "200":
+          description: Room archived
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArchiveRoomResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "404":
+          description: Room not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "409":
+          description: Room already archived
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "501":
+          description: Not implemented
+  /admin/rooms/{roomId}/unarchive:
+    post:
+      operationId: UnarchiveAdminRoom
+      summary: Unarchive a room (instance_admin required)
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Room unarchived
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnarchiveRoomResponse"
+        "404":
+          description: Room not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "409":
+          description: Room not archived
           content:
             application/json:
               schema:

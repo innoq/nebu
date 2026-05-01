@@ -88,6 +88,17 @@ func (m *mockRoomRepository) UpdateRoom(
 	return m.getResult, m.getErr
 }
 
+// Story 6.9: stub methods required by the extended RoomRepository interface.
+func (m *mockRoomRepository) ArchiveRoom(_ context.Context, _ string, _ string) (*api.ArchiveResult, error) {
+	return nil, nil
+}
+func (m *mockRoomRepository) UnarchiveRoom(_ context.Context, _ string) (*api.UnarchiveResult, error) {
+	return nil, nil
+}
+func (m *mockRoomRepository) GetRoomStatus(_ context.Context, _ string) (string, error) {
+	return "active", nil
+}
+
 // noopJWTMiddlewareForRooms injects an instance_admin role and a test actor
 // user ID into the request context, simulating the real JWT middleware.
 func noopJWTMiddlewareForRooms(next http.Handler) http.Handler {

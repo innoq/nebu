@@ -48,6 +48,8 @@ const (
 	CoreService_GetEventContext_FullMethodName        = "/core.CoreService/GetEventContext"
 	CoreService_InvalidateUserSessions_FullMethodName = "/core.CoreService/InvalidateUserSessions"
 	CoreService_UpdateRoomSettings_FullMethodName     = "/core.CoreService/UpdateRoomSettings"
+	CoreService_ArchiveRoom_FullMethodName            = "/core.CoreService/ArchiveRoom"
+	CoreService_UnarchiveRoom_FullMethodName          = "/core.CoreService/UnarchiveRoom"
 )
 
 // CoreServiceClient is the client API for CoreService service.
@@ -117,6 +119,15 @@ type CoreServiceClient interface {
 	// max_members = 0 means "no limit". Go gateway sends this after updating rooms table.
 	// Elixir Core updates in-memory GenServer state; no-op if GenServer not running (will load from DB on next start).
 	UpdateRoomSettings(ctx context.Context, in *UpdateRoomSettingsRequest, opts ...grpc.CallOption) (*UpdateRoomSettingsResponse, error)
+	// ArchiveRoom — Story 6.9: Admin API terminates the Room GenServer for an archived room.
+	// The Go gateway has already updated rooms.status='archived' in DB before calling this.
+	// Core stops the GenServer via Horde.DynamicSupervisor.terminate_child/2.
+	// Returns ok=true in all cases (even if GenServer was already stopped).
+	ArchiveRoom(ctx context.Context, in *ArchiveRoomRequest, opts ...grpc.CallOption) (*ArchiveRoomResponse, error)
+	// UnarchiveRoom — Story 6.9: Admin API restarts the Room GenServer for an unarchived room.
+	// The Go gateway has already updated rooms.status='active' in DB before calling this.
+	// Core restarts the GenServer via RoomSupervisor.start_room/1.
+	UnarchiveRoom(ctx context.Context, in *UnarchiveRoomRequest, opts ...grpc.CallOption) (*UnarchiveRoomResponse, error)
 }
 
 type coreServiceClient struct {
@@ -426,6 +437,26 @@ func (c *coreServiceClient) UpdateRoomSettings(ctx context.Context, in *UpdateRo
 	return out, nil
 }
 
+func (c *coreServiceClient) ArchiveRoom(ctx context.Context, in *ArchiveRoomRequest, opts ...grpc.CallOption) (*ArchiveRoomResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ArchiveRoomResponse)
+	err := c.cc.Invoke(ctx, CoreService_ArchiveRoom_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) UnarchiveRoom(ctx context.Context, in *UnarchiveRoomRequest, opts ...grpc.CallOption) (*UnarchiveRoomResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UnarchiveRoomResponse)
+	err := c.cc.Invoke(ctx, CoreService_UnarchiveRoom_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CoreServiceServer is the server API for CoreService service.
 // All implementations must embed UnimplementedCoreServiceServer
 // for forward compatibility.
@@ -493,6 +524,15 @@ type CoreServiceServer interface {
 	// max_members = 0 means "no limit". Go gateway sends this after updating rooms table.
 	// Elixir Core updates in-memory GenServer state; no-op if GenServer not running (will load from DB on next start).
 	UpdateRoomSettings(context.Context, *UpdateRoomSettingsRequest) (*UpdateRoomSettingsResponse, error)
+	// ArchiveRoom — Story 6.9: Admin API terminates the Room GenServer for an archived room.
+	// The Go gateway has already updated rooms.status='archived' in DB before calling this.
+	// Core stops the GenServer via Horde.DynamicSupervisor.terminate_child/2.
+	// Returns ok=true in all cases (even if GenServer was already stopped).
+	ArchiveRoom(context.Context, *ArchiveRoomRequest) (*ArchiveRoomResponse, error)
+	// UnarchiveRoom — Story 6.9: Admin API restarts the Room GenServer for an unarchived room.
+	// The Go gateway has already updated rooms.status='active' in DB before calling this.
+	// Core restarts the GenServer via RoomSupervisor.start_room/1.
+	UnarchiveRoom(context.Context, *UnarchiveRoomRequest) (*UnarchiveRoomResponse, error)
 	mustEmbedUnimplementedCoreServiceServer()
 }
 
@@ -589,6 +629,12 @@ func (UnimplementedCoreServiceServer) InvalidateUserSessions(context.Context, *I
 }
 func (UnimplementedCoreServiceServer) UpdateRoomSettings(context.Context, *UpdateRoomSettingsRequest) (*UpdateRoomSettingsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method UpdateRoomSettings not implemented")
+}
+func (UnimplementedCoreServiceServer) ArchiveRoom(context.Context, *ArchiveRoomRequest) (*ArchiveRoomResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ArchiveRoom not implemented")
+}
+func (UnimplementedCoreServiceServer) UnarchiveRoom(context.Context, *UnarchiveRoomRequest) (*UnarchiveRoomResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UnarchiveRoom not implemented")
 }
 func (UnimplementedCoreServiceServer) mustEmbedUnimplementedCoreServiceServer() {}
 func (UnimplementedCoreServiceServer) testEmbeddedByValue()                     {}
@@ -1126,6 +1172,42 @@ func _CoreService_UpdateRoomSettings_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_ArchiveRoom_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ArchiveRoomRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).ArchiveRoom(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_ArchiveRoom_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).ArchiveRoom(ctx, req.(*ArchiveRoomRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_UnarchiveRoom_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UnarchiveRoomRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).UnarchiveRoom(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_UnarchiveRoom_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).UnarchiveRoom(ctx, req.(*UnarchiveRoomRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CoreService_ServiceDesc is the grpc.ServiceDesc for CoreService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1244,6 +1326,14 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateRoomSettings",
 			Handler:    _CoreService_UpdateRoomSettings_Handler,
+		},
+		{
+			MethodName: "ArchiveRoom",
+			Handler:    _CoreService_ArchiveRoom_Handler,
+		},
+		{
+			MethodName: "UnarchiveRoom",
+			Handler:    _CoreService_UnarchiveRoom_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

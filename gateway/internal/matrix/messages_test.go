@@ -466,6 +466,85 @@ func TestGetMessages_InvalidLimit(t *testing.T) {
 	}
 }
 
+// ─── Test 9 (Story 6-9): Archived room → GET /messages still returns 200 ─────
+//
+// MAJOR-1 — archived rooms allow message history reads.
+//
+// GetMessagesHandler has NO StatusChecker (unlike SendEventHandler) — this is
+// intentional. Read-only access to message history is preserved even after a
+// room is archived. The handler does not inspect room status at all; Core simply
+// returns the events it has.
+//
+// This test documents that invariant explicitly: a request against an archived
+// room ID succeeds identically to a request against an active room.
+
+func TestGetMessages_ArchivedRoom_Returns200(t *testing.T) {
+	// archived rooms allow message history reads — no status check in GetMessages handler
+	contentBytes := []byte(`{"msgtype":"m.text","body":"archived message"}`)
+
+	mock := &mockGetMessagesCoreClient{
+		resp: &pb.GetMessagesResponse{
+			Events: []*pb.Event{
+				{
+					EventId:   "$archived-event1:test.local",
+					RoomId:    "!archived:test.local",
+					SenderId:  "@alice:test.local",
+					EventType: "m.room.message",
+					Content:   contentBytes,
+					OriginTs:  1700000000999,
+				},
+			},
+			NextBatch: "v1_arch_next",
+			PrevBatch: "v1_arch_prev",
+		},
+	}
+
+	handler, _, makeToken := buildAuthedMessagesHandler(t, mock)
+
+	// Use an "archived" room ID — the handler does not check room status,
+	// so Core returning events is all that matters.
+	req := httptest.NewRequest(http.MethodGet,
+		"/rooms/!archived:test.local/messages?dir=b",
+		nil)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	// Archived rooms must still return 200 — read-only history access is preserved.
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for archived room GET /messages, got %d; body: %s",
+			w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Chunk []map[string]any `json:"chunk"`
+		Start string           `json:"start"`
+		End   string           `json:"end"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response body: %v", err)
+	}
+
+	if len(resp.Chunk) != 1 {
+		t.Errorf("expected 1 event in chunk for archived room, got %d", len(resp.Chunk))
+	}
+	if resp.Start != "v1_arch_prev" {
+		t.Errorf("expected start=v1_arch_prev, got %q", resp.Start)
+	}
+	if resp.End != "v1_arch_next" {
+		t.Errorf("expected end=v1_arch_next, got %q", resp.End)
+	}
+
+	// Handler must have forwarded the request to Core unchanged — no early exit.
+	if mock.capturedReq == nil {
+		t.Fatal("expected gRPC GetMessages to be called for archived room, but capturedReq is nil")
+	}
+	if mock.capturedReq.RoomId != "!archived:test.local" {
+		t.Errorf("expected room_id !archived:test.local, got %q", mock.capturedReq.RoomId)
+	}
+}
+
 // ─── Test 9: Limit clamping → gRPC receives clamped limit value ──────────────
 //
 // MINOR-3 — ?limit=0 must be clamped to 1; ?limit=500 must be clamped to 100.

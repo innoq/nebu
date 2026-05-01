@@ -1518,6 +1518,67 @@ defmodule Nebu.EventDispatcher.Server do
     end
   end
 
+  # ─── Story 6.9: ArchiveRoom + UnarchiveRoom gRPC handlers ─────────────────────
+  #
+  # archive_room/2:
+  #   Called by the Go gateway after successfully setting rooms.status = 'archived' in DB.
+  #   Best-effort: terminates the running Room GenServer via Horde so in-memory state is
+  #   cleared. The DB is authoritative — even if the GenServer is not running, ok=true.
+  #   On next start, Room.Server.init/1 sees status="archived" → {:stop, :normal} → no loop.
+  #
+  # unarchive_room/2:
+  #   Called by the Go gateway after successfully setting rooms.status = 'active' in DB.
+  #   Best-effort: starts the Room GenServer so it is immediately available for messages.
+  #   Returns ok=true even if start_room fails (DB is authoritative; Gateway returns 200).
+
+  def archive_room(%Core.ArchiveRoomRequest{} = req, _stream) do
+    room_id = req.room_id
+
+    # Terminate the running GenServer (best-effort — idempotent if not running).
+    # Room.Server.child_spec uses :transient restart, so Horde will NOT restart it
+    # after a terminate_child call. DB status is the authoritative archived flag.
+    case Nebu.Room.RoomSupervisor.lookup_room(room_id) do
+      {:ok, pid} ->
+        case Horde.DynamicSupervisor.terminate_child(Nebu.Room.HordeSupervisor, pid) do
+          :ok ->
+            :ok
+
+          {:error, reason} ->
+            # Race: process likely crashed between lookup and terminate. The DB
+            # is already archived, so the Gateway returns 200 — but log so this
+            # isn't silently swallowed.
+            Logger.warning("ArchiveRoom: terminate_child failed (likely already stopped) — #{inspect(reason)}",
+              room_id: room_id
+            )
+
+            :ok
+        end
+
+      {:error, :not_found} ->
+        # Already stopped — no-op (idempotent).
+        :ok
+    end
+
+    %Core.ArchiveRoomResponse{ok: true}
+  end
+
+  def unarchive_room(%Core.UnarchiveRoomRequest{} = req, _stream) do
+    room_id = req.room_id
+
+    # Start the Room GenServer so it is immediately available.
+    # Room.Server.init/1 now calls get_room_status/1 on start:
+    #   → {:ok, "active"} means the room is unarchived — init proceeds normally.
+    #   → {:ok, "archived"} would be a race condition (DB not yet updated) — init stops.
+    # Best-effort: if start_room fails, the DB is already updated to 'active';
+    # the GenServer will start on the next client request.
+    case Nebu.Room.RoomSupervisor.start_room(room_id) do
+      {:ok, _pid} -> :ok
+      {:error, _reason} -> :ok
+    end
+
+    %Core.UnarchiveRoomResponse{ok: true}
+  end
+
   # ─── Private helpers ──────────────────────────────────────────────────────────
 
   # Emits a signed m.room.member leave event into the events table and broadcasts

@@ -86,6 +86,12 @@ defmodule Nebu.RoomTest do
     # RED: this function does not exist yet on DBBehaviour; adding it here ensures
     # FakeDB satisfies the updated behaviour once @callback load_room_settings/1 is added.
     def load_room_settings(_room_id), do: {:ok, 0}
+
+    # Story 6.9: get_room_status/1 — NEW callback added to Nebu.Room.DBBehaviour.
+    # Returns {:ok, "active"} for all rooms in unit tests (normal rooms are active).
+    # RED: fails to compile until @callback get_room_status/1 is added to DBBehaviour.
+    # Once DBBehaviour is updated, this stub ensures FakeDB satisfies the contract.
+    def get_room_status(_room_id), do: {:ok, "active"}
   end
 
   # Fake DB that always returns a DB error on writes — for testing fail-safe behavior
@@ -99,6 +105,9 @@ defmodule Nebu.RoomTest do
     def set_power_levels(_room_id, _json), do: {:error, :db_connection_lost}
     # Story 6.8: fail-open — if load_room_settings fails, GenServer defaults to 0.
     def load_room_settings(_room_id), do: {:error, :db_connection_lost}
+    # Story 6.9: get_room_status/1 — fail-open: return "active" so GenServer starts normally.
+    # The archive guard in init/1 only stops when status is explicitly "archived".
+    def get_room_status(_room_id), do: {:ok, "active"}
     # Unused by write-error tests — stubs required to satisfy @behaviour contract.
     def get_rooms_for_user(_user_id), do: {:error, :db_connection_lost}
     def fetch_events(_room_id, _dir, _limit, _from), do: {:error, :db_connection_lost}
@@ -679,6 +688,17 @@ defmodule Nebu.RoomTest do
 
         # Story 6.8: returns {:ok, 5} simulating a room with max_members=5 in the DB.
         def load_room_settings(_room_id), do: {:ok, 5}
+
+        # Story 6.9: get_room_status/1 — returns {:ok, "active"} so init/1 proceeds normally.
+        # This module is only used to test max_members recovery; rooms are active here.
+        def get_room_status(_room_id), do: {:ok, "active"}
+
+        # Stubs required by @behaviour Nebu.Room.DBBehaviour:
+        def get_rooms_for_user(_user_id), do: {:ok, []}
+        def fetch_events(_room_id, _dir, _limit, _from), do: {:ok, [], "", ""}
+        def fetch_events_since(_room_id, _last_event_id, _limit), do: {:ok, []}
+        def get_event_timestamp(_event_id), do: {:error, :not_found}
+        def get_room_name(_room_id), do: {:error, :not_found}
       end
 
       Application.put_env(:room_manager, :db_module, FakeDBWithMaxMembers)

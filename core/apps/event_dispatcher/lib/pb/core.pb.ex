@@ -751,3 +751,47 @@ defmodule Core.UpdateRoomSettingsResponse do
 
   field :ok, 1, type: :bool
 end
+
+defmodule Core.ArchiveRoomRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.ArchiveRoomRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :room_id, 1, type: :string, json_name: "roomId"
+end
+
+defmodule Core.ArchiveRoomResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.ArchiveRoomResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :ok, 1, type: :bool
+end
+
+defmodule Core.UnarchiveRoomRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.UnarchiveRoomRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :room_id, 1, type: :string, json_name: "roomId"
+end
+
+defmodule Core.UnarchiveRoomResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.UnarchiveRoomResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :ok, 1, type: :bool
+end

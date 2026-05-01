@@ -776,9 +776,15 @@ func main() {
 	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/upgrade",
 		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(upgradeRoomHandler.PostUpgradeRoom))))
 
+	// Story 6.9: roomsRepo is needed by SendEventHandler to check rooms.status before
+	// calling Core.SendEvent (archived rooms must return 403 M_ROOM_ARCHIVED).
+	// roomsRepo is also wired into AdminServer below (Story 6.7 onwards).
+	// Creating it here ensures it is available for both uses.
+	sendEventRoomsRepo := apihandler.NewRoomRepo(bootstrapDB) // Story 6.9
 	sendEventHandler := matrix.NewSendEventHandler(matrix.SendEventConfig{
-		CoreClient: coreClient,
-		ServerName: serverName,
+		CoreClient:    coreClient,
+		ServerName:    serverName,
+		StatusChecker: sendEventRoomsRepo, // Story 6.9: check rooms.status before Core.SendEvent
 	})
 	mux.Handle("PUT /_matrix/client/v3/rooms/{roomId}/send/{eventType}/{txnId}",
 		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(sendEventHandler.PutSendEvent))))

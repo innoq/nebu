@@ -69,6 +69,12 @@ func RegisterAdminRoutes(mux *http.ServeMux, adminServer *AdminServer, jwtMW fun
 		jwtMW(RequireRole("instance_admin", checker)(patchAdminRoomHandler(sh))))
 	mux.Handle("PUT /api/v1/admin/config/room-defaults",
 		jwtMW(RequireRole("instance_admin", checker)(putAdminRoomDefaultsHandler(sh))))
+
+	// Story 6.9: Archive + Unarchive room — instance_admin required.
+	mux.Handle("POST /api/v1/admin/rooms/{roomId}/archive",
+		jwtMW(RequireRole("instance_admin", checker)(archiveAdminRoomHandler(sh, adminServer))))
+	mux.Handle("POST /api/v1/admin/rooms/{roomId}/unarchive",
+		jwtMW(RequireRole("instance_admin", checker)(unarchiveAdminRoomHandler(sh, adminServer))))
 }
 
 // listAdminUsersHandler returns an http.Handler that parses the cursor/limit/search query
@@ -258,5 +264,55 @@ func putAdminRoomDefaultsHandler(sh ServerInterface) http.Handler {
 			return
 		}
 		sh.PutAdminRoomDefaults(w, r)
+	})
+}
+
+// archiveAdminRoomHandler extracts {roomId}, checks nil Rooms (→501), pre-validates
+// body is present (→400 M_BAD_JSON), and delegates to sh.ArchiveAdminRoom(w, r, roomId).
+//
+// Story 6.9: POST /api/v1/admin/rooms/{roomId}/archive
+//
+// Order matters:
+//  1. Rooms nil-guard fires first → 501 (satisfies AC#5 router test with nil AdminServer)
+//  2. Body nil/empty → 400 M_BAD_JSON (strict handler would emit plain-text 400 otherwise)
+func archiveAdminRoomHandler(sh ServerInterface, adminServer *AdminServer) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		roomID := r.PathValue("roomId")
+		// Nil-guard first — same 501 the handler would return, but before the body check.
+		if adminServer == nil || adminServer.Rooms == nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotImplemented)
+			_, _ = w.Write([]byte(`{"error":{"code":"M_NOT_IMPLEMENTED","message":"archive not configured"}}`))
+			return
+		}
+		if r.Body == nil || r.ContentLength == 0 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":{"code":"M_BAD_JSON","message":"request body is required"}}`))
+			return
+		}
+		sh.ArchiveAdminRoom(w, r, roomID)
+	})
+}
+
+// unarchiveAdminRoomHandler extracts {roomId}, checks nil Rooms (→501), and
+// delegates to sh.UnarchiveAdminRoom(w, r, roomId).
+//
+// Story 6.9: POST /api/v1/admin/rooms/{roomId}/unarchive
+// No body required for unarchive — no body pre-check needed.
+//
+// The explicit 501 body mirrors archiveAdminRoomHandler so both routes return
+// the same Matrix-envelope error rather than the strict-handler default empty
+// 501 body.
+func unarchiveAdminRoomHandler(sh ServerInterface, adminServer *AdminServer) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		roomID := r.PathValue("roomId")
+		if adminServer == nil || adminServer.Rooms == nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotImplemented)
+			_, _ = w.Write([]byte(`{"error":{"code":"M_NOT_IMPLEMENTED","message":"unarchive not configured"}}`))
+			return
+		}
+		sh.UnarchiveAdminRoom(w, r, roomID)
 	})
 }

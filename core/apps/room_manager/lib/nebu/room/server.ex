@@ -188,6 +188,21 @@ defmodule Nebu.Room.Server do
     # group but does not need to receive its own broadcasts (handle_info ignores them).
     # Keeping the Room GenServer out of the group prevents interference with tests that
     # assert the group is empty after sync handlers clean up.
+
+    # Story 6.9: Archived room guard — check room status BEFORE loading state.
+    # If the room is archived, stop with :normal so Horde's :transient restart strategy
+    # does not restart the GenServer. This prevents a restart loop on cluster rejoin.
+    # Fail-open: if get_room_status fails, we proceed (don't block active rooms on DB error).
+    case db_module().get_room_status(room_id) do
+      {:ok, "archived"} ->
+        {:stop, :normal}
+
+      _ ->
+        do_init(room_id)
+    end
+  end
+
+  defp do_init(room_id) do
     case db_module().load_members(room_id) do
       {:ok, user_ids, created_at_ms, power_levels_json} ->
         members = MapSet.new(user_ids)

@@ -2,6 +2,7 @@
 
 // Package api provides the RoomRepository interface and its PostgreSQL implementation
 // for the Admin Room List + Get API (Story 6.7) and Room Settings Update API (Story 6.8).
+// Story 6.9 adds ArchiveRoom, UnarchiveRoom, and GetRoomStatus for room archivierung.
 package api
 
 import (
@@ -10,7 +11,30 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
+
+// ── Story 6.9: Sentinel errors ────────────────────────────────────────────────
+
+// ErrRoomNotFound is returned by ArchiveRoom / UnarchiveRoom when the room
+// does not exist in the rooms table.
+var ErrRoomNotFound = errors.New("room not found")
+
+// ErrRoomWrongStatus is returned when the room exists but has the wrong status
+// for the requested operation (e.g. archiving an already-archived room).
+var ErrRoomWrongStatus = errors.New("room has wrong status for this operation")
+
+// ArchiveResult is returned by RoomRepository.ArchiveRoom on success.
+type ArchiveResult struct {
+	RoomID string `json:"room_id"`
+	Status string `json:"status"` // always "archived"
+}
+
+// UnarchiveResult is returned by RoomRepository.UnarchiveRoom on success.
+type UnarchiveResult struct {
+	RoomID string `json:"room_id"`
+	Status string `json:"status"` // always "active"
+}
 
 // AdminRoom is the list-view representation of a room for the Admin API.
 // Fields match AC#1 room object: room_id, name, topic, visibility, member_count,
@@ -54,10 +78,17 @@ type RoomPatch struct {
 // GetRoom returns (nil, nil) when the room does not exist.
 // UpdateRoom applies the non-nil fields in patch and returns the updated room.
 // Returns (nil, nil) if the room does not exist.
+//
+// Story 6.9: ArchiveRoom sets status='archived', UnarchiveRoom sets status='active'.
+// GetRoomStatus returns the current room status string ("active", "archived", or "" if not found).
 type RoomRepository interface {
 	ListRooms(ctx context.Context, afterID, afterCreatedAt string, limit int, search, status string) ([]AdminRoom, int, string, error)
 	GetRoom(ctx context.Context, roomID string) (*AdminRoomDetail, error)
 	UpdateRoom(ctx context.Context, roomID string, patch RoomPatch) (*AdminRoomDetail, error)
+	// Story 6.9: Archive / Unarchive / Status check
+	ArchiveRoom(ctx context.Context, roomID, reason string) (*ArchiveResult, error)
+	UnarchiveRoom(ctx context.Context, roomID string) (*UnarchiveResult, error)
+	GetRoomStatus(ctx context.Context, roomID string) (string, error)
 }
 
 // dbRoomRepo is the real PostgreSQL implementation of RoomRepository.
@@ -247,6 +278,96 @@ func (r *dbRoomRepo) GetRoom(ctx context.Context, roomID string) (*AdminRoomDeta
 		MessageCount:    messageCount,
 		PowerLevelsJSON: powerLevels,
 	}, nil
+}
+
+// ── Story 6.9: ArchiveRoom ────────────────────────────────────────────────────
+
+// ArchiveRoom atomically sets rooms.status='archived' for the given room.
+//
+// Uses a conditional UPDATE (WHERE status='active') to prevent race conditions.
+// Returns ErrRoomNotFound if the room does not exist.
+// Returns ErrRoomWrongStatus if the room is already archived.
+// Returns (*ArchiveResult, nil) on success.
+func (r *dbRoomRepo) ArchiveRoom(ctx context.Context, roomID, reason string) (*ArchiveResult, error) {
+	archivedAt := time.Now().UnixMilli()
+
+	const updateSQL = `
+		UPDATE rooms
+		SET status = 'archived', archived_at = $2, archive_reason = $3
+		WHERE room_id = $1 AND status = 'active'
+		RETURNING room_id, status`
+
+	var rid, status string
+	err := r.db.QueryRowContext(ctx, updateSQL, roomID, archivedAt, reason).Scan(&rid, &status)
+	if errors.Is(err, sql.ErrNoRows) {
+		// 0 rows affected — determine if 404 or 409.
+		const existsSQL = `SELECT EXISTS(SELECT 1 FROM rooms WHERE room_id = $1)`
+		var exists bool
+		if scanErr := r.db.QueryRowContext(ctx, existsSQL, roomID).Scan(&exists); scanErr != nil {
+			return nil, fmt.Errorf("ArchiveRoom exists check: %w", scanErr)
+		}
+		if !exists {
+			return nil, ErrRoomNotFound
+		}
+		return nil, ErrRoomWrongStatus
+	}
+	if err != nil {
+		return nil, fmt.Errorf("ArchiveRoom update: %w", err)
+	}
+	return &ArchiveResult{RoomID: rid, Status: status}, nil
+}
+
+// ── Story 6.9: UnarchiveRoom ──────────────────────────────────────────────────
+
+// UnarchiveRoom atomically sets rooms.status='active' and clears archived_at.
+//
+// Uses a conditional UPDATE (WHERE status='archived') to prevent race conditions.
+// Returns ErrRoomNotFound if the room does not exist.
+// Returns ErrRoomWrongStatus if the room is not archived (already active).
+// Returns (*UnarchiveResult, nil) on success.
+func (r *dbRoomRepo) UnarchiveRoom(ctx context.Context, roomID string) (*UnarchiveResult, error) {
+	const updateSQL = `
+		UPDATE rooms
+		SET status = 'active', archived_at = NULL
+		WHERE room_id = $1 AND status = 'archived'
+		RETURNING room_id, status`
+
+	var rid, status string
+	err := r.db.QueryRowContext(ctx, updateSQL, roomID).Scan(&rid, &status)
+	if errors.Is(err, sql.ErrNoRows) {
+		// 0 rows affected — determine if 404 or 409.
+		const existsSQL = `SELECT EXISTS(SELECT 1 FROM rooms WHERE room_id = $1)`
+		var exists bool
+		if scanErr := r.db.QueryRowContext(ctx, existsSQL, roomID).Scan(&exists); scanErr != nil {
+			return nil, fmt.Errorf("UnarchiveRoom exists check: %w", scanErr)
+		}
+		if !exists {
+			return nil, ErrRoomNotFound
+		}
+		return nil, ErrRoomWrongStatus
+	}
+	if err != nil {
+		return nil, fmt.Errorf("UnarchiveRoom update: %w", err)
+	}
+	return &UnarchiveResult{RoomID: rid, Status: status}, nil
+}
+
+// ── Story 6.9: GetRoomStatus ──────────────────────────────────────────────────
+
+// GetRoomStatus returns the current status of the room ("active" or "archived").
+// Returns "" (empty string) when the room does not exist.
+// Used by SendEventHandler to fail-fast on archived rooms before calling Core gRPC.
+func (r *dbRoomRepo) GetRoomStatus(ctx context.Context, roomID string) (string, error) {
+	const q = `SELECT COALESCE(status, 'active') FROM rooms WHERE room_id = $1`
+	var status string
+	err := r.db.QueryRowContext(ctx, q, roomID).Scan(&status)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil // room not found
+	}
+	if err != nil {
+		return "", fmt.Errorf("GetRoomStatus: %w", err)
+	}
+	return status, nil
 }
 
 // UpdateRoom applies only the non-nil fields in patch to the rooms table, then

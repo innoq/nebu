@@ -921,3 +921,202 @@ func (r *putRoomDefaults400Resp) VisitPutAdminRoomDefaultsResponse(w http.Respon
 		"error": map[string]string{"code": "M_BAD_JSON", "message": r.msg},
 	})
 }
+
+// ── Story 6.9: ArchiveAdminRoom handler ──────────────────────────────────────
+
+// ArchiveAdminRoom implements AC#1: POST /api/v1/admin/rooms/{roomId}/archive.
+// Validates reason (min 10 chars), atomically archives room in DB, calls gRPC
+// ArchiveRoom (best-effort), emits audit log.
+// Returns 501 if Rooms repository is not wired.
+func (s *AdminServer) ArchiveAdminRoom(ctx context.Context, req ArchiveAdminRoomRequestObject) (ArchiveAdminRoomResponseObject, error) {
+	if s.Rooms == nil {
+		return ArchiveAdminRoom501Response{}, nil
+	}
+
+	roomID := req.RoomId
+	body := req.Body
+	if body == nil {
+		return &archiveRoom400Resp{msg: "request body is required"}, nil
+	}
+
+	// 1. Validate reason (required, min 10 chars).
+	reason := strings.TrimSpace(body.Reason)
+	if len(reason) < 10 {
+		return &archiveRoom400Resp{msg: "reason must be at least 10 characters"}, nil
+	}
+
+	// 2. DB update (atomic conditional UPDATE).
+	result, err := s.Rooms.ArchiveRoom(ctx, roomID, reason)
+	if errors.Is(err, ErrRoomNotFound) {
+		return &archiveRoom404Resp{}, nil
+	}
+	if errors.Is(err, ErrRoomWrongStatus) {
+		return &archiveRoom409Resp{msg: "Room is already archived"}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return &archiveRoom404Resp{}, nil
+	}
+
+	// 3. gRPC ArchiveRoom (best-effort — DB is authoritative).
+	if s.CoreClient != nil {
+		_, grpcErr := s.CoreClient.ArchiveRoom(ctx, &pb.ArchiveRoomRequest{RoomId: roomID})
+		if grpcErr != nil {
+			slog.Warn("ArchiveRoom gRPC failed — GenServer may still be running",
+				"room_id", roomID, "err", grpcErr)
+			// Best-effort: continue. Room.Server init/1 will stop on next restart
+			// because it checks rooms.status from DB (archived → {:stop, :normal}).
+		}
+	}
+
+	// 4. Audit log (never-raise).
+	if s.CoreClient != nil {
+		actorID, _ := ctx.Value(middleware.ContextKeyUserID).(string)
+		_ = audit.LogEvent(ctx, s.CoreClient, actorID, "room_archived", "room", roomID,
+			map[string]any{"reason": reason}, "success", "")
+	} else {
+		slog.Warn("ArchiveAdminRoom audit skipped — CoreClient is nil", "room_id", roomID)
+	}
+
+	return &archiveRoom200Resp{roomID: result.RoomID, status: result.Status}, nil
+}
+
+// ── Story 6.9: UnarchiveAdminRoom handler ────────────────────────────────────
+
+// UnarchiveAdminRoom implements AC#2: POST /api/v1/admin/rooms/{roomId}/unarchive.
+// Atomically unarchives room in DB, calls gRPC UnarchiveRoom (best-effort),
+// emits audit log.
+// Returns 501 if Rooms repository is not wired.
+func (s *AdminServer) UnarchiveAdminRoom(ctx context.Context, req UnarchiveAdminRoomRequestObject) (UnarchiveAdminRoomResponseObject, error) {
+	if s.Rooms == nil {
+		return UnarchiveAdminRoom501Response{}, nil
+	}
+
+	roomID := req.RoomId
+
+	// 1. DB update (atomic conditional UPDATE).
+	result, err := s.Rooms.UnarchiveRoom(ctx, roomID)
+	if errors.Is(err, ErrRoomNotFound) {
+		return &unarchiveRoom404Resp{}, nil
+	}
+	if errors.Is(err, ErrRoomWrongStatus) {
+		return &unarchiveRoom409Resp{msg: "Room is not archived"}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return &unarchiveRoom404Resp{}, nil
+	}
+
+	// 2. gRPC UnarchiveRoom (restarts GenServer) — best-effort.
+	if s.CoreClient != nil {
+		_, grpcErr := s.CoreClient.UnarchiveRoom(ctx, &pb.UnarchiveRoomRequest{RoomId: roomID})
+		if grpcErr != nil {
+			slog.Warn("UnarchiveRoom gRPC failed — GenServer not restarted",
+				"room_id", roomID, "err", grpcErr)
+			// Best-effort: continue. GenServer will start on next Matrix event.
+		}
+	}
+
+	// 3. Audit log (never-raise).
+	if s.CoreClient != nil {
+		actorID, _ := ctx.Value(middleware.ContextKeyUserID).(string)
+		_ = audit.LogEvent(ctx, s.CoreClient, actorID, "room_unarchived", "room", roomID,
+			nil, "success", "")
+	} else {
+		slog.Warn("UnarchiveAdminRoom audit skipped — CoreClient is nil", "room_id", roomID)
+	}
+
+	return &unarchiveRoom200Resp{roomID: result.RoomID, status: result.Status}, nil
+}
+
+// ── Story 6.9: Archive / Unarchive response types ────────────────────────────
+
+// archiveRoom200Resp — 200 OK with room_id and status="archived".
+// Implements ArchiveAdminRoomResponseObject.
+type archiveRoom200Resp struct{ roomID, status string }
+
+func (r *archiveRoom200Resp) VisitArchiveAdminRoomResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	return json.NewEncoder(w).Encode(map[string]string{
+		"room_id": r.roomID,
+		"status":  r.status,
+	})
+}
+
+// archiveRoom400Resp — 400 M_BAD_JSON validation error.
+// Implements ArchiveAdminRoomResponseObject.
+type archiveRoom400Resp struct{ msg string }
+
+func (r *archiveRoom400Resp) VisitArchiveAdminRoomResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusBadRequest)
+	return json.NewEncoder(w).Encode(map[string]any{
+		"error": map[string]string{"code": "M_BAD_JSON", "message": r.msg},
+	})
+}
+
+// archiveRoom404Resp — 404 M_NOT_FOUND.
+// Implements ArchiveAdminRoomResponseObject.
+type archiveRoom404Resp struct{}
+
+func (r *archiveRoom404Resp) VisitArchiveAdminRoomResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusNotFound)
+	return json.NewEncoder(w).Encode(map[string]any{
+		"error": map[string]string{"code": "M_NOT_FOUND", "message": "Room not found"},
+	})
+}
+
+// archiveRoom409Resp — 409 M_CONFLICT (room already archived).
+// Implements ArchiveAdminRoomResponseObject.
+type archiveRoom409Resp struct{ msg string }
+
+func (r *archiveRoom409Resp) VisitArchiveAdminRoomResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusConflict)
+	return json.NewEncoder(w).Encode(map[string]any{
+		"error": map[string]string{"code": "M_CONFLICT", "message": r.msg},
+	})
+}
+
+// unarchiveRoom200Resp — 200 OK with room_id and status="active".
+// Implements UnarchiveAdminRoomResponseObject.
+type unarchiveRoom200Resp struct{ roomID, status string }
+
+func (r *unarchiveRoom200Resp) VisitUnarchiveAdminRoomResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	return json.NewEncoder(w).Encode(map[string]string{
+		"room_id": r.roomID,
+		"status":  r.status,
+	})
+}
+
+// unarchiveRoom404Resp — 404 M_NOT_FOUND.
+// Implements UnarchiveAdminRoomResponseObject.
+type unarchiveRoom404Resp struct{}
+
+func (r *unarchiveRoom404Resp) VisitUnarchiveAdminRoomResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusNotFound)
+	return json.NewEncoder(w).Encode(map[string]any{
+		"error": map[string]string{"code": "M_NOT_FOUND", "message": "Room not found"},
+	})
+}
+
+// unarchiveRoom409Resp — 409 M_CONFLICT (room is not archived).
+// Implements UnarchiveAdminRoomResponseObject.
+type unarchiveRoom409Resp struct{ msg string }
+
+func (r *unarchiveRoom409Resp) VisitUnarchiveAdminRoomResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusConflict)
+	return json.NewEncoder(w).Encode(map[string]any{
+		"error": map[string]string{"code": "M_CONFLICT", "message": r.msg},
+	})
+}

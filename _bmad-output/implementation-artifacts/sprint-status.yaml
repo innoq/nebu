@@ -1,5 +1,6 @@
 # generated: 2026-03-20
 # last_updated: 2026-05-01
+# story 6-9 created: 6-9 → ready-for-dev: 2026-05-01 (Room Archivierung — POST /admin/rooms/{roomId}/archive + unarchive, proto ArchiveRoom/UnarchiveRoom, Room.Server archived init guard, SendEvent archive check, audit log)
 # story 6-8 created: 6-8 → ready-for-dev: 2026-05-01 (Room Settings Update API — PATCH /admin/rooms/{roomId}, PUT /admin/config/room-defaults, migration 000037 room_defaults, proto UpdateRoomSettings, max_members enforcement in Room GenServer, audit log)
 # story 6-7 created: 6-7 → ready-for-dev: 2026-05-01 (Room List + Get API — migration 000036 rooms_admin_columns, GET /admin/rooms list+filter+cursor, GET /admin/rooms/{roomId} detail, RoomRepository, member_count/message_count, audit log)
 # story 6-6 done (pipeline: ATDD+Dev+CodeReview+Kassandra CLEAN — role_overrides migration 000035, POST /roles grant/revoke, RequireRole DB-override, 60s TTL cache): 2026-05-01
@@ -585,7 +586,7 @@ development_status:
   6-6-user-role-assignment-api-role-overrides-tabelle-middleware-integration: done
   6-7-room-list-get-api: review
   6-8-room-settings-update-api-max-members-visibility-serverweite-defaults: review
-  6-9-room-archivierung-kein-physisches-loschen-events-bleiben-erhalten: backlog
+  6-9-room-archivierung-kein-physisches-loschen-events-bleiben-erhalten: review
   6-10-server-config-api-metrics-api: backlog
   6-11-gherkin-admin-api-crud-flow: backlog
   epic-6-retrospective: optional

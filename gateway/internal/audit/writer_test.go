@@ -129,6 +129,12 @@ func (m *mockCoreClient) InvalidateUserSessions(_ context.Context, _ *pb.Invalid
 func (m *mockCoreClient) UpdateRoomSettings(_ context.Context, _ *pb.UpdateRoomSettingsRequest, _ ...grpc.CallOption) (*pb.UpdateRoomSettingsResponse, error) {
 	panic("unexpected call: UpdateRoomSettings")
 }
+func (m *mockCoreClient) ArchiveRoom(_ context.Context, _ *pb.ArchiveRoomRequest, _ ...grpc.CallOption) (*pb.ArchiveRoomResponse, error) {
+	panic("unexpected call: ArchiveRoom")
+}
+func (m *mockCoreClient) UnarchiveRoom(_ context.Context, _ *pb.UnarchiveRoomRequest, _ ...grpc.CallOption) (*pb.UnarchiveRoomResponse, error) {
+	panic("unexpected call: UnarchiveRoom")
+}
 
 // ─── AC11 Test 5: LogEvent_Success ───────────────────────────────────────────
 //
