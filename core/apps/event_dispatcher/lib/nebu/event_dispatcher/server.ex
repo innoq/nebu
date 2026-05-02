@@ -57,6 +57,12 @@ defmodule Nebu.EventDispatcher.Server do
     Application.get_env(:compliance, :audit_writer, Compliance.AuditWriter)
   end
 
+  # ─── Configurable SessionSupervisor module for testability ─────────────────
+  # Override via Application.put_env(:event_dispatcher, :session_supervisor_module, FakeModule) in tests.
+  defp session_supervisor_module do
+    Application.get_env(:event_dispatcher, :session_supervisor_module, Nebu.Session.SessionSupervisor)
+  end
+
   def send_event(request, _stream) do
     room_id = request.room_id
     sender_id = request.sender_id
@@ -222,12 +228,44 @@ defmodule Nebu.EventDispatcher.Server do
             # No audit log for idempotent joins (AC9 scope decision).
             %Core.JoinRoomResponse{room_id: room_id}
 
+          {:error, :room_full} ->
+            # Story 6.8: room has reached max_members capacity.
+            # Go gateway maps codes.ResourceExhausted → 403 M_ROOM_FULL.
+            raise GRPC.RPCError,
+              status: GRPC.Status.resource_exhausted(),
+              message: "room is full"
+
           {:error, reason} ->
             raise GRPC.RPCError,
               status: GRPC.Status.internal(),
               message: "join failed: #{inspect(reason)}"
         end
     end
+  end
+
+  # ─── UpdateRoomSettings — Story 6.8: Admin PATCH /admin/rooms/{roomId} ─────────
+  #
+  # Called by the Go gateway after a successful DB update of room settings.
+  # Delegates to Nebu.Room.Server.update_settings/2 (best-effort fire-and-forget cast).
+  # Returns UpdateRoomSettingsResponse{ok: true} always — failure to find the running
+  # GenServer is non-fatal (room may not be started, or settings will be loaded on next init).
+
+  def update_room_settings(%Core.UpdateRoomSettingsRequest{} = req, _stream) do
+    room_id = req.room_id
+    max_members = req.max_members
+
+    # Best-effort: call update_settings only if the room GenServer is running.
+    # If the room is not started, the new max_members will be loaded from DB on next init.
+    case Nebu.Room.RoomSupervisor.lookup_room(room_id) do
+      {:ok, _pid} ->
+        Nebu.Room.Server.update_settings(room_id, %{max_members: max_members})
+
+      {:error, :not_found} ->
+        # Room GenServer not running — settings will be applied on next init/1.
+        :ok
+    end
+
+    %Core.UpdateRoomSettingsResponse{ok: true}
   end
 
   def leave_room(request, _stream) do
@@ -294,6 +332,12 @@ defmodule Nebu.EventDispatcher.Server do
 
         case db_module_invite().insert_invitation(room_id, inviter, invitee) do
           :ok ->
+            # Wake the invitee's long-polling sync task immediately (Bug 4-29f fix).
+            # The invitee subscribed to "user:#{invitee}" in do_incremental_sync before
+            # entering the receive loop. Without this broadcast the long-poll sleeps 30 s.
+            :pg.get_local_members("user:#{invitee}")
+            |> Enum.each(&send(&1, {:new_invite, room_id}))
+
             %Core.InviteUserResponse{}
 
           {:error, reason} ->
@@ -570,6 +614,18 @@ defmodule Nebu.EventDispatcher.Server do
            request.email
          ) do
       {:ok, user} ->
+        # Upsert profile row on every successful login so GET /profile/{userId} returns
+        # 200 for OIDC-provisioned users (Bug 2a fix). Non-fatal: profile write failure
+        # must not block login — the provisioned user session is already valid.
+        display_name_for_profile =
+          if request.display_name == "", do: nil, else: request.display_name
+
+        case profile_db_module().upsert_profile(user_id, display_name_for_profile, nil) do
+          :ok -> :ok
+          {:error, reason} ->
+            Logger.warning("validate_token: profile upsert failed for #{user_id}: #{inspect(reason)}")
+        end
+
         %Core.ValidateTokenResponse{
           user_id: user.user_id,
           system_role: user.system_role,
@@ -628,6 +684,57 @@ defmodule Nebu.EventDispatcher.Server do
           status: GRPC.Status.internal(),
           message: "deletion failed: #{inspect(reason)}"
     end
+  end
+
+  # ─── InvalidateUserSessions — Story 6.5: Admin deactivation revokes all sessions ─
+  #
+  # Called by the Go gateway after a successful user deactivation.
+  # Delegates to session_supervisor_module().destroy_session/1 which handles:
+  #   - Nebu.Session.PgStore.invalidate_session/1 → deletes sync_tokens + sessions rows in a DB tx
+  #   - Nebu.Session.EtsStore.delete_session/1 → evicts ETS entry (after DB commit)
+  #
+  # Returns %Core.InvalidateUserSessionsResponse{ok: true} on success.
+  # Raises GRPC.RPCError with status=internal on failure (Go logs as warning, does not block).
+
+  def invalidate_user_sessions(%Core.InvalidateUserSessionsRequest{} = req, _stream) do
+    case session_supervisor_module().destroy_session(req.user_id) do
+      :ok ->
+        %Core.InvalidateUserSessionsResponse{ok: true}
+
+      {:error, reason} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.internal(),
+          message: "session invalidation failed: #{inspect(reason)}"
+    end
+  end
+
+  # ─── InvalidateAllAdminSessions — Story 6.10: Admin config OIDC change ────────
+  #
+  # Called by the Go gateway when OIDC issuer/client_id/client_secret changes in
+  # PATCH /admin/config. Forces all active sessions to re-authenticate.
+  #
+  # Flow:
+  #   1. List all active user_ids from ETS via Nebu.Session.EtsStore.list_user_ids/0.
+  #   2. Call session_supervisor_module().destroy_session/1 for each user (best-effort).
+  #   3. Always return %Core.InvalidateAllAdminSessionsResponse{ok: true} — no-op if ETS empty.
+  #
+  # Never raises — individual session failures are silently ignored (best-effort).
+  # Returns ok: true even if ETS is empty (idempotent no-op).
+
+  def invalidate_all_admin_sessions(%Core.InvalidateAllAdminSessionsRequest{} = _req, _stream) do
+    user_ids = Nebu.Session.EtsStore.list_user_ids()
+
+    Enum.each(user_ids, fn user_id ->
+      case session_supervisor_module().destroy_session(user_id) do
+        :ok ->
+          :ok
+
+        {:error, reason} ->
+          Logger.warning("InvalidateAllAdminSessions: failed to destroy session for #{user_id}: #{inspect(reason)}")
+      end
+    end)
+
+    %Core.InvalidateAllAdminSessionsResponse{ok: true}
   end
 
   def get_pending_events(_request, _stream) do
@@ -692,9 +799,13 @@ defmodule Nebu.EventDispatcher.Server do
   # calls GenServer.call(via(room_id), :get_state).
   # In tests, room_registry_module is overridden with FakeRoomRegistry.
 
-  def get_room_state(request, _stream) do
+  def get_room_state(request, stream) do
     room_id = request.room_id
+    event_type = Map.get(request, :event_type, "")
+    state_key = Map.get(request, :state_key, "")
     mod = room_registry_module()
+
+    {caller_id, system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
 
     state =
       try do
@@ -706,10 +817,43 @@ defmodule Nebu.EventDispatcher.Server do
             message: "room not found: #{room_id}"
       end
 
+    # System-role callers (internal gateway fanout) skip the membership check.
+    # User-role callers must be room members (Story 7-19 IDOR fix preserved).
+    unless system_role == "system" or MapSet.member?(state.members, caller_id) do
+      raise GRPC.RPCError,
+        status: GRPC.Status.permission_denied(),
+        message: "#{caller_id} is not a member of #{room_id}"
+    end
+
+    # Build the full state_events list for this room.
+    all_state_events = build_state_events(state, room_id)
+
+    # Apply optional event_type / state_key filter (Story 7-19, AC2 + AC3 + AC6).
+    # When event_type is empty, return all events (backward compat: /members caller).
+    # When event_type is set, filter to matching events; raise not_found if none match.
+    filtered_events =
+      if event_type == "" do
+        all_state_events
+      else
+        matched =
+          Enum.filter(all_state_events, fn ev ->
+            ev.type == event_type && ev.state_key == state_key
+          end)
+
+        if matched == [] do
+          raise GRPC.RPCError,
+            status: GRPC.Status.not_found(),
+            message: "no state event for type=#{event_type} state_key=#{state_key} in room #{room_id}"
+        end
+
+        matched
+      end
+
     %Core.GetRoomStateResponse{
       members: MapSet.to_list(state.members),
       power_levels_json: Jason.encode!(state.power_levels),
-      room_name: ""
+      room_name: "",
+      state_events: filtered_events
     }
   end
 
@@ -899,7 +1043,12 @@ defmodule Nebu.EventDispatcher.Server do
 
     room_ids = room_ids ++ invited_room_ids ++ declined_room_ids
 
-    # Step 5: Subscribe to :pg groups BEFORE DB check (race prevention)
+    # Step 5a: Subscribe to user-level :pg group BEFORE DB check.
+    # Receives {:new_invite, room_id} when invite_user/2 sends an invitation — this
+    # wakes the long-poll immediately instead of sleeping the full 30 s (Bug 4-29f fix).
+    :pg.join("user:#{user_id}", self())
+
+    # Step 5b: Subscribe to room-level :pg groups BEFORE DB check (race prevention).
     Enum.each(room_ids, fn room_id ->
       :pg.join("room:#{room_id}", self())
     end)
@@ -908,13 +1057,15 @@ defmodule Nebu.EventDispatcher.Server do
     # Pass last_event_id (string) directly — the DB module resolves the ts internally.
     delta_rooms = fetch_delta_rooms(room_ids, last_event_id)
 
+    leave_all_groups = fn ->
+      :pg.leave("user:#{user_id}", self())
+      Enum.each(room_ids, fn room_id -> :pg.leave("room:#{room_id}", self()) end)
+    end
+
     result_rooms =
       if delta_rooms != [] do
         # Step 7: Events found — leave :pg groups and return immediately
-        Enum.each(room_ids, fn room_id ->
-          :pg.leave("room:#{room_id}", self())
-        end)
-
+        leave_all_groups.()
         delta_rooms
       else
         # Step 8: No events — enter long-poll if timeout_ms > 0
@@ -929,6 +1080,14 @@ defmodule Nebu.EventDispatcher.Server do
                 flush_long_poll_timeout()
                 fetch_delta_rooms(room_ids, last_event_id)
 
+              {:new_invite, _room_id} ->
+                # New invitation for this user — cancel timer and return empty delta.
+                # The Go gateway's buildInviteRooms queries the DB for invite data,
+                # so returning [] here is sufficient to unblock the client.
+                Process.cancel_timer(timer_ref)
+                flush_long_poll_timeout()
+                []
+
               :sync_long_poll_timeout ->
                 []
             end
@@ -936,11 +1095,9 @@ defmodule Nebu.EventDispatcher.Server do
             []
           end
 
-        # Unsubscribe from :pg groups before returning (belt-and-suspenders;
+        # Unsubscribe from all :pg groups before returning (belt-and-suspenders;
         # :pg auto-removes dead processes, but explicit leave is cleaner)
-        Enum.each(room_ids, fn room_id ->
-          :pg.leave("room:#{room_id}", self())
-        end)
+        leave_all_groups.()
 
         wait_result
       end
@@ -1125,6 +1282,333 @@ defmodule Nebu.EventDispatcher.Server do
   defp do_send_reply(stream, event) do
     GRPC.Server.send_reply(stream, event)
   end
+
+  # ─── Story 7-22: Room Moderation ─────────────────────────────────────────────
+
+  @doc """
+  Handles POST /_matrix/client/v3/rooms/{roomId}/kick.
+
+  Kicks `target_id` from the room:
+  1. Verifies room exists.
+  2. Verifies `caller_id` is a room member.
+  3. Checks caller power level ≥ kick threshold (50 by default).
+  4. Calls Room GenServer leave/2 to remove target from members.
+  5. Returns empty KickUserResponse on success.
+  """
+  def kick_user(request, stream) do
+    room_id   = request.room_id
+    {caller_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
+    target_id = request.target_id
+
+    case Nebu.Room.RoomSupervisor.lookup_room(room_id) do
+      {:error, :not_found} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "room not found: #{room_id}"
+
+      {:ok, _pid} ->
+        state = Nebu.Room.Server.get_state(room_id)
+
+        unless MapSet.member?(state.members, caller_id) do
+          raise GRPC.RPCError,
+            status: GRPC.Status.permission_denied(),
+            message: "you are not a member of this room"
+        end
+
+        unless Nebu.Room.PowerLevels.can?(state.power_levels, caller_id, :kick) do
+          raise GRPC.RPCError,
+            status: GRPC.Status.permission_denied(),
+            message: "insufficient power level for kick"
+        end
+
+        case Nebu.Room.Server.remove_member(room_id, target_id) do
+          :ok ->
+            # Emit kick as m.room.member leave with sender = caller_id (not target_id).
+            reason = if request.reason != "", do: request.reason, else: nil
+            content = %{"membership" => "leave"} |> then(fn c ->
+              if reason, do: Map.put(c, "reason", reason), else: c
+            end)
+            kick_event = %{
+              "room_id"          => room_id,
+              "type"             => "m.room.member",
+              "state_key"        => target_id,
+              "sender"           => caller_id,
+              "content"          => content,
+              "origin_server_ts" => Nebu.DB.Helpers.now_ms()
+            }
+            event_id      = Nebu.EventId.generate(kick_event)
+            event_with_id = Map.put(kick_event, "event_id", event_id)
+            {_pub, priv}  = :persistent_term.get(:nebu_signing_key)
+            event_json    = Nebu.CanonicalJson.encode!(kick_event)
+            signature     = :crypto.sign(:eddsa, :none, event_json, [priv, :ed25519])
+            sig_b64       = Base.encode64(signature)
+            signed        = Map.put(event_with_id, "signatures", %{"nebu" => sig_b64})
+            case messages_db_module().insert_event(signed) do
+              :ok ->
+                Enum.each(:pg.get_local_members("room:#{room_id}"), &send(&1, {:new_event, signed}))
+                %Core.KickUserResponse{}
+              {:error, reason} ->
+                raise GRPC.RPCError,
+                  status: GRPC.Status.internal(),
+                  message: "kick failed: #{inspect(reason)}"
+            end
+
+          {:error, :not_member} ->
+            raise GRPC.RPCError,
+              status: GRPC.Status.not_found(),
+              message: "target user is not a member of this room"
+
+          {:error, reason} ->
+            raise GRPC.RPCError,
+              status: GRPC.Status.internal(),
+              message: "kick failed: #{inspect(reason)}"
+        end
+    end
+  end
+
+  @doc """
+  Handles POST /_matrix/client/v3/rooms/{roomId}/ban.
+
+  Bans `target_id` from the room:
+  1. Verifies room exists.
+  2. Verifies `caller_id` is a room member.
+  3. Checks caller power level ≥ ban threshold (50 by default).
+  4. If target is currently joined, removes them from members first.
+  5. Emits a m.room.member ban state event.
+  6. Returns empty BanUserResponse on success.
+  """
+  def ban_user(request, stream) do
+    room_id   = request.room_id
+    {caller_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
+    target_id = request.target_id
+
+    case Nebu.Room.RoomSupervisor.lookup_room(room_id) do
+      {:error, :not_found} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "room not found: #{room_id}"
+
+      {:ok, _pid} ->
+        state = Nebu.Room.Server.get_state(room_id)
+
+        unless MapSet.member?(state.members, caller_id) do
+          raise GRPC.RPCError,
+            status: GRPC.Status.permission_denied(),
+            message: "you are not a member of this room"
+        end
+
+        unless Nebu.Room.PowerLevels.can?(state.power_levels, caller_id, :ban) do
+          raise GRPC.RPCError,
+            status: GRPC.Status.permission_denied(),
+            message: "insufficient power level for ban"
+        end
+
+        # If the target is currently a member, remove them without emitting a leave event
+        # (the ban event below is the authoritative membership change).
+        if MapSet.member?(state.members, target_id) do
+          Nebu.Room.Server.remove_member(room_id, target_id)
+        end
+
+        reason = if request.reason != "", do: request.reason, else: nil
+        ban_content = %{"membership" => "ban"} |> then(fn c ->
+          if reason, do: Map.put(c, "reason", reason), else: c
+        end)
+
+        # Emit a m.room.member ban state event to signal the ban.
+        ban_event = %{
+          "room_id"          => room_id,
+          "type"             => "m.room.member",
+          "state_key"        => target_id,
+          "sender"           => caller_id,
+          "content"          => ban_content,
+          "origin_server_ts" => Nebu.DB.Helpers.now_ms()
+        }
+        event_id       = Nebu.EventId.generate(ban_event)
+        event_with_id  = Map.put(ban_event, "event_id", event_id)
+        {_pub, priv}   = :persistent_term.get(:nebu_signing_key)
+        event_json     = Nebu.CanonicalJson.encode!(ban_event)
+        signature      = :crypto.sign(:eddsa, :none, event_json, [priv, :ed25519])
+        sig_b64        = Base.encode64(signature)
+        signed         = Map.put(event_with_id, "signatures", %{"nebu" => sig_b64})
+
+        case messages_db_module().insert_event(signed) do
+          :ok ->
+            Enum.each(:pg.get_local_members("room:#{room_id}"), &send(&1, {:new_event, signed}))
+            %Core.BanUserResponse{}
+
+          {:error, reason} ->
+            raise GRPC.RPCError,
+              status: GRPC.Status.internal(),
+              message: "ban failed: #{inspect(reason)}"
+        end
+    end
+  end
+
+  @doc """
+  Handles POST /_matrix/client/v3/rooms/{roomId}/unban.
+
+  Unbans `target_id` from the room by setting their membership to leave:
+  1. Verifies room exists.
+  2. Verifies `caller_id` is a room member.
+  3. Checks caller power level ≥ ban threshold (50 by default).
+  4. Emits a m.room.member leave state event (unban = set to leave).
+  5. Returns empty UnbanUserResponse on success.
+  """
+  def unban_user(request, stream) do
+    room_id   = request.room_id
+    {caller_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
+    target_id = request.target_id
+
+    case Nebu.Room.RoomSupervisor.lookup_room(room_id) do
+      {:error, :not_found} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "room not found: #{room_id}"
+
+      {:ok, _pid} ->
+        state = Nebu.Room.Server.get_state(room_id)
+
+        unless MapSet.member?(state.members, caller_id) do
+          raise GRPC.RPCError,
+            status: GRPC.Status.permission_denied(),
+            message: "you are not a member of this room"
+        end
+
+        unless Nebu.Room.PowerLevels.can?(state.power_levels, caller_id, :ban) do
+          raise GRPC.RPCError,
+            status: GRPC.Status.permission_denied(),
+            message: "insufficient power level for unban"
+        end
+
+        # Emit m.room.member leave state event — unban = set membership to leave.
+        unban_event = %{
+          "room_id"          => room_id,
+          "type"             => "m.room.member",
+          "state_key"        => target_id,
+          "sender"           => caller_id,
+          "content"          => %{"membership" => "leave"},
+          "origin_server_ts" => Nebu.DB.Helpers.now_ms()
+        }
+        event_id       = Nebu.EventId.generate(unban_event)
+        event_with_id  = Map.put(unban_event, "event_id", event_id)
+        {_pub, priv}   = :persistent_term.get(:nebu_signing_key)
+        event_json     = Nebu.CanonicalJson.encode!(unban_event)
+        signature      = :crypto.sign(:eddsa, :none, event_json, [priv, :ed25519])
+        sig_b64        = Base.encode64(signature)
+        signed         = Map.put(event_with_id, "signatures", %{"nebu" => sig_b64})
+
+        case messages_db_module().insert_event(signed) do
+          :ok ->
+            Enum.each(:pg.get_local_members("room:#{room_id}"), &send(&1, {:new_event, signed}))
+            %Core.UnbanUserResponse{}
+
+          {:error, reason} ->
+            raise GRPC.RPCError,
+              status: GRPC.Status.internal(),
+              message: "unban failed: #{inspect(reason)}"
+        end
+    end
+  end
+
+  @doc """
+  Handles POST /_matrix/client/v3/rooms/{roomId}/forget.
+
+  Marks a room as excluded from future /sync for the calling user:
+  1. Verifies room exists.
+  2. Verifies caller is NOT currently joined (must leave first).
+  3. Returns empty ForgetRoomResponse on success.
+
+  Note: In MVP, forget is a no-op beyond the FailedPrecondition check because
+  GetSyncDelta does not yet filter forgotten rooms. A follow-up story will add
+  the `forgotten_rooms` column to session state and filter in GetSyncDelta.
+  """
+  def forget_room(request, _stream) do
+    room_id = request.room_id
+    user_id = request.user_id
+
+    case Nebu.Room.RoomSupervisor.lookup_room(room_id) do
+      {:error, :not_found} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "room not found: #{room_id}"
+
+      {:ok, _pid} ->
+        state = Nebu.Room.Server.get_state(room_id)
+
+        # Cannot forget a room while still joined.
+        if MapSet.member?(state.members, user_id) do
+          raise GRPC.RPCError,
+            status: GRPC.Status.failed_precondition(),
+            message: "user must leave the room before forgetting"
+        end
+
+        # Room is not currently joined — forget acknowledged.
+        %Core.ForgetRoomResponse{}
+    end
+  end
+
+  # ─── Story 6.9: ArchiveRoom + UnarchiveRoom gRPC handlers ─────────────────────
+  #
+  # archive_room/2:
+  #   Called by the Go gateway after successfully setting rooms.status = 'archived' in DB.
+  #   Best-effort: terminates the running Room GenServer via Horde so in-memory state is
+  #   cleared. The DB is authoritative — even if the GenServer is not running, ok=true.
+  #   On next start, Room.Server.init/1 sees status="archived" → {:stop, :normal} → no loop.
+  #
+  # unarchive_room/2:
+  #   Called by the Go gateway after successfully setting rooms.status = 'active' in DB.
+  #   Best-effort: starts the Room GenServer so it is immediately available for messages.
+  #   Returns ok=true even if start_room fails (DB is authoritative; Gateway returns 200).
+
+  def archive_room(%Core.ArchiveRoomRequest{} = req, _stream) do
+    room_id = req.room_id
+
+    # Terminate the running GenServer (best-effort — idempotent if not running).
+    # Room.Server.child_spec uses :transient restart, so Horde will NOT restart it
+    # after a terminate_child call. DB status is the authoritative archived flag.
+    case Nebu.Room.RoomSupervisor.lookup_room(room_id) do
+      {:ok, pid} ->
+        case Horde.DynamicSupervisor.terminate_child(Nebu.Room.HordeSupervisor, pid) do
+          :ok ->
+            :ok
+
+          {:error, reason} ->
+            # Race: process likely crashed between lookup and terminate. The DB
+            # is already archived, so the Gateway returns 200 — but log so this
+            # isn't silently swallowed.
+            Logger.warning("ArchiveRoom: terminate_child failed (likely already stopped) — #{inspect(reason)}",
+              room_id: room_id
+            )
+
+            :ok
+        end
+
+      {:error, :not_found} ->
+        # Already stopped — no-op (idempotent).
+        :ok
+    end
+
+    %Core.ArchiveRoomResponse{ok: true}
+  end
+
+  def unarchive_room(%Core.UnarchiveRoomRequest{} = req, _stream) do
+    room_id = req.room_id
+
+    # Start the Room GenServer so it is immediately available.
+    # Room.Server.init/1 now calls get_room_status/1 on start:
+    #   → {:ok, "active"} means the room is unarchived — init proceeds normally.
+    #   → {:ok, "archived"} would be a race condition (DB not yet updated) — init stops.
+    # Best-effort: if start_room fails, the DB is already updated to 'active';
+    # the GenServer will start on the next client request.
+    case Nebu.Room.RoomSupervisor.start_room(room_id) do
+      {:ok, _pid} -> :ok
+      {:error, _reason} -> :ok
+    end
+
+    %Core.UnarchiveRoomResponse{ok: true}
+  end
+
+  # ─── Private helpers ──────────────────────────────────────────────────────────
 
   # Emits a signed m.room.member leave event into the events table and broadcasts
   # it to any :pg subscribers of the room. Called when an invite is declined via

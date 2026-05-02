@@ -72,8 +72,8 @@ test.describe('Room Invites — render and decline (AC 3, Story 4-29)', () => {
     const { room_id: roomId } = await createResp.json();
 
     // Set up sync interception BEFORE sending invite (network-first — Murat TEA).
-    // Invites don't trigger a :pg broadcast, so the long-poll runs its full 30 s.
-    // We wait up to 35 s for the sync response that includes rooms.invite[roomId].
+    // invite_user/2 now broadcasts {:new_invite, room_id} via :pg to the invitee's
+    // user-level group, waking the long-poll within ~3 s. (Bug 4-29f fix, Story 8-10a)
     const syncWithInvitePromise = page.waitForResponse(async (resp) => {
       if (!resp.url().includes('/_matrix/client/v3/sync')) return false;
       if (!resp.ok()) return false;
@@ -92,11 +92,13 @@ test.describe('Room Invites — render and decline (AC 3, Story 4-29)', () => {
     );
     expect(inviteResp.status(), 'POST /invite must return 200').toBe(200);
 
-    // Wait for sync to deliver rooms.invite (long-poll max 30 s + margin)
+    // Wait for sync to deliver rooms.invite within 10 s (was 35 s workaround).
+    // With :pg broadcast fix: sync wakes in ~3 s → PASS.
+    // Without the fix: long-poll sleeps 30 s → timeout fires → FAIL.
     await Promise.race([
       syncWithInvitePromise,
       new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Invite not delivered in sync within 35 s')), 35_000)
+        setTimeout(() => reject(new Error('Invite not delivered in sync within 10 s — :pg user broadcast fix required')), 10_000)
       ),
     ]);
 
@@ -154,11 +156,12 @@ test.describe('Room Invites — render and decline (AC 3, Story 4-29)', () => {
       },
     );
 
-    // Wait for sync to deliver rooms.invite (long-poll max 30 s + margin)
+    // Wait for sync to deliver rooms.invite within 10 s (was 35 s workaround).
+    // With :pg broadcast fix: sync wakes in ~3 s. (Bug 4-29f fix, Story 8-10a)
     await Promise.race([
       syncWithInvitePromise,
       new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Invite not delivered in sync within 35 s')), 35_000)
+        setTimeout(() => reject(new Error('Invite not delivered in sync within 10 s — :pg user broadcast fix required')), 10_000)
       ),
     ]);
 

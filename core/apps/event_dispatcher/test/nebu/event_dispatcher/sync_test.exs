@@ -135,7 +135,7 @@ defmodule Nebu.EventDispatcher.SyncTest do
       all_events =
         :ets.match(:sync_test_db, {{:event, :"$1"}, :"$2"})
         |> Enum.map(fn [_id, ev] -> ev end)
-        |> Enum.filter(fn ev -> ev["room_id"] == room_id end)
+        |> Enum.filter(fn ev -> ev["room_id"] == room_id and Map.has_key?(ev, "event_type") end)
         |> Enum.sort_by(fn ev -> ev["origin_server_ts"] end, :desc)
         |> Enum.take(limit)
 
@@ -159,7 +159,9 @@ defmodule Nebu.EventDispatcher.SyncTest do
         :ets.match(:sync_test_db, {{:event, :"$1"}, :"$2"})
         |> Enum.map(fn [_id, ev] -> ev end)
         |> Enum.filter(fn ev ->
-          ev["room_id"] == room_id and ev["origin_server_ts"] > cutoff_ts
+          ev["room_id"] == room_id and
+            Map.has_key?(ev, "event_type") and
+            ev["origin_server_ts"] > cutoff_ts
         end)
         |> Enum.sort_by(fn ev -> ev["origin_server_ts"] end, :asc)
         |> Enum.take(limit)
@@ -193,6 +195,26 @@ defmodule Nebu.EventDispatcher.SyncTest do
           {:error, :not_found}
       end
     end
+
+    # Story 6.8: load_room_settings/1 returns {:ok, 0} (no limit) for unit tests.
+    def load_room_settings(_room_id), do: {:ok, 0}
+
+    # Story 6.9: get_room_status/1 — returns {:ok, "active"} so normal rooms start correctly.
+    def get_room_status(_room_id), do: {:ok, "active"}
+  end
+
+  # ─── SyncTestFakeInviteDB ────────────────────────────────────────────────────
+  #
+  # No-op fake for Nebu.Room.InviteDB. Injected via
+  # Application.put_env(:event_dispatcher, :invite_db_module, SyncTestFakeInviteDB).
+  # Prevents do_incremental_sync from hitting Ecto when fetching invite rooms.
+
+  defmodule SyncTestFakeInviteDB do
+    def get_pending_invite_rooms_for_user(_user_id), do: {:ok, []}
+    def get_declined_invite_rooms_for_user(_user_id), do: {:ok, []}
+    def insert_invitation(_room_id, _inviter, _invitee), do: :ok
+    def accept_invitation(_room_id, _invitee_id), do: :ok
+    def reject_invitation(_room_id, _invitee_id), do: :ok
   end
 
   # ─── SyncTestFakePgStore ──────────────────────────────────────────────────────
@@ -251,6 +273,9 @@ defmodule Nebu.EventDispatcher.SyncTest do
     # Inject fake DB for the get_initial_sync handler's get_rooms_for_user/1 calls.
     Application.put_env(:event_dispatcher, :rooms_db_module, SyncTestFakeDB)
 
+    # Inject fake InviteDB so do_incremental_sync doesn't hit Ecto for pending invites.
+    Application.put_env(:event_dispatcher, :invite_db_module, SyncTestFakeInviteDB)
+
     # Inject fake PgStore so persist_since_token/3 is testable without PostgreSQL.
     Application.put_env(:event_dispatcher, :pg_store_module, SyncTestFakePgStore)
 
@@ -272,6 +297,7 @@ defmodule Nebu.EventDispatcher.SyncTest do
       Application.delete_env(:room_manager, :db_module)
       Application.delete_env(:event_dispatcher, :messages_db_module)
       Application.delete_env(:event_dispatcher, :rooms_db_module)
+      Application.delete_env(:event_dispatcher, :invite_db_module)
       Application.delete_env(:event_dispatcher, :pg_store_module)
       Application.delete_env(:event_dispatcher, :server_name)
 
@@ -725,6 +751,10 @@ defmodule Nebu.EventDispatcher.SyncTest do
     defdelegate get_rooms_for_user(user_id), to: SyncTestFakeDB
     defdelegate fetch_events(room_id, direction, limit, from_token), to: SyncTestFakeDB
     defdelegate get_room_name(room_id), to: SyncTestFakeDB
+    # Story 6.8: delegate load_room_settings/1 to SyncTestFakeDB (returns {:ok, 0}).
+    defdelegate load_room_settings(room_id), to: SyncTestFakeDB
+    # Story 6.9: delegate get_room_status/1 to SyncTestFakeDB (returns {:ok, "active"}).
+    defdelegate get_room_status(room_id), to: SyncTestFakeDB
 
     # ── New: fetch_events_since/3 (Story 4-15) ────────────────────────────────
     #
@@ -750,7 +780,9 @@ defmodule Nebu.EventDispatcher.SyncTest do
         :ets.match(:sync_test_db, {{:event, :"$1"}, :"$2"})
         |> Enum.map(fn [_id, ev] -> ev end)
         |> Enum.filter(fn ev ->
-          ev["room_id"] == room_id and ev["origin_server_ts"] > cutoff_ts
+          ev["room_id"] == room_id and
+            Map.has_key?(ev, "event_type") and
+            ev["origin_server_ts"] > cutoff_ts
         end)
         |> Enum.sort_by(fn ev -> ev["origin_server_ts"] end, :asc)
         |> Enum.take(limit)
@@ -1187,6 +1219,84 @@ defmodule Nebu.EventDispatcher.SyncTest do
 
       assert is_binary(response.since_token) and response.since_token != "",
              "expected non-empty binary since_token, got: #{inspect(response.since_token)}"
+    end
+  end
+
+  # ─── Story 8-10a AC4b: do_incremental_sync wakes on {:new_invite, _} ─────────
+  #
+  # Bug 4-29f fix: the sync long-poll must wake immediately when a new invite
+  # arrives, instead of sleeping the full 30 s.
+  #
+  # Mechanism: do_incremental_sync subscribes to :pg group "user:#{user_id}" BEFORE
+  # entering the receive loop. invite_user/2 sends {:new_invite, room_id} to that
+  # group. The receive block handles {:new_invite, _} by cancelling the timer and
+  # returning an empty delta (Go gateway's buildInviteRooms fetches the invite data).
+  #
+  # Given: alice has no pending events (long-poll would normally wait timeout_ms)
+  # When:  get_sync_delta is called with timeout_ms: 500
+  #        AND after 50 ms an external process sends {:new_invite, room_id} to "user:alice"
+  # Then:  the handler returns within ~200 ms (much less than 500 ms)
+  #        AND response.rooms == [] (empty delta — invite data fetched by Go gateway)
+
+  describe "Server.get_sync_delta/2 — wakes on {:new_invite, _} (Bug 4-29f)" do
+    test "long-poll returns early when {:new_invite, room_id} is broadcast to user :pg group" do
+      alice = "@alice_invite_wake:test.local"
+      room_id = "!invite-wake:test.local"
+
+      :ets.new(:sync_delta_pg_store_config, [:named_table, :public, :set])
+
+      on_exit(fn ->
+        if :ets.info(:sync_delta_pg_store_config) != :undefined do
+          :ets.delete(:sync_delta_pg_store_config)
+        end
+      end)
+
+      Application.put_env(:event_dispatcher, :pg_store_module, SyncDeltaFakePgStore)
+      Application.put_env(:event_dispatcher, :messages_db_module, SyncDeltaFakeDB)
+      Application.put_env(:event_dispatcher, :rooms_db_module, SyncDeltaFakeDB)
+
+      on_exit(fn ->
+        Application.delete_env(:event_dispatcher, :pg_store_module)
+        Application.delete_env(:event_dispatcher, :messages_db_module)
+        Application.delete_env(:event_dispatcher, :rooms_db_module)
+      end)
+
+      # alice has no rooms and no events → long-poll path is taken.
+      :ets.insert(:sync_delta_pg_store_config,
+        {:get_since_token_response, {:ok, %{since_token: "s_invite_wake", last_event_id: nil}}})
+
+      request = %Core.GetSyncDeltaRequest{
+        user_id: alice,
+        since_token: "s_invite_wake",
+        timeout_ms: 500
+      }
+
+      # Spawn sender: waits 50 ms, then broadcasts {:new_invite, room_id} to alice's :pg group.
+      test_pid = self()
+      Task.start(fn ->
+        Process.sleep(50)
+        members = :pg.get_local_members("user:#{alice}")
+        Enum.each(members, &send(&1, {:new_invite, room_id}))
+        send(test_pid, {:sender_done, length(members)})
+      end)
+
+      start_ms = System.monotonic_time(:millisecond)
+      response = Server.get_sync_delta(request, build_stream())
+      elapsed_ms = System.monotonic_time(:millisecond) - start_ms
+
+      # Must return well before the 500 ms timeout — invite woke the long-poll.
+      assert elapsed_ms < 300,
+             "Expected early return on {:new_invite, _} but took #{elapsed_ms} ms (timeout was 500 ms)"
+
+      # Must not timeout — should return much faster than timeout_ms.
+      assert elapsed_ms >= 40,
+             "Expected at least 40 ms (sender delay), got #{elapsed_ms} ms"
+
+      # Invite wakeup returns empty rooms — Go gateway fetches invite data separately.
+      assert response.rooms == [],
+             "Expected empty rooms on {:new_invite, _} wakeup, got: #{inspect(response.rooms)}"
+
+      assert %Core.GetSyncDeltaResponse{} = response
     end
   end
 end

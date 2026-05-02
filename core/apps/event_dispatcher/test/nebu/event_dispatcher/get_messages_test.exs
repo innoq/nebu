@@ -98,7 +98,7 @@ defmodule Nebu.EventDispatcher.GetMessagesTest do
       all_events =
         :ets.match(:get_messages_test_db, {{:event, :"$1"}, :"$2"})
         |> Enum.map(fn [_id, ev] -> ev end)
-        |> Enum.filter(fn ev -> ev["room_id"] == room_id end)
+        |> Enum.filter(fn ev -> ev["room_id"] == room_id and Map.has_key?(ev, "event_type") end)
         |> Enum.sort_by(fn ev -> ev["origin_server_ts"] end)
 
       # Apply cursor if from_token is non-empty.
@@ -188,6 +188,12 @@ defmodule Nebu.EventDispatcher.GetMessagesTest do
     end
 
     defp decode_token(_), do: :error
+
+    # Story 6.8: load_room_settings/1 returns {:ok, 0} (no limit) for unit tests.
+    def load_room_settings(_room_id), do: {:ok, 0}
+
+    # Story 6.9: get_room_status/1 — returns {:ok, "active"} so normal rooms start correctly.
+    def get_room_status(_room_id), do: {:ok, "active"}
   end
 
   # ─── Setup / Teardown ────────────────────────────────────────────────────────

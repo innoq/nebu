@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/nebu/nebu/internal/admin"
+	apihandler "github.com/nebu/nebu/internal/api"
 	"github.com/nebu/nebu/internal/audit"
 	"github.com/nebu/nebu/internal/auth"
 	"github.com/nebu/nebu/internal/buffer"
@@ -53,8 +54,11 @@ type coreRoomStateLookup struct {
 }
 
 // GetRoomState satisfies buffer.RoomStateLookup: calls the gRPC Core and returns member IDs.
+// Uses coregrpc.WithUserMetadata to identify this as a trusted internal (system) call so that
+// the Elixir Core's system-role bypass skips the membership check (Story 7-33).
 func (a *coreRoomStateLookup) GetRoomState(ctx context.Context, roomID string) ([]string, error) {
-	resp, err := a.client.GetRoomState(ctx, &pb.GetRoomStateRequest{RoomId: roomID})
+	sysCtx := coregrpc.WithUserMetadata(ctx, "", "system")
+	resp, err := a.client.GetRoomState(sysCtx, &pb.GetRoomStateRequest{RoomId: roomID})
 	if err != nil {
 		return nil, err
 	}
@@ -205,8 +209,10 @@ func main() {
 	// so that only the proxy-appended IP (rightmost-minus-1) is trusted for rate limiting.
 	trustedProxy := os.Getenv("NEBU_TRUSTED_PROXY") == "true"
 	// strictRL: Matrix /login (real brute-force risk: username+password) — 30 req/min, burst 10.
-	// (Compliance endpoints also use strictRL but are JWT-gated, so brute-force isn't a concern there.)
 	strictRL := middleware.NewIPRateLimiter(middleware.RateLimitConfig{Rate: rate.Limit(30.0 / 60.0), Burst: 10}, trustedProxy, "strict")
+	// complianceRL: all compliance/* and admin user key/anonymize routes — 10 req/min, burst 10.
+	// Separate instance from strictRL so compliance traffic cannot exhaust the login bucket.
+	complianceRL := middleware.NewIPRateLimiter(middleware.RateLimitConfig{Rate: rate.Limit(10.0 / 60.0), Burst: 10}, trustedProxy, "compliance")
 	// adminRL: all rate-limited admin endpoints (login/start, callback, bootstrap, claim-select) —
 	// 60 req/min, burst 20. Sized so legit admin clicking never hits the limit; sustained
 	// hammering is still capped to ~1/sec which kills brute-force.
@@ -304,6 +310,40 @@ func main() {
 	dashboardHandler := admin.NewDashboardHandler(tmplHandler, coreClient, bootstrapDB)
 	mux.Handle("GET /admin/dashboard", csrf(sessionGuard(http.HandlerFunc(dashboardHandler.Handler))))
 
+	// Story 7.2: Users + Rooms master-detail routes — registered BEFORE catch-all
+	usersHandler := admin.NewUsersHandler(tmplHandler)
+	mux.Handle("GET /admin/users", csrf(sessionGuard(http.HandlerFunc(usersHandler.ListHandler))))
+	mux.Handle("GET /admin/users/{userId}", csrf(sessionGuard(http.HandlerFunc(usersHandler.DetailHandler))))
+	mux.Handle("POST /admin/users/{userId}/display-name", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(usersHandler.UpdateDisplayNameHandler)))))
+	mux.Handle("POST /admin/users/{userId}/role", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(usersHandler.UpdateRoleHandler)))))
+	mux.Handle("POST /admin/users/{userId}/deactivate", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(usersHandler.DeactivateUserHandler)))))
+	mux.Handle("POST /admin/users/{userId}/reactivate", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(usersHandler.ReactivateUserHandler)))))
+	roomsHandler := admin.NewRoomsHandler(tmplHandler)
+	mux.Handle("GET /admin/rooms", csrf(sessionGuard(http.HandlerFunc(roomsHandler.ListHandler))))
+	mux.Handle("GET /admin/rooms/{roomId}", csrf(sessionGuard(http.HandlerFunc(roomsHandler.DetailHandler))))
+	mux.Handle("POST /admin/rooms/{roomId}/name", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(roomsHandler.UpdateRoomNameHandler)))))
+	mux.Handle("POST /admin/rooms/{roomId}/archive", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(roomsHandler.ArchiveRoomHandler)))))
+	mux.Handle("POST /admin/rooms/{roomId}/unarchive", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(roomsHandler.UnarchiveRoomHandler)))))
+	// Story 7.10: Server Configuration page.
+	configHandler := admin.NewConfigHandler(tmplHandler)
+	mux.Handle("GET /admin/config", csrf(sessionGuard(http.HandlerFunc(configHandler.Handler))))
+	mux.Handle("POST /admin/config", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(configHandler.UpdateConfigHandler)))))
+
+	// Story 7.15: Role Mapping configuration page.
+	roleMappingHandler := admin.NewRoleMappingHandler(tmplHandler)
+	mux.Handle("GET /admin/config/role-mapping", csrf(sessionGuard(http.HandlerFunc(roleMappingHandler.Handler))))
+	mux.Handle("POST /admin/config/role-mapping", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(roleMappingHandler.UpdateHandler)))))
+
+	// Story 7.11: Compliance Access Requests page (four-eyes approval UI).
+	complianceHandler := admin.NewComplianceHandler(tmplHandler)
+	mux.Handle("GET /admin/compliance", csrf(sessionGuard(http.HandlerFunc(complianceHandler.ListHandler))))
+	mux.Handle("POST /admin/compliance/{id}/approve", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(complianceHandler.ApproveHandler)))))
+	mux.Handle("POST /admin/compliance/{id}/reject", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(complianceHandler.RejectHandler)))))
+
+	// Story 7.12: Audit Log page — read-only, no POST handlers.
+	auditLogHandler := admin.NewAuditLogHandler(tmplHandler)
+	mux.Handle("GET /admin/audit-log", csrf(sessionGuard(http.HandlerFunc(auditLogHandler.ListHandler))))
+
 	checker := admin.NewPostgresBootstrapChecker(bootstrapDB)
 	bootstrapHandler := admin.NewBootstrapHandler(checker, tmplHandler, bootstrapDB, []byte(internalSecret))
 	guard := admin.BootstrapGuard(checker)
@@ -314,6 +354,8 @@ func main() {
 	mux.HandleFunc("GET /admin/static/vendor/{filename}", admin.ServeVendorFile)
 	mux.HandleFunc("GET /admin/static/metrics-widget.js", admin.ServeMetricsWidgetJS)
 	mux.HandleFunc("GET /admin/static/js/{filename}", admin.ServeJSFile)
+	mux.HandleFunc("GET /admin/static/icons/{filename}", admin.ServeIconFile)
+	mux.HandleFunc("GET /favicon.ico", admin.ServeFavicon)
 
 	// SSE live metrics endpoint — behind session guard (AC5: no CSRF on SSE/GET).
 	sseMetricsHandler := admin.NewSSEMetricsHandler(&coreMetricsAdapter{client: coreClient})
@@ -397,11 +439,15 @@ func main() {
 	tokenStore := db.NewPostgresTokenStore(tokenDB)
 	logoutHandler := matrix.NewLogoutHandler(tokenStore)
 	jwtMiddleware := middleware.JWTMiddleware(oidcProvider, cfg.OIDCClientID, cfg.OIDCClaimRole, tokenStore, serverName)
+	// Story 6.5 (HIGH-1 fix): wrap jwtMiddleware with is_active check so ALL authenticated
+	// routes (Matrix, admin, compliance) reject tokens for deactivated users.
+	// 60s TTL cache per user; fail-open on DB error to avoid blocking on transient DB issues.
+	jwtWithStatusCheck := middleware.WithUserStatusCheck(jwtMiddleware, &middleware.DBUserStatusChecker{DB: tokenDB})
 
 	// Matrix compatibility endpoints — required by all Matrix clients post-login.
 	// whoami: FluffyChat calls this immediately after login to verify the session is valid.
 	mux.Handle("GET /_matrix/client/v3/account/whoami",
-		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		jwtWithStatusCheck(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			userID, _ := r.Context().Value(middleware.ContextKeyUserID).(string)
 			w.Header().Set("Content-Type", "application/json")
 			fmt.Fprintf(w, `{"user_id":%q,"is_guest":false}`, userID)
@@ -424,12 +470,31 @@ func main() {
 		w.Write([]byte(`{"errcode":"M_UNRECOGNIZED","error":"MSC2965 OIDC-native auth is not supported by this server. Use m.login.sso."}`))
 	})))
 
-	// pushrules: return empty rule set — no push notifications in MVP.
+	// Story 7-30: Push Rules API — GET/PUT/DELETE /pushrules + Pushers.
+	// Replaces the empty stub with a full database-backed implementation.
+	// Default rules are seeded lazily on first GET /pushrules/ for each user.
+	pushRulesHandler := matrix.NewPushRulesHandler(matrix.PushRulesConfig{
+		DB: db.NewPostgresPushRulesDB(bootstrapDB),
+	})
+	pushersHandler := matrix.NewPushersHandler(matrix.PushersConfig{
+		DB: db.NewPostgresPushersDB(bootstrapDB),
+	})
 	mux.Handle("GET /_matrix/client/v3/pushrules/",
-		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"global":{"content":[],"override":[],"room":[],"sender":[],"underride":[]}}`))
-		})))
+		jwtWithStatusCheck(http.HandlerFunc(pushRulesHandler.GetAllPushRules)))
+	mux.Handle("GET /_matrix/client/v3/pushrules/{scope}/{kind}/{ruleId}",
+		jwtWithStatusCheck(http.HandlerFunc(pushRulesHandler.GetPushRule)))
+	mux.Handle("PUT /_matrix/client/v3/pushrules/{scope}/{kind}/{ruleId}",
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(pushRulesHandler.PutPushRule))))
+	mux.Handle("DELETE /_matrix/client/v3/pushrules/{scope}/{kind}/{ruleId}",
+		jwtWithStatusCheck(http.HandlerFunc(pushRulesHandler.DeletePushRule)))
+	mux.Handle("PUT /_matrix/client/v3/pushrules/{scope}/{kind}/{ruleId}/enabled",
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(pushRulesHandler.PutPushRuleEnabled))))
+	mux.Handle("PUT /_matrix/client/v3/pushrules/{scope}/{kind}/{ruleId}/actions",
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(pushRulesHandler.PutPushRuleActions))))
+	mux.Handle("GET /_matrix/client/v3/pushers",
+		jwtWithStatusCheck(http.HandlerFunc(pushersHandler.GetPushers)))
+	mux.Handle("POST /_matrix/client/v3/pushers/set",
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(pushersHandler.SetPusher))))
 
 	// media config: report the upload size limit (10 MiB default).
 	// looseRL: unauthenticated media config endpoint.
@@ -443,21 +508,32 @@ func main() {
 
 	// 3PIDs (email/phone binding) — not supported in MVP.
 	mux.Handle("GET /_matrix/client/v3/account/3pid",
-		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		jwtWithStatusCheck(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"threepids":[]}`))
 		})))
 
-	// Device list — no multi-device management in MVP.
+	// Story 7-26: Device Management API — GET/PUT/DELETE /devices + POST /delete_devices.
+	// Devices are backed by the sessions table; migration 000030 adds device_display_name.
+	// DELETE and POST /delete_devices require UIA (m.login.sso stage).
+	devicesHandler := matrix.NewDevicesHandler(matrix.DevicesConfig{
+		ServerName: serverName,
+		DB:         db.NewPostgresDeviceStore(bootstrapDB),
+	})
 	mux.Handle("GET /_matrix/client/v3/devices",
-		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"devices":[]}`))
-		})))
+		jwtWithStatusCheck(http.HandlerFunc(devicesHandler.ListDevices)))
+	mux.Handle("GET /_matrix/client/v3/devices/{deviceId}",
+		jwtWithStatusCheck(http.HandlerFunc(devicesHandler.GetDevice)))
+	mux.Handle("PUT /_matrix/client/v3/devices/{deviceId}",
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(devicesHandler.PutDevice))))
+	mux.Handle("DELETE /_matrix/client/v3/devices/{deviceId}",
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(devicesHandler.DeleteDevice))))
+	mux.Handle("POST /_matrix/client/v3/delete_devices",
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(devicesHandler.DeleteDevices))))
 
 	// Joined rooms — clients use this as a shortcut; sync already returns room state.
 	mux.Handle("GET /_matrix/client/v3/joined_rooms",
-		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		jwtWithStatusCheck(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"joined_rooms":[]}`))
 		})))
@@ -470,18 +546,18 @@ func main() {
 		ServerName: serverName,
 	})
 	mux.Handle("POST /_matrix/client/v3/user_directory/search",
-		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(userDirHandler.Search))))
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(userDirHandler.Search))))
 
 	// Room directory / alias endpoints.
 	// PUT: Element Web calls this when creating a public room with an address.
 	// MVP: accept and acknowledge without storing — aliases not implemented yet.
 	mux.Handle("PUT /_matrix/client/v3/directory/room/{roomAlias}",
-		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{}`))
 		}))))
 	mux.Handle("DELETE /_matrix/client/v3/directory/room/{roomAlias}",
-		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		jwtWithStatusCheck(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{}`))
 		})))
@@ -501,7 +577,7 @@ func main() {
 	// Event filter — clients POST a filter definition, receive a filter_id for use in /sync.
 	// MVP: accept any filter and return id "0" (unfiltered sync is equivalent).
 	mux.Handle("POST /_matrix/client/v3/user/{userId}/filter",
-		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"filter_id":"0"}`))
 		}))))
@@ -510,12 +586,12 @@ func main() {
 	// Without this endpoint, /sync enters a permanent ERROR loop (filter fetch fails → no sync).
 	filterHandler := matrix.NewFilterHandler(matrix.FilterConfig{ServerName: serverName})
 	mux.Handle("GET /_matrix/client/v3/user/{userId}/filter/{filterId}",
-		jwtMiddleware(http.HandlerFunc(filterHandler.GetFilter)))
+		jwtWithStatusCheck(http.HandlerFunc(filterHandler.GetFilter)))
 
 	// E2E encryption stubs — acknowledge without storing (no E2E in MVP).
 	// Return non-zero one_time_key_counts so Element Web considers keys uploaded
 	// and skips the "Setting up keys / Unable to set up keys" cross-signing dialog.
-	e2eHandler := jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	e2eHandler := jwtWithStatusCheck(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"one_time_key_counts":{"curve25519":50,"signed_curve25519":50}}`))
 	}))
@@ -528,7 +604,7 @@ func main() {
 	// We implement the minimal UIA flow: m.login.dummy (no real challenge) so
 	// Element considers the setup successful and skips the error dialog.
 	mux.Handle("POST /_matrix/client/v3/keys/device_signing/upload",
-		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			var body map[string]interface{}
 			_ = json.NewDecoder(r.Body).Decode(&body)
 			// If the request includes an "auth" field, treat it as the confirmed UIA step.
@@ -546,7 +622,7 @@ func main() {
 				fmt.Sprintf("%x", func() []byte { b := make([]byte, 8); _, _ = rand.Read(b); return b }()))
 		}))))
 	mux.Handle("POST /_matrix/client/v3/keys/signatures/upload",
-		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"failures":{}}`))
 		}))))
@@ -555,29 +631,78 @@ func main() {
 	// Returning 404 for GET (no backup) and 200 for POST (accept creation silently)
 	// prevents the "Unable to set up keys" error dialog from appearing.
 	mux.Handle("GET /_matrix/client/v3/room_keys/version",
-		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		jwtWithStatusCheck(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusNotFound)
 			w.Write([]byte(`{"errcode":"M_NOT_FOUND","error":"No backup found"}`))
 		})))
 	mux.Handle("POST /_matrix/client/v3/room_keys/version",
-		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"version":"1"}`))
 		}))))
 
-	// Account data endpoints (used for secret storage, notification settings, etc.)
+	// Story 7-24: Account data endpoints — global and per-room.
+	// GET/PUT /_matrix/client/v3/user/{userId}/account_data/{type}
+	// GET/PUT /_matrix/client/v3/user/{userId}/rooms/{roomId}/account_data/{type}
+	// Stored directly in PostgreSQL (no gRPC round-trip needed for account data).
+	// RLS policy on room_account_data enforces user isolation per row.
+	accountDataHandler := matrix.NewAccountDataHandler(matrix.AccountDataConfig{
+		ServerName: serverName,
+		DB:         db.NewPostgresAccountDataDB(bootstrapDB),
+	})
 	mux.Handle("GET /_matrix/client/v3/user/{userId}/account_data/{type}",
-		jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusNotFound)
-			w.Write([]byte(`{"errcode":"M_NOT_FOUND","error":"Account data not found"}`))
-		})))
+		jwtWithStatusCheck(http.HandlerFunc(accountDataHandler.GetGlobalAccountData)))
 	mux.Handle("PUT /_matrix/client/v3/user/{userId}/account_data/{type}",
-		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{}`))
-		}))))
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(accountDataHandler.PutGlobalAccountData))))
+	mux.Handle("GET /_matrix/client/v3/user/{userId}/rooms/{roomId}/account_data/{type}",
+		jwtWithStatusCheck(http.HandlerFunc(accountDataHandler.GetRoomAccountData)))
+	mux.Handle("PUT /_matrix/client/v3/user/{userId}/rooms/{roomId}/account_data/{type}",
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(accountDataHandler.PutRoomAccountData))))
+
+	// Story 7-25: Tags API — GET/PUT/DELETE /user/{userId}/rooms/{roomId}/tags[/{tag}].
+	// Tags are stored as a single "m.tag" room account data entry ({"tags":{...}}) via
+	// the same PostgreSQL room_account_data table introduced in Story 7-24.
+	// All three endpoints require JWT auth (AC6 ownership check inside handler).
+	// PUT/DELETE require bodyLimit1MiB (PUT body: {"order":0.5}; DELETE has no body).
+	tagsHandler := matrix.NewTagsHandler(matrix.TagsConfig{
+		ServerName: serverName,
+		DB:         db.NewPostgresAccountDataDB(bootstrapDB),
+	})
+	mux.Handle("GET /_matrix/client/v3/user/{userId}/rooms/{roomId}/tags",
+		jwtWithStatusCheck(http.HandlerFunc(tagsHandler.GetTags)))
+	mux.Handle("PUT /_matrix/client/v3/user/{userId}/rooms/{roomId}/tags/{tag}",
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(tagsHandler.PutTag))))
+	mux.Handle("DELETE /_matrix/client/v3/user/{userId}/rooms/{roomId}/tags/{tag}",
+		jwtWithStatusCheck(http.HandlerFunc(tagsHandler.DeleteTag)))
+
+	// Story 7-27: Public Room Directory — GET/POST /_matrix/client/v3/publicRooms.
+	// GET is unauthenticated (looseRL); POST requires JWT + body size limit.
+	publicRoomsHandler := matrix.NewPublicRoomsHandler(matrix.PublicRoomsConfig{
+		CoreClient: coreClient,
+		ServerName: serverName,
+	})
+	mux.Handle("GET /_matrix/client/v3/publicRooms",
+		looseRL(http.HandlerFunc(publicRoomsHandler.GetPublicRooms)))
+	mux.Handle("POST /_matrix/client/v3/publicRooms",
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(publicRoomsHandler.PostPublicRooms))))
+
+	// Story 7-28: Event Context — GET /_matrix/client/v3/rooms/{roomId}/context/{eventId}.
+	// JWT required. Query param: limit (default 5, max 25).
+	eventContextHandler := matrix.NewGetEventContextHandler(matrix.GetEventContextConfig{
+		CoreClient: coreClient,
+	})
+	mux.Handle("GET /_matrix/client/v3/rooms/{roomId}/context/{eventId}",
+		jwtWithStatusCheck(http.HandlerFunc(eventContextHandler.GetEventContext)))
+
+	// Story 7-29: Notifications API — GET /_matrix/client/v3/notifications.
+	// Reads from the notifications table (migration 000031) with cursor-based pagination.
+	// JWT required (jwtMiddleware). Query params: from (cursor), limit (default 50, max 200), only.
+	notificationsHandler := matrix.NewNotificationsHandler(matrix.NotificationsConfig{
+		DB: db.NewPostgresNotificationsDB(bootstrapDB),
+	})
+	mux.Handle("GET /_matrix/client/v3/notifications",
+		jwtWithStatusCheck(http.HandlerFunc(notificationsHandler.GetNotifications)))
 
 	// Misc stubs to suppress other 404s in Element Web startup
 	// looseRL on unauthenticated stub endpoints that clients poll at startup.
@@ -601,28 +726,28 @@ func main() {
 		UserChecker: db.NewPostgresUserExistenceChecker(bootstrapDB),
 	})
 	mux.Handle("POST /_matrix/client/v3/keys/query",
-		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(keysQueryHandler.PostKeysQuery))))
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(keysQueryHandler.PostKeysQuery))))
 
 	// keys/changes requires JWT auth per Matrix spec (AC7, story 5-27).
-	mux.Handle("GET /_matrix/client/v3/keys/changes", looseRL(jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("GET /_matrix/client/v3/keys/changes", looseRL(jwtWithStatusCheck(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"changed":[],"left":[]}`))
 	}))))
 
 	mux.Handle("POST /_matrix/client/v3/keys/claim",
-		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"one_time_keys":{},"failures":{}}`))
 		}))))
 
-	mux.Handle("POST /_matrix/client/v3/logout", bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(logoutHandler.PostLogout))))
+	mux.Handle("POST /_matrix/client/v3/logout", bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(logoutHandler.PostLogout))))
 
 	createRoomHandler := matrix.NewCreateRoomHandler(matrix.CreateRoomConfig{
 		CoreClient: coreClient,
 		ServerName: serverName,
 	})
 	mux.Handle("POST /_matrix/client/v3/createRoom",
-		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(createRoomHandler.PostCreateRoom))))
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(createRoomHandler.PostCreateRoom))))
 
 	joinRoomHandler := matrix.NewJoinRoomHandler(matrix.JoinRoomConfig{
 		CoreClient: coreClient,
@@ -630,17 +755,17 @@ func main() {
 	})
 	// FR20: Join by room ID or alias directly
 	mux.Handle("POST /_matrix/client/v3/join/{roomIdOrAlias}",
-		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(joinRoomHandler.PostJoinRoom))))
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(joinRoomHandler.PostJoinRoom))))
 	// Accept invitation via /rooms/{roomId}/join
 	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/join",
-		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(joinRoomHandler.PostJoinRoomById))))
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(joinRoomHandler.PostJoinRoomById))))
 
 	inviteHandler := matrix.NewInviteUserHandler(matrix.InviteUserConfig{
 		CoreClient: coreClient,
 		ServerName: serverName,
 	})
 	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/invite",
-		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(inviteHandler.PostInviteUser))))
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(inviteHandler.PostInviteUser))))
 
 	// Story 5-29e Bug 1: upgrade endpoint was missing, returning 404 from default mux fallback.
 	// This 501 stub prevents the 404 and signals the client that the server understands the
@@ -649,14 +774,20 @@ func main() {
 		ServerName: serverName,
 	})
 	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/upgrade",
-		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(upgradeRoomHandler.PostUpgradeRoom))))
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(upgradeRoomHandler.PostUpgradeRoom))))
 
+	// Story 6.9: roomsRepo is needed by SendEventHandler to check rooms.status before
+	// calling Core.SendEvent (archived rooms must return 403 M_ROOM_ARCHIVED).
+	// roomsRepo is also wired into AdminServer below (Story 6.7 onwards).
+	// Creating it here ensures it is available for both uses.
+	sendEventRoomsRepo := apihandler.NewRoomRepo(bootstrapDB) // Story 6.9
 	sendEventHandler := matrix.NewSendEventHandler(matrix.SendEventConfig{
-		CoreClient: coreClient,
-		ServerName: serverName,
+		CoreClient:    coreClient,
+		ServerName:    serverName,
+		StatusChecker: sendEventRoomsRepo, // Story 6.9: check rooms.status before Core.SendEvent
 	})
 	mux.Handle("PUT /_matrix/client/v3/rooms/{roomId}/send/{eventType}/{txnId}",
-		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(sendEventHandler.PutSendEvent))))
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(sendEventHandler.PutSendEvent))))
 
 	messagesHandler := matrix.NewGetMessagesHandler(matrix.GetMessagesConfig{
 		CoreClient: coreClient,
@@ -664,7 +795,7 @@ func main() {
 	})
 	// GetRoomMessages wraps GetMessages with Matrix roomId path-param validation (AC2, story 5-27).
 	mux.Handle("GET /_matrix/client/v3/rooms/{roomId}/messages",
-		jwtMiddleware(http.HandlerFunc(messagesHandler.GetRoomMessages)))
+		jwtWithStatusCheck(http.HandlerFunc(messagesHandler.GetRoomMessages)))
 
 	setRoomStateHandler := matrix.NewSetRoomStateHandler(matrix.SetRoomStateConfig{
 		CoreClient: coreClient,
@@ -672,32 +803,33 @@ func main() {
 	})
 	// Register both: with stateKey (e.g. m.room.member/@user:srv) and without (e.g. m.room.power_levels).
 	mux.Handle("PUT /_matrix/client/v3/rooms/{roomId}/state/{eventType}/{stateKey}",
-		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(setRoomStateHandler.PutSetRoomState))))
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(setRoomStateHandler.PutSetRoomState))))
 	mux.Handle("PUT /_matrix/client/v3/rooms/{roomId}/state/{eventType}",
-		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(setRoomStateHandler.PutSetRoomState))))
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(setRoomStateHandler.PutSetRoomState))))
 
 	syncHandler := matrix.NewGetSyncHandler(matrix.GetSyncConfig{
-		CoreClient: coreClient,
-		ServerName: serverName,
-		Buffer:     msgBuf,
-		DB:         bootstrapDB, // for rooms.invite pending invitation queries
+		CoreClient:    coreClient,
+		ServerName:    serverName,
+		Buffer:        msgBuf,
+		DB:            bootstrapDB, // for rooms.invite pending invitation queries
+		AccountDataDB: db.NewPostgresAccountDataDB(bootstrapDB), // Story 7-24 AC4: account_data in sync
 	})
 	mux.Handle("GET /_matrix/client/v3/sync",
-		jwtMiddleware(http.HandlerFunc(syncHandler.GetSync)))
+		jwtWithStatusCheck(http.HandlerFunc(syncHandler.GetSync)))
 
 	typingHandler := matrix.NewTypingHandler(matrix.TypingConfig{
 		CoreClient: coreClient,
 		ServerName: serverName,
 	})
 	mux.Handle("PUT /_matrix/client/v3/rooms/{roomId}/typing/{userId}",
-		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(typingHandler.PutTyping))))
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(typingHandler.PutTyping))))
 
 	receiptsHandler := matrix.NewReceiptsHandler(matrix.ReceiptsConfig{
 		CoreClient: coreClient,
 		ServerName: serverName,
 	})
 	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/receipt/{receiptType}/{eventId}",
-		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(receiptsHandler.PostReceipt))))
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(receiptsHandler.PostReceipt))))
 
 	// Room members — Element Web calls this to populate the member sidebar after entering a room.
 	getRoomMembersHandler := matrix.NewGetRoomMembersHandler(matrix.GetRoomMembersConfig{
@@ -705,13 +837,67 @@ func main() {
 		ServerName: serverName,
 	})
 	mux.Handle("GET /_matrix/client/v3/rooms/{roomId}/members",
-		jwtMiddleware(http.HandlerFunc(getRoomMembersHandler.GetRoomMembers)))
+		jwtWithStatusCheck(http.HandlerFunc(getRoomMembersHandler.GetRoomMembers)))
+
+	// Story 7-20: Joined members compact map — returns {"joined": {"@user:server": {...}}}
+	// with only users whose current membership is "join". Profile data (display_name, avatar_url)
+	// is read from PostgreSQL via ProfileDB. JWT required (authenticated endpoint).
+	getJoinedMembersHandler := matrix.NewGetJoinedMembersHandler(matrix.GetJoinedMembersConfig{
+		CoreClient: coreClient,
+		ServerName: serverName,
+		DB:         db.NewPostgresProfileDB(bootstrapDB),
+	})
+	mux.Handle("GET /_matrix/client/v3/rooms/{roomId}/joined_members",
+		jwtWithStatusCheck(http.HandlerFunc(getJoinedMembersHandler.GetJoinedMembers)))
+
+	// Story 7-19: Room State API — GET /rooms/{roomId}/state (all events) and
+	// GET /rooms/{roomId}/state/{eventType}/{stateKey} / /{eventType} (single event).
+	// All three variants require JWT auth (AC7).
+	getRoomStateHandler := matrix.NewGetRoomStateHandler(matrix.GetRoomStateConfig{
+		CoreClient: coreClient,
+		ServerName: serverName,
+	})
+	mux.Handle("GET /_matrix/client/v3/rooms/{roomId}/state",
+		jwtWithStatusCheck(http.HandlerFunc(getRoomStateHandler.GetRoomState)))
+	mux.Handle("GET /_matrix/client/v3/rooms/{roomId}/state/{eventType}/{stateKey}",
+		jwtWithStatusCheck(http.HandlerFunc(getRoomStateHandler.GetRoomStateSingleEvent)))
+	// Trailing-slash variant handles "GET /state/{eventType}/" with empty stateKey (subtree pattern).
+	mux.Handle("GET /_matrix/client/v3/rooms/{roomId}/state/{eventType}/",
+		jwtWithStatusCheck(http.HandlerFunc(getRoomStateHandler.GetRoomStateSingleEvent)))
+	mux.Handle("GET /_matrix/client/v3/rooms/{roomId}/state/{eventType}",
+		jwtWithStatusCheck(http.HandlerFunc(getRoomStateHandler.GetRoomStateSingleEvent)))
+
+	// Story 7-23: Room Aliases — GET /rooms/{roomId}/aliases.
+	// MVP: membership verified via GetRoomState gRPC; returns {"aliases":[]} (no alias storage yet).
+	// JWT required (jwtMiddleware). Extensible: when alias storage is added, gRPC call drops in here.
+	getRoomAliasesHandler := matrix.NewGetRoomAliasesHandler(matrix.GetRoomAliasesConfig{
+		CoreClient: coreClient,
+		ServerName: serverName,
+	})
+	mux.Handle("GET /_matrix/client/v3/rooms/{roomId}/aliases",
+		jwtWithStatusCheck(http.HandlerFunc(getRoomAliasesHandler.GetRoomAliases)))
 
 	// Read markers — Element Web posts fully-read markers; acknowledge without persisting (MVP).
 	// Without this, Element enters a retry loop producing "Error sending fully_read" log spam.
 	readMarkersHandler := matrix.NewReadMarkersHandler(matrix.ReadMarkersConfig{ServerName: serverName})
 	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/read_markers",
-		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(readMarkersHandler.PostReadMarkers))))
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(readMarkersHandler.PostReadMarkers))))
+
+	// Story 7-22: Room Moderation — kick / ban / unban / forget.
+	// All four are state-changing Matrix POST endpoints; require JWT auth + bodyLimit1MiB
+	// (matches existing /v3 pattern — no per-route rate limit beyond the global default).
+	moderationHandler := matrix.NewModerationHandler(matrix.ModerationConfig{
+		CoreClient: coreClient,
+		ServerName: serverName,
+	})
+	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/kick",
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(moderationHandler.PostKickUser))))
+	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/ban",
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(moderationHandler.PostBanUser))))
+	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/unban",
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(moderationHandler.PostUnbanUser))))
+	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/forget",
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(moderationHandler.PostForgetRoom))))
 
 	// Profile DB: reuse the bootstrapDB connection for direct profile reads (GET /profile — no gRPC).
 	profileHandler := matrix.NewProfileHandler(matrix.ProfileConfig{
@@ -719,25 +905,31 @@ func main() {
 		ServerName: serverName,
 		DB:         db.NewPostgresProfileDB(bootstrapDB),
 	})
+	// Story 7-21: GET sub-field endpoints — unauthenticated (AC4), looseRL (AC5).
+	// Must be registered BEFORE the less-specific GET /profile/{userId} pattern.
+	mux.Handle("GET /_matrix/client/v3/profile/{userId}/displayname",
+		looseRL(http.HandlerFunc(profileHandler.GetDisplayname)))
+	mux.Handle("GET /_matrix/client/v3/profile/{userId}/avatar_url",
+		looseRL(http.HandlerFunc(profileHandler.GetAvatarURL)))
 	// GET is unauthenticated — no jwtMiddleware wrapper (per Matrix spec: profile is public).
 	// GET /profile is unauthenticated (Matrix spec: profile is public) — medium rate-limit (Story 5.21, AC 2).
 	mux.Handle("GET /_matrix/client/v3/profile/{userId}", mediumRL(http.HandlerFunc(profileHandler.GetProfile)))
 	// PUT endpoints require JWT auth.
 	mux.Handle("PUT /_matrix/client/v3/profile/{userId}/displayname",
-		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(profileHandler.PutDisplayname))))
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(profileHandler.PutDisplayname))))
 	mux.Handle("PUT /_matrix/client/v3/profile/{userId}/avatar_url",
-		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(profileHandler.PutAvatarURL))))
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(profileHandler.PutAvatarURL))))
 
 	presenceHandler := matrix.NewPresenceHandler(matrix.PresenceConfig{
 		CoreClient: coreClient,
 		ServerName: serverName,
 	})
 	mux.Handle("GET /_matrix/client/v3/presence/{userId}/status",
-		jwtMiddleware(http.HandlerFunc(presenceHandler.GetPresenceStatus)))
+		jwtWithStatusCheck(http.HandlerFunc(presenceHandler.GetPresenceStatus)))
 
 	// PUT /presence/{userId}/status — checks userId == authed user (AC5, story 5-27).
 	mux.Handle("PUT /_matrix/client/v3/presence/{userId}/status",
-		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(presenceHandler.PutPresenceStatus))))
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(presenceHandler.PutPresenceStatus))))
 
 	// Story 5.3 — Compliance Access Request API
 	// Route namespace: /api/v1/compliance/* — NOT under /_matrix/client/v3/ (Matrix CS API)
@@ -753,20 +945,24 @@ func main() {
 		DB:         complianceDB,
 		CoreClient: coreClient.CoreServiceClient(),
 	}
-	// FB-53-01: all compliance/* and admin anonymize/key-delete routes wrapped in strictRL (10/min/IP).
+	// FB-53-01: all compliance/* and admin anonymize/key-delete routes wrapped in complianceRL (10/min/IP).
+	// Separate from strictRL (login) so compliance traffic cannot exhaust the login rate-limit bucket.
 	mux.Handle("POST /api/v1/compliance/access-requests",
-		strictRL(bodyLimit64KiB(jwtMiddleware(http.HandlerFunc(accessRequestHandler.PostAccessRequest)))))
+		complianceRL(bodyLimit64KiB(jwtWithStatusCheck(http.HandlerFunc(accessRequestHandler.PostAccessRequest)))))
 
 	// Story 5.4 — Four-Eyes Approval API
-	// GET: no body, so no bodyLimit needed
+	// GET: no body, so no bodyLimit needed.
+	// NOTE: RegisterAdminRoutes (Story 6.3) intentionally does NOT register this GET route;
+	// main.go owns it to preserve the working accessRequestHandler with complianceRL.
+	// Story 6.11 will migrate it under the generated StrictHandler.
 	mux.Handle("GET /api/v1/compliance/access-requests",
-		strictRL(jwtMiddleware(http.HandlerFunc(accessRequestHandler.GetAccessRequests))))
+		complianceRL(jwtWithStatusCheck(http.HandlerFunc(accessRequestHandler.GetAccessRequests))))
 
 	mux.Handle("POST /api/v1/compliance/access-requests/{requestId}/approve",
-		strictRL(bodyLimit64KiB(jwtMiddleware(http.HandlerFunc(accessRequestHandler.PostApprove)))))
+		complianceRL(bodyLimit64KiB(jwtWithStatusCheck(http.HandlerFunc(accessRequestHandler.PostApprove)))))
 
 	mux.Handle("POST /api/v1/compliance/access-requests/{requestId}/reject",
-		strictRL(bodyLimit64KiB(jwtMiddleware(http.HandlerFunc(accessRequestHandler.PostReject)))))
+		complianceRL(bodyLimit64KiB(jwtWithStatusCheck(http.HandlerFunc(accessRequestHandler.PostReject)))))
 
 	// Admin API (session auth, not JWT) — pending-count badge for dashboard
 	pendingCountHandler := &compliance.PendingCountHandler{DB: complianceDB}
@@ -833,7 +1029,7 @@ func main() {
 		PublicKey:  compPubKey,
 	}
 	mux.Handle("POST /api/v1/compliance/access-requests/{requestId}/session",
-		strictRL(bodyLimit64KiB(jwtMiddleware(http.HandlerFunc(sessionHandler.PostSession)))))
+		complianceRL(bodyLimit64KiB(jwtWithStatusCheck(http.HandlerFunc(sessionHandler.PostSession)))))
 
 	// Story 5.6 — Compliance Data Export
 	// GET endpoint — no body, so no bodyLimit64KiB or requireJSON needed.
@@ -845,7 +1041,7 @@ func main() {
 		PublicKey:  compPubKey,
 	}
 	mux.Handle("GET /api/v1/compliance/export",
-		strictRL(jwtMiddleware(http.HandlerFunc(exportHandler.GetExport))))
+		complianceRL(jwtWithStatusCheck(http.HandlerFunc(exportHandler.GetExport))))
 
 	// Story 5.29c AC2 — Compliance session revoke endpoint.
 	// POST /api/v1/admin/compliance/sessions/{sessionId}/revoke
@@ -855,12 +1051,13 @@ func main() {
 	// like every other admin POST (Logout, Bootstrap, Select-Claim). Without
 	// this, a lure-attack would let an attacker revoke compliance sessions
 	// via a forged form post. Kassandra HIGH-1 fix (2026-04-29).
+	// 7-16b: moved from adminRL (burst=20) to complianceRL (burst=10) — Story 5.29b AC1 gap.
 	revokeSessionHandler := &compliance.RevokeSessionHandler{
 		DB:         complianceDB,
 		CoreClient: coreClient.CoreServiceClient(),
 	}
 	mux.Handle("POST /api/v1/admin/compliance/sessions/{sessionId}/revoke",
-		adminRL(bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(revokeSessionHandler.RevokeSession))))))
+		complianceRL(bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(revokeSessionHandler.RevokeSession))))))
 
 	// Story 5.7 — DSGVO User Key Deletion
 	// Route namespace: /api/v1/admin/* — instance_admin only, role gate inside handler.
@@ -869,7 +1066,7 @@ func main() {
 		CoreClient: coreClient.CoreServiceClient(),
 	}
 	mux.Handle("DELETE /api/v1/admin/users/{userId}/keys",
-		strictRL(bodyLimit64KiB(jwtMiddleware(http.HandlerFunc(userKeyDeletionHandler.DeleteUserKeys)))))
+		complianceRL(bodyLimit64KiB(jwtWithStatusCheck(http.HandlerFunc(userKeyDeletionHandler.DeleteUserKeys)))))
 
 	// Story 5.8 — Operational PII Anonymization
 	// Route namespace: /api/v1/admin/* — instance_admin only, role gate inside handler.
@@ -881,11 +1078,11 @@ func main() {
 		StoragePath: os.Getenv("NEBU_MEDIA_STORAGE_PATH"),
 	}
 	mux.Handle("POST /api/v1/admin/users/{userId}/anonymize",
-		strictRL(jwtMiddleware(http.HandlerFunc(anonymizationHandler.AnonymizeUser))))
+		complianceRL(jwtWithStatusCheck(http.HandlerFunc(anonymizationHandler.AnonymizeUser))))
 
 	// POST /rooms/{roomId}/leave — leave a room (calls Elixir LeaveRoom gRPC)
 	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/leave",
-		bodyLimit1MiB(jwtMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			roomID := r.PathValue("roomId")
 			userID, _ := r.Context().Value(middleware.ContextKeyUserID).(string)
 			systemRole, _ := r.Context().Value(middleware.ContextKeySystemRole).(string)
@@ -912,6 +1109,43 @@ func main() {
 			}
 			w.Write([]byte(`{}`))
 		}))))
+
+	// Story 6.1 — Admin API OpenAPI spec endpoint (unauthenticated, FR51).
+	// Serves the raw openapi.yaml embedded at build time so API tooling can fetch it
+	// without credentials. Must NOT be placed behind jwtMiddleware or sessionGuard.
+	mux.HandleFunc("GET /api/v1/openapi.yaml", apihandler.OpenAPIYAMLHandler)
+
+	// Story 6.3 — Admin API Router + Role-Auth Middleware.
+	// Story 6.4 — Admin API User List + Get: AdminServer gains DB + CoreClient + Users.
+	// Story 6.5 — User Deactivation + Reactivation: adds Deactivation repo + session invalidation.
+	// Registers generated Admin API stub routes with role-based access control:
+	//   - GET  /api/v1/health                              → unauthenticated
+	//   - GET  /api/v1/admin/*                             → instance_admin role required
+	//   - GET  /api/v1/admin/users                         → list users (Story 6.4)
+	//   - GET  /api/v1/admin/users/{userId}                → get single user (Story 6.4)
+	//   - POST /api/v1/admin/users/{userId}/deactivate     → deactivate user (Story 6.5)
+	//   - POST /api/v1/admin/users/{userId}/reactivate     → reactivate user (Story 6.5)
+	// GET /api/v1/compliance/access-requests is owned by main.go above (Story 5.4 live handler).
+	rolesRepo := apihandler.NewRoleOverrideRepo(bootstrapDB)        // Story 6.6
+	roomsRepo := apihandler.NewRoomRepo(bootstrapDB)                // Story 6.7
+	roomDefaultsRepo := apihandler.NewRoomDefaultsRepo(bootstrapDB) // Story 6.8
+	serverConfigRepo := apihandler.NewServerConfigRepo(bootstrapDB) // Story 6.10
+	metricsRepo := apihandler.NewMetricsRepo(bootstrapDB)           // Story 6.10
+	adminSrv := &apihandler.AdminServer{
+		DB:           bootstrapDB,
+		CoreClient:   coreClient.CoreServiceClient(),
+		Users:        apihandler.NewUserRepoWithRoles(bootstrapDB, rolesRepo), // Story 6.6: merge overrides
+		Deactivation: apihandler.NewDeactivationRepo(bootstrapDB),             // Story 6.5
+		Roles:        rolesRepo,                                               // Story 6.6
+		Rooms:        roomsRepo,                                               // Story 6.7
+		RoomDefaults: roomDefaultsRepo,                                        // Story 6.8
+		ServerConfig: serverConfigRepo,                                        // Story 6.10
+		Metrics:      metricsRepo,                                             // Story 6.10
+		Secret:       []byte(internalSecret),                                  // Story 6.10: AES-256-GCM key for oidc_client_secret
+	}
+	// jwtWithStatusCheck is defined early (after jwtMiddleware, line ~445) and wraps ALL routes.
+	// rolesRepo satisfies RoleOverrideChecker for RequireRole DB-override path (Story 6.6).
+	apihandler.RegisterAdminRoutes(mux, adminSrv, jwtWithStatusCheck, rolesRepo)
 
 	// Story 5.14: Wrap the main mux so that every /admin/* response carries security headers.
 	// SecurityHeadersMiddleware is the outermost layer — even 302 redirects emitted by

@@ -1,20 +1,15 @@
-openapi: "3.0.3"
+openapi: "3.1.0"
 info:
-  title: Nebu Admin API
-  version: "0.1.0"
-paths:
-  /api/v1/health:
-    get:
-      operationId: GetApiV1Health
-      summary: Admin health check
-      responses:
-        "200":
-          description: Health status
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/HealthResponse"
+  title: "Nebu Admin API"
+  version: "1.0.0"
+servers:
+  - url: "/api/v1"
 components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
   schemas:
     HealthResponse:
       type: object
@@ -23,3 +18,720 @@ components:
       properties:
         status:
           type: string
+    EmptyResponse:
+      type: object
+      description: Placeholder response; replaced in Epic 6 sub-stories
+    DeactivateUserRequest:
+      type: object
+      required:
+        - reason
+      properties:
+        reason:
+          type: string
+          minLength: 10
+    UserStatusResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
+          required:
+            - user_id
+            - status
+          properties:
+            user_id:
+              type: string
+            status:
+              type: string
+    UserListResponse:
+      type: object
+      required:
+        - data
+        - meta
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+        meta:
+          type: object
+          required:
+            - total
+          properties:
+            total:
+              type: integer
+            next_cursor:
+              type: string
+    UserDetailResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
+    AssignUserRoleRequest:
+      type: object
+      required:
+        - role
+        - action
+      properties:
+        role:
+          type: string
+          enum: [instance_admin, compliance_officer]
+        action:
+          type: string
+          enum: [grant, revoke]
+    AssignUserRoleResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
+          required:
+            - user_id
+            - role
+            - action
+          properties:
+            user_id:
+              type: string
+            role:
+              type: string
+            action:
+              type: string
+    AdminRoomObject:
+      type: object
+      required:
+        - room_id
+        - name
+        - topic
+        - visibility
+        - member_count
+        - status
+        - created_at
+        - creator_user_id
+      properties:
+        room_id:
+          type: string
+        name:
+          type: string
+        topic:
+          type: string
+        visibility:
+          type: string
+        member_count:
+          type: integer
+        status:
+          type: string
+        created_at:
+          type: string
+        creator_user_id:
+          type: string
+    AdminRoomDetailObject:
+      allOf:
+        - $ref: "#/components/schemas/AdminRoomObject"
+        - type: object
+          required:
+            - max_members
+            - message_count
+            - power_levels_json
+          properties:
+            max_members:
+              type: integer
+            message_count:
+              type: integer
+            power_levels_json:
+              type: string
+    RoomListResponse:
+      type: object
+      required:
+        - data
+        - meta
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminRoomObject"
+        meta:
+          type: object
+          required:
+            - total
+          properties:
+            total:
+              type: integer
+            next_cursor:
+              type: string
+    PatchAdminRoomRequest:
+      type: object
+      properties:
+        max_members:
+          type: integer
+          minimum: 2
+          maximum: 100000
+        visibility:
+          type: string
+          enum: [public, private]
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        topic:
+          type: string
+          maxLength: 1000
+    PutRoomDefaultsRequest:
+      type: object
+      required:
+        - default_max_members
+        - default_visibility
+      properties:
+        default_max_members:
+          type: integer
+          minimum: 0
+        default_visibility:
+          type: string
+          enum: [public, private]
+    RoomDefaultsResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
+          required:
+            - default_max_members
+            - default_visibility
+          properties:
+            default_max_members:
+              type: integer
+            default_visibility:
+              type: string
+    AdminConfigResponse:
+      type: object
+      properties:
+        instance_name:
+          type: string
+        oidc_issuer:
+          type: string
+        oidc_client_id:
+          type: string
+        room_default_max_members:
+          type: integer
+        room_default_visibility:
+          type: string
+        audit_log_retention_days:
+          type: integer
+      # NOTE: oidc_client_secret intentionally absent — write-only field
+    PatchAdminConfigRequest:
+      type: object
+      properties:
+        instance_name:
+          type: string
+        oidc_issuer:
+          type: string
+        oidc_client_id:
+          type: string
+        oidc_client_secret:
+          type: string
+        audit_log_retention_days:
+          type: integer
+          minimum: 1
+          maximum: 36500
+      # All fields optional — partial update semantics
+    AdminMetricsResponse:
+      type: object
+      properties:
+        active_sessions:
+          type: integer
+        room_count:
+          type: integer
+        archived_room_count:
+          type: integer
+        msg_per_sec_1m:
+          type: number
+          format: float
+        registered_users:
+          type: integer
+        deactivated_users:
+          type: integer
+    ArchiveRoomRequest:
+      type: object
+      required:
+        - reason
+      properties:
+        reason:
+          type: string
+          minLength: 10
+    ArchiveRoomResponse:
+      type: object
+      required:
+        - room_id
+        - status
+      properties:
+        room_id:
+          type: string
+        status:
+          type: string
+    UnarchiveRoomResponse:
+      type: object
+      required:
+        - room_id
+        - status
+      properties:
+        room_id:
+          type: string
+        status:
+          type: string
+security:
+  - BearerAuth: []
+paths:
+  /health:
+    get:
+      operationId: GetHealth
+      summary: Health check (unauthenticated)
+      security: []
+      responses:
+        "200":
+          description: Health status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /admin/users:
+    get:
+      operationId: ListAdminUsers
+      summary: List users (instance_admin required)
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserListResponse"
+        "400":
+          description: Bad request (invalid cursor or limit)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "501":
+          description: Not implemented
+  /admin/users/{userId}:
+    get:
+      operationId: GetAdminUser
+      summary: Get single user (instance_admin required)
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserDetailResponse"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+  /admin/users/{userId}/deactivate:
+    post:
+      operationId: DeactivateAdminUser
+      summary: Deactivate user account (instance_admin required)
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeactivateUserRequest"
+      responses:
+        "200":
+          description: User deactivated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserStatusResponse"
+        "400":
+          description: Bad request (missing/short reason)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "409":
+          description: Conflict (already deactivated)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "501":
+          description: Not implemented
+  /admin/users/{userId}/reactivate:
+    post:
+      operationId: ReactivateAdminUser
+      summary: Reactivate user account (instance_admin required)
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User reactivated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserStatusResponse"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "409":
+          description: Conflict (irreversible state or already active)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "501":
+          description: Not implemented
+  /admin/users/{userId}/roles:
+    post:
+      operationId: AssignAdminUserRole
+      summary: Grant or revoke a role override for a user (instance_admin required)
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignUserRoleRequest"
+      responses:
+        "200":
+          description: Role assigned or revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignUserRoleResponse"
+        "400":
+          description: Bad request (invalid role or action)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "403":
+          description: Forbidden (self-revoke protection)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "404":
+          description: User or role override not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "501":
+          description: Not implemented
+  /admin/rooms:
+    get:
+      operationId: ListAdminRooms
+      summary: List rooms (instance_admin required)
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Room list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomListResponse"
+        "400":
+          description: Bad request (invalid cursor or limit)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "501":
+          description: Not implemented
+  /admin/rooms/{roomId}:
+    get:
+      operationId: GetAdminRoom
+      summary: Get single room (instance_admin required)
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Room details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminRoomDetailObject"
+        "404":
+          description: Room not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "501":
+          description: Not implemented
+    patch:
+      operationId: PatchAdminRoom
+      summary: Update room settings (instance_admin required)
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchAdminRoomRequest"
+      responses:
+        "200":
+          description: Updated room
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminRoomDetailObject"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "404":
+          description: Room not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "501":
+          description: Not implemented
+  /admin/config/room-defaults:
+    put:
+      operationId: PutAdminRoomDefaults
+      summary: Set server-wide room defaults (instance_admin required)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PutRoomDefaultsRequest"
+      responses:
+        "200":
+          description: Room defaults
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomDefaultsResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "501":
+          description: Not implemented
+  /admin/rooms/{roomId}/archive:
+    post:
+      operationId: ArchiveAdminRoom
+      summary: Archive a room (instance_admin required)
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ArchiveRoomRequest"
+      responses:
+        "200":
+          description: Room archived
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArchiveRoomResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "404":
+          description: Room not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "409":
+          description: Room already archived
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "501":
+          description: Not implemented
+  /admin/rooms/{roomId}/unarchive:
+    post:
+      operationId: UnarchiveAdminRoom
+      summary: Unarchive a room (instance_admin required)
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Room unarchived
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnarchiveRoomResponse"
+        "404":
+          description: Room not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "409":
+          description: Room not archived
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "501":
+          description: Not implemented
+  /admin/config:
+    get:
+      operationId: GetAdminConfig
+      summary: Get server config (instance_admin required)
+      responses:
+        "200":
+          description: Server configuration (oidc_client_secret is never returned)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminConfigResponse"
+        "501":
+          description: Not implemented
+    patch:
+      operationId: PatchAdminConfig
+      summary: Update server config (instance_admin required)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchAdminConfigRequest"
+      responses:
+        "200":
+          description: Updated server configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminConfigResponse"
+        "400":
+          description: Validation error (e.g. audit_log_retention_days out of range)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "501":
+          description: Not implemented
+  /admin/metrics:
+    get:
+      operationId: GetAdminMetrics
+      summary: Get instance metrics (instance_admin required)
+      responses:
+        "200":
+          description: Live instance metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminMetricsResponse"
+        "501":
+          description: Not implemented
+  /compliance/access-requests:
+    get:
+      operationId: ListComplianceAccessRequests
+      summary: List compliance access requests (placeholder — Story 6.x)
+      responses:
+        "200":
+          description: Access requests
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyResponse"
+        "501":
+          description: Not implemented

@@ -86,6 +86,12 @@ defmodule Nebu.Room.PowerLevelEnforcementTest do
       :ets.insert(:fake_room_db, {{:power_levels, room_id}, power_levels_json})
       :ok
     end
+
+    # Story 6.8: load_room_settings/1 returns {:ok, 0} (no limit) for unit tests.
+    def load_room_settings(_room_id), do: {:ok, 0}
+
+    # Story 6.9: get_room_status/1 returns {:ok, "active"} — normal rooms start correctly.
+    def get_room_status(_room_id), do: {:ok, "active"}
   end
 
   defmodule FailingWriteDB do
@@ -95,6 +101,10 @@ defmodule Nebu.Room.PowerLevelEnforcementTest do
     def delete_member(_room_id, _user_id), do: {:error, :db_connection_lost}
     def insert_event(_event), do: {:error, :db_connection_lost}
     def set_power_levels(_room_id, _json), do: {:error, :db_connection_lost}
+    # Story 6.8: fail-open — if load_room_settings fails, GenServer defaults to 0.
+    def load_room_settings(_room_id), do: {:error, :db_connection_lost}
+    # Story 6.9: fail-open — if get_room_status errors, GenServer starts normally.
+    def get_room_status(_room_id), do: {:ok, "active"}
   end
 
   # ─── Setup ──────────────────────────────────────────────────────────────────

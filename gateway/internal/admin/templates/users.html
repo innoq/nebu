@@ -1,0 +1,112 @@
+{{ template "base" . }}
+{{ define "title" }}Users — Nebu Admin{{ end }}
+
+{{ define "content" }}
+{{ template "master_detail" . }}
+{{ end }}
+
+{{ define "master_list" }}
+<div class="flex flex-col h-full">
+  <div class="p-4 border-b border-base-300">
+    <h1 class="text-lg font-semibold mb-3">Users</h1>
+    <form method="GET" action="/admin/users" class="flex flex-col gap-2">
+      {{ template "search_input" .SearchInput }}
+      {{ template "filter_bar" .FilterBar }}
+    </form>
+  </div>
+
+  <div class="flex-1 overflow-y-auto">
+    {{ if .Users }}
+    <ul role="listbox" aria-label="Users" data-loading-skeleton class="p-2">
+      {{ range .Users }}
+      <li>
+        <a href="/admin/users/{{ .ID }}"
+           role="option"
+           aria-selected="{{ if eq .ID $.ActiveItemID }}true{{ else }}false{{ end }}"
+           class="flex items-center gap-3 px-3 py-3 rounded text-sm
+                  {{ if eq .ID $.ActiveItemID }}active bg-primary text-primary-content border-l-[3px] border-primary{{ else }}text-base-content hover:bg-base-300{{ end }}
+                  focus:outline-none focus:ring-2 focus:ring-primary">
+          <span class="font-medium flex-1 truncate">{{ .DisplayName }}</span>
+          {{ template "status_badge" .Badge }}
+        </a>
+      </li>
+      {{ end }}
+    </ul>
+    {{ else }}
+    {{ template "empty_state" .EmptyState }}
+    {{ end }}
+  </div>
+
+  {{ if .HasMore }}
+  <nav aria-label="pagination" class="p-3 border-t border-base-300 text-center">
+    <a href="/admin/users?q={{ .SearchInput.Value }}&role={{ (index .FilterBar 0).CurrentValue }}&page={{ .NextPage }}"
+       class="btn btn-ghost btn-sm">Load more</a>
+  </nav>
+  {{ end }}
+</div>
+{{ end }}
+
+{{ define "detail_title" }}
+  {{ if .ActiveUser }}{{ .ActiveUser.DisplayName }}{{ else }}User not found{{ end }}
+{{ end }}
+
+{{ define "detail_content" }}
+  {{ if .Flash.Message }}
+  {{ template "alert_banner" .Flash }}
+  {{ end }}
+  {{ if .ActiveUser }}
+    {{/* Avatar placeholder with user initials (rune-safe, pre-computed by handler) */}}
+    <div class="flex justify-center mb-4">
+      <div class="avatar placeholder">
+        <div class="bg-neutral text-neutral-content rounded-full w-16">
+          <span class="text-2xl">{{ .ActiveUserInitial }}</span>
+        </div>
+      </div>
+    </div>
+
+    <dl class="divide-y divide-base-300">
+      <div class="py-3">
+        <dt class="text-base-content/60 text-xs uppercase tracking-wide mb-1">Display Name</dt>
+        <dd>
+          {{ template "inline_edit" .ActiveUserInlineEdit }}
+        </dd>
+      </div>
+      <div class="flex justify-between py-3">
+        <dt class="text-base-content/60 text-sm">Email</dt>
+        <dd class="text-sm font-medium">{{ .ActiveUser.Email }}</dd>
+      </div>
+      <div class="flex justify-between items-center py-3">
+        <dt class="text-base-content/60 text-sm">Role</dt>
+        <dd>
+          <form method="POST" action="/admin/users/{{ .ActiveUser.ID }}/role">
+            <input type="hidden" name="_csrf" value="{{ .CSRFToken }}">
+            <label for="user-role-select" class="sr-only">Role</label>
+            <select id="user-role-select" name="role" onchange="this.form.submit()" class="select select-sm select-bordered">
+              {{ range .ActiveUserRoleOptions }}
+              <option value="{{ . }}"{{ if eq . $.ActiveUserRoleValue }} selected{{ end }}>{{ . }}</option>
+              {{ end }}
+            </select>
+          </form>
+        </dd>
+      </div>
+      <div class="flex justify-between py-3">
+        <dt class="text-base-content/60 text-sm">Status</dt>
+        <dd>
+          {{ template "status_badge" .ActiveUserStatusBadge }}
+        </dd>
+      </div>
+    </dl>
+    {{ template "confirm_dialog" .ActiveUserConfirmDialog }}
+  {{ end }}
+{{ end }}
+
+{{ define "detail_footer" }}
+  {{ if .ActiveUser }}
+    {{ if eq .ActiveUser.Status "active" }}
+    <button type="button" class="btn btn-sm btn-warning"
+            onclick="confirm_dialog.showModal()">Deactivate</button>
+    {{ else }}
+    <button type="button" class="btn btn-sm btn-success">Reactivate</button>
+    {{ end }}
+  {{ end }}
+{{ end }}

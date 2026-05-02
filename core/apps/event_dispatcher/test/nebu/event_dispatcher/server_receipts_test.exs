@@ -77,6 +77,12 @@ defmodule Nebu.EventDispatcher.ServerReceiptsTest do
       :ets.insert(:receipts_test_room_db, {{:power_levels, room_id}, power_levels_json})
       :ok
     end
+
+    # Story 6.8: load_room_settings/1 returns {:ok, 0} (no limit) for unit tests.
+    def load_room_settings(_room_id), do: {:ok, 0}
+
+    # Story 6.9: get_room_status/1 — returns {:ok, "active"} so normal rooms start correctly.
+    def get_room_status(_room_id), do: {:ok, "active"}
   end
 
   # ─── FakeReceiptDB ────────────────────────────────────────────────────────────

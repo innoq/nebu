@@ -92,4 +92,14 @@ defmodule Nebu.Session.EtsStore do
     :ets.tab2list(:NebuSessions)
     |> Enum.map(fn {_user_id, session_map} -> session_map end)
   end
+
+  @doc """
+  Returns all user_ids currently stored in the ETS table.
+  Intended for InvalidateAllAdminSessions; iterates over :NebuSessions.
+  """
+  @spec list_user_ids() :: [String.t()]
+  def list_user_ids do
+    :ets.tab2list(:NebuSessions)
+    |> Enum.map(fn {user_id, _session_map} -> user_id end)
+  end
 end

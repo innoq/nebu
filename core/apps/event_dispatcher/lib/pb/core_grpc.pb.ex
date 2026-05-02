@@ -18,6 +18,10 @@ defmodule Core.CoreService.Service do
   rpc :SendReceipt, Core.SendReceiptRequest, Core.SendReceiptResponse
   rpc :GetInitialSync, Core.GetInitialSyncRequest, Core.GetInitialSyncResponse
   rpc :GetSyncDelta, Core.GetSyncDeltaRequest, Core.GetSyncDeltaResponse
+  rpc :GetPresence, Core.GetPresenceRequest, Core.GetPresenceResponse
+  rpc :UpdateProfile, Core.UpdateProfileRequest, Core.UpdateProfileResponse
+  rpc :WriteAuditLog, Core.WriteAuditLogRequest, Core.WriteAuditLogResponse
+  rpc :DeleteUserKeys, Core.DeleteUserKeysRequest, Core.DeleteUserKeysResponse
 end
 
 defmodule Core.CoreService.Stub do

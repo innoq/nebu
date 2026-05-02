@@ -68,6 +68,12 @@ defmodule Nebu.EventDispatcher.SendEventTest do
       :ets.insert(:send_event_test_db, {{:event, event["event_id"]}, event})
       :ok
     end
+
+    # Story 6.8: load_room_settings/1 returns {:ok, 0} (no limit) for unit tests.
+    def load_room_settings(_room_id), do: {:ok, 0}
+
+    # Story 6.9: get_room_status/1 — returns {:ok, "active"} so normal rooms start correctly.
+    def get_room_status(_room_id), do: {:ok, "active"}
   end
 
   # ─── Setup / Teardown ────────────────────────────────────────────────────────
@@ -360,11 +366,13 @@ defmodule Nebu.EventDispatcher.SendEventTest do
              "idempotency violation: first call returned #{response1.event_id}, " <>
                "second call returned #{response2.event_id} — expected same event_id"
 
-      # Verify only ONE event was persisted to FakeDB (not two).
-      all_events = :ets.match(:send_event_test_db, {{:event, :"$1"}, :_})
+      # Verify only ONE message event was persisted to FakeDB (not two).
+      # Exclude m.room.member state events emitted by setup (emit_membership_event).
+      all_entries = :ets.match_object(:send_event_test_db, {{:event, :_}, :_})
+      message_events = Enum.reject(all_entries, fn {{:event, _}, ev} -> ev["type"] == "m.room.member" end)
 
-      assert length(all_events) == 1,
-             "expected exactly 1 event in FakeDB after duplicate send, got #{length(all_events)}"
+      assert length(message_events) == 1,
+             "expected exactly 1 message event in FakeDB after duplicate send, got #{length(message_events)}"
     end
   end
 end

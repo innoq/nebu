@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -27,20 +28,22 @@ type GetSyncCoreClient interface {
 
 // GetSyncHandler handles GET /_matrix/client/v3/sync.
 type GetSyncHandler struct {
-	coreClient GetSyncCoreClient
-	serverName string
-	timeout    time.Duration
-	buffer     *buffer.MessageBuffer // Story 4-16: local event buffer (nil = disabled)
-	db         *sql.DB               // for pending invite queries
+	coreClient    GetSyncCoreClient
+	serverName    string
+	timeout       time.Duration
+	buffer        *buffer.MessageBuffer // Story 4-16: local event buffer (nil = disabled)
+	db            *sql.DB               // for pending invite queries
+	accountDataDB AccountDataDB         // Story 7-24: per-room account data (nil = disabled)
 }
 
 // GetSyncConfig holds dependencies for NewGetSyncHandler.
 type GetSyncConfig struct {
-	CoreClient GetSyncCoreClient
-	ServerName string
-	Timeout    time.Duration         // gRPC call timeout; defaults to 5s if zero
-	Buffer     *buffer.MessageBuffer // Story 4-16: optional local event buffer
-	DB         *sql.DB               // optional: enables rooms.invite in sync response
+	CoreClient    GetSyncCoreClient
+	ServerName    string
+	Timeout       time.Duration         // gRPC call timeout; defaults to 5s if zero
+	Buffer        *buffer.MessageBuffer // Story 4-16: optional local event buffer
+	DB            *sql.DB               // optional: enables rooms.invite in sync response
+	AccountDataDB AccountDataDB         // Story 7-24: optional, enables account_data in sync response
 }
 
 // NewGetSyncHandler constructs a GetSyncHandler from the provided config.
@@ -50,11 +53,12 @@ func NewGetSyncHandler(cfg GetSyncConfig) *GetSyncHandler {
 		timeout = 5 * time.Second
 	}
 	return &GetSyncHandler{
-		coreClient: cfg.CoreClient,
-		serverName: cfg.ServerName,
-		timeout:    timeout,
-		buffer:     cfg.Buffer,
-		db:         cfg.DB,
+		coreClient:    cfg.CoreClient,
+		serverName:    cfg.ServerName,
+		timeout:       timeout,
+		buffer:        cfg.Buffer,
+		db:            cfg.DB,
+		accountDataDB: cfg.AccountDataDB,
 	}
 }
 
@@ -254,8 +258,21 @@ type syncRooms struct {
 }
 
 type syncJoinedRoom struct {
-	State    syncStateSection    `json:"state"`
-	Timeline syncTimelineSection `json:"timeline"`
+	State       syncStateSection       `json:"state"`
+	Timeline    syncTimelineSection    `json:"timeline"`
+	AccountData syncAccountDataSection `json:"account_data"`
+}
+
+// syncAccountDataSection is the account_data section in a joined room's sync response.
+// Spec: {"events": [{"type": "m.tag", "content": {...}}, ...]}
+type syncAccountDataSection struct {
+	Events []syncAccountDataEvent `json:"events"`
+}
+
+// syncAccountDataEvent represents one account_data event in the sync response.
+type syncAccountDataEvent struct {
+	Type    string          `json:"type"`
+	Content json.RawMessage `json:"content"`
 }
 
 type syncStateSection struct {
@@ -330,6 +347,8 @@ func (h *GetSyncHandler) GetSync(w http.ResponseWriter, r *http.Request) {
 
 	// Build Matrix sync response
 	joinedRooms := buildJoinedRooms(resp.GetRooms())
+	// Story 7-24 AC4: inject per-room account data into each joined room's account_data.events.
+	h.injectAccountData(r.Context(), userID, joinedRooms)
 
 	otkCount, fallbackKeys, deviceLists := emptySyncDeviceFields()
 	syncResp := syncResponse{
@@ -442,6 +461,8 @@ func (h *GetSyncHandler) handleIncrementalSync(w http.ResponseWriter, r *http.Re
 			return
 		}
 		joinedRooms := buildJoinedRooms(initialResp.GetRooms())
+		// Story 7-24 AC4: inject per-room account data into joined rooms.
+		h.injectAccountData(r.Context(), userID, joinedRooms)
 		otkCount, fallbackKeys, deviceLists := emptySyncDeviceFields()
 		syncResp := syncResponse{
 			NextBatch: initialResp.GetSinceToken(),
@@ -471,6 +492,8 @@ func (h *GetSyncHandler) handleIncrementalSync(w http.ResponseWriter, r *http.Re
 	for roomID := range leaveRooms {
 		delete(joinedRooms, roomID)
 	}
+	// Story 7-24 AC4: inject per-room account data into joined rooms.
+	h.injectAccountData(r.Context(), userID, joinedRooms)
 	otkCount, fallbackKeys, deviceLists := emptySyncDeviceFields()
 	syncResp := syncResponse{
 		NextBatch: deltaResp.GetSinceToken(),
@@ -556,7 +579,65 @@ func buildJoinedRooms(rooms []*pb.SyncRoom) map[string]syncJoinedRoom {
 				Limited:   room.GetLimited(),
 				PrevBatch: room.GetPrevBatch(),
 			},
+			// AccountData is populated by injectAccountData; initialize to empty (not null).
+			AccountData: syncAccountDataSection{Events: []syncAccountDataEvent{}},
 		}
 	}
 	return joinedRooms
+}
+
+// injectAccountData queries the room_account_data table for all (userID, roomID) pairs
+// present in joinedRooms and injects the account_data.events into each room's entry.
+//
+// Story 7-24 AC4: after a PUT, the next /sync response must include the account_data
+// event under rooms.join.{roomId}.account_data.events.
+//
+// This is a best-effort operation: if the DB is unavailable or a row is missing, that
+// room gets an empty events slice (graceful degradation, no error surfaced to client).
+func (h *GetSyncHandler) injectAccountData(ctx context.Context, userID string, joinedRooms map[string]syncJoinedRoom) {
+	if h.accountDataDB == nil {
+		return // disabled (nil = account data injection not configured)
+	}
+	for roomID, room := range joinedRooms {
+		events, err := h.fetchRoomAccountDataEvents(ctx, userID, roomID)
+		if err != nil {
+			// Graceful degradation: log a warning but don't fail the sync.
+			slog.Warn("injectAccountData: failed to fetch account data", "room", roomID, "err", err)
+			continue
+		}
+		room.AccountData = syncAccountDataSection{Events: events}
+		joinedRooms[roomID] = room
+	}
+}
+
+// fetchRoomAccountDataEvents queries all account data rows for (userID, roomID) and
+// returns them as syncAccountDataEvent values. Returns an empty slice if no rows exist.
+func (h *GetSyncHandler) fetchRoomAccountDataEvents(ctx context.Context, userID, roomID string) ([]syncAccountDataEvent, error) {
+	if h.accountDataDB == nil {
+		return []syncAccountDataEvent{}, nil
+	}
+	// The AccountDataDB interface only exposes GetAccountData for a single eventType.
+	// To fetch all types for a room we query the underlying table via a type-list DB.
+	// For MVP, we support the two most important types that Element Web reads from sync:
+	// "m.tag" (room tags) and "m.fully_read" (read position marker).
+	// TODO: replace with a scanAllRoomAccountData(userID, roomID) query when added to AccountDataDB.
+	importantTypes := []string{"m.tag", "m.fully_read", "m.push_rules"}
+	var events []syncAccountDataEvent
+	for _, eventType := range importantTypes {
+		content, err := h.accountDataDB.GetAccountData(ctx, userID, roomID, eventType)
+		if err != nil {
+			if errors.Is(err, ErrAccountDataNotFound) {
+				continue // no data for this type — skip
+			}
+			return nil, err
+		}
+		events = append(events, syncAccountDataEvent{
+			Type:    eventType,
+			Content: content,
+		})
+	}
+	if events == nil {
+		events = []syncAccountDataEvent{}
+	}
+	return events, nil
 }

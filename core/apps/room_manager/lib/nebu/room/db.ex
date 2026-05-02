@@ -413,6 +413,51 @@ defmodule Nebu.Room.DB do
 
   defp decode_token(_), do: :empty
 
+  @sql_load_room_settings """
+  SELECT COALESCE(max_members, 0) FROM rooms WHERE room_id = $1
+  """
+
+  @doc """
+  Loads mutable room settings (currently only max_members) for the given `room_id`.
+
+  Returns `{:ok, max_members}` where max_members=0 means no limit.
+  Returns `{:error, reason}` on DB error.
+
+  Story 6.8: Called by Room.Server.init/1 to recover max_members after a GenServer restart.
+  Fail-open: if this call fails, the GenServer defaults to 0 (no limit).
+  """
+  @spec load_room_settings(String.t()) :: {:ok, non_neg_integer()} | {:error, term()}
+  def load_room_settings(room_id) do
+    case Ecto.Adapters.SQL.query(Nebu.Repo, @sql_load_room_settings, [room_id]) do
+      {:ok, %{rows: [[max_members]]}} -> {:ok, max_members}
+      {:ok, %{rows: []}} -> {:ok, 0}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # room_id is the PRIMARY KEY of the rooms table — no LIMIT needed.
+  @sql_get_room_status "SELECT COALESCE(status, 'active') FROM rooms WHERE room_id = $1"
+
+  @doc """
+  Returns the archival status of `room_id` from the `rooms` table.
+
+  Returns `{:ok, "active"}` for active (non-archived) rooms.
+  Returns `{:ok, "archived"}` for archived rooms.
+  Returns `{:error, :not_found}` when the room does not exist in the table.
+  Returns `{:error, reason}` on DB error.
+
+  Story 6.9: Called by Room.Server.init/1 before initialising state.
+  When the result is `{:ok, "archived"}`, init/1 returns `{:stop, :normal}`.
+  """
+  @spec get_room_status(String.t()) :: {:ok, String.t()} | {:error, :not_found | term()}
+  def get_room_status(room_id) do
+    case Ecto.Adapters.SQL.query(Nebu.Repo, @sql_get_room_status, [room_id]) do
+      {:ok, %{rows: [[status]]}} -> {:ok, status}
+      {:ok, %{rows: []}} -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   @doc """
   Returns the room name from the most recent m.room.name event, or {:error, :not_found}.
 

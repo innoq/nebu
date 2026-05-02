@@ -22,13 +22,20 @@ defmodule Nebu.Room.Server do
   - Auto-expiry via `Process.send_after/3` → `{:typing_expire, user_id}`.
   - Broadcasts `{:typing_update, user_id, typing}` via :pg room group.
 
+  Story 6-8 adds max_members enforcement:
+  - `max_members` field added to GenServer state (0 = no limit).
+  - Loaded from DB on init via `db_module().load_room_settings/1` (fail-open: defaults to 0).
+  - `join/2` returns `{:error, :room_full}` when member_count >= max_members > 0.
+  - `update_settings/2` is a fire-and-forget cast to update max_members in-memory.
+
   State structure:
     %{
       room_id:      String.t(),
       members:      MapSet.t(String.t()),
       power_levels: map(),          # string-key map — see Nebu.Room.PowerLevels
       created_at:   DateTime.t(),
-      typing_users: MapSet.t(String.t())  # ephemeral — resets on restart
+      typing_users: MapSet.t(String.t()),  # ephemeral — resets on restart
+      max_members:  non_neg_integer()      # 0 = no limit; Story 6.8
     }
 
   DB writes go through the configurable db_module/0 helper (defaults to Nebu.Room.DB).
@@ -66,6 +73,15 @@ defmodule Nebu.Room.Server do
   def leave(room_id, user_id), do: GenServer.call(via(room_id), {:leave, user_id})
 
   @doc """
+  Removes `user_id` from the room's member set without emitting a membership event.
+
+  Used by kick and ban, which emit their own event with the correct sender (caller_id).
+  Returns `:ok` on success, `{:error, :not_member}` if not joined, or `{:error, reason}`.
+  """
+  @spec remove_member(String.t(), String.t()) :: :ok | {:error, term()}
+  def remove_member(room_id, user_id), do: GenServer.call(via(room_id), {:remove_member, user_id})
+
+  @doc """
   Returns the default Matrix power levels map.
 
   Public so that EventDispatcher.Server and tests can build creator-boosted maps
@@ -98,6 +114,20 @@ defmodule Nebu.Room.Server do
   @spec set_typing(String.t(), String.t(), boolean(), integer()) :: :ok
   def set_typing(room_id, user_id, typing, timeout_ms) do
     GenServer.call(via(room_id), {:set_typing, user_id, typing, timeout_ms})
+  end
+
+  @doc """
+  Updates mutable room settings in the GenServer state (fire-and-forget cast).
+
+  Supported keys in `settings` map:
+  - `:max_members` — non-negative integer; 0 = no limit.
+
+  Returns `:ok` immediately (GenServer.cast semantics).
+  Story 6.8: Called by the gRPC UpdateRoomSettings handler after the Admin DB update.
+  """
+  @spec update_settings(String.t(), map()) :: :ok
+  def update_settings(room_id, settings) do
+    GenServer.cast(via(room_id), {:update_settings, settings})
   end
 
   @doc """
@@ -158,25 +188,53 @@ defmodule Nebu.Room.Server do
     # group but does not need to receive its own broadcasts (handle_info ignores them).
     # Keeping the Room GenServer out of the group prevents interference with tests that
     # assert the group is empty after sync handlers clean up.
+
+    # Story 6.9: Archived room guard — check room status BEFORE loading state.
+    # If the room is archived, stop with :normal so Horde's :transient restart strategy
+    # does not restart the GenServer. This prevents a restart loop on cluster rejoin.
+    # Fail-open: if get_room_status fails, we proceed (don't block active rooms on DB error).
+    case db_module().get_room_status(room_id) do
+      {:ok, "archived"} ->
+        {:stop, :normal}
+
+      _ ->
+        do_init(room_id)
+    end
+  end
+
+  defp do_init(room_id) do
     case db_module().load_members(room_id) do
       {:ok, user_ids, created_at_ms, power_levels_json} ->
         members = MapSet.new(user_ids)
         created_at = DateTime.from_unix!(created_at_ms, :millisecond)
         power_levels = parse_power_levels(power_levels_json)
-        {:ok, %{room_id: room_id, members: members, power_levels: power_levels, created_at: created_at, typing_users: MapSet.new()}}
+        # Story 6.8: load max_members from DB; fail-open (default 0 = no limit).
+        max_members =
+          case db_module().load_room_settings(room_id) do
+            {:ok, n} -> n
+            {:error, _} -> 0
+          end
+        {:ok, %{room_id: room_id, members: members, power_levels: power_levels, created_at: created_at, typing_users: MapSet.new(), max_members: max_members}}
 
       {:error, :not_found} ->
         case db_module().insert_room(room_id) do
           {:ok, created_at_ms} ->
             created_at = DateTime.from_unix!(created_at_ms, :millisecond)
-
+            # Story 6.8: load max_members even for new rooms (fail-open: default 0).
+            # FakeDBWithMaxMembers test verifies this is called even on first start.
+            max_members =
+              case db_module().load_room_settings(room_id) do
+                {:ok, n} -> n
+                {:error, _} -> 0
+              end
             {:ok,
              %{
                room_id: room_id,
                members: MapSet.new(),
                power_levels: %{},
                created_at: created_at,
-               typing_users: MapSet.new()
+               typing_users: MapSet.new(),
+               max_members: max_members
              }}
 
           {:error, reason} ->
@@ -195,22 +253,30 @@ defmodule Nebu.Room.Server do
 
   @impl GenServer
   def handle_call({:join, user_id}, _from, %{members: members} = state) do
-    if MapSet.member?(members, user_id) do
-      {:reply, {:error, :already_member}, state}
-    else
-      case db_module().insert_member(state.room_id, user_id) do
-        :ok ->
-          # Emit m.room.member state event so incremental sync (GetSyncDelta)
-          # detects the join via fetch_events_since — without this event,
-          # the room never appeared in rooms.join on the next delta sync
-          # ("stuck on Joining…" in Element Web — GAP-1 fix).
-          emit_membership_event(state.room_id, user_id, "join")
-          new_state = %{state | members: MapSet.put(members, user_id)}
-          {:reply, :ok, new_state}
+    cond do
+      MapSet.member?(members, user_id) ->
+        # :already_member check comes first — even a full room must return :already_member
+        # for an existing member (test: "room_full check does not block already_member re-join").
+        {:reply, {:error, :already_member}, state}
 
-        {:error, reason} ->
-          {:reply, {:error, reason}, state}
-      end
+      state.max_members > 0 and MapSet.size(members) >= state.max_members ->
+        # Story 6.8: room is at capacity — reject the join.
+        {:reply, {:error, :room_full}, state}
+
+      true ->
+        case db_module().insert_member(state.room_id, user_id) do
+          :ok ->
+            # Emit m.room.member state event so incremental sync (GetSyncDelta)
+            # detects the join via fetch_events_since — without this event,
+            # the room never appeared in rooms.join on the next delta sync
+            # ("stuck on Joining…" in Element Web — GAP-1 fix).
+            emit_membership_event(state.room_id, user_id, "join")
+            new_state = %{state | members: MapSet.put(members, user_id)}
+            {:reply, :ok, new_state}
+
+          {:error, reason} ->
+            {:reply, {:error, reason}, state}
+        end
     end
   end
 
@@ -223,6 +289,22 @@ defmodule Nebu.Room.Server do
         :ok ->
           # Emit m.room.member leave event so sync delta includes the left room.
           emit_membership_event(state.room_id, user_id, "leave")
+          new_state = %{state | members: MapSet.delete(members, user_id)}
+          {:reply, :ok, new_state}
+
+        {:error, reason} ->
+          {:reply, {:error, reason}, state}
+      end
+    end
+  end
+
+  @impl GenServer
+  def handle_call({:remove_member, user_id}, _from, %{members: members} = state) do
+    if not MapSet.member?(members, user_id) do
+      {:reply, {:error, :not_member}, state}
+    else
+      case db_module().delete_member(state.room_id, user_id) do
+        :ok ->
           new_state = %{state | members: MapSet.delete(members, user_id)}
           {:reply, :ok, new_state}
 
@@ -336,6 +418,21 @@ defmodule Nebu.Room.Server do
     Enum.each(members, fn pid -> send(pid, {:typing_update, user_id, typing}) end)
 
     {:reply, :ok, %{state | typing_users: new_typing_users}}
+  end
+
+  # Story 6.8: update mutable room settings in-memory (fire-and-forget cast).
+  # Supported keys: :max_members (non-negative integer; 0 = no limit).
+  # This cast is triggered by the gRPC UpdateRoomSettings handler after the Admin DB update.
+  @impl GenServer
+  def handle_cast({:update_settings, settings}, state) do
+    new_state =
+      case Map.get(settings, :max_members) do
+        nil -> state
+        n when is_integer(n) and n >= 0 -> %{state | max_members: n}
+        _ -> state
+      end
+
+    {:noreply, new_state}
   end
 
   # Handle incoming :new_event broadcasts from :pg group members (including self).

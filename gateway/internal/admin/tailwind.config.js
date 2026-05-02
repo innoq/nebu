@@ -44,11 +44,21 @@ module.exports = {
         "status-ok-bg":     "#052e16",
         "status-warn-bg":   "#431407",
         "status-error-bg":  "#450a0a",
+        // UX-DR1: fourth background tier (one step darker than base-100)
+        "base-400":         "#0d1117",
       },
       // Typography scale from UX-DR2
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
+      },
+      // Named font-size utilities (UX-DR2: display, heading, body, caption, mono)
+      fontSize: {
+        'display': ['2.25rem', { fontWeight: '700', lineHeight: '1.2', letterSpacing: '-0.02em' }],
+        'heading': ['1.5rem',  { fontWeight: '600', lineHeight: '1.2', letterSpacing: '-0.02em' }],
+        'body':    ['1rem',    { fontWeight: '400', lineHeight: '1.6' }],
+        'caption': ['0.75rem', { fontWeight: '400', lineHeight: '1.5', letterSpacing: '0.08em' }],
+        'mono':    ['0.875rem',{ fontWeight: '400', lineHeight: '1.5' }],
       },
     },
   },

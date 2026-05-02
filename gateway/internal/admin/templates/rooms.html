@@ -1,0 +1,101 @@
+{{ template "base" . }}
+{{ define "title" }}Rooms — Nebu Admin{{ end }}
+
+{{ define "content" }}
+{{ template "master_detail" . }}
+{{ end }}
+
+{{ define "master_list" }}
+<div class="flex flex-col h-full">
+  <div class="p-4 border-b border-base-300">
+    <h1 class="text-lg font-semibold mb-3">Rooms</h1>
+    <form method="GET" action="/admin/rooms" class="flex flex-col gap-2">
+      {{ template "search_input" .SearchInput }}
+      {{ template "filter_bar" .FilterBar }}
+    </form>
+  </div>
+
+  <div class="flex-1 overflow-y-auto">
+    {{ if .Rooms }}
+    <ul role="listbox" aria-label="Rooms" data-loading-skeleton class="p-2">
+      {{ range .Rooms }}
+      <li>
+        <a href="/admin/rooms/{{ .ID }}"
+           role="option"
+           aria-selected="{{ if eq .ID $.ActiveItemID }}true{{ else }}false{{ end }}"
+           class="flex items-center gap-3 px-3 py-3 rounded text-sm
+                  {{ if eq .ID $.ActiveItemID }}active bg-primary text-primary-content border-l-[3px] border-primary{{ else }}text-base-content hover:bg-base-300{{ end }}
+                  focus:outline-none focus:ring-2 focus:ring-primary">
+          <span class="font-medium flex-1 truncate">{{ .Name }}</span>
+          {{ template "status_badge" .Badge }}
+        </a>
+      </li>
+      {{ end }}
+    </ul>
+    {{ else }}
+    {{ template "empty_state" .EmptyState }}
+    {{ end }}
+  </div>
+
+  {{ if .HasMore }}
+  <nav aria-label="pagination" class="p-3 border-t border-base-300 text-center">
+    <a href="/admin/rooms?q={{ .SearchInput.Value }}&visibility={{ (index .FilterBar 0).CurrentValue }}&page={{ .NextPage }}"
+       class="btn btn-ghost btn-sm">Load more</a>
+  </nav>
+  {{ end }}
+</div>
+{{ end }}
+
+{{ define "detail_title" }}
+  {{ if .ActiveRoom }}{{ .ActiveRoom.Name }}{{ else }}Room not found{{ end }}
+{{ end }}
+
+{{ define "detail_content" }}
+  {{ if .Flash.Message }}
+  {{ template "alert_banner" .Flash }}
+  {{ end }}
+  {{ if .ActiveRoom }}
+    {{/* Avatar placeholder with room initial (rune-safe, pre-computed by handler) */}}
+    <div class="flex justify-center mb-4">
+      <div class="avatar placeholder">
+        <div class="bg-neutral text-neutral-content rounded-full w-16">
+          <span class="text-2xl">{{ .ActiveRoomInitial }}</span>
+        </div>
+      </div>
+    </div>
+
+    <dl class="divide-y divide-base-300">
+      <div class="py-3">
+        <dt class="text-base-content/60 text-xs uppercase tracking-wide mb-1">Name</dt>
+        <dd>
+          {{ template "inline_edit" .ActiveRoomInlineEdit }}
+        </dd>
+      </div>
+      <div class="flex justify-between py-3">
+        <dt class="text-base-content/60 text-sm">Visibility</dt>
+        <dd class="text-sm font-medium">{{ .ActiveRoom.Visibility }}</dd>
+      </div>
+      <div class="flex justify-between py-3">
+        <dt class="text-base-content/60 text-sm">Members</dt>
+        <dd class="text-sm font-medium">{{ .ActiveRoom.MemberCount }}</dd>
+      </div>
+      <div class="flex justify-between py-3">
+        <dt class="text-base-content/60 text-sm">Status</dt>
+        <dd>
+          {{ template "status_badge" .ActiveRoomStatusBadge }}
+        </dd>
+      </div>
+    </dl>
+    {{ template "confirm_dialog" .ActiveRoomConfirmDialog }}
+  {{ end }}
+{{ end }}
+
+{{ define "detail_footer" }}
+  {{ if .ActiveRoom }}
+    {{ if eq .ActiveRoom.Status "active" }}
+    <button type="button" onclick="confirm_dialog.showModal()" class="btn btn-sm btn-warning">Archive room</button>
+    {{ else }}
+    <span class="badge badge-ghost">Archived</span>
+    {{ end }}
+  {{ end }}
+{{ end }}

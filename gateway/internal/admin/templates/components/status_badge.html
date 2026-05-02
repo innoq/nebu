@@ -1,0 +1,14 @@
+{{ define "status_badge" }}
+{{- /* C13 StatusBadge — Story 7.4
+     Data: StatusBadgeData{Status string, Label string}
+     Status → badge class: active→badge-success, inactive→badge-error, pending→badge-warning, unknown→badge-ghost
+     Label overrides display text; if empty, Status is used.
+     WCAG: role="status" and aria-label="{{ .Status }}" on the outer <span>.
+*/ -}}
+{{ $class := "badge-ghost" }}
+{{ if eq .Status "active" }}{{ $class = "badge-success" }}{{ end -}}
+{{ if eq .Status "inactive" }}{{ $class = "badge-error" }}{{ end -}}
+{{ if eq .Status "pending" }}{{ $class = "badge-warning" }}{{ end -}}
+{{ $text := .Status }}{{ if .Label }}{{ $text = .Label }}{{ end -}}
+<span class="badge {{ $class }}" role="status" aria-label="{{ .Status }}">{{ $text }}</span>
+{{ end }}

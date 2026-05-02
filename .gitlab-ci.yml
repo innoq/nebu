@@ -16,6 +16,15 @@ variables:
   CI_ELIXIR_IMAGE: $CI_REGISTRY_IMAGE/ci-elixir:1.19
   GITLEAKS_VERSION: "8.24.3"
 
+# Suppress duplicate pipelines: when a branch has an open MR, only the MR
+# pipeline runs. Without this, every push fires both a branch and an MR pipeline.
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'
+      when: never
+    - if: '$CI_COMMIT_BRANCH'
+
 # Defaults applied to every job unless overridden.
 # - `timeout: 30 minutes` bounds runaway jobs (Kassandra 8.6 review M-3).
 # - `interruptible: true` cancels superseded pipelines on the same ref so a
@@ -68,9 +77,19 @@ build-ci-elixir:
     - when: manual
       allow_failure: true
 
+# ─── Shared helpers ───────────────────────────────────────────────────────────
+
+# Downloads gitignored vendor JS files so that go:embed directives resolve.
+# Must run before any `go vet` / `go test` step that compiles gateway/internal/admin.
+.download_vendor: &download_vendor
+  before_script:
+    - mkdir -p gateway/internal/admin/static/vendor
+    - wget -q -O gateway/internal/admin/static/vendor/vue.esm-browser.prod.js 'https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.esm-browser.prod.js'
+
 # ─── Lint ─────────────────────────────────────────────────────────────────────
 
 lint-go:
+  <<: *download_vendor
   stage: lint
   image: $CI_REGISTRY_IMAGE/ci-go:1.26
   script:
@@ -88,6 +107,7 @@ lint-go:
 # Run directly in custom images — no DinD, no make overhead.
 
 test-unit-go:
+  <<: *download_vendor
   stage: unit
   image: $CI_REGISTRY_IMAGE/ci-go:1.26
   script:
@@ -156,6 +176,8 @@ verify-docs:
     - scripts/verify-readme-attribution.sh
     - scripts/verify-contributing.sh
     - scripts/verify-security-policy.sh
+    - scripts/verify-docs.sh
+  allow_failure: true
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
     - if: '$CI_COMMIT_BRANCH =~ /^feature\//'
@@ -172,7 +194,7 @@ integration-test:
   services:
     - docker:dind
   before_script:
-    - apk add --no-cache make
+    - apk add --no-cache make openssl
   script:
     - make test-integration
   rules:

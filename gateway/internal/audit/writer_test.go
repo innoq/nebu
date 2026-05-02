@@ -105,6 +105,39 @@ func (m *mockCoreClient) UpdateProfile(ctx context.Context, in *pb.UpdateProfile
 func (m *mockCoreClient) DeleteUserKeys(_ context.Context, _ *pb.DeleteUserKeysRequest, _ ...grpc.CallOption) (*pb.DeleteUserKeysResponse, error) {
 	panic("unexpected call: DeleteUserKeys")
 }
+func (m *mockCoreClient) KickUser(_ context.Context, _ *pb.KickUserRequest, _ ...grpc.CallOption) (*pb.KickUserResponse, error) {
+	panic("unexpected call: KickUser")
+}
+func (m *mockCoreClient) BanUser(_ context.Context, _ *pb.BanUserRequest, _ ...grpc.CallOption) (*pb.BanUserResponse, error) {
+	panic("unexpected call: BanUser")
+}
+func (m *mockCoreClient) UnbanUser(_ context.Context, _ *pb.UnbanUserRequest, _ ...grpc.CallOption) (*pb.UnbanUserResponse, error) {
+	panic("unexpected call: UnbanUser")
+}
+func (m *mockCoreClient) ForgetRoom(_ context.Context, _ *pb.ForgetRoomRequest, _ ...grpc.CallOption) (*pb.ForgetRoomResponse, error) {
+	panic("unexpected call: ForgetRoom")
+}
+func (m *mockCoreClient) GetEventContext(_ context.Context, _ *pb.GetEventContextRequest, _ ...grpc.CallOption) (*pb.GetEventContextResponse, error) {
+	panic("unexpected call: GetEventContext")
+}
+func (m *mockCoreClient) ListPublicRooms(_ context.Context, _ *pb.ListPublicRoomsRequest, _ ...grpc.CallOption) (*pb.ListPublicRoomsResponse, error) {
+	panic("unexpected call: ListPublicRooms")
+}
+func (m *mockCoreClient) InvalidateUserSessions(_ context.Context, _ *pb.InvalidateUserSessionsRequest, _ ...grpc.CallOption) (*pb.InvalidateUserSessionsResponse, error) {
+	panic("unexpected call: InvalidateUserSessions")
+}
+func (m *mockCoreClient) UpdateRoomSettings(_ context.Context, _ *pb.UpdateRoomSettingsRequest, _ ...grpc.CallOption) (*pb.UpdateRoomSettingsResponse, error) {
+	panic("unexpected call: UpdateRoomSettings")
+}
+func (m *mockCoreClient) ArchiveRoom(_ context.Context, _ *pb.ArchiveRoomRequest, _ ...grpc.CallOption) (*pb.ArchiveRoomResponse, error) {
+	panic("unexpected call: ArchiveRoom")
+}
+func (m *mockCoreClient) UnarchiveRoom(_ context.Context, _ *pb.UnarchiveRoomRequest, _ ...grpc.CallOption) (*pb.UnarchiveRoomResponse, error) {
+	panic("unexpected call: UnarchiveRoom")
+}
+func (m *mockCoreClient) InvalidateAllAdminSessions(_ context.Context, _ *pb.InvalidateAllAdminSessionsRequest, _ ...grpc.CallOption) (*pb.InvalidateAllAdminSessionsResponse, error) {
+	panic("unexpected call: InvalidateAllAdminSessions")
+}
 
 // ─── AC11 Test 5: LogEvent_Success ───────────────────────────────────────────
 //

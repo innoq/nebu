@@ -19,27 +19,38 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	CoreService_SendEvent_FullMethodName        = "/core.CoreService/SendEvent"
-	CoreService_CreateRoom_FullMethodName       = "/core.CoreService/CreateRoom"
-	CoreService_JoinRoom_FullMethodName         = "/core.CoreService/JoinRoom"
-	CoreService_LeaveRoom_FullMethodName        = "/core.CoreService/LeaveRoom"
-	CoreService_GetMessages_FullMethodName      = "/core.CoreService/GetMessages"
-	CoreService_SetPresence_FullMethodName      = "/core.CoreService/SetPresence"
-	CoreService_SetTyping_FullMethodName        = "/core.CoreService/SetTyping"
-	CoreService_ValidateToken_FullMethodName    = "/core.CoreService/ValidateToken"
-	CoreService_GetPendingEvents_FullMethodName = "/core.CoreService/GetPendingEvents"
-	CoreService_EventBus_FullMethodName         = "/core.CoreService/EventBus"
-	CoreService_GetMetrics_FullMethodName       = "/core.CoreService/GetMetrics"
-	CoreService_GetRoomState_FullMethodName     = "/core.CoreService/GetRoomState"
-	CoreService_InviteUser_FullMethodName       = "/core.CoreService/InviteUser"
-	CoreService_SetPowerLevels_FullMethodName   = "/core.CoreService/SetPowerLevels"
-	CoreService_SendReceipt_FullMethodName      = "/core.CoreService/SendReceipt"
-	CoreService_GetInitialSync_FullMethodName   = "/core.CoreService/GetInitialSync"
-	CoreService_GetSyncDelta_FullMethodName     = "/core.CoreService/GetSyncDelta"
-	CoreService_GetPresence_FullMethodName      = "/core.CoreService/GetPresence"
-	CoreService_UpdateProfile_FullMethodName    = "/core.CoreService/UpdateProfile"
-	CoreService_WriteAuditLog_FullMethodName    = "/core.CoreService/WriteAuditLog"
-	CoreService_DeleteUserKeys_FullMethodName   = "/core.CoreService/DeleteUserKeys"
+	CoreService_SendEvent_FullMethodName                  = "/core.CoreService/SendEvent"
+	CoreService_CreateRoom_FullMethodName                 = "/core.CoreService/CreateRoom"
+	CoreService_JoinRoom_FullMethodName                   = "/core.CoreService/JoinRoom"
+	CoreService_LeaveRoom_FullMethodName                  = "/core.CoreService/LeaveRoom"
+	CoreService_GetMessages_FullMethodName                = "/core.CoreService/GetMessages"
+	CoreService_SetPresence_FullMethodName                = "/core.CoreService/SetPresence"
+	CoreService_SetTyping_FullMethodName                  = "/core.CoreService/SetTyping"
+	CoreService_ValidateToken_FullMethodName              = "/core.CoreService/ValidateToken"
+	CoreService_GetPendingEvents_FullMethodName           = "/core.CoreService/GetPendingEvents"
+	CoreService_EventBus_FullMethodName                   = "/core.CoreService/EventBus"
+	CoreService_GetMetrics_FullMethodName                 = "/core.CoreService/GetMetrics"
+	CoreService_GetRoomState_FullMethodName               = "/core.CoreService/GetRoomState"
+	CoreService_InviteUser_FullMethodName                 = "/core.CoreService/InviteUser"
+	CoreService_SetPowerLevels_FullMethodName             = "/core.CoreService/SetPowerLevels"
+	CoreService_SendReceipt_FullMethodName                = "/core.CoreService/SendReceipt"
+	CoreService_GetInitialSync_FullMethodName             = "/core.CoreService/GetInitialSync"
+	CoreService_GetSyncDelta_FullMethodName               = "/core.CoreService/GetSyncDelta"
+	CoreService_GetPresence_FullMethodName                = "/core.CoreService/GetPresence"
+	CoreService_UpdateProfile_FullMethodName              = "/core.CoreService/UpdateProfile"
+	CoreService_WriteAuditLog_FullMethodName              = "/core.CoreService/WriteAuditLog"
+	CoreService_DeleteUserKeys_FullMethodName             = "/core.CoreService/DeleteUserKeys"
+	CoreService_KickUser_FullMethodName                   = "/core.CoreService/KickUser"
+	CoreService_BanUser_FullMethodName                    = "/core.CoreService/BanUser"
+	CoreService_UnbanUser_FullMethodName                  = "/core.CoreService/UnbanUser"
+	CoreService_ForgetRoom_FullMethodName                 = "/core.CoreService/ForgetRoom"
+	CoreService_ListPublicRooms_FullMethodName            = "/core.CoreService/ListPublicRooms"
+	CoreService_GetEventContext_FullMethodName            = "/core.CoreService/GetEventContext"
+	CoreService_InvalidateUserSessions_FullMethodName     = "/core.CoreService/InvalidateUserSessions"
+	CoreService_UpdateRoomSettings_FullMethodName         = "/core.CoreService/UpdateRoomSettings"
+	CoreService_ArchiveRoom_FullMethodName                = "/core.CoreService/ArchiveRoom"
+	CoreService_UnarchiveRoom_FullMethodName              = "/core.CoreService/UnarchiveRoom"
+	CoreService_InvalidateAllAdminSessions_FullMethodName = "/core.CoreService/InvalidateAllAdminSessions"
 )
 
 // CoreServiceClient is the client API for CoreService service.
@@ -86,6 +97,43 @@ type CoreServiceClient interface {
 	// Story 5.7: instance_admin only. Returns keys_deleted_at (Unix ms) on success.
 	// Elixir Core handles the Ecto.Multi + failure-invariant audit emission.
 	DeleteUserKeys(ctx context.Context, in *DeleteUserKeysRequest, opts ...grpc.CallOption) (*DeleteUserKeysResponse, error)
+	// KickUser — room moderator action; power check enforced by GenServer
+	KickUser(ctx context.Context, in *KickUserRequest, opts ...grpc.CallOption) (*KickUserResponse, error)
+	// BanUser — bans a user from a room; power check enforced by GenServer
+	BanUser(ctx context.Context, in *BanUserRequest, opts ...grpc.CallOption) (*BanUserResponse, error)
+	// UnbanUser — removes a ban (sets membership: leave); power check enforced by GenServer
+	UnbanUser(ctx context.Context, in *UnbanUserRequest, opts ...grpc.CallOption) (*UnbanUserResponse, error)
+	// ForgetRoom — marks a room as excluded from future /sync for the calling user
+	ForgetRoom(ctx context.Context, in *ForgetRoomRequest, opts ...grpc.CallOption) (*ForgetRoomResponse, error)
+	// ListPublicRooms — returns paginated public rooms (join_rule=public) with live member counts.
+	// Story 7-27: GET/POST /_matrix/client/v3/publicRooms.
+	ListPublicRooms(ctx context.Context, in *ListPublicRoomsRequest, opts ...grpc.CallOption) (*ListPublicRoomsResponse, error)
+	// GetEventContext — returns the target event plus up to `limit` events before
+	// and after it, a state snapshot, and pagination tokens compatible with GetMessages.
+	// Story 7-28.
+	GetEventContext(ctx context.Context, in *GetEventContextRequest, opts ...grpc.CallOption) (*GetEventContextResponse, error)
+	// InvalidateUserSessions — Story 6.5: revoke all sessions for a user (admin deactivation).
+	// Calls SessionManager.destroy_session/1 for the target user.
+	// Returns ok=true on success; gRPC error on DB failure.
+	InvalidateUserSessions(ctx context.Context, in *InvalidateUserSessionsRequest, opts ...grpc.CallOption) (*InvalidateUserSessionsResponse, error)
+	// UpdateRoomSettings — Story 6.8: Admin API notifies Room GenServer of settings change.
+	// max_members = 0 means "no limit". Go gateway sends this after updating rooms table.
+	// Elixir Core updates in-memory GenServer state; no-op if GenServer not running (will load from DB on next start).
+	UpdateRoomSettings(ctx context.Context, in *UpdateRoomSettingsRequest, opts ...grpc.CallOption) (*UpdateRoomSettingsResponse, error)
+	// ArchiveRoom — Story 6.9: Admin API terminates the Room GenServer for an archived room.
+	// The Go gateway has already updated rooms.status='archived' in DB before calling this.
+	// Core stops the GenServer via Horde.DynamicSupervisor.terminate_child/2.
+	// Returns ok=true in all cases (even if GenServer was already stopped).
+	ArchiveRoom(ctx context.Context, in *ArchiveRoomRequest, opts ...grpc.CallOption) (*ArchiveRoomResponse, error)
+	// UnarchiveRoom — Story 6.9: Admin API restarts the Room GenServer for an unarchived room.
+	// The Go gateway has already updated rooms.status='active' in DB before calling this.
+	// Core restarts the GenServer via RoomSupervisor.start_room/1.
+	UnarchiveRoom(ctx context.Context, in *UnarchiveRoomRequest, opts ...grpc.CallOption) (*UnarchiveRoomResponse, error)
+	// InvalidateAllAdminSessions — Story 6.10: destroys all active admin UI sessions in ETS.
+	// Called by Go gateway after OIDC config changes (oidc_issuer, oidc_client_id, oidc_client_secret).
+	// Iterates EtsStore.list_user_ids/0 and calls SessionSupervisor.destroy_session/1 for each.
+	// Returns ok=true always (best-effort — OIDC config is already updated in DB).
+	InvalidateAllAdminSessions(ctx context.Context, in *InvalidateAllAdminSessionsRequest, opts ...grpc.CallOption) (*InvalidateAllAdminSessionsResponse, error)
 }
 
 type coreServiceClient struct {
@@ -315,6 +363,116 @@ func (c *coreServiceClient) DeleteUserKeys(ctx context.Context, in *DeleteUserKe
 	return out, nil
 }
 
+func (c *coreServiceClient) KickUser(ctx context.Context, in *KickUserRequest, opts ...grpc.CallOption) (*KickUserResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(KickUserResponse)
+	err := c.cc.Invoke(ctx, CoreService_KickUser_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) BanUser(ctx context.Context, in *BanUserRequest, opts ...grpc.CallOption) (*BanUserResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BanUserResponse)
+	err := c.cc.Invoke(ctx, CoreService_BanUser_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) UnbanUser(ctx context.Context, in *UnbanUserRequest, opts ...grpc.CallOption) (*UnbanUserResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UnbanUserResponse)
+	err := c.cc.Invoke(ctx, CoreService_UnbanUser_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) ForgetRoom(ctx context.Context, in *ForgetRoomRequest, opts ...grpc.CallOption) (*ForgetRoomResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ForgetRoomResponse)
+	err := c.cc.Invoke(ctx, CoreService_ForgetRoom_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) ListPublicRooms(ctx context.Context, in *ListPublicRoomsRequest, opts ...grpc.CallOption) (*ListPublicRoomsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListPublicRoomsResponse)
+	err := c.cc.Invoke(ctx, CoreService_ListPublicRooms_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) GetEventContext(ctx context.Context, in *GetEventContextRequest, opts ...grpc.CallOption) (*GetEventContextResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetEventContextResponse)
+	err := c.cc.Invoke(ctx, CoreService_GetEventContext_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) InvalidateUserSessions(ctx context.Context, in *InvalidateUserSessionsRequest, opts ...grpc.CallOption) (*InvalidateUserSessionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InvalidateUserSessionsResponse)
+	err := c.cc.Invoke(ctx, CoreService_InvalidateUserSessions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) UpdateRoomSettings(ctx context.Context, in *UpdateRoomSettingsRequest, opts ...grpc.CallOption) (*UpdateRoomSettingsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateRoomSettingsResponse)
+	err := c.cc.Invoke(ctx, CoreService_UpdateRoomSettings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) ArchiveRoom(ctx context.Context, in *ArchiveRoomRequest, opts ...grpc.CallOption) (*ArchiveRoomResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ArchiveRoomResponse)
+	err := c.cc.Invoke(ctx, CoreService_ArchiveRoom_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) UnarchiveRoom(ctx context.Context, in *UnarchiveRoomRequest, opts ...grpc.CallOption) (*UnarchiveRoomResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UnarchiveRoomResponse)
+	err := c.cc.Invoke(ctx, CoreService_UnarchiveRoom_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) InvalidateAllAdminSessions(ctx context.Context, in *InvalidateAllAdminSessionsRequest, opts ...grpc.CallOption) (*InvalidateAllAdminSessionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InvalidateAllAdminSessionsResponse)
+	err := c.cc.Invoke(ctx, CoreService_InvalidateAllAdminSessions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CoreServiceServer is the server API for CoreService service.
 // All implementations must embed UnimplementedCoreServiceServer
 // for forward compatibility.
@@ -359,6 +517,43 @@ type CoreServiceServer interface {
 	// Story 5.7: instance_admin only. Returns keys_deleted_at (Unix ms) on success.
 	// Elixir Core handles the Ecto.Multi + failure-invariant audit emission.
 	DeleteUserKeys(context.Context, *DeleteUserKeysRequest) (*DeleteUserKeysResponse, error)
+	// KickUser — room moderator action; power check enforced by GenServer
+	KickUser(context.Context, *KickUserRequest) (*KickUserResponse, error)
+	// BanUser — bans a user from a room; power check enforced by GenServer
+	BanUser(context.Context, *BanUserRequest) (*BanUserResponse, error)
+	// UnbanUser — removes a ban (sets membership: leave); power check enforced by GenServer
+	UnbanUser(context.Context, *UnbanUserRequest) (*UnbanUserResponse, error)
+	// ForgetRoom — marks a room as excluded from future /sync for the calling user
+	ForgetRoom(context.Context, *ForgetRoomRequest) (*ForgetRoomResponse, error)
+	// ListPublicRooms — returns paginated public rooms (join_rule=public) with live member counts.
+	// Story 7-27: GET/POST /_matrix/client/v3/publicRooms.
+	ListPublicRooms(context.Context, *ListPublicRoomsRequest) (*ListPublicRoomsResponse, error)
+	// GetEventContext — returns the target event plus up to `limit` events before
+	// and after it, a state snapshot, and pagination tokens compatible with GetMessages.
+	// Story 7-28.
+	GetEventContext(context.Context, *GetEventContextRequest) (*GetEventContextResponse, error)
+	// InvalidateUserSessions — Story 6.5: revoke all sessions for a user (admin deactivation).
+	// Calls SessionManager.destroy_session/1 for the target user.
+	// Returns ok=true on success; gRPC error on DB failure.
+	InvalidateUserSessions(context.Context, *InvalidateUserSessionsRequest) (*InvalidateUserSessionsResponse, error)
+	// UpdateRoomSettings — Story 6.8: Admin API notifies Room GenServer of settings change.
+	// max_members = 0 means "no limit". Go gateway sends this after updating rooms table.
+	// Elixir Core updates in-memory GenServer state; no-op if GenServer not running (will load from DB on next start).
+	UpdateRoomSettings(context.Context, *UpdateRoomSettingsRequest) (*UpdateRoomSettingsResponse, error)
+	// ArchiveRoom — Story 6.9: Admin API terminates the Room GenServer for an archived room.
+	// The Go gateway has already updated rooms.status='archived' in DB before calling this.
+	// Core stops the GenServer via Horde.DynamicSupervisor.terminate_child/2.
+	// Returns ok=true in all cases (even if GenServer was already stopped).
+	ArchiveRoom(context.Context, *ArchiveRoomRequest) (*ArchiveRoomResponse, error)
+	// UnarchiveRoom — Story 6.9: Admin API restarts the Room GenServer for an unarchived room.
+	// The Go gateway has already updated rooms.status='active' in DB before calling this.
+	// Core restarts the GenServer via RoomSupervisor.start_room/1.
+	UnarchiveRoom(context.Context, *UnarchiveRoomRequest) (*UnarchiveRoomResponse, error)
+	// InvalidateAllAdminSessions — Story 6.10: destroys all active admin UI sessions in ETS.
+	// Called by Go gateway after OIDC config changes (oidc_issuer, oidc_client_id, oidc_client_secret).
+	// Iterates EtsStore.list_user_ids/0 and calls SessionSupervisor.destroy_session/1 for each.
+	// Returns ok=true always (best-effort — OIDC config is already updated in DB).
+	InvalidateAllAdminSessions(context.Context, *InvalidateAllAdminSessionsRequest) (*InvalidateAllAdminSessionsResponse, error)
 	mustEmbedUnimplementedCoreServiceServer()
 }
 
@@ -431,6 +626,39 @@ func (UnimplementedCoreServiceServer) WriteAuditLog(context.Context, *WriteAudit
 }
 func (UnimplementedCoreServiceServer) DeleteUserKeys(context.Context, *DeleteUserKeysRequest) (*DeleteUserKeysResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteUserKeys not implemented")
+}
+func (UnimplementedCoreServiceServer) KickUser(context.Context, *KickUserRequest) (*KickUserResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method KickUser not implemented")
+}
+func (UnimplementedCoreServiceServer) BanUser(context.Context, *BanUserRequest) (*BanUserResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BanUser not implemented")
+}
+func (UnimplementedCoreServiceServer) UnbanUser(context.Context, *UnbanUserRequest) (*UnbanUserResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UnbanUser not implemented")
+}
+func (UnimplementedCoreServiceServer) ForgetRoom(context.Context, *ForgetRoomRequest) (*ForgetRoomResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ForgetRoom not implemented")
+}
+func (UnimplementedCoreServiceServer) ListPublicRooms(context.Context, *ListPublicRoomsRequest) (*ListPublicRoomsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListPublicRooms not implemented")
+}
+func (UnimplementedCoreServiceServer) GetEventContext(context.Context, *GetEventContextRequest) (*GetEventContextResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetEventContext not implemented")
+}
+func (UnimplementedCoreServiceServer) InvalidateUserSessions(context.Context, *InvalidateUserSessionsRequest) (*InvalidateUserSessionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method InvalidateUserSessions not implemented")
+}
+func (UnimplementedCoreServiceServer) UpdateRoomSettings(context.Context, *UpdateRoomSettingsRequest) (*UpdateRoomSettingsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateRoomSettings not implemented")
+}
+func (UnimplementedCoreServiceServer) ArchiveRoom(context.Context, *ArchiveRoomRequest) (*ArchiveRoomResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ArchiveRoom not implemented")
+}
+func (UnimplementedCoreServiceServer) UnarchiveRoom(context.Context, *UnarchiveRoomRequest) (*UnarchiveRoomResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UnarchiveRoom not implemented")
+}
+func (UnimplementedCoreServiceServer) InvalidateAllAdminSessions(context.Context, *InvalidateAllAdminSessionsRequest) (*InvalidateAllAdminSessionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method InvalidateAllAdminSessions not implemented")
 }
 func (UnimplementedCoreServiceServer) mustEmbedUnimplementedCoreServiceServer() {}
 func (UnimplementedCoreServiceServer) testEmbeddedByValue()                     {}
@@ -824,6 +1052,204 @@ func _CoreService_DeleteUserKeys_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_KickUser_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(KickUserRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).KickUser(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_KickUser_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).KickUser(ctx, req.(*KickUserRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_BanUser_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BanUserRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).BanUser(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_BanUser_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).BanUser(ctx, req.(*BanUserRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_UnbanUser_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UnbanUserRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).UnbanUser(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_UnbanUser_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).UnbanUser(ctx, req.(*UnbanUserRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_ForgetRoom_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ForgetRoomRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).ForgetRoom(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_ForgetRoom_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).ForgetRoom(ctx, req.(*ForgetRoomRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_ListPublicRooms_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPublicRoomsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).ListPublicRooms(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_ListPublicRooms_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).ListPublicRooms(ctx, req.(*ListPublicRoomsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_GetEventContext_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetEventContextRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).GetEventContext(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_GetEventContext_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).GetEventContext(ctx, req.(*GetEventContextRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_InvalidateUserSessions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InvalidateUserSessionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).InvalidateUserSessions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_InvalidateUserSessions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).InvalidateUserSessions(ctx, req.(*InvalidateUserSessionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_UpdateRoomSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateRoomSettingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).UpdateRoomSettings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_UpdateRoomSettings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).UpdateRoomSettings(ctx, req.(*UpdateRoomSettingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_ArchiveRoom_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ArchiveRoomRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).ArchiveRoom(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_ArchiveRoom_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).ArchiveRoom(ctx, req.(*ArchiveRoomRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_UnarchiveRoom_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UnarchiveRoomRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).UnarchiveRoom(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_UnarchiveRoom_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).UnarchiveRoom(ctx, req.(*UnarchiveRoomRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_InvalidateAllAdminSessions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InvalidateAllAdminSessionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).InvalidateAllAdminSessions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_InvalidateAllAdminSessions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).InvalidateAllAdminSessions(ctx, req.(*InvalidateAllAdminSessionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CoreService_ServiceDesc is the grpc.ServiceDesc for CoreService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -910,6 +1336,50 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteUserKeys",
 			Handler:    _CoreService_DeleteUserKeys_Handler,
+		},
+		{
+			MethodName: "KickUser",
+			Handler:    _CoreService_KickUser_Handler,
+		},
+		{
+			MethodName: "BanUser",
+			Handler:    _CoreService_BanUser_Handler,
+		},
+		{
+			MethodName: "UnbanUser",
+			Handler:    _CoreService_UnbanUser_Handler,
+		},
+		{
+			MethodName: "ForgetRoom",
+			Handler:    _CoreService_ForgetRoom_Handler,
+		},
+		{
+			MethodName: "ListPublicRooms",
+			Handler:    _CoreService_ListPublicRooms_Handler,
+		},
+		{
+			MethodName: "GetEventContext",
+			Handler:    _CoreService_GetEventContext_Handler,
+		},
+		{
+			MethodName: "InvalidateUserSessions",
+			Handler:    _CoreService_InvalidateUserSessions_Handler,
+		},
+		{
+			MethodName: "UpdateRoomSettings",
+			Handler:    _CoreService_UpdateRoomSettings_Handler,
+		},
+		{
+			MethodName: "ArchiveRoom",
+			Handler:    _CoreService_ArchiveRoom_Handler,
+		},
+		{
+			MethodName: "UnarchiveRoom",
+			Handler:    _CoreService_UnarchiveRoom_Handler,
+		},
+		{
+			MethodName: "InvalidateAllAdminSessions",
+			Handler:    _CoreService_InvalidateAllAdminSessions_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

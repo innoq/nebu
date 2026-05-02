@@ -56,6 +56,54 @@ service CoreService {
   // Story 5.7: instance_admin only. Returns keys_deleted_at (Unix ms) on success.
   // Elixir Core handles the Ecto.Multi + failure-invariant audit emission.
   rpc DeleteUserKeys(DeleteUserKeysRequest) returns (DeleteUserKeysResponse);
+
+  // KickUser — room moderator action; power check enforced by GenServer
+  rpc KickUser(KickUserRequest) returns (KickUserResponse);
+
+  // BanUser — bans a user from a room; power check enforced by GenServer
+  rpc BanUser(BanUserRequest) returns (BanUserResponse);
+
+  // UnbanUser — removes a ban (sets membership: leave); power check enforced by GenServer
+  rpc UnbanUser(UnbanUserRequest) returns (UnbanUserResponse);
+
+  // ForgetRoom — marks a room as excluded from future /sync for the calling user
+  rpc ForgetRoom(ForgetRoomRequest) returns (ForgetRoomResponse);
+
+  // ListPublicRooms — returns paginated public rooms (join_rule=public) with live member counts.
+  // Story 7-27: GET/POST /_matrix/client/v3/publicRooms.
+  rpc ListPublicRooms(ListPublicRoomsRequest) returns (ListPublicRoomsResponse);
+
+  // GetEventContext — returns the target event plus up to `limit` events before
+  // and after it, a state snapshot, and pagination tokens compatible with GetMessages.
+  // Story 7-28.
+  rpc GetEventContext(GetEventContextRequest) returns (GetEventContextResponse);
+
+  // InvalidateUserSessions — Story 6.5: revoke all sessions for a user (admin deactivation).
+  // Calls SessionManager.destroy_session/1 for the target user.
+  // Returns ok=true on success; gRPC error on DB failure.
+  rpc InvalidateUserSessions(InvalidateUserSessionsRequest) returns (InvalidateUserSessionsResponse);
+
+  // UpdateRoomSettings — Story 6.8: Admin API notifies Room GenServer of settings change.
+  // max_members = 0 means "no limit". Go gateway sends this after updating rooms table.
+  // Elixir Core updates in-memory GenServer state; no-op if GenServer not running (will load from DB on next start).
+  rpc UpdateRoomSettings(UpdateRoomSettingsRequest) returns (UpdateRoomSettingsResponse);
+
+  // ArchiveRoom — Story 6.9: Admin API terminates the Room GenServer for an archived room.
+  // The Go gateway has already updated rooms.status='archived' in DB before calling this.
+  // Core stops the GenServer via Horde.DynamicSupervisor.terminate_child/2.
+  // Returns ok=true in all cases (even if GenServer was already stopped).
+  rpc ArchiveRoom(ArchiveRoomRequest) returns (ArchiveRoomResponse);
+
+  // UnarchiveRoom — Story 6.9: Admin API restarts the Room GenServer for an unarchived room.
+  // The Go gateway has already updated rooms.status='active' in DB before calling this.
+  // Core restarts the GenServer via RoomSupervisor.start_room/1.
+  rpc UnarchiveRoom(UnarchiveRoomRequest) returns (UnarchiveRoomResponse);
+
+  // InvalidateAllAdminSessions — Story 6.10: destroys all active admin UI sessions in ETS.
+  // Called by Go gateway after OIDC config changes (oidc_issuer, oidc_client_id, oidc_client_secret).
+  // Iterates EtsStore.list_user_ids/0 and calls SessionSupervisor.destroy_session/1 for each.
+  // Returns ok=true always (best-effort — OIDC config is already updated in DB).
+  rpc InvalidateAllAdminSessions(InvalidateAllAdminSessionsRequest) returns (InvalidateAllAdminSessionsResponse);
 }
 
 // Shared event type used across multiple RPCs
@@ -193,12 +241,15 @@ message InviteUserResponse {}
 
 // GetRoomState — unary: Go queries current room members + metadata
 message GetRoomStateRequest {
-  string room_id = 1;
+  string room_id    = 1;
+  string event_type = 2;  // optional filter; empty = return all state events
+  string state_key  = 3;  // optional; only meaningful when event_type is set
 }
 message GetRoomStateResponse {
-  repeated string members           = 1;
-  string          power_levels_json = 2;  // JSON string — full power levels in Story 4-13
-  string          room_name         = 3;  // empty for now — full room metadata in Story 4-9
+  repeated string            members           = 1;  // kept for /members backward compat
+  string                     power_levels_json = 2;  // kept for /members backward compat
+  string                     room_name         = 3;  // kept for backward compat
+  repeated SyncRoomStateEvent state_events     = 4;  // Story 7-19: full state array
 }
 
 // SetPowerLevels — update room power levels (caller must have change_state power)
@@ -302,4 +353,132 @@ message DeleteUserKeysRequest {
 message DeleteUserKeysResponse {
   string status          = 1;  // "keys_deleted"
   int64  keys_deleted_at = 2;  // Unix milliseconds — convert to ISO8601 in Go handler
+}
+
+// KickUser — room moderator action; power check enforced by GenServer
+message KickUserRequest {
+  string room_id   = 1;
+  string caller_id = 2;  // user performing the kick
+  string target_id = 3;  // user to kick
+  string reason    = 4;  // optional
+}
+message KickUserResponse {}
+
+// BanUser — bans a user from a room; power check enforced by GenServer
+message BanUserRequest {
+  string room_id   = 1;
+  string caller_id = 2;
+  string target_id = 3;
+  string reason    = 4;  // optional
+}
+message BanUserResponse {}
+
+// UnbanUser — removes ban (sets membership: leave); power check enforced by GenServer
+message UnbanUserRequest {
+  string room_id   = 1;
+  string caller_id = 2;
+  string target_id = 3;
+}
+message UnbanUserResponse {}
+
+// ForgetRoom — marks a room as excluded from future /sync for the calling user
+message ForgetRoomRequest {
+  string room_id = 1;
+  string user_id = 2;
+}
+message ForgetRoomResponse {}
+
+// ListPublicRooms — Story 7-27
+// Cursor: since is the room_id of the last item on the previous page (lexicographic).
+// filter_term: case-insensitive substring match on room name and topic (ILIKE '%term%').
+message ListPublicRoomsRequest {
+  int32  limit       = 1;  // max rooms per page; 0 = default 20; server caps at 100
+  string since       = 2;  // opaque cursor from previous next_cursor; empty = first page
+  string filter_term = 3;  // generic_search_term; empty = no filter
+}
+
+// RoomSummary represents one public room entry in the directory.
+message RoomSummary {
+  string room_id            = 1;
+  string name               = 2;
+  string topic              = 3;
+  int32  num_joined_members = 4;  // live count from Room GenServer (or DB fallback)
+  bool   world_readable     = 5;  // always false for Nebu rooms
+  bool   guest_can_join     = 6;  // always false for Nebu rooms
+}
+
+message ListPublicRoomsResponse {
+  repeated RoomSummary rooms          = 1;
+  string               next_cursor    = 2;  // empty when no more pages
+  int32                total_estimate = 3;  // approximate total public room count
+}
+
+// GetEventContext — Story 7-28
+// Returns the target event, up to `limit` events before and after it, a state
+// snapshot at the time of the event, and pagination tokens that are compatible
+// with GetMessages (start is usable as `to`, end as `from`).
+message GetEventContextRequest {
+  string room_id  = 1;
+  string event_id = 2;
+  int32  limit    = 3;  // events before AND after; 0 = default 10; clamped to 100
+}
+
+// ContextStateEvent is a state event in the context snapshot (needs state_key).
+message ContextStateEvent {
+  string event_type = 1;
+  string state_key  = 2;
+  bytes  content    = 3;  // JSON-encoded
+  string sender     = 4;
+}
+
+message GetEventContextResponse {
+  Event                      event         = 1;  // the target event itself
+  repeated Event             events_before = 2;  // up to `limit` events older than event (newest last)
+  repeated Event             events_after  = 3;  // up to `limit` events newer than event (oldest first)
+  repeated ContextStateEvent state         = 4;  // state snapshot at event time
+  string                     start_token   = 5;  // pagination token — use as `to` in GET /messages
+  string                     end_token     = 6;  // pagination token — use as `from` in GET /messages
+}
+
+// InvalidateUserSessions — Story 6.5: Admin deactivation revokes all active sessions.
+// Calls SessionManager.destroy_session/1 for the target user.
+// Returns ok=true on success; gRPC error on DB failure.
+message InvalidateUserSessionsRequest {
+  string user_id = 1;  // Matrix user ID (@localpart:server)
+}
+
+message InvalidateUserSessionsResponse {
+  bool ok = 1;
+}
+
+// UpdateRoomSettings — Story 6.8
+message UpdateRoomSettingsRequest {
+  string room_id     = 1;
+  int32  max_members = 2;  // 0 = no limit; always sent (even if unchanged) for simplicity
+}
+message UpdateRoomSettingsResponse {
+  bool ok = 1;
+}
+
+// ArchiveRoom — Story 6.9
+message ArchiveRoomRequest {
+  string room_id = 1;
+}
+message ArchiveRoomResponse {
+  bool ok = 1;
+}
+
+// UnarchiveRoom — Story 6.9
+message UnarchiveRoomRequest {
+  string room_id = 1;
+}
+message UnarchiveRoomResponse {
+  bool ok = 1;
+}
+
+// InvalidateAllAdminSessions — Story 6.10
+message InvalidateAllAdminSessionsRequest {}
+
+message InvalidateAllAdminSessionsResponse {
+  bool ok = 1;
 }

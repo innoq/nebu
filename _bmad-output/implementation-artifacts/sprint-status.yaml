@@ -1,5 +1,64 @@
 # generated: 2026-03-20
-# last_updated: 2026-04-23
+# last_updated: 2026-05-01
+# story 6-11 created: 6-11 → ready-for-dev: 2026-05-01 (Gherkin: Admin API CRUD Flow — 3 Godog scenarios: user lifecycle deactivate/reactivate, role grant/revoke, room archive, new gateway/features/admin_api.feature + gateway/test/integration/admin_api_steps_test.go)
+# story 6-9 created: 6-9 → ready-for-dev: 2026-05-01 (Room Archivierung — POST /admin/rooms/{roomId}/archive + unarchive, proto ArchiveRoom/UnarchiveRoom, Room.Server archived init guard, SendEvent archive check, audit log)
+# story 6-8 created: 6-8 → ready-for-dev: 2026-05-01 (Room Settings Update API — PATCH /admin/rooms/{roomId}, PUT /admin/config/room-defaults, migration 000037 room_defaults, proto UpdateRoomSettings, max_members enforcement in Room GenServer, audit log)
+# story 6-7 created: 6-7 → ready-for-dev: 2026-05-01 (Room List + Get API — migration 000036 rooms_admin_columns, GET /admin/rooms list+filter+cursor, GET /admin/rooms/{roomId} detail, RoomRepository, member_count/message_count, audit log)
+# story 6-6 done (pipeline: ATDD+Dev+CodeReview+Kassandra CLEAN — role_overrides migration 000035, POST /roles grant/revoke, RequireRole DB-override, 60s TTL cache): 2026-05-01
+# story 6-6 created: 6-6 → ready-for-dev: 2026-05-01 (User Role Assignment API — role_overrides migration 000035, POST /roles grant/revoke, RequireRole DB-override extension with 60s TTL cache, roles merge in ListUsers/GetUser)
+# story 6-5 created: 6-5 → ready-for-dev: 2026-05-01 (User Deactivation + Reactivation + Session-Invalidierung — POST deactivate/reactivate, proto InvalidateUserSessions, JWT middleware is_active check, migration 000034)
+# story 6-4 created: 6-4 → ready-for-dev: 2026-05-01 (User List + Get API — ListAdminUsers real impl + GetAdminUser new endpoint, spec-first with make gen-api, UserRepository, cursor pagination, email masking MVP, audit log)
+# story 6-3 created: 6-3 → ready-for-dev: 2026-05-01 (Admin API Router + RequireRole middleware — wires oapi-codegen StrictHandler + role-gate for instance_admin/compliance_officer groups)
+# story 6-5 done (pipeline: ATDD+Dev+CodeReview+Kassandra HIGH-1-fixed (jwtWithStatusCheck wraps ALL routes) — deactivate/reactivate, proto InvalidateUserSessions, 60s TTL cache): 2026-05-01
+# story 6-4 done (pipeline: ATDD+Dev+CodeReview+Kassandra CLEAN — UserList/GetUser, cursor pagination, email-mask MVP, audit log, errors.Is fix): 2026-05-01
+# story 6-3 done (pipeline: ATDD+Dev+CodeReview MAJOR-fixed (compliance route regression)+Kassandra CLEAN — RequireRole, RegisterAdminRoutes, compliance-route owned by main.go): 2026-05-01
+# story 6-2 done (pipeline: ATDD+Dev+CodeReview CLEAN — APIResponse[T], EncodeCursor/DecodeCursor, ErrInvalidCursor sentinel): 2026-05-01
+# story 6-2 created: 6-2 → ready-for-dev: 2026-05-01 (Admin API response envelope + cursor pagination helpers)
+# story 6-1 done (pipeline: ATDD+Dev+CodeReview+Kassandra CLEAN — oapi-codegen StrictServerInterface, openapi.yaml 3.1, GET /api/v1/openapi.yaml embedded): 2026-05-01
+# story 7-36 done (pipeline: ATDD+Dev+CodeReview CLEAN — sync propagation Godog + private room exclusion + theResponseBodyIs compile fix): 2026-04-30
+# story 7-36 created: 7-36 → ready-for-dev: 2026-04-30 (P1 test gap closure: sync propagation for account_data+tags + private room exclusion from publicRooms)
+# story 7-35 done (pipeline: ATDD+Dev+CodeReview MINOR-FIXED — withUserDB helper, SET LOCAL GUC, RLS migration 000033): 2026-04-30
+# story 7-33 done (pipeline: ATDD+Dev+CodeReview CLEAN — system-role bypass in get_room_state, fanout goroutine fixed): 2026-04-30
+# story 7-33 created: 7-33 → ready-for-dev: 2026-04-30 (SEC Gate 2 MEDIUM fix: fanout goroutine must send system role to bypass membership check in get_room_state)
+# story 7-32 done (pipeline: ATDD+Dev+CodeReview CLEAN — kick/ban/unban use metadata not body caller_id): 2026-04-30
+# story 7-32 created: 7-32 → ready-for-dev: 2026-04-30 (SEC Gate 2 HIGH fix: moderation caller_id must come from gRPC metadata not request body)
+# epic-7b SEC Gate 2 done — Kassandra HIGH (kick/ban/unban caller_id from body not metadata); 6 MEDIUM; follow-ups needed: 2026-04-30
+# story 7-30 done (pipeline: ATDD+Dev+CodeReview 1 MAJOR fixed (SELECT FOR UPDATE in PutRule) + 5 MINOR fixed): 2026-04-30
+# story 7-29 done (pipeline: CodeReview 1 MAJOR fixed (RLS→WHERE clause) + 3 MINOR fixed (slog, matrixURL, captureResponse): 2026-04-30
+# story 7-28 done (pipeline: CodeReview MINOR fixed (slog, auth guard panic) + compile errors fixed): 2026-04-30
+# story 7-27 done (pipeline: CodeReview 2 MINOR fixed (gRPC ctx propagation, slog) + compile errors fixed): 2026-04-30
+# story 7-26 done (pipeline: ATDD+Dev+CodeReview MAJOR accepted (token-invalidation MVP risk)+Security Kassandra CLEAN): 2026-04-30
+# story 7-25 done (pipeline: ATDD+Dev+CodeReview CLEAN — tags read-modify-write via m.tag account data entry): 2026-04-30
+# story 7-24 done (pipeline: ATDD+Dev+CodeReview CLEAN — account_data table migration 000029, upsert, sync integration): 2026-04-30
+# story 7-23 done (pipeline: ATDD+Dev+CodeReview CLEAN — aliases stub returns [], JWT-gated): 2026-04-30
+# story 7-22 done (pipeline: ATDD+Dev+CodeReview 5 MAJOR fixed (kick wrong-sender+ban double-event+reason dropped+forget-stub AC noted)+Security not-needed per CR): 2026-04-30
+# story 7-21 done (pipeline: ATDD+Dev+CodeReview CLEAN — 1 MINOR (404 wording per spec accepted)): 2026-04-30
+# story 7-20 done (pipeline: ATDD+Dev+CodeReview CLEAN — 2 MINOR fixed (Godog field assertion+comment drift), N+1 profile lookup acceptable for MVP): 2026-04-30
+# story 7-19 done (pipeline: ATDD+Dev+CodeReview MAJOR fixed (IDOR membership check server.ex)+3 MINOR fixed (Gherkin keys+step parser+gofmt)): 2026-04-30
+# story 7-18 done (pipeline: ATDD+Dev+CodeReview MINOR_FIXED (3 MAJOR Playwright+1 MINOR compliance)+Security CLEAN): 2026-04-30
+# story 7-17 done (pipeline: ATDD+Dev+CodeReview CLEAN+Security CLEAN — 11 POST routes wrapped bodyLimit64KiB(csrf(sessionGuard))); Kassandra MEDIUM non-blocking): 2026-04-30
+# stories 7-17..7-31 created (2 security follow-ups from SEC Gate 2 + 13 Matrix API gap stories from tmp/missing-matrix-features.md; migration numbers corrected to 000029..000032): 2026-04-30
+# story 7-16f done (pipeline: no-op — migration 000026_avatar_url_scrub already committed in feat(security) 4e25855; story was deferred AC7 from 5.29b, now verified in place): 2026-04-30
+# story 7-16e done (pipeline: MINOR_FIXED+Security CLEAN — migration 000028 re-asserts audit_log_purge SECURITY DEFINER; test INSERT+UPDATE to bypass BEFORE INSERT trigger): 2026-04-30
+# story 7-16d done (pipeline: CLEAN — missing 4 RPC registrations in core_grpc.pb.ex fixed; auth interceptor now runs for WriteAuditLog/GetPresence/UpdateProfile/DeleteUserKeys): 2026-04-30
+# story 7-16c done (pipeline: ATDD+Dev+CodeReview MINOR_FIXED+Security CLEAN — gRPC pipeline smoke tests, logout HTTP flow, compile-collision fixed): 2026-04-30
+# story 7-16b done (pipeline: ATDD+Dev+CodeReview+Security CLEAN — complianceRL isolated from strictRL login bucket): 2026-04-30
+# story 7-16a done (pipeline: test-only fix — migrationDBURL BYPASSRLS for TRUNCATE, security_review: not-needed): 2026-04-30
+# story 7-16f created: 7-16f → ready-for-dev: 2026-04-30
+# story 7-16e created: 7-16e → ready-for-dev: 2026-04-30
+# story 7-16d created: 7-16d → ready-for-dev: 2026-04-30
+# story 7-16c created: 7-16c → ready-for-dev: 2026-04-30
+# story 7-16b created: 7-16b → ready-for-dev: 2026-04-30
+# story 7-16a created: 7-16a → ready-for-dev: 2026-04-30 (bugfix batch: integration-test regressions + missing features post-epic-7-rebase)
+# story 7-6 done (CR: 2 MINOR fixed inline — rune-count fix + dead template branch removed; 0 decision-needed, 0 deferred): 2026-04-29
+# story 7-6 created: 7-6 → ready-for-dev: 2026-04-29
+# story 7-5 done (CR: 1 MINOR fixed inline — badge normalization extracted to toUserRowData helper; 0 decision-needed, 0 deferred): 2026-04-29
+# story 7-5 created: 7-5 → ready-for-dev: 2026-04-29
+# story 7-4 created: 7-4 → ready-for-dev: 2026-04-29
+# story 7-2 done (pipeline: 3 TEA MAJOR fixed inline + 2 MINOR fixed, CR 1 MINOR fixed — not-found title casing; tokens: ~304k create+dev+tea+cr): 2026-04-29
+# story 7-1 done (pipeline: 2 TEA MINOR fixed inline, CR CLEAN; tokens: ~267k create+dev+tea+cr): 2026-04-29
+# story 7-2 review: 2026-04-29
+# story 7-2 ready-for-dev: 2026-04-29
 # story 5-29d review (AC1: event_dispatcher 23→8 failures, remaining 8 split to 5-29d.1; AC5 KEK hard-fail; AC6 enc:v1: envelope; AC7 jitter scheduler; AC3 deferred to 7-11): 2026-04-23
 # story 5-29d in-progress: 2026-04-23
 # story 5-29b done (pipeline: 0 TEA MAJOR / 7 MINOR fixed by CR; Kassandra CLEAN — URL-encoded path-traversal verified non-exploitable, 4 INFO no-blocker): 2026-04-29
@@ -71,7 +130,9 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-20
-last_updated: 2026-04-23
+last_updated: 2026-05-01
+# story 6-10 created: 6-10 → ready-for-dev: 2026-05-01 (Server Config API + Metrics API — GET/PATCH /admin/config, GET /admin/metrics, proto InvalidateAllAdminSessions, ServerConfigRepository, MetricsRepository, oidc_client_secret encryption, session invalidation on OIDC change)
+# story 6-1 created: epic-6 → in-progress, 6-1 → ready-for-dev: 2026-05-01
 # story 5-1 review: 2026-04-23 (audit-log schema + RLS + retention cleanup)
 # story 5-29 created as follow-up of 5-27 scope reduction (code-review MAJOR-B): 2026-04-23
 # story 5-27 done (pipeline: 1 MAJOR-A fixed, 1 MAJOR-B deferred to 5-29, 8 MINOR fixed, Kassandra CLEAN): 2026-04-23
@@ -512,42 +573,81 @@ development_status:
   5-29e-manual-testing-bugs: done                      # Bugs 1+2b+3+4 (sync device fields)
   # Security Hardening — Group H: Pipeline / Process
   5-28-security-review-pipeline-gate: done
-  epic-5-retrospective: ready                          # SEC Gate 2 closure CLEAN (2026-04-23): all 4 HIGH + 2 MEDIUM closed; 2 INFO + 6 Epic-6 backlog items, non-blocking
+  epic-5-retrospective: skipped                        # skipped by user decision 2026-04-29: jumping to Epic 7 (MVP priority); SEC Gate 2 was CLEAN
 
   # ─────────────────────────────────────────────────────────────────────────
   # Epic 6: Instance Admins Can Manage the Instance Programmatically via Admin API
+  # (skipped by user decision 2026-04-29 — Epic 7 UI is MVP priority; Epic 6 API stays backlog)
   # ─────────────────────────────────────────────────────────────────────────
-  epic-6: backlog
-  6-1-openapi-spec-first-setup-codegen-pipeline-strictserverinterface-live-endpoint: backlog
-  6-2-admin-api-response-format-cursor-pagination: backlog
-  6-3-admin-api-router-role-auth-middleware: backlog
-  6-4-user-list-get-api: backlog
-  6-5-user-deactivation-reactivation-session-invalidierung: backlog
-  6-6-user-role-assignment-api-role-overrides-tabelle-middleware-integration: backlog
-  6-7-room-list-get-api: backlog
-  6-8-room-settings-update-api-max-members-visibility-serverweite-defaults: backlog
-  6-9-room-archivierung-kein-physisches-loschen-events-bleiben-erhalten: backlog
-  6-10-server-config-api-metrics-api: backlog
-  6-11-gherkin-admin-api-crud-flow: backlog
+  epic-6: in-progress
+  6-1-openapi-spec-first-setup-codegen-pipeline-strictserverinterface-live-endpoint: done
+  6-2-admin-api-response-format-cursor-pagination: done
+  6-3-admin-api-router-role-auth-middleware: done
+  6-4-user-list-get-api: done
+  6-5-user-deactivation-reactivation-session-invalidierung: done
+  6-6-user-role-assignment-api-role-overrides-tabelle-middleware-integration: done
+  6-7-room-list-get-api: review
+  6-8-room-settings-update-api-max-members-visibility-serverweite-defaults: review
+  6-9-room-archivierung-kein-physisches-loschen-events-bleiben-erhalten: review
+  6-10-server-config-api-metrics-api: review
+  6-11-gherkin-admin-api-crud-flow: done
   epic-6-retrospective: optional
 
   # ─────────────────────────────────────────────────────────────────────────
   # Epic 7: Instance Admins Have a Full Admin UI for Day-to-Day Operations
   # ─────────────────────────────────────────────────────────────────────────
-  epic-7: backlog
-  7-1-obsidian-color-system-vollstandig-typography-ux-dr1-ux-dr2: backlog
-  7-2-masterdetaillayout-detailpanel-c4-c5-bookmarkbare-url-routen: backlog
-  7-3-interaction-components-c6-wizardstepper-c7-c10: backlog
-  7-4-display-components-c11-c14-inkl-inlineedit-alertbanner: backlog
-  7-5-user-list-page-suche-debounced-load-more-skeleton-wcag-landmarks: backlog
-  7-6-user-detail-panel-inlineedit-displayname-status-bookmarkbare-url: backlog
-  7-7-user-role-ui-deactivation-confirmation-dialog: backlog
-  7-8-room-list-page-suche-filter-pagination: backlog
-  7-9-room-detail-panel-settings-edit-archive-ui-confirmation-pattern: backlog
-  7-10-server-config-ui-get-patch-api-v1-admin-config: backlog
-  7-11-compliance-access-request-list-four-eyes-approval-ui: backlog
-  7-12-audit-log-view-atlas-pattern-zeitraum-filter-read-only: backlog
-  7-13-wcag-audit-axe-core-report-automatisierter-scan-aller-admin-seiten: backlog
-  7-14-gherkin-admin-ui-smoke-flows-user-deactivate-room-archive-via-ui: backlog
-  7-15-bootstrap-wizard-claim-role-mapping-instance-admin-compliance-user: backlog
-  epic-7-retrospective: optional
+  epic-7: in-progress
+  7-1-obsidian-color-system-vollstandig-typography-ux-dr1-ux-dr2: done
+  7-2-masterdetaillayout-detailpanel-c4-c5-bookmarkbare-url-routen: done
+  7-3-interaction-components-c6-wizardstepper-c7-c10: done  # ~380k tokens
+  7-4-display-components-c11-c14-inkl-inlineedit-alertbanner: done  # ~340k tokens
+  7-5-user-list-page-suche-debounced-load-more-skeleton-wcag-landmarks: done
+  7-6-user-detail-panel-inlineedit-displayname-status-bookmarkbare-url: done
+  7-7-user-role-ui-deactivation-confirmation-dialog: done  # ~390k tokens
+  7-8-room-list-page-suche-filter-pagination: done  # ~280k tokens
+  7-9-room-detail-panel-settings-edit-archive-ui-confirmation-pattern: done  # ~310k tokens
+  7-10-server-config-ui-get-patch-api-v1-admin-config: done  # ~290k tokens
+  7-11-compliance-access-request-list-four-eyes-approval-ui: done  # ~250k tokens
+  7-12-audit-log-view-atlas-pattern-zeitraum-filter-read-only: done
+  7-13-wcag-audit-axe-core-report-automatisierter-scan-aller-admin-seiten: done  # nested <main> fixed in 4 templates, sr-only labels added, axe WCAG 2.1 AA spec for 8 pages
+  7-14-gherkin-admin-ui-smoke-flows-user-deactivate-room-archive-via-ui: done  # smoke-flows spec, reactivate+unarchive handlers added
+  7-15-bootstrap-wizard-claim-role-mapping-instance-admin-compliance-user: done  # role-mapping config page, regex validation, Kassandra CLEAN
+  7-16a-test-fixture-bootstrap-truncate-permission: done
+  7-16b-rate-limiter-revoke-strictrl-and-ip-isolation: done
+  7-16c-audit-log-admin-events-missing: done
+  7-16d-grpc-auth-http404-statt-unauthenticated: done
+  7-16e-audit-log-purge-security-definer: done
+  7-16f-migration-avatar-url-scrub-fehlt: done
+  # Security follow-up stories (SEC Gate 2 findings)
+  7-17-csrf-enforcement-body-size-limits-admin-post-routes: done
+  7-18-flash-message-allowlist-admin-get-handlers: done
+  # Matrix Client-Server API gaps (from tmp/missing-matrix-features.md)
+  7-19-room-state-api-get-state-single-event: done
+  7-20-joined-members-get-rooms-roomid-joined-members: done
+  7-21-profile-einzelfelder-displayname-avatar-url: done
+  7-22-room-moderation-kick-ban-unban-forget: done
+  7-23-room-aliases-get-rooms-roomid-aliases: done
+  7-24-account-data-per-room-get-put: done
+  7-25-tags-api-get-put-delete: done
+  7-26-device-management-get-put-delete-devices: done
+  7-27-public-room-directory-get-post-publicrooms: done
+  7-28-event-context-get-rooms-roomid-context-eventid: done
+  7-29-notifications-api-get-notifications: done
+  7-30-push-rules-pushers-api: done
+  7-31-search-api-post-search-adr-required: backlog  # blocked: ADR-010 (FTS strategy) required first
+  # SEC Gate 2 HIGH follow-up
+  7-32-moderation-caller-id-from-metadata: done
+  # SEC Gate 2 MEDIUM follow-up (fanout regression from 7-19 IDOR fix)
+  7-33-fanout-system-role-bypass: done
+  # SEC Gate 2 MEDIUM follow-up (RLS GUC wiring + enable RLS on notifications/push_rules/pushers)
+  7-35-rls-per-request-guc-wiring: done
+  # P1 test gap closure (from epic-7-final-traceability-2026-04-30.md)
+  7-36-p1-test-gaps-sync-propagation-private-room-exclusion: done
+  epic-7-retrospective: pending  # SEC Gate 2 done; retro blocked until 7-17 (CSRF HIGH) is done
+# story 6-11 done (pipeline: ATDD+Dev+CodeReview CLEAN — Godog E2E admin lifecycle/role/archive, compliance officer auth): 2026-05-02
+# story 6-10 done (pipeline: ATDD+Dev+CodeReview+Kassandra HIGH-1-fixed (CWE-209 ResponseErrorHandlerFunc) — GET/PATCH /admin/config + GET /admin/metrics + AES-256-GCM oidc_client_secret): 2026-05-02
+# story 6-9 done (pipeline: ATDD+Dev+CodeReview+Kassandra HIGH-1 (archive race window) as follow-up 6-9b — archive/unarchive endpoints, Horde GenServer guard): 2026-05-02
+# story 6-8 done (pipeline: ATDD+Dev+CodeReview+Kassandra CLEAN — PATCH /admin/rooms, PUT room-defaults, max_members GenServer, room_full 403): 2026-05-02
+# story 6-7 done (pipeline: ATDD+Dev+CodeReview+Kassandra CLEAN — GET /admin/rooms + GET /admin/rooms/{roomId}, cursor pagination, RoomRepository): 2026-05-02
+# epic-6 SEC Gate 2 done — Kassandra HIGH (HIGH-1 RequireRole fail-closed FIXED inline; HIGH-2 Core send_event archive-race as follow-up 6-9b); 4 MEDIUM + 2 LOW follow-ups: 2026-05-02
+# epic-6 SEC Gate 2 HIGH-2 follow-up: story 6-9b created (Core send_event archived-status check to close TOCTOU race window): 2026-05-02

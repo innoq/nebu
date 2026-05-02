@@ -34,7 +34,8 @@
 
 Nebu is a chat server that speaks the [Matrix Client-Server API](https://spec.matrix.org/latest/client-server-api/), so any standard Matrix client (Element, Cinny, FluffyChat, …) works out of the box. It's built for organizations that need full data sovereignty: on-premise deployment, no vendor lock-in, no telemetry, no federation overhead.
 
-**Status:** Early development. Epic 4 complete, Epic 5 in progress. Not production-ready.
+<!-- markdownlint-disable-next-line MD013 -->
+**Status:** Pre-alpha. Core chat functionality implemented (Epics 1–8 complete). Not production-ready — see [Current Limitations](#current-limitations) before evaluating.
 
 ---
 
@@ -51,7 +52,7 @@ Existing Matrix servers each have a trade-off that makes them hard to adopt in e
 - **Compliance-ready** — audit logging, legal export, four-eyes principle for privileged access
 - **Horizontally scalable** — stateless Go gateway + clustered Elixir core (libcluster + Horde)
 
-**Intentional non-goals:** federation, end-to-end encryption (by design — server-side compliance access is a requirement, not a bug).
+**Intentional non-goals:** federation, end-to-end encryption (by design — see [Current Limitations](#current-limitations)).
 
 ---
 
@@ -81,7 +82,39 @@ Existing Matrix servers each have a trade-off that makes them hard to adopt in e
 
 **Three runtime components:** a Go binary (gateway + media), an Elixir release (core), and PostgreSQL. That's it.
 
+<!-- markdownlint-disable MD013 -->
 Deep dives: [`docs/architecture/`](docs/architecture/) · ADRs: [`docs/architecture/adr/`](docs/architecture/adr/)
+<!-- markdownlint-enable MD013 -->
+
+---
+
+## Current Limitations
+
+<!-- markdownlint-disable MD013 -->
+These are **deliberate design decisions**, not oversights. Open an issue only if you believe a limitation should be reconsidered — not to ask when it will be "fixed."
+
+### No End-to-End Encryption
+
+Nebu does **not** implement E2EE. Message content is encrypted in transit (TLS 1.3) and at rest (AES-256-GCM for media), but the server can read all messages.
+
+**Why this is intentional:** Nebu targets organizations that require compliance access — audit logging, legal export, four-eyes-principle review of privileged content (Epic 5). True E2EE makes server-side compliance access impossible. A future "Managed E2EE" model (client encrypts, server holds escrow keys) is on the roadmap but not yet designed. See [ADR-007](docs/architecture/adr/ADR-007-ed25519-x25519-keypairs.md).
+
+**Practical impact for client users:** The Matrix E2EE setup dialogs in Element Web are silenced via stubs (`keys/upload`, `keys/query`). You will not see "Unable to set up keys" errors, but messages are not end-to-end encrypted.
+
+### No Federation
+
+Nebu does not implement the [Matrix Server-Server API](https://spec.matrix.org/latest/server-server-api/). Users on a Nebu instance cannot communicate with users on other Matrix homeservers (Synapse, Conduit, etc.).
+
+**Why this is intentional:** Federation adds ~40% protocol surface area and is incompatible with the closed-network data-sovereignty model Nebu is built for. See [ADR-002](docs/architecture/adr/ADR-002-no-redis-nats.md).
+
+### No Full-Text Search
+
+`POST /_matrix/client/v3/search` is not yet implemented. It requires ADR-010 (FTS strategy: PostgreSQL `tsvector` vs. pgvector semantic search) to be decided first.
+
+### Pre-Alpha Quality
+
+No stability guarantees. Database migrations may require manual intervention between versions. The API surface is not yet frozen.
+<!-- markdownlint-enable MD013 -->
 
 ---
 
@@ -138,6 +171,7 @@ Open http://localhost:8008/admin and complete the Bootstrap Wizard (OIDC issuer:
 | `compliance@example.com`   | `changeme` | `compliance_officer` |
 | `alex@example.com`         | `changeme` | `user`               |
 
+<!-- markdownlint-disable-next-line MD013 -->
 Full setup walkthrough: [`docs/getting-started.md`](docs/getting-started.md)
 
 ---
@@ -150,6 +184,7 @@ Nebu implements the core of the Matrix Client-Server API. Clients that rely only
 
 **Intentionally excluded:** `/_matrix/federation/*`, `/_matrix/identity/*`, `/_matrix/client/v3/keys/claim` (no E2EE).
 
+<!-- markdownlint-disable-next-line MD013 -->
 Full endpoint list: [`docs/matrix-api-scope.md`](docs/matrix-api-scope.md)
 
 ---
@@ -174,17 +209,19 @@ All dependencies are Apache 2.0, MIT, BSD, or PostgreSQL License. No AGPLv3, no 
 
 ## Roadmap
 
-| Phase | Focus                                  | Status         |
-|-------|----------------------------------------|----------------|
-| 1     | OIDC login, first message              | Done           |
-| 2     | Rooms, power levels, admin API         | Done           |
-| 3     | Ed25519 signatures, audit log          | Done           |
-| 4     | Media upload/download (AES-256-GCM)    | Done           |
-| 5     | Rate limiting, compliance search       | In progress    |
-| 6     | Full-text search (PostgreSQL FTS)      | Planned        |
-| 7     | Clustering & horizontal scale          | Planned        |
-| 8     | Enterprise hardening (GDPR, retention) | Planned        |
-| 9     | Semantic search via pgvector (opt-in)  | Exploratory    |
+<!-- markdownlint-disable MD013 MD060 -->
+| Phase | Focus                                                            | Status      |
+|-------|------------------------------------------------------------------|-------------|
+| 1–2   | OIDC login, rooms, power levels                                  | Done        |
+| 3     | Ed25519 signatures, audit log, media (AES-256-GCM)              | Done        |
+| 4     | Full Matrix Client-Server API MVP (sync, send, presence, …)     | Done        |
+| 5     | Security hardening, rate limiting, compliance access             | Done        |
+| 6     | Admin API (user/room management)                                 | In progress |
+| 7     | Admin UI (full day-to-day operations)                            | Done        |
+| 8     | Public open-source release (GitHub/GitLab, CI, docs scaffold)   | Done        |
+| 9     | Full-text search (ADR-010 required), Managed E2EE (ADR-011 req.)| Planned     |
+| 10    | Clustering & horizontal scale, GDPR/retention hardening         | Planned     |
+<!-- markdownlint-enable MD013 MD060 -->
 
 Detailed roadmap: [`docs/roadmap.md`](docs/roadmap.md)
 

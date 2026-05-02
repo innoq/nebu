@@ -75,6 +75,18 @@ func theResponseBodyContains(expected string) error {
 	return nil
 }
 
+// captureResponse reads the response body and stores it in lastStatusCode / lastBody.
+func captureResponse(resp *http.Response) error {
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("reading response body: %w", err)
+	}
+	lastStatusCode = resp.StatusCode
+	lastBody = string(body)
+	return nil
+}
+
 // InitializeScenario registers all step definitions for the integration test suite.
 func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^the docker compose stack is started$`, theDockerComposeStackIsStarted)
@@ -86,4 +98,17 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	initializeAdminBootstrapSteps(sc)  // admin bootstrap + dashboard step definitions
 	initializeRoomFlowSteps(sc)        // room flow step definitions
 	initializeComplianceFlowSteps(sc)  // compliance flow step definitions (Story 5.9)
+	initializeRoomStateSteps(sc)         // room state API step definitions (Story 7-19)
+	initializeJoinedMembersSteps(sc)     // joined members API step definitions (Story 7-20)
+	initializeProfileSubfieldSteps(sc)   // profile sub-field API step definitions (Story 7-21)
+	initializeModerationSteps(sc)        // room moderation step definitions (Story 7-22)
+	initializeRoomAliasesSteps(sc)       // room aliases API step definitions (Story 7-23)
+	initializeAccountDataSteps(sc)       // account data API step definitions (Story 7-24)
+	initializeTagsSteps(sc)              // tags API step definitions (Story 7-25)
+	initializeDevicesSteps(sc)           // device management step definitions (Story 7-26)
+	initializePublicRoomsSteps(sc)       // public room directory step definitions (Story 7-27)
+	initializeEventContextSteps(sc)      // event context step definitions (Story 7-28)
+	initializeNotificationsSteps(sc)     // notifications API step definitions (Story 7-29)
+	initializePushRulesSteps(sc)          // push rules + pushers API step definitions (Story 7-30)
+	initializeAdminAPISteps(sc)           // Admin API step definitions (Story 6-11)
 }

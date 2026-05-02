@@ -294,18 +294,31 @@ func TestAuditLogPurge_AppRoleCanCallSecurityDefiner(t *testing.T) {
 	migrateDB := openRoleSeparationMigrateDB(t)
 	ctx := context.Background()
 
-	// Seed a row dated 3001 days ago (beyond any reasonable retention).
+	// Seed a row that will be aged into the purge window.
+	// Step 1: INSERT — the BEFORE INSERT trigger (migration 000025) will set
+	// event_time = NOW(), so we cannot supply the historical timestamp directly.
 	var seedID int64
-	oldTS := time.Now().Add(-3001 * 24 * time.Hour).UTC()
 	err := migrateDB.QueryRowContext(ctx,
-		`INSERT INTO audit_log (event_time, actor_user_id, action, outcome)
-		 VALUES ($1, 'sys-role-sep-purge', 'role_sep_purge_test', 'success')
+		`INSERT INTO audit_log (actor_user_id, action, outcome)
+		 VALUES ('sys-role-sep-purge', 'role_sep_purge_test', 'success')
 		 RETURNING id`,
-		oldTS,
 	).Scan(&seedID)
 	if err != nil {
 		t.Fatalf("AC6 setup: privileged INSERT failed: %v", err)
 	}
+
+	// Step 2: UPDATE event_time to 3001 days ago via nebu_migrate (BYPASSRLS bypasses
+	// FORCE ROW LEVEL SECURITY on audit_log, including the UPDATE-denied policy).
+	// This is the canonical approach when a historical timestamp is required:
+	// the trigger fires on INSERT, so we fixup the timestamp via a subsequent UPDATE.
+	oldTS := time.Now().Add(-3001 * 24 * time.Hour).UTC()
+	if _, err := migrateDB.ExecContext(ctx,
+		`UPDATE audit_log SET event_time = $1 WHERE id = $2`, oldTS, seedID,
+	); err != nil {
+		t.Fatalf("AC6 setup: backdate event_time failed: %v — "+
+			"nebu_migrate must have BYPASSRLS to UPDATE audit_log despite FORCE RLS", err)
+	}
+
 	t.Cleanup(func() {
 		// Best-effort cleanup in case the purge didn't remove it.
 		_, _ = migrateDB.ExecContext(ctx,

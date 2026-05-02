@@ -1,0 +1,27 @@
+{{ define "search_input" }}
+{{- /* C8 SearchInput — Story 7.3
+     Data: SearchInputData{Placeholder string, Value string, ParamName string}
+     Renders a text <input> with a 300ms debounce script that calls form.requestSubmit().
+     NO <form> tag — the page template wraps this component in its own <form method="GET">.
+     The input ID uses ParamName to avoid collisions: id="search_input_{{ .ParamName }}".
+     Browser support for requestSubmit(): Chrome 76+, Firefox 75+, Safari 15.4+.
+*/ -}}
+<label for="search_input_{{ .ParamName }}" class="sr-only">{{ .Placeholder }}</label>
+<input type="text"
+       id="search_input_{{ .ParamName }}"
+       name="{{ .ParamName }}"
+       value="{{ .Value }}"
+       placeholder="{{ .Placeholder }}"
+       aria-label="{{ .Placeholder }}"
+       class="input input-bordered input-sm w-full max-w-xs">
+<script>
+(function() {
+  var input = document.getElementById('search_input_{{ .ParamName }}');
+  var timer;
+  input.addEventListener('input', function() {
+    clearTimeout(timer);
+    timer = setTimeout(function() { if (input.form) { input.form.requestSubmit(); } }, 300);
+  });
+})();
+</script>
+{{ end }}

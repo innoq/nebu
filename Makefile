@@ -7,7 +7,7 @@ DOCKER_ELIXIR = docker run --rm -v $(PWD):/workspace -w /workspace elixir:1.19-a
 DOCKER_BUF    = docker run --rm -v $(PWD):/workspace -w /workspace bufbuild/buf
 DOCKER_NODE   = docker run --rm -v $(PWD):/workspace -w /workspace node:22-alpine
 
-.PHONY: build-gateway build-core build-admin-css download-fonts dev setup test-unit-go test-unit-elixir test-integration test-e2e test-matrix-compat test-load-silber build-element-e2e test-e2e-element build-fluffychat-e2e test-e2e-fluffychat proto gen-api test-compose-ports
+.PHONY: build-gateway build-core build-admin-css download-fonts download-vendor dev setup test-unit-go test-unit-elixir test-integration test-e2e test-matrix-compat test-load-silber build-element-e2e test-e2e-element build-fluffychat-e2e test-e2e-fluffychat proto gen-api test-compose-ports
 
 ## download-fonts: Download Inter + JetBrains Mono WOFF2 fonts (run once; commit results)
 download-fonts:
@@ -23,6 +23,15 @@ download-fonts:
 		curl -fsSL -o gateway/internal/admin/static/fonts/JetBrainsMono-Regular.woff2 \
 			'https://fonts.bunny.net/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2'"
 
+## download-vendor: Download vendored JS files (run once; results are gitignored — downloaded at build time)
+download-vendor:
+	@[ -f gateway/internal/admin/static/vendor/vue.esm-browser.prod.js ] || \
+	docker run --rm -v $(PWD):/workspace -w /workspace alpine:3.19 sh -c "\
+		apk add -q --no-cache curl && \
+		mkdir -p gateway/internal/admin/static/vendor && \
+		curl -fsSL -o gateway/internal/admin/static/vendor/vue.esm-browser.prod.js \
+			'https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.esm-browser.prod.js'"
+
 ## build-admin-css: Compile Tailwind CSS + DaisyUI into gateway/internal/admin/static/admin.css
 build-admin-css:
 	$(DOCKER_NODE) sh -c "\
@@ -35,7 +44,7 @@ build-admin-css:
 			--minify"
 
 ## build-gateway: Build the Go Gateway Docker image (multi-stage)
-build-gateway: build-admin-css
+build-gateway: gen-api build-admin-css download-vendor
 	docker build -t nebu-gateway:dev ./gateway
 
 ## build-core: Compile the Elixir/OTP Core inside container (mix compile)
@@ -62,7 +71,7 @@ setup:
 	@echo "  alex@example.com       / changeme  (user)"
 
 ## test-unit-go: Run Go unit tests inside container
-test-unit-go:
+test-unit-go: download-vendor
 	$(DOCKER_GO) sh -c "apk add -q --no-cache gcc musl-dev && cd gateway && go test -race ./..."
 
 ## test-unit-elixir: Run Elixir unit tests inside container
@@ -72,7 +81,7 @@ test-unit-elixir:
 ## test-integration: Run full stack integration tests (Godog / Gherkin)
 ## The test runner joins the nebu_default compose network so it can reach
 ## gateway:8080 and core:4000 by service name — works locally and in DinD CI.
-test-integration:
+test-integration: setup
 	docker compose up -d --wait && \
 	docker run --rm -v $(PWD):/workspace -w /workspace \
 		--network=nebu_default \
@@ -182,10 +191,8 @@ proto:
 		mkdir -p ../core/apps/event_dispatcher/lib/pb && \
 		protoc --plugin=protoc-gen-elixir=/root/.mix/escripts/protoc-gen-elixir --elixir_out=../core/apps/event_dispatcher/lib/pb --proto_path=. core.proto'
 
-## gen-api: Generate Go server stubs from openapi.yaml (oapi-codegen)
+## gen-api: Generate Go server stubs from openapi.yaml (oapi-codegen, strict-server)
 gen-api:
 	$(DOCKER_GO) sh -c "go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest \
-		-generate types,std-http-server \
-		-package admin \
-		-o gateway/internal/admin/api_gen.go \
+		--config gateway/api/oapi-codegen.yaml \
 		gateway/api/openapi.yaml"

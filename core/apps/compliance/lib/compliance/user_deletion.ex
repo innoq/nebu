@@ -88,6 +88,11 @@ defmodule Compliance.UserDeletion do
 
             {:ok, %{keys_deleted_at: keys_deleted_at_ms}}
 
+          {:error, :conflict} ->
+            # mark_in_progress detected a concurrent deletion inside the TX.
+            # :conflict is a business-logic guard — no attempted-audit (AC3 spec).
+            {:error, :conflict}
+
           {:error, error_reason} ->
             # Transaction failed (DB error in Steps 2–5).
             # Emit attempted-audit in separate AuditWriter TX (failure invariant, AC3).

@@ -153,6 +153,39 @@ func (m *mockCoreClient) UpdateProfile(_ context.Context, _ *pb.UpdateProfileReq
 func (m *mockCoreClient) DeleteUserKeys(_ context.Context, _ *pb.DeleteUserKeysRequest, _ ...grpc.CallOption) (*pb.DeleteUserKeysResponse, error) {
 	return &pb.DeleteUserKeysResponse{}, nil
 }
+func (m *mockCoreClient) KickUser(_ context.Context, _ *pb.KickUserRequest, _ ...grpc.CallOption) (*pb.KickUserResponse, error) {
+	return &pb.KickUserResponse{}, nil
+}
+func (m *mockCoreClient) BanUser(_ context.Context, _ *pb.BanUserRequest, _ ...grpc.CallOption) (*pb.BanUserResponse, error) {
+	return &pb.BanUserResponse{}, nil
+}
+func (m *mockCoreClient) UnbanUser(_ context.Context, _ *pb.UnbanUserRequest, _ ...grpc.CallOption) (*pb.UnbanUserResponse, error) {
+	return &pb.UnbanUserResponse{}, nil
+}
+func (m *mockCoreClient) ForgetRoom(_ context.Context, _ *pb.ForgetRoomRequest, _ ...grpc.CallOption) (*pb.ForgetRoomResponse, error) {
+	return &pb.ForgetRoomResponse{}, nil
+}
+func (m *mockCoreClient) GetEventContext(_ context.Context, _ *pb.GetEventContextRequest, _ ...grpc.CallOption) (*pb.GetEventContextResponse, error) {
+	return &pb.GetEventContextResponse{}, nil
+}
+func (m *mockCoreClient) ListPublicRooms(_ context.Context, _ *pb.ListPublicRoomsRequest, _ ...grpc.CallOption) (*pb.ListPublicRoomsResponse, error) {
+	return &pb.ListPublicRoomsResponse{}, nil
+}
+func (m *mockCoreClient) InvalidateUserSessions(_ context.Context, _ *pb.InvalidateUserSessionsRequest, _ ...grpc.CallOption) (*pb.InvalidateUserSessionsResponse, error) {
+	return &pb.InvalidateUserSessionsResponse{Ok: true}, nil
+}
+func (m *mockCoreClient) UpdateRoomSettings(_ context.Context, _ *pb.UpdateRoomSettingsRequest, _ ...grpc.CallOption) (*pb.UpdateRoomSettingsResponse, error) {
+	return &pb.UpdateRoomSettingsResponse{Ok: true}, nil
+}
+func (m *mockCoreClient) ArchiveRoom(_ context.Context, _ *pb.ArchiveRoomRequest, _ ...grpc.CallOption) (*pb.ArchiveRoomResponse, error) {
+	return &pb.ArchiveRoomResponse{Ok: true}, nil
+}
+func (m *mockCoreClient) UnarchiveRoom(_ context.Context, _ *pb.UnarchiveRoomRequest, _ ...grpc.CallOption) (*pb.UnarchiveRoomResponse, error) {
+	return &pb.UnarchiveRoomResponse{Ok: true}, nil
+}
+func (m *mockCoreClient) InvalidateAllAdminSessions(_ context.Context, _ *pb.InvalidateAllAdminSessionsRequest, _ ...grpc.CallOption) (*pb.InvalidateAllAdminSessionsResponse, error) {
+	return &pb.InvalidateAllAdminSessionsResponse{Ok: true}, nil
+}
 
 // ─── fakeDB driver ────────────────────────────────────────────────────────────
 //

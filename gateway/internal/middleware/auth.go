@@ -2,17 +2,114 @@ package middleware
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"log"
+	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/nebu/nebu/internal/auth"
 	coregrpc "github.com/nebu/nebu/internal/grpc"
 	"github.com/prometheus/client_golang/prometheus"
 )
+
+// UserStatusChecker checks if a user account is active.
+// A nil implementation means the check is disabled (backward compat, tests).
+type UserStatusChecker interface {
+	IsUserActive(ctx context.Context, userID string) (bool, error)
+}
+
+// DBUserStatusChecker is the production implementation of UserStatusChecker.
+// It queries the users table for is_active on each cache miss.
+type DBUserStatusChecker struct {
+	DB *sql.DB
+}
+
+// IsUserActive returns whether the user account is active in the DB.
+// On sql.ErrNoRows (unknown user): returns true to fail-open (let downstream handle 404).
+func (c *DBUserStatusChecker) IsUserActive(ctx context.Context, userID string) (bool, error) {
+	var isActive bool
+	err := c.DB.QueryRowContext(ctx, "SELECT is_active FROM users WHERE user_id = $1", userID).Scan(&isActive)
+	if errors.Is(err, sql.ErrNoRows) {
+		return true, nil // unknown user: fail open
+	}
+	return isActive, err
+}
+
+// statusCacheEntry pairs the cached result with its expiry time.
+type statusCacheEntry struct {
+	isActive  bool
+	expiresAt time.Time
+}
+
+// makeStatusChecker returns a closure that checks user status via cache + checker.
+// The cache is a per-middleware-instance sync.Map with 60-second TTL entries.
+// This ensures each call to WithUserStatusCheck gets its own isolated cache —
+// important for test isolation and for production correctness (one cache per gateway instance).
+//
+// On DB error: fail-open (return isActive=true, log warning). This prevents
+// a DB outage from locking out all authenticated users.
+func makeStatusChecker(cache *sync.Map, checker UserStatusChecker) func(ctx context.Context, userID string) (bool, error) {
+	return func(ctx context.Context, userID string) (bool, error) {
+		// Check cache first (60s TTL).
+		if v, ok := cache.Load(userID); ok {
+			entry := v.(statusCacheEntry)
+			if time.Now().Before(entry.expiresAt) {
+				return entry.isActive, nil
+			}
+			cache.Delete(userID) // expired — remove and re-fetch
+		}
+		isActive, err := checker.IsUserActive(ctx, userID)
+		if err != nil {
+			return true, err // fail open on DB error
+		}
+		cache.Store(userID, statusCacheEntry{
+			isActive:  isActive,
+			expiresAt: time.Now().Add(60 * time.Second),
+		})
+		return isActive, nil
+	}
+}
+
+// WithUserStatusCheck wraps an existing JWT middleware and adds an is_active check.
+// The check runs AFTER the inner middleware has verified the token and populated
+// ContextKeyUserID in the context. This preserves the existing JWTMiddleware signature.
+//
+// Each call to WithUserStatusCheck creates a fresh per-middleware cache (sync.Map, 60s TTL).
+// If checker is nil, the check is skipped (backward compat for callers that pass nil).
+// On DB error, the request is allowed through (fail-open) and a warning is logged.
+// If is_active=false, responds with 401 M_UNKNOWN_TOKEN "Account deactivated".
+func WithUserStatusCheck(next func(http.Handler) http.Handler, checker UserStatusChecker) func(http.Handler) http.Handler {
+	// Allocate a fresh cache per middleware instance (test isolation + single-instance safety).
+	var cache sync.Map
+	var checkFn func(ctx context.Context, userID string) (bool, error)
+	if checker != nil {
+		checkFn = makeStatusChecker(&cache, checker)
+	}
+
+	return func(h http.Handler) http.Handler {
+		return next(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// At this point the inner middleware has run (JWT verified) and
+			// ContextKeyUserID is populated in the context.
+			userID, _ := r.Context().Value(ContextKeyUserID).(string)
+			if checkFn != nil && userID != "" {
+				active, err := checkFn(r.Context(), userID)
+				if err != nil {
+					slog.Warn("user status check failed — failing open", "user_id", userID, "err", err)
+				} else if !active {
+					writeMatrixError(w, http.StatusUnauthorized, "M_UNKNOWN_TOKEN", "Account deactivated")
+					return
+				}
+			}
+			h.ServeHTTP(w, r)
+		}))
+	}
+}
 
 // jwtValidationTotal counts JWT validation outcomes by pipeline stage and result.
 //   stage="verify"   — OIDC signature / expiry / audience check
@@ -43,6 +140,10 @@ const (
 	// ContextKeyUserID holds the pre-computed Matrix user ID (@localpart:server).
 	// Handlers should read this instead of calling FormatUserID themselves.
 	ContextKeyUserID contextKey = "user_id"
+	// ContextKeyDeviceID holds the device_id from the JWT "did" claim.
+	// Empty string if the claim is not present (most OIDC tokens don't include it).
+	// Story 7-26: used by device management handlers for current-device detection.
+	ContextKeyDeviceID contextKey = "device_id"
 )
 
 type matrixError struct {
@@ -124,6 +225,7 @@ func JWTMiddleware(provider *auth.Provider, clientID string, claimName string, s
 			preferredUsername, _ := allClaims["preferred_username"].(string)
 			name, _ := allClaims["name"].(string)
 			email, _ := allClaims["email"].(string)
+			deviceID, _ := allClaims["did"].(string) // Story 7-26: device_id claim ("did")
 			rawRole := auth.ExtractRoleClaim(allClaims, claimName)
 			systemRole := auth.MapSystemRole(rawRole)
 
@@ -139,6 +241,7 @@ func JWTMiddleware(provider *auth.Provider, clientID string, claimName string, s
 			ctx = context.WithValue(ctx, ContextKeySystemRole, systemRole)
 			ctx = context.WithValue(ctx, ContextKeyTokenExpiry, idToken.Expiry)
 			ctx = context.WithValue(ctx, ContextKeyUserID, userID)
+			ctx = context.WithValue(ctx, ContextKeyDeviceID, deviceID)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

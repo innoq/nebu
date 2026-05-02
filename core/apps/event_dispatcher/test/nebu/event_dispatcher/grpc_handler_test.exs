@@ -54,6 +54,15 @@ defmodule Nebu.EventDispatcher.GrpcHandlerTest do
     end
   end
 
+  # ─── FakeMessagesDB ──────────────────────────────────────────────────────────
+  # Prevents Ecto dependency in get_room_state tests.
+  # build_state_events/2 calls messages_db_module().get_room_name/1 — this stub
+  # returns :not_found so no m.room.name state event is emitted (Story 7-33 fix).
+
+  defmodule FakeMessagesDB do
+    def get_room_name(_room_id), do: {:error, :not_found}
+  end
+
   # ─── FakeStream ─────────────────────────────────────────────────────────────
   # A minimal fake that the implementation can call GRPC.Server.send_reply/2 on.
   # Story 4-8's implementation is expected to check for the :grpc_reply_interceptor
@@ -66,7 +75,9 @@ defmodule Nebu.EventDispatcher.GrpcHandlerTest do
 
   defp build_fake_stream(test_pid) do
     %{
-      http_request_headers: %{},
+      # x-user-id matches the member in FakeRoomRegistry so the Story 7-19 membership
+      # check passes. x-system-role is omitted — trusted_identity/1 defaults to "user".
+      http_request_headers: %{"x-user-id" => "@kai:nebu.local"},
       # Implementation reads this to forward GRPC.Server.send_reply/2 outputs in tests
       grpc_reply_interceptor: test_pid
     }
@@ -84,8 +95,12 @@ defmodule Nebu.EventDispatcher.GrpcHandlerTest do
     # Inject fake room registry for get_room_state tests
     Application.put_env(:event_dispatcher, :room_registry_module, FakeRoomRegistry)
 
+    # Inject fake messages DB so build_state_events/2 does not hit Ecto (Story 7-33)
+    Application.put_env(:event_dispatcher, :messages_db_module, FakeMessagesDB)
+
     on_exit(fn ->
       Application.delete_env(:event_dispatcher, :room_registry_module)
+      Application.delete_env(:event_dispatcher, :messages_db_module)
     end)
 
     :ok

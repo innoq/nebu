@@ -355,7 +355,7 @@ test_ac7_markdownlint_clean() {
 
     # Baseline: count errors in the committed (HEAD) version of README.md
     local baseline_readme baseline_count
-    baseline_readme="$(mktemp /tmp/readme-baseline-XXXX.md)"
+    baseline_readme="$(mktemp /tmp/readme-baseline-XXXXXX)"
     # Ensure tempfile is removed even if a later step aborts (set -e).
     # We register an EXIT trap once per script invocation (idempotent: appended to TEMPFILES list).
     TEMPFILES+=("${baseline_readme}")

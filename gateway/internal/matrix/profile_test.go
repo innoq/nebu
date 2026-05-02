@@ -713,6 +713,288 @@ func TestPutAvatarURL_RejectsUnsafeMxc_Returns400(t *testing.T) {
 	}
 }
 
+// ─── Story 7-21: GET /profile/{userId}/displayname + /avatar_url ─────────────
+//
+// These tests are written FIRST (ATDD gate), before implementation exists.
+// ALL tests in this section MUST FAIL until Story 7-21 is implemented.
+//
+// Tested methods: ProfileHandler.GetDisplayname and ProfileHandler.GetAvatarURL.
+// Both are unauthenticated GET endpoints — no JWTMiddleware wrapper.
+//
+// buildProfileSubfieldHandler wires GET /profile/{userId}/displayname and
+// GET /profile/{userId}/avatar_url on a mux WITHOUT JWTMiddleware.
+// Returns the http.Handler ready for httptest.
+func buildProfileSubfieldHandler(t *testing.T, dbMock *mockProfileDB) http.Handler {
+	t.Helper()
+
+	handler := NewProfileHandler(ProfileConfig{
+		CoreClient: &mockProfileCoreClient{},
+		ServerName: "test.local",
+		DB:         dbMock,
+	})
+
+	mux := http.NewServeMux()
+	// Both sub-field endpoints are unauthenticated — no jwtMiddleware (AC4).
+	mux.HandleFunc("GET /profile/{userId}/displayname", handler.GetDisplayname)
+	mux.HandleFunc("GET /profile/{userId}/avatar_url", handler.GetAvatarURL)
+
+	return mux
+}
+
+// ─── Test 14: GET /profile/{userId}/displayname — happy path → 200 ───────────
+//
+// AC1 — GET /displayname returns 200 with body {"displayname":"<value>"}.
+// No JWT required (unauthenticated endpoint per Matrix spec).
+func TestGetDisplayname_ReturnsValue(t *testing.T) {
+	dbMock := &mockProfileDB{
+		found:       true,
+		displayName: "Alice Wonderland",
+		avatarURL:   "mxc://test.local/abc123",
+	}
+	mux := buildProfileSubfieldHandler(t, dbMock)
+
+	req := httptest.NewRequest(http.MethodGet, "/profile/@alice:test.local/displayname", nil)
+	// Deliberately no Authorization header — unauthenticated endpoint.
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s — Story 7-21 GetDisplayname not yet implemented", w.Code, w.Body.String())
+	}
+
+	ct := w.Header().Get("Content-Type")
+	if ct != "application/json" {
+		t.Errorf("expected Content-Type application/json, got %s", ct)
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response body: %v", err)
+	}
+	if resp["displayname"] != "Alice Wonderland" {
+		t.Errorf("expected displayname=Alice Wonderland, got %v", resp["displayname"])
+	}
+	// avatar_url must NOT be present — sub-field endpoint returns only one field.
+	if _, present := resp["avatar_url"]; present {
+		t.Errorf("expected avatar_url to be absent from /displayname response, but it was present: %v", resp)
+	}
+}
+
+// ─── Test 15: GET /profile/{userId}/avatar_url — avatar set → 200 ────────────
+//
+// AC2 — GET /avatar_url returns 200 with body {"avatar_url":"<value>"} when avatar is set.
+func TestGetAvatarURL_ReturnsValue(t *testing.T) {
+	dbMock := &mockProfileDB{
+		found:       true,
+		displayName: "Alice",
+		avatarURL:   "mxc://server/abc123",
+	}
+	mux := buildProfileSubfieldHandler(t, dbMock)
+
+	req := httptest.NewRequest(http.MethodGet, "/profile/@alice:test.local/avatar_url", nil)
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s — Story 7-21 GetAvatarURL not yet implemented", w.Code, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response body: %v", err)
+	}
+	if resp["avatar_url"] != "mxc://server/abc123" {
+		t.Errorf("expected avatar_url=mxc://server/abc123, got %v", resp["avatar_url"])
+	}
+	// displayname must NOT be present — sub-field endpoint returns only one field.
+	if _, present := resp["displayname"]; present {
+		t.Errorf("expected displayname to be absent from /avatar_url response, but it was present: %v", resp)
+	}
+}
+
+// ─── Test 16: GET /profile/{userId}/avatar_url — no avatar set → {"avatar_url":null} ─
+//
+// AC2 + AC6 — When the user exists but has no avatar (empty AvatarURL in DB),
+// the response body must be {"avatar_url":null} — not omitted, not "".
+func TestGetAvatarURL_ReturnsNull_WhenNotSet(t *testing.T) {
+	dbMock := &mockProfileDB{
+		found:       true,
+		displayName: "Alice",
+		avatarURL:   "", // no avatar set
+	}
+	mux := buildProfileSubfieldHandler(t, dbMock)
+
+	req := httptest.NewRequest(http.MethodGet, "/profile/@alice:test.local/avatar_url", nil)
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for user with no avatar, got %d; body: %s — Story 7-21 not yet implemented", w.Code, w.Body.String())
+	}
+
+	// Parse raw JSON to distinguish null from missing vs "".
+	var resp map[string]json.RawMessage
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response body: %v", err)
+	}
+	raw, present := resp["avatar_url"]
+	if !present {
+		t.Fatalf("expected avatar_url key in response, but it was absent; body: %s", w.Body.String())
+	}
+	if string(raw) != "null" {
+		t.Errorf("expected avatar_url=null (JSON null), got %s", string(raw))
+	}
+}
+
+// ─── Test 17: GET /profile/{userId}/displayname — not found → 404 ────────────
+//
+// AC3 — When the userId does not exist in the DB, the handler must return
+// 404 with errcode M_NOT_FOUND.
+func TestGetDisplayname_NotFound(t *testing.T) {
+	dbMock := &mockProfileDB{
+		found: false, // GetProfile returns nil, ErrProfileNotFound
+	}
+	mux := buildProfileSubfieldHandler(t, dbMock)
+
+	req := httptest.NewRequest(http.MethodGet, "/profile/@ghost:test.local/displayname", nil)
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d; body: %s — Story 7-21 not yet implemented", w.Code, w.Body.String())
+	}
+
+	var errResp matrixError
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+	if errResp.ErrCode != "M_NOT_FOUND" {
+		t.Errorf("expected errcode M_NOT_FOUND, got %s", errResp.ErrCode)
+	}
+}
+
+// ─── Test 18: GET /profile/{userId}/avatar_url — not found → 404 ────────────
+//
+// AC3 — When the userId does not exist in the DB, the avatar_url endpoint must
+// also return 404 M_NOT_FOUND.
+func TestGetAvatarURL_NotFound(t *testing.T) {
+	dbMock := &mockProfileDB{
+		found: false, // GetProfile returns nil, ErrProfileNotFound
+	}
+	mux := buildProfileSubfieldHandler(t, dbMock)
+
+	req := httptest.NewRequest(http.MethodGet, "/profile/@ghost:test.local/avatar_url", nil)
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d; body: %s — Story 7-21 not yet implemented", w.Code, w.Body.String())
+	}
+
+	var errResp matrixError
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+	if errResp.ErrCode != "M_NOT_FOUND" {
+		t.Errorf("expected errcode M_NOT_FOUND, got %s", errResp.ErrCode)
+	}
+}
+
+// ─── Test 19: GET /profile/{userId}/displayname — no JWT returns 200 ─────────
+//
+// AC4 — Explicitly verifies that GET /displayname does NOT require a JWT.
+// The absence of an Authorization header must NOT produce 401.
+func TestGetDisplayname_NoJWT_Allowed(t *testing.T) {
+	dbMock := &mockProfileDB{
+		found:       true,
+		displayName: "Bob",
+		avatarURL:   "",
+	}
+	mux := buildProfileSubfieldHandler(t, dbMock)
+
+	req := httptest.NewRequest(http.MethodGet, "/profile/@bob:test.local/displayname", nil)
+	// No Authorization header at all.
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code == http.StatusUnauthorized {
+		t.Fatalf("GET /profile/{userId}/displayname must be public (no auth), but got 401 — Story 7-21 AC4 not yet implemented")
+	}
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for unauthenticated GET /displayname, got %d; body: %s", w.Code, w.Body.String())
+	}
+}
+
+// ─── Test 20: GET /profile/{userId}/displayname — empty displayname → "" ─────
+//
+// AC6 — An empty displayname in DB is returned as "" (empty string), not null.
+func TestGetDisplayname_EmptyString_NotNull(t *testing.T) {
+	dbMock := &mockProfileDB{
+		found:       true,
+		displayName: "", // empty string in DB
+		avatarURL:   "",
+	}
+	mux := buildProfileSubfieldHandler(t, dbMock)
+
+	req := httptest.NewRequest(http.MethodGet, "/profile/@bob:test.local/displayname", nil)
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s — Story 7-21 not yet implemented", w.Code, w.Body.String())
+	}
+
+	// Parse raw JSON to distinguish "" from null.
+	var resp map[string]json.RawMessage
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response body: %v", err)
+	}
+	raw, present := resp["displayname"]
+	if !present {
+		t.Fatalf("expected displayname key in response, but it was absent; body: %s", w.Body.String())
+	}
+	// AC6: empty displayname must be "" (JSON string), NOT null.
+	if string(raw) == "null" {
+		t.Errorf("expected displayname='' (empty string), got null — AC6 violation")
+	}
+	if string(raw) != `""` {
+		t.Errorf(`expected displayname="" (empty JSON string), got %s`, string(raw))
+	}
+}
+
+// ─── Test 21: GET /profile/{userId}/avatar_url — no JWT returns 200 ──────────
+//
+// AC4 — Explicitly verifies that GET /avatar_url does NOT require a JWT.
+func TestGetAvatarURL_NoJWT_Allowed(t *testing.T) {
+	dbMock := &mockProfileDB{
+		found:     true,
+		avatarURL: "mxc://test.local/img",
+	}
+	mux := buildProfileSubfieldHandler(t, dbMock)
+
+	req := httptest.NewRequest(http.MethodGet, "/profile/@bob:test.local/avatar_url", nil)
+	// No Authorization header at all.
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code == http.StatusUnauthorized {
+		t.Fatalf("GET /profile/{userId}/avatar_url must be public (no auth), but got 401 — Story 7-21 AC4 not yet implemented")
+	}
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for unauthenticated GET /avatar_url, got %d; body: %s", w.Code, w.Body.String())
+	}
+}
+
+// ─── TestPutAvatarURL_AcceptsValidMxc_Returns200 (original) ──────────────────
+
 // TestPutAvatarURL_AcceptsValidMxc_Returns200 verifies that a well-formed safe mxc URI
 // is accepted (boundary check — passes through validation).
 //

@@ -1,0 +1,31 @@
+{{ define "wizard_stepper" }}
+{{- /* C6 WizardStepper — Story 7.3
+     Data: WizardStepperData{Steps []string, CurrentStep int}
+     Steps before CurrentStep are "completed", CurrentStep is "active", rest are "upcoming".
+     WCAG: role="list" on the outer <ol>; aria-current="step" on the active <li> only.
+     Active step uses --color-primary border; completed steps use --color-success fill (bg-success).
+*/ -}}
+<ol role="list" class="flex items-center gap-0">
+  {{- range $i, $label := .Steps }}
+  {{- if gt $i 0 }}
+  <div class="flex-1 h-px bg-base-300 mx-2 self-center"></div>
+  {{- end }}
+  {{- if lt $i $.CurrentStep }}
+  <li class="flex flex-col items-center gap-1">
+    <span class="w-8 h-8 rounded-full bg-success text-success-content flex items-center justify-center font-bold text-sm">✓</span>
+    <span class="text-xs mt-1">{{ $label }}</span>
+  </li>
+  {{- else if eq $i $.CurrentStep }}
+  <li aria-current="step" class="flex flex-col items-center gap-1">
+    <span class="w-8 h-8 rounded-full border-2 border-primary text-primary flex items-center justify-center font-bold text-sm">●</span>
+    <span class="text-xs mt-1 font-semibold text-primary">{{ $label }}</span>
+  </li>
+  {{- else }}
+  <li class="flex flex-col items-center gap-1">
+    <span class="w-8 h-8 rounded-full border-2 border-base-300 text-base-content/40 flex items-center justify-center text-sm">○</span>
+    <span class="text-xs mt-1 text-base-content/40">{{ $label }}</span>
+  </li>
+  {{- end }}
+  {{- end }}
+</ol>
+{{ end }}

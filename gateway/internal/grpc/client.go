@@ -224,6 +224,46 @@ func (c *Client) GetSyncDelta(ctx context.Context, req *pb.GetSyncDeltaRequest) 
 	return c.core.GetSyncDelta(ctx, req)
 }
 
+// KickUser calls the Elixir core to kick a user from a room.
+// Power-level check is enforced by the Elixir GenServer.
+func (c *Client) KickUser(ctx context.Context, req *pb.KickUserRequest) (*pb.KickUserResponse, error) {
+	return c.core.KickUser(ctx, req)
+}
+
+// BanUser calls the Elixir core to ban a user from a room.
+// Power-level check is enforced by the Elixir GenServer.
+func (c *Client) BanUser(ctx context.Context, req *pb.BanUserRequest) (*pb.BanUserResponse, error) {
+	return c.core.BanUser(ctx, req)
+}
+
+// UnbanUser calls the Elixir core to unban a user from a room (sets membership: leave).
+// Power-level check is enforced by the Elixir GenServer.
+func (c *Client) UnbanUser(ctx context.Context, req *pb.UnbanUserRequest) (*pb.UnbanUserResponse, error) {
+	return c.core.UnbanUser(ctx, req)
+}
+
+// ForgetRoom calls the Elixir core to mark a room as excluded from future /sync for the user.
+// Returns FailedPrecondition if the user is still joined.
+func (c *Client) ForgetRoom(ctx context.Context, req *pb.ForgetRoomRequest) (*pb.ForgetRoomResponse, error) {
+	return c.core.ForgetRoom(ctx, req)
+}
+
+// ListPublicRooms calls the Elixir core to retrieve a paginated list of public rooms.
+// Story 7-27: backing RPC for GET/POST /_matrix/client/v3/publicRooms.
+// The Elixir handler queries the DB for rooms where join_rule = 'public', resolves live member
+// counts from Room GenServers (DB fallback for rooms whose GenServer is not running), and
+// returns the page with a cursor for stable lexicographic pagination.
+func (c *Client) ListPublicRooms(ctx context.Context, req *pb.ListPublicRoomsRequest) (*pb.ListPublicRoomsResponse, error) {
+	return c.core.ListPublicRooms(ctx, req)
+}
+
+// GetEventContext calls the Elixir core to retrieve the context window around a specific event.
+// Returns NOT_FOUND if the event does not exist in the room, PERMISSION_DENIED if the user
+// is not a room member. Story 7-28: GET /_matrix/client/v3/rooms/{roomId}/context/{eventId}.
+func (c *Client) GetEventContext(ctx context.Context, req *pb.GetEventContextRequest) (*pb.GetEventContextResponse, error) {
+	return c.core.GetEventContext(ctx, req)
+}
+
 // CoreServiceClient returns the underlying generated gRPC client stub.
 // Used by EventBusStream (Story 4-16) which requires the raw pb.CoreServiceClient.
 func (c *Client) CoreServiceClient() pb.CoreServiceClient {

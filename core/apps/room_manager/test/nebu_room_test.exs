@@ -80,16 +80,40 @@ defmodule Nebu.RoomTest do
       :ets.insert(:fake_room_db, {{:power_levels, room_id}, power_levels_json})
       :ok
     end
+
+    # Story 6.8: returns {:ok, 0} (no limit) for all rooms in unit tests.
+    # Production DB returns COALESCE(max_members, 0) FROM rooms WHERE room_id = $1.
+    # RED: this function does not exist yet on DBBehaviour; adding it here ensures
+    # FakeDB satisfies the updated behaviour once @callback load_room_settings/1 is added.
+    def load_room_settings(_room_id), do: {:ok, 0}
+
+    # Story 6.9: get_room_status/1 — NEW callback added to Nebu.Room.DBBehaviour.
+    # Returns {:ok, "active"} for all rooms in unit tests (normal rooms are active).
+    # RED: fails to compile until @callback get_room_status/1 is added to DBBehaviour.
+    # Once DBBehaviour is updated, this stub ensures FakeDB satisfies the contract.
+    def get_room_status(_room_id), do: {:ok, "active"}
   end
 
   # Fake DB that always returns a DB error on writes — for testing fail-safe behavior
   defmodule FailingWriteDB do
+    @behaviour Nebu.Room.DBBehaviour
     def load_members(_room_id), do: {:error, :not_found}
     def insert_room(_room_id), do: {:ok, System.system_time(:millisecond)}
     def insert_member(_room_id, _user_id), do: {:error, :db_connection_lost}
     def delete_member(_room_id, _user_id), do: {:error, :db_connection_lost}
     def insert_event(_event), do: {:error, :db_connection_lost}
     def set_power_levels(_room_id, _json), do: {:error, :db_connection_lost}
+    # Story 6.8: fail-open — if load_room_settings fails, GenServer defaults to 0.
+    def load_room_settings(_room_id), do: {:error, :db_connection_lost}
+    # Story 6.9: get_room_status/1 — fail-open: return "active" so GenServer starts normally.
+    # The archive guard in init/1 only stops when status is explicitly "archived".
+    def get_room_status(_room_id), do: {:ok, "active"}
+    # Unused by write-error tests — stubs required to satisfy @behaviour contract.
+    def get_rooms_for_user(_user_id), do: {:error, :db_connection_lost}
+    def fetch_events(_room_id, _dir, _limit, _from), do: {:error, :db_connection_lost}
+    def fetch_events_since(_room_id, _last_event_id, _limit), do: {:error, :db_connection_lost}
+    def get_event_timestamp(_event_id), do: {:error, :db_connection_lost}
+    def get_room_name(_room_id), do: {:error, :db_connection_lost}
   end
 
   # ─── Setup ──────────────────────────────────────────────────────────────────
@@ -458,6 +482,251 @@ defmodule Nebu.RoomTest do
 
       # AC #3: no broadcast must have been delivered on DB failure
       refute_receive {:new_event, _}, 100
+    end
+  end
+
+  # ─── Story 6-8: max_members Enforcement + update_settings ───────────────────
+  #
+  # RED PHASE — all tests in this describe block FAIL until:
+  #   - Nebu.Room.DBBehaviour gains @callback load_room_settings(room_id) callback
+  #   - FakeDB (above) gains def load_room_settings(_), do: {:ok, 0}
+  #   - Nebu.Room.Server.init/1 loads max_members from db_module().load_room_settings/1
+  #   - max_members field is added to GenServer state (default 0 = no limit)
+  #   - Nebu.Room.Server.handle_call({:join, user_id}, ...) enforces max_members
+  #   - Nebu.Room.Server.update_settings/2 public function is added
+  #   - Nebu.Room.Server.handle_cast({:update_settings, settings}, state) is added
+
+  describe "Story 6.8 — max_members enforcement in join/2" do
+    # FakeDB.load_room_settings/1 must be added to FakeDB above for these to compile.
+    # Until then, tests fail with UndefinedFunctionError or function_clause.
+
+    test "join succeeds when max_members=0 (no limit) regardless of member count" do
+      # max_members=0 means "no limit" — any number of members can join.
+      room_id = unique_room_id("6-8-join-no-limit")
+      {:ok, _pid} = start_and_track(room_id)
+
+      # FakeDB.load_room_settings returns {:ok, 0} → no limit applied
+      assert :ok = Nebu.Room.Server.join(room_id, "@alice:nebu.local")
+      assert :ok = Nebu.Room.Server.join(room_id, "@bob:nebu.local")
+
+      state = Nebu.Room.Server.get_state(room_id)
+      assert MapSet.size(state.members) == 2
+    end
+
+    test "join blocked when member_count >= max_members returns {:error, :room_full}" do
+      # Arrange: room with max_members=2 already containing 2 members (alice, bob).
+      # Act: charlie tries to join.
+      # Assert: returns {:error, :room_full}.
+      #
+      # This test uses update_settings/2 to set max_members=2 after starting the room
+      # (simulating what the Admin PATCH handler + gRPC would do in production).
+      # If update_settings/2 does not exist yet, the test fails with UndefinedFunctionError
+      # — that is the expected RED-phase failure.
+      room_id = unique_room_id("6-8-join-room-full")
+      {:ok, _pid} = start_and_track(room_id)
+
+      # Join two members successfully (no limit yet)
+      assert :ok = Nebu.Room.Server.join(room_id, "@alice:nebu.local")
+      assert :ok = Nebu.Room.Server.join(room_id, "@bob:nebu.local")
+
+      # Set max_members=2 via update_settings (mirrors Admin PATCH + gRPC flow)
+      :ok = Nebu.Room.Server.update_settings(room_id, %{max_members: 2})
+
+      # Synchronization barrier: GenServer.call flushes any preceding casts.
+      _state = Nebu.Room.Server.get_state(room_id)
+
+      # Third join must be blocked
+      assert {:error, :room_full} = Nebu.Room.Server.join(room_id, "@charlie:nebu.local")
+
+      state = Nebu.Room.Server.get_state(room_id)
+      assert MapSet.size(state.members) == 2
+      refute MapSet.member?(state.members, "@charlie:nebu.local")
+    end
+
+    test "join allowed when member_count < max_members" do
+      # max_members=3, only 2 members present → third join is allowed.
+      room_id = unique_room_id("6-8-join-under-limit")
+      {:ok, _pid} = start_and_track(room_id)
+
+      assert :ok = Nebu.Room.Server.join(room_id, "@alice:nebu.local")
+      assert :ok = Nebu.Room.Server.join(room_id, "@bob:nebu.local")
+
+      # Set limit to 3 — one slot still available
+      :ok = Nebu.Room.Server.update_settings(room_id, %{max_members: 3})
+      # Synchronization barrier: GenServer.call flushes any preceding casts.
+      _state = Nebu.Room.Server.get_state(room_id)
+
+      assert :ok = Nebu.Room.Server.join(room_id, "@charlie:nebu.local")
+
+      state = Nebu.Room.Server.get_state(room_id)
+      assert MapSet.size(state.members) == 3
+    end
+
+    test "room_full check does not block already_member re-join attempt" do
+      # A user already in the room who tries to join again must get :already_member,
+      # not :room_full, even when the room is at capacity.
+      room_id = unique_room_id("6-8-already-member-priority")
+      {:ok, _pid} = start_and_track(room_id)
+
+      assert :ok = Nebu.Room.Server.join(room_id, "@alice:nebu.local")
+
+      # Set max_members=1 — room is now full
+      :ok = Nebu.Room.Server.update_settings(room_id, %{max_members: 1})
+      # Synchronization barrier: GenServer.call flushes any preceding casts.
+      _state = Nebu.Room.Server.get_state(room_id)
+
+      # Alice is already a member — must get :already_member, not :room_full
+      assert {:error, :already_member} = Nebu.Room.Server.join(room_id, "@alice:nebu.local")
+    end
+  end
+
+  describe "Story 6.8 — update_settings/2 GenServer cast" do
+    test "update_settings/2 updates max_members in GenServer state" do
+      # Arrange: room starts with max_members=0 (loaded from FakeDB).
+      # Act: update_settings/2 casts {:update_settings, %{max_members: 10}} to GenServer.
+      # Assert: state.max_members == 10 after the cast is processed.
+      #
+      # RED: fails until handle_cast({:update_settings, settings}, state) is implemented.
+      room_id = unique_room_id("6-8-update-settings")
+      {:ok, _pid} = start_and_track(room_id)
+
+      state_before = Nebu.Room.Server.get_state(room_id)
+      # Before Story 6.8, state does not have max_members key → Map.get returns nil.
+      # After Story 6.8, it must be 0 (the initial value from FakeDB.load_room_settings).
+      assert Map.get(state_before, :max_members, 0) == 0
+
+      :ok = Nebu.Room.Server.update_settings(room_id, %{max_members: 42})
+
+      state_after = Nebu.Room.Server.get_state(room_id)
+      assert state_after.max_members == 42
+    end
+
+    test "update_settings/2 with max_members=0 disables limit (no limit)" do
+      # After a limit was set, setting max_members=0 must re-open the room.
+      room_id = unique_room_id("6-8-remove-limit")
+      {:ok, _pid} = start_and_track(room_id)
+
+      # Fill the room to capacity 1
+      assert :ok = Nebu.Room.Server.join(room_id, "@alice:nebu.local")
+      :ok = Nebu.Room.Server.update_settings(room_id, %{max_members: 1})
+      # Synchronization barrier: GenServer.call flushes any preceding casts.
+      _state = Nebu.Room.Server.get_state(room_id)
+
+      # Bob is blocked
+      assert {:error, :room_full} = Nebu.Room.Server.join(room_id, "@bob:nebu.local")
+
+      # Remove the limit
+      :ok = Nebu.Room.Server.update_settings(room_id, %{max_members: 0})
+      # Synchronization barrier: GenServer.call flushes any preceding casts.
+      _state = Nebu.Room.Server.get_state(room_id)
+
+      # Bob can now join
+      assert :ok = Nebu.Room.Server.join(room_id, "@bob:nebu.local")
+    end
+
+    test "update_settings/2 is best-effort: returns :ok immediately (fire-and-forget cast)" do
+      # GenServer.cast always returns :ok immediately, even if the process is busy.
+      # This test verifies the function signature returns :ok and does not block.
+      room_id = unique_room_id("6-8-cast-best-effort")
+      {:ok, _pid} = start_and_track(room_id)
+
+      result = Nebu.Room.Server.update_settings(room_id, %{max_members: 100})
+      assert result == :ok
+    end
+  end
+
+  describe "Story 6.8 — max_members loaded from DB on GenServer restart" do
+    test "max_members is recovered from DB after crash-restart (via load_room_settings)" do
+      # This test verifies that when the Room GenServer restarts, it loads max_members
+      # from the DB (via load_room_settings/1), not just member list.
+      #
+      # RED: fails until:
+      #   - load_room_settings/1 is added to DBBehaviour and FakeDB
+      #   - init/1 calls db_module().load_room_settings(room_id) and stores result in state
+      #
+      # The FakeDB.load_room_settings stub currently always returns {:ok, 0}.
+      # For this specific test we use a custom FakeDB that returns {:ok, 5}.
+      defmodule FakeDBWithMaxMembers do
+        def load_members(room_id) do
+          case :ets.lookup(:fake_room_db, {:room, room_id}) do
+            [] -> {:error, :not_found}
+            [{_, created_at_ms}] ->
+              members = :ets.match(:fake_room_db, {{:member, room_id, :"$1"}, :active})
+              {:ok, Enum.map(members, fn [uid] -> uid end), created_at_ms, "{}"}
+          end
+        end
+
+        def insert_room(room_id) do
+          now_ms = System.system_time(:millisecond)
+          :ets.insert(:fake_room_db, {{:room, room_id}, now_ms})
+          {:ok, now_ms}
+        end
+
+        def insert_member(room_id, user_id) do
+          :ets.insert(:fake_room_db, {{:member, room_id, user_id}, :active})
+          :ok
+        end
+
+        def delete_member(room_id, user_id) do
+          case :ets.lookup(:fake_room_db, {:member, room_id, user_id}) do
+            [{_, :active}] ->
+              :ets.insert(:fake_room_db, {{:member, room_id, user_id}, {:left, 0}})
+              :ok
+            _ -> {:error, :not_member}
+          end
+        end
+
+        def insert_event(event) do
+          :ets.insert(:fake_room_db, {{:event, event["event_id"]}, event})
+          :ok
+        end
+
+        def set_power_levels(room_id, json) do
+          :ets.insert(:fake_room_db, {{:power_levels, room_id}, json})
+          :ok
+        end
+
+        # Story 6.8: returns {:ok, 5} simulating a room with max_members=5 in the DB.
+        def load_room_settings(_room_id), do: {:ok, 5}
+
+        # Story 6.9: get_room_status/1 — returns {:ok, "active"} so init/1 proceeds normally.
+        # This module is only used to test max_members recovery; rooms are active here.
+        def get_room_status(_room_id), do: {:ok, "active"}
+
+        # Stubs required by @behaviour Nebu.Room.DBBehaviour:
+        def get_rooms_for_user(_user_id), do: {:ok, []}
+        def fetch_events(_room_id, _dir, _limit, _from), do: {:ok, [], "", ""}
+        def fetch_events_since(_room_id, _last_event_id, _limit), do: {:ok, []}
+        def get_event_timestamp(_event_id), do: {:error, :not_found}
+        def get_room_name(_room_id), do: {:error, :not_found}
+      end
+
+      Application.put_env(:room_manager, :db_module, FakeDBWithMaxMembers)
+
+      room_id = unique_room_id("6-8-restart-max-members")
+      {:ok, pid} = Nebu.Room.RoomSupervisor.start_room(room_id)
+
+      on_exit(fn ->
+        Application.put_env(:room_manager, :db_module, FakeDB)
+      end)
+
+      # Initial state should have max_members=5 (from FakeDBWithMaxMembers)
+      state = Nebu.Room.Server.get_state(room_id)
+      assert state.max_members == 5
+
+      # Crash the GenServer
+      Process.exit(pid, :kill)
+      Process.sleep(150)
+
+      # Restart — init/1 must reload max_members=5 from DB
+      {:ok, new_pid} = Nebu.Room.RoomSupervisor.start_room(room_id)
+
+      on_exit(fn ->
+        if Process.alive?(new_pid), do: GenServer.stop(new_pid, :normal, 5_000)
+      end)
+
+      state_after = Nebu.Room.Server.get_state(room_id)
+      assert state_after.max_members == 5
     end
   end
 end

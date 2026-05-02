@@ -1,0 +1,27 @@
+{{ define "confirm_dialog" }}
+{{- /* C7 ConfirmDialog — Story 7.3
+     Data: ConfirmDialogData{Title, Message, ConfirmLabel, ConfirmClass, FormAction,
+                             HiddenFields map[string]string, CSRFToken string}
+     Renders a DaisyUI modal <dialog> with role="alertdialog" and WCAG ARIA attributes.
+     IMPORTANT: The trigger button (onclick="confirm_dialog.showModal()") lives in the
+     CALLER template — NOT inside this component. This component renders the dialog only.
+     CSRF: The form includes a hidden _csrf field populated from ConfirmDialogData.CSRFToken.
+           Callers (Stories 7.7, 7.9) must populate CSRFToken from PageData.CSRFToken.
+*/ -}}
+<dialog id="confirm_dialog" class="modal" role="alertdialog"
+        aria-labelledby="confirm_dialog_title"
+        aria-describedby="confirm_dialog_message">
+  <div class="modal-box">
+    <h3 id="confirm_dialog_title" class="text-lg font-bold">{{ .Title }}</h3>
+    <p id="confirm_dialog_message" class="py-4">{{ .Message }}</p>
+    <form method="POST" action="{{ .FormAction }}" class="modal-action">
+      <input type="hidden" name="_csrf" value="{{ .CSRFToken }}">
+      {{ range $k, $v := .HiddenFields -}}
+      <input type="hidden" name="{{ $k }}" value="{{ $v }}">
+      {{ end -}}
+      <button type="button" class="btn" onclick="confirm_dialog.close()">Cancel</button>
+      <button type="submit" class="btn {{ .ConfirmClass }}">{{ .ConfirmLabel }}</button>
+    </form>
+  </div>
+</dialog>
+{{ end }}
