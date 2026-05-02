@@ -81,7 +81,7 @@ test-unit-elixir:
 ## test-integration: Run full stack integration tests (Godog / Gherkin)
 ## The test runner joins the nebu_default compose network so it can reach
 ## gateway:8080 and core:4000 by service name — works locally and in DinD CI.
-test-integration:
+test-integration: setup
 	docker compose up -d --wait && \
 	docker run --rm -v $(PWD):/workspace -w /workspace \
 		--network=nebu_default \

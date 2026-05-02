@@ -7,8 +7,9 @@
 # Manual trigger available for initial setup (run build-ci-go + build-ci-elixir
 # once before first pipeline run that uses them).
 #
-# Unit tests run directly inside custom images — no Docker-in-Docker needed.
-# Integration test requires DinD to start the docker compose stack.
+# CI image builds use Kaniko — no Docker daemon / DinD required, works on plain
+# K8s runners. Only the integration-test job still needs DinD (docker compose
+# spins up the full stack); it is routed to a DinD-capable runner via tags.
 
 variables:
   DOCKER_DRIVER: overlay2
@@ -42,20 +43,33 @@ stages:
   - integration
 
 # ─── CI Image Builds ──────────────────────────────────────────────────────────
+# Kaniko builds container images without a Docker daemon.
+# The -debug variant ships a busybox shell so before_script works.
+# Credentials are written to /kaniko/.docker/config.json (Kaniko's default
+# Docker credential location) — no `docker login` command needed.
 
 .build_ci_image: &build_ci_image
   stage: build-ci-images
-  image: docker:latest
-  services:
-    - docker:dind
+  image:
+    name: gcr.io/kaniko-project/executor:v1.23.2-debug
+    entrypoint: [""]
   before_script:
-    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - mkdir -p /kaniko/.docker
+    - |
+      printf '{"auths":{"%s":{"auth":"%s"}}}' \
+        "${CI_REGISTRY}" \
+        "$(printf '%s:%s' "${CI_REGISTRY_USER}" "${CI_REGISTRY_PASSWORD}" | base64 | tr -d '\n')" \
+        > /kaniko/.docker/config.json
 
 build-ci-go:
   <<: *build_ci_image
   script:
-    - docker build -t $CI_REGISTRY_IMAGE/ci-go:1.26 -f docker/Dockerfile.ci.go .
-    - docker push $CI_REGISTRY_IMAGE/ci-go:1.26
+    - /kaniko/executor
+      --context "${CI_PROJECT_DIR}"
+      --dockerfile docker/Dockerfile.ci.go
+      --destination "${CI_REGISTRY_IMAGE}/ci-go:1.26"
+      --cache=true
+      --cache-ttl=168h
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
       changes: [docker/Dockerfile.ci.go]
@@ -67,8 +81,12 @@ build-ci-go:
 build-ci-elixir:
   <<: *build_ci_image
   script:
-    - docker build -t $CI_REGISTRY_IMAGE/ci-elixir:1.19 -f docker/Dockerfile.ci.elixir .
-    - docker push $CI_REGISTRY_IMAGE/ci-elixir:1.19
+    - /kaniko/executor
+      --context "${CI_PROJECT_DIR}"
+      --dockerfile docker/Dockerfile.ci.elixir
+      --destination "${CI_REGISTRY_IMAGE}/ci-elixir:1.19"
+      --cache=true
+      --cache-ttl=168h
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
       changes: [docker/Dockerfile.ci.elixir]
@@ -187,14 +205,23 @@ verify-docs:
 # Requires DinD: starts docker compose stack, runs Gherkin tests, tears down.
 # Test runner joins nebu_default network → reaches gateway:8080 and core:4000
 # by service name (works in DinD where host.docker.internal is not available).
+#
+# This job is intentionally pinned to runners tagged `dind` — those are the only
+# nodes where a privileged Docker daemon is available. Plain K8s runners (no
+# DinD) cannot run docker compose and must not pick up this job.
 
 integration-test:
   stage: integration
+  tags:
+    - docker
   image: docker:latest
   services:
     - docker:dind
+  variables:
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_TLS_CERTDIR: "/certs"
   before_script:
-    - apk add --no-cache make
+    - apk add --no-cache make openssl
   script:
     - make test-integration
   rules:
