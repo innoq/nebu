@@ -217,6 +217,20 @@ defmodule Nebu.EventDispatcher.SyncTest do
     def reject_invitation(_room_id, _invitee_id), do: :ok
   end
 
+  # ─── SyncTestFakeInviteDB ────────────────────────────────────────────────────
+  #
+  # No-op fake for Nebu.Room.InviteDB. Injected via
+  # Application.put_env(:event_dispatcher, :invite_db_module, SyncTestFakeInviteDB).
+  # Prevents do_incremental_sync from hitting Ecto when fetching invite rooms.
+
+  defmodule SyncTestFakeInviteDB do
+    def get_pending_invite_rooms_for_user(_user_id), do: {:ok, []}
+    def get_declined_invite_rooms_for_user(_user_id), do: {:ok, []}
+    def insert_invitation(_room_id, _inviter, _invitee), do: :ok
+    def accept_invitation(_room_id, _invitee_id), do: :ok
+    def reject_invitation(_room_id, _invitee_id), do: :ok
+  end
+
   # ─── SyncTestFakePgStore ──────────────────────────────────────────────────────
   #
   # ETS-backed fake for Nebu.Session.PgStore (injected via

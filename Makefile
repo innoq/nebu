@@ -44,7 +44,7 @@ build-admin-css:
 			--minify"
 
 ## build-gateway: Build the Go Gateway Docker image (multi-stage)
-build-gateway: gen-api build-admin-css download-vendor
+build-gateway: build-admin-css download-vendor
 	docker build -t nebu-gateway:dev ./gateway
 
 ## build-core: Compile the Elixir/OTP Core inside container (mix compile)
