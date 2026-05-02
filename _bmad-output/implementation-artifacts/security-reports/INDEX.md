@@ -81,5 +81,19 @@ respective report. No CRITICAL or HIGH findings remain open.
 
 ## Footer
 
-Epic-end SEC Gate 2 (full-epic Kassandra review) is executed as part
-of Story 8.10 (Initial Public Push).
+Epic-end SEC Gate 2 (full-epic Kassandra review) for Epic 8 was executed
+as part of Story 8.10 (Initial Public Push).
+
+---
+
+## Epic 9 — arc42 Documentation Generation
+
+### Epic 9 SEC Gate 2 (mandatory epic-end review)
+
+- **File:** `_bmad-output/implementation-artifacts/security-reports/epic-9-security-review-2026-05-01.md`
+- **Classification:** CLEAN
+- **CRITICAL:** 0 / **HIGH:** 0 / **MEDIUM:** 2 / **LOW:** 1
+- **Open items:**
+  - MEDIUM-1: Dev credentials (`changeme`, `nebu-admin-secret`) documented in `docs/getting-started.md` — dev fixture only, no production impact. Recommendation: add warning box. Suitable as follow-up story acceptance criterion.
+  - MEDIUM-2: Bootstrap auto-admin mechanism explicitly documented in public arc42 docs (`08-concepts.md` line 23). Consider softer phrasing. No direct exploit path.
+  - LOW-1: `actions/checkout@v6` floating tag in CI `verify-docs` job — pre-existing pattern, not new debt introduced by Epic 9.
