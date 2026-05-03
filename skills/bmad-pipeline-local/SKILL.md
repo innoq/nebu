@@ -55,6 +55,9 @@ Jede Dateileseoperation, jeder Git-Befehl und jede Suche läuft durch RTK:
    ↓
 [CP1] Kontext-Checkpoint: Story-Zusammenfassung sichern
    ↓
+[1b] Matrix-Gate (Oracle)  (inline)  ← nur wenn Matrix-Feature
+     MATRIX_ORACLE_CONTEXT → an [2] und [5] weitergegeben
+   ↓
 [2]  bmad-testarch-atdd    (inline)  ← TEA Gate 1
    ↓
 [CP2] Kontext-Checkpoint: Test-Dateinamen sichern
@@ -151,6 +154,44 @@ Zeige: `✓ [1] Story erstellt → <pfad>`
 
 ---
 
+## Schritt 1b: Matrix-Gate — Oracle-Konsultation (inline, conditional)
+
+**Erkennung:**
+
+```bash
+rtk grep -i "_matrix/\|m\.room\.\|m\.login\|txnId\|sync.*since\|matrix.*spec" <story-datei.md>
+```
+
+Matrix-Bezug liegt vor wenn Endpoint-Pfade, Event-Typen (`m.room.*`), Matrix-Fehlercodes (`M_FORBIDDEN` etc.) oder Matrix-Konzepte im Story-Text erscheinen.
+
+**Wenn kein Matrix-Bezug:**
+
+`⏭️ [1b] Matrix-Gate übersprungen.`  
+`MATRIX_ORACLE_CONTEXT = null` — Schritt 2 und 5 erhalten keinen Oracle-Input.
+
+**Wenn Matrix-Feature erkannt:**
+
+```bash
+rtk read --level aggressive skills/agent-oracle/SKILL.md
+rtk read skills/agent-oracle/references/spec-lookup.md
+rtk read skills/agent-oracle/references/test-guidance.md
+rtk read <story-datei.md>
+```
+
+Handle als Oracle: Welche Matrix CS API v1.18 MUST-Anforderungen, Fehlercodes und spec-definierten Edge Cases sind für diese Story relevant?
+
+Schreibe das Ergebnis kompakt (max. 40 Zeilen) als `MATRIX_ORACLE_CONTEXT` in den Kontext:
+
+```
+=== MATRIX_ORACLE_CONTEXT ===
+[MUST-Anforderungen und spec-definierte Testfälle als Listen]
+=== END MATRIX_ORACLE_CONTEXT ===
+```
+
+Zeige: `✓ [1b] Oracle konsultiert — Matrix-Spec-Context erfasst.`
+
+---
+
 ## Schritt 2: bmad-testarch-atdd (inline) — TEA Gate 1
 
 **Ausnahme:** Reine Infra-Stories (Dockerfile, Migration ohne Logik) → `⏭️ [2] ATDD übersprungen (Infra-only).`
@@ -163,6 +204,11 @@ rtk read <story-datei.md>
 ```
 
 Generiere failing Acceptance Tests inline. Schreibe die Test-Dateien.
+
+Falls `MATRIX_ORACLE_CONTEXT` im Kontext vorhanden: stelle sicher, dass alle dort
+genannten Fehlercodes, HTTP-Status-Codes und Edge Cases als eigene failing Tests
+abgedeckt sind. Die Matrix-Spezifikation definiert explizit welche Fehlerantworten
+auf welche Eingaben zu erfolgen haben — nicht nur den Happy-Path testen.
 
 Nach Generierung:
 ```bash
@@ -252,6 +298,11 @@ rtk diff <(git diff --staged) /dev/null
 ```
 
 Reviewe alle gestagten Änderungen. Nutze die Findings aus [4] als Eingabe.
+
+Falls `MATRIX_ORACLE_CONTEXT` im Kontext vorhanden: prüfe ob die Implementierung
+ALLEN dort genannten MUST-Anforderungen der Matrix CS API v1.18 entspricht.
+Jede Abweichung von der Spec ist ein Finding. Falsches `errcode` oder falscher
+HTTP-Status-Code = MAJOR.
 
 **Minor Issues**: Fixen sofort, ohne zu pausieren.
 
