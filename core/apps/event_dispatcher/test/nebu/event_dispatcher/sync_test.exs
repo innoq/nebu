@@ -201,6 +201,7 @@ defmodule Nebu.EventDispatcher.SyncTest do
 
     # Story 6.9: get_room_status/1 — returns {:ok, "active"} so normal rooms start correctly.
     def get_room_status(_room_id), do: {:ok, "active"}
+    def get_room_creator(_room_id), do: {:error, :not_found}
   end
 
   # ─── SyncTestFakeInviteDB ────────────────────────────────────────────────────
@@ -755,6 +756,7 @@ defmodule Nebu.EventDispatcher.SyncTest do
     defdelegate load_room_settings(room_id), to: SyncTestFakeDB
     # Story 6.9: delegate get_room_status/1 to SyncTestFakeDB (returns {:ok, "active"}).
     defdelegate get_room_status(room_id), to: SyncTestFakeDB
+    defdelegate get_room_creator(room_id), to: SyncTestFakeDB
 
     # ── New: fetch_events_since/3 (Story 4-15) ────────────────────────────────
     #

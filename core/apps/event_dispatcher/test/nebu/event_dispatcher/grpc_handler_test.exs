@@ -61,6 +61,7 @@ defmodule Nebu.EventDispatcher.GrpcHandlerTest do
 
   defmodule FakeMessagesDB do
     def get_room_name(_room_id), do: {:error, :not_found}
+    def get_room_creator(_room_id), do: {:error, :not_found}
   end
 
   # ─── FakeStream ─────────────────────────────────────────────────────────────
