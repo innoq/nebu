@@ -6,6 +6,7 @@ landingURL: "https://gitlab.opencode.de/nebu/nebu-server"
 
 softwareVersion: "0.1.0-pre-alpha"
 releaseDate: "2026-05-02"
+genericName: Chat
 
 logo: "docs/logo.svg"
 
