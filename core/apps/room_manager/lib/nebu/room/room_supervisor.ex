@@ -19,9 +19,25 @@ defmodule Nebu.Room.RoomSupervisor do
            Nebu.Room.HordeSupervisor,
            {Nebu.Room.Server, room_id}
          ) do
-      {:ok, pid} -> {:ok, pid}
+      {:ok, pid} -> await_registry(room_id, pid)
       {:error, {:already_started, pid}} -> {:ok, pid}
       {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # Horde.Registry uses CRDT replication — the pid may not be visible via lookup
+  # immediately after start_child returns. Poll until the entry appears (max 500 ms).
+  defp await_registry(room_id, pid, retries \\ 100) do
+    case Horde.Registry.lookup(Nebu.Room.Registry, room_id) do
+      [{^pid, _}] ->
+        {:ok, pid}
+
+      _ when retries > 0 ->
+        Process.sleep(5)
+        await_registry(room_id, pid, retries - 1)
+
+      _ ->
+        {:error, :registry_timeout}
     end
   end
 

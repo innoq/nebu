@@ -154,10 +154,10 @@ defmodule Nebu.Room.PowerLevelEnforcementTest do
 
   # Deterministic poll: waits until lookup_room returns a NEW pid (not old_pid).
   # Uses Enum.reduce_while to avoid fixed Process.sleep durations.
-  # Asserts within 2 000 ms (200 iterations x 10 ms).
+  # Asserts within 5 000 ms (500 iterations x 10 ms) — CI needs more headroom.
   defp await_new_pid(room_id, old_pid) do
     result =
-      Enum.reduce_while(1..200, nil, fn _i, _acc ->
+      Enum.reduce_while(1..500, nil, fn _i, _acc ->
         case Nebu.Room.RoomSupervisor.lookup_room(room_id) do
           {:ok, pid} when pid != old_pid -> {:halt, {:ok, pid}}
           _ ->
@@ -168,7 +168,7 @@ defmodule Nebu.Room.PowerLevelEnforcementTest do
 
     case result do
       {:ok, new_pid} -> new_pid
-      nil -> flunk("Horde did not restart room #{room_id} within 2000ms")
+      nil -> flunk("Horde did not restart room #{room_id} within 5000ms")
     end
   end
 

@@ -102,15 +102,15 @@ description:
 
 legal:
   license: "Apache-2.0"
-  mainCopyrightOwner: "INNOQ Technology GmbH"
-  repoOwner: "INNOQ Technology GmbH"
+  mainCopyrightOwner: "innoQ Deutschland GmbH"
+  repoOwner: "innoQ Deutschland GmbH"
 
 maintenance:
   type: "internal"
   contacts:
     - name: "Philipp Beyerlein"
       email: "philipp.beyerlein@innoq.com"
-      affiliation: "INNOQ Technology GmbH"
+      affiliation: "innoQ Deutschland GmbH"
 
 localisation:
   localisationReady: false

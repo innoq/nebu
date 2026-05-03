@@ -125,9 +125,13 @@ func openMockDB(t *testing.T, commitErr error) (*sql.DB, *userTxConn) {
 // ─── behaviour tests ──────────────────────────────────────────────────────────
 
 // TestWithUserDB_SetsGUCBeforeFn verifies that the first prepared statement inside
-// the transaction is SET LOCAL app.user_id = $1 AND that the userID is passed as a
+// the transaction sets app.user_id for RLS AND that the userID is passed as a
 // bound parameter (not string-interpolated into the SQL) — this is the SQL-injection
 // guarantee for the GUC value (AC #1).
+//
+// Accepts both SET LOCAL and set_config() forms. SET LOCAL x = $1 is invalid PostgreSQL
+// syntax (SET commands reject bind parameters), so the implementation uses
+// set_config('app.user_id', $1, true) which is equivalent but accepts prepared params.
 func TestWithUserDB_SetsGUCBeforeFn(t *testing.T) {
 	db, conn := openMockDB(t, nil)
 	userID := "@kai:nebu.test"
@@ -152,8 +156,11 @@ func TestWithUserDB_SetsGUCBeforeFn(t *testing.T) {
 	}
 	first := conn.prepares[0]
 	lowerFirst := strings.ToLower(first)
-	if !strings.Contains(lowerFirst, "set local app.user_id") {
-		t.Errorf("first statement must be SET LOCAL app.user_id; got: %q", first)
+	// Accept either SET LOCAL or set_config() — both scope the GUC to the transaction.
+	setsGUC := strings.Contains(lowerFirst, "set local app.user_id") ||
+		(strings.Contains(lowerFirst, "set_config") && strings.Contains(lowerFirst, "app.user_id"))
+	if !setsGUC {
+		t.Errorf("first statement must set app.user_id GUC (SET LOCAL or set_config); got: %q", first)
 	}
 	// SQL-injection guard: the SQL text must use a bind placeholder ($1), not the
 	// literal userID string interpolated.
@@ -165,7 +172,7 @@ func TestWithUserDB_SetsGUCBeforeFn(t *testing.T) {
 	}
 	// The userID must be delivered as a bound driver.Value to the prepared statement.
 	if len(conn.execArgs) == 0 || len(conn.execArgs[0]) == 0 {
-		t.Fatal("SET LOCAL prepared statement received no bound arguments")
+		t.Fatal("GUC statement received no bound arguments")
 	}
 	gotArg := conn.execArgs[0][0]
 	if gotArg != userID {

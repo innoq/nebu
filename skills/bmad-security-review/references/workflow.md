@@ -54,6 +54,17 @@ For each candidate finding:
 3. **Classify severity.** Apply `./triage-rubric.md`. The Rufschädigungs-Test is the tie-breaker between CRITICAL and HIGH. When between two levels, pick the lower one.
 4. **Draft the finding.** File:line, CWE/OWASP reference, description, impact, recommendation.
 
+**Matrix Spec Compliance Check (when API-layer diff contains `gateway/internal/matrix/` files).**
+
+Load `{project-root}/skills/agent-oracle/references/compliance-review.md` and run a compliance review over all Matrix handler files in the diff. This is a targeted cross-check: Oracle reviews the implementation against Matrix Client-Server API v1.18 and returns structured findings.
+
+Merge Oracle findings into Kassandra's analysis:
+- Spec deviations that affect auth, power-level checks, or token validation → promote to Kassandra finding pool (CRITICAL or HIGH based on exploit path)
+- Spec deviations that affect error codes, response fields, or event content → MEDIUM unless a plausible security exploit path exists
+- Include a "Matrix Spec Compliance" section in the report with Oracle's findings, cited to spec sections
+
+Oracle's compliance review does not replace Kassandra's analysis — it augments it. Run both independently and merge the results.
+
 **Nebu Invariants Check — always.** Invariants are cross-cutting, so run them even when the diff does not obviously touch these areas:
 
 - Compliance RSP coverage

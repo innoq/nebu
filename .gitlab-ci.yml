@@ -7,8 +7,9 @@
 # Manual trigger available for initial setup (run build-ci-go + build-ci-elixir
 # once before first pipeline run that uses them).
 #
-# Unit tests run directly inside custom images — no Docker-in-Docker needed.
-# Integration test requires DinD to start the docker compose stack.
+# CI image builds use Kaniko — no Docker daemon / DinD required, works on plain
+# K8s runners. Only the integration-test job still needs DinD (docker compose
+# spins up the full stack); it is routed to a DinD-capable runner via tags.
 
 variables:
   DOCKER_DRIVER: overlay2
@@ -39,23 +40,37 @@ stages:
   - unit
   - scan
   - verify
+  - build
   - integration
 
 # ─── CI Image Builds ──────────────────────────────────────────────────────────
+# Kaniko builds container images without a Docker daemon.
+# The -debug variant ships a busybox shell so before_script works.
+# Credentials are written to /kaniko/.docker/config.json (Kaniko's default
+# Docker credential location) — no `docker login` command needed.
 
 .build_ci_image: &build_ci_image
   stage: build-ci-images
-  image: docker:latest
-  services:
-    - docker:dind
+  image:
+    name: gcr.io/kaniko-project/executor:v1.23.2-debug
+    entrypoint: [""]
   before_script:
-    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - mkdir -p /kaniko/.docker
+    - |
+      printf '{"auths":{"%s":{"auth":"%s"}}}' \
+        "${CI_REGISTRY}" \
+        "$(printf '%s:%s' "${CI_REGISTRY_USER}" "${CI_REGISTRY_PASSWORD}" | base64 | tr -d '\n')" \
+        > /kaniko/.docker/config.json
 
 build-ci-go:
   <<: *build_ci_image
   script:
-    - docker build -t $CI_REGISTRY_IMAGE/ci-go:1.26 -f docker/Dockerfile.ci.go .
-    - docker push $CI_REGISTRY_IMAGE/ci-go:1.26
+    - /kaniko/executor
+      --context "${CI_PROJECT_DIR}"
+      --dockerfile docker/Dockerfile.ci.go
+      --destination "${CI_REGISTRY_IMAGE}/ci-go:1.26"
+      --cache=true
+      --cache-ttl=168h
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
       changes: [docker/Dockerfile.ci.go]
@@ -67,8 +82,12 @@ build-ci-go:
 build-ci-elixir:
   <<: *build_ci_image
   script:
-    - docker build -t $CI_REGISTRY_IMAGE/ci-elixir:1.19 -f docker/Dockerfile.ci.elixir .
-    - docker push $CI_REGISTRY_IMAGE/ci-elixir:1.19
+    - /kaniko/executor
+      --context "${CI_PROJECT_DIR}"
+      --dockerfile docker/Dockerfile.ci.elixir
+      --destination "${CI_REGISTRY_IMAGE}/ci-elixir:1.19"
+      --cache=true
+      --cache-ttl=168h
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
       changes: [docker/Dockerfile.ci.elixir]
@@ -183,20 +202,112 @@ verify-docs:
     - if: '$CI_COMMIT_BRANCH =~ /^feature\//'
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
 
+# ─── App Image Builds ─────────────────────────────────────────────────────────
+# Kaniko builds the gateway and core application images and pushes them to the
+# GitLab registry tagged with the commit SHA. No DinD required.
+# These images are consumed by the integration-test job via docker-compose.ci.yml.
+
+build-gateway-image:
+  <<: *build_ci_image
+  stage: build
+  script:
+    - /kaniko/executor
+      --context "${CI_PROJECT_DIR}/gateway"
+      --dockerfile gateway/Dockerfile
+      --destination "${CI_REGISTRY_IMAGE}/gateway:${CI_COMMIT_SHA}"
+      --cache=true
+      --cache-ttl=24h
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+build-core-image:
+  <<: *build_ci_image
+  stage: build
+  script:
+    - /kaniko/executor
+      --context "${CI_PROJECT_DIR}/core"
+      --dockerfile core/Dockerfile
+      --destination "${CI_REGISTRY_IMAGE}/core:${CI_COMMIT_SHA}"
+      --cache=true
+      --cache-ttl=24h
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
 # ─── Integration Test ─────────────────────────────────────────────────────────
 # Requires DinD: starts docker compose stack, runs Gherkin tests, tears down.
 # Test runner joins nebu_default network → reaches gateway:8080 and core:4000
 # by service name (works in DinD where host.docker.internal is not available).
+#
+# This job is intentionally pinned to runners tagged `docker` — those are the
+# only nodes where a privileged Docker daemon is available. Plain K8s runners
+# (no DinD) cannot run docker compose.
+#
+# Job is manual (when: manual) so pipelines on plain K8s runners are not
+# blocked. Trigger manually when a docker-tagged runner is available, or run
+# locally via `make test-integration`.
 
 integration-test:
   stage: integration
+  tags:
+    - docker
   image: docker:latest
   services:
-    - docker:dind
+    - name: docker:dind
+      command: ["--tls=false"]
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
   before_script:
     - apk add --no-cache make openssl
+    - until docker info; do sleep 1; done
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
   script:
-    - make test-integration
+    - make test-integration-ci
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+      allow_failure: true
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: manual
+      allow_failure: true
+
+# Daemonless alternative to integration-test for plain K8s runners (no DinD).
+# Uses podman-compose instead of docker compose — no Docker daemon required.
+# Requires the runner pod to have user namespaces enabled (/dev/fuse + SYS_ADMIN)
+# or to run with privileged: true. If neither is available, the job will fail
+# at `podman-compose up` with a "newuidmap" or "fuse" error.
+integration-test-podman:
+  stage: integration
+  image: quay.io/podman/stable
+  variables:
+    COMPOSE_PROJECT_NAME: nebu
+  before_script:
+    - dnf install -y --quiet make openssl python3-pip
+    - pip3 install --quiet podman-compose
+    - podman login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+    - make setup
+  script:
+    - podman-compose -f docker-compose.yml -f docker-compose.ci.yml up -d --wait
+    - podman run --rm -v "$CI_PROJECT_DIR:/workspace" -w /workspace
+        --network=nebu_default
+        -e NEBU_TEST_GATEWAY_URL=http://gateway:8080
+        -e NEBU_TEST_CORE_URL=http://core:4000
+        -e NEBU_TEST_DEX_URL=http://dex:5556
+        -e NEBU_TEST_MATRIX_URL=http://gateway:8008
+        -e NEBU_TEST_DB_URL=postgresql://nebu_app:nebu_app_dev_pw@postgres:5432/nebu
+        -e NEBU_TEST_MIGRATION_DB_URL=postgresql://nebu_migrate:nebu_migrate_dev_pw@postgres:5432/nebu
+        -e NEBU_TEST_CORE_GRPC_ADDR=core:9000
+        -e NEBU_TEST_INTERNAL_SECRET="$(cat .secrets/internal_secret)"
+        golang:1.26-alpine
+        sh -c "apk add -q --no-cache gcc musl-dev && cd gateway && go test -v -tags integration ./test/integration/..."
+  after_script:
+    - podman-compose -f docker-compose.yml -f docker-compose.ci.yml down
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+      allow_failure: true
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: manual
+      allow_failure: true
