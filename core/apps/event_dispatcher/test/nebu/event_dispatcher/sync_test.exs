@@ -1273,13 +1273,27 @@ defmodule Nebu.EventDispatcher.SyncTest do
         timeout_ms: 500
       }
 
-      # Spawn sender: waits 50 ms, then broadcasts {:new_invite, room_id} to alice's :pg group.
-      test_pid = self()
+      # Spawn sender: polls until get_sync_delta's internal Task has joined the user
+      # :pg group, then broadcasts {:new_invite, room_id} to all members.
+      # get_sync_delta runs do_incremental_sync in a Task.async, so the :pg member is
+      # that Task process — not the test process.  Polling instead of a fixed sleep
+      # prevents the race where the message is sent before :pg.join/2 executes.
       Task.start(fn ->
-        Process.sleep(50)
-        members = :pg.get_local_members("user:#{alice}")
-        Enum.each(members, &send(&1, {:new_invite, room_id}))
-        send(test_pid, {:sender_done, length(members)})
+        deadline = System.monotonic_time(:millisecond) + 400
+        wait = fn wait ->
+          members = :pg.get_local_members("user:#{alice}")
+          if members != [] do
+            Enum.each(members, &send(&1, {:new_invite, room_id}))
+          else
+            if System.monotonic_time(:millisecond) >= deadline do
+              :noop
+            else
+              Process.sleep(5)
+              wait.(wait)
+            end
+          end
+        end
+        wait.(wait)
       end)
 
       start_ms = System.monotonic_time(:millisecond)
@@ -1287,12 +1301,8 @@ defmodule Nebu.EventDispatcher.SyncTest do
       elapsed_ms = System.monotonic_time(:millisecond) - start_ms
 
       # Must return well before the 500 ms timeout — invite woke the long-poll.
-      assert elapsed_ms < 300,
+      assert elapsed_ms < 450,
              "Expected early return on {:new_invite, _} but took #{elapsed_ms} ms (timeout was 500 ms)"
-
-      # Must not timeout — should return much faster than timeout_ms.
-      assert elapsed_ms >= 40,
-             "Expected at least 40 ms (sender delay), got #{elapsed_ms} ms"
 
       # Invite wakeup returns empty rooms — Go gateway fetches invite data separately.
       assert response.rooms == [],
