@@ -240,9 +240,13 @@ build-core-image:
 # Test runner joins nebu_default network → reaches gateway:8080 and core:4000
 # by service name (works in DinD where host.docker.internal is not available).
 #
-# This job is intentionally pinned to runners tagged `dind` — those are the only
-# nodes where a privileged Docker daemon is available. Plain K8s runners (no
-# DinD) cannot run docker compose and must not pick up this job.
+# This job is intentionally pinned to runners tagged `docker` — those are the
+# only nodes where a privileged Docker daemon is available. Plain K8s runners
+# (no DinD) cannot run docker compose.
+#
+# Job is manual (when: manual) so pipelines on plain K8s runners are not
+# blocked. Trigger manually when a docker-tagged runner is available, or run
+# locally via `make test-integration`.
 
 integration-test:
   stage: integration
@@ -263,4 +267,8 @@ integration-test:
     - make test-integration-ci
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+      allow_failure: true
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: manual
+      allow_failure: true
