@@ -40,6 +40,7 @@ stages:
   - unit
   - scan
   - verify
+  - build
   - integration
 
 # ─── CI Image Builds ──────────────────────────────────────────────────────────
@@ -201,6 +202,39 @@ verify-docs:
     - if: '$CI_COMMIT_BRANCH =~ /^feature\//'
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
 
+# ─── App Image Builds ─────────────────────────────────────────────────────────
+# Kaniko builds the gateway and core application images and pushes them to the
+# GitLab registry tagged with the commit SHA. No DinD required.
+# These images are consumed by the integration-test job via docker-compose.ci.yml.
+
+build-gateway-image:
+  <<: *build_ci_image
+  stage: build
+  script:
+    - /kaniko/executor
+      --context "${CI_PROJECT_DIR}"
+      --dockerfile gateway/Dockerfile
+      --destination "${CI_REGISTRY_IMAGE}/gateway:${CI_COMMIT_SHA}"
+      --cache=true
+      --cache-ttl=24h
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+build-core-image:
+  <<: *build_ci_image
+  stage: build
+  script:
+    - /kaniko/executor
+      --context "${CI_PROJECT_DIR}"
+      --dockerfile core/Dockerfile
+      --destination "${CI_REGISTRY_IMAGE}/core:${CI_COMMIT_SHA}"
+      --cache=true
+      --cache-ttl=24h
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
 # ─── Integration Test ─────────────────────────────────────────────────────────
 # Requires DinD: starts docker compose stack, runs Gherkin tests, tears down.
 # Test runner joins nebu_default network → reaches gateway:8080 and core:4000
@@ -222,8 +256,9 @@ integration-test:
     DOCKER_TLS_CERTDIR: "/certs"
   before_script:
     - apk add --no-cache make openssl
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
   script:
-    - make test-integration
+    - make test-integration-ci
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'

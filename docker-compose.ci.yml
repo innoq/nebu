@@ -1,0 +1,13 @@
+# CI overlay — replaces build: directives with pre-built images from the GitLab registry.
+#
+# Usage (DinD integration-test job):
+#   docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d --wait --no-build
+#
+# Kaniko pushes gateway and core images in the `build` stage before this runs.
+# CI_REGISTRY_IMAGE and CI_COMMIT_SHA are set automatically by GitLab CI.
+
+services:
+  gateway:
+    image: ${CI_REGISTRY_IMAGE}/gateway:${CI_COMMIT_SHA}
+  core:
+    image: ${CI_REGISTRY_IMAGE}/core:${CI_COMMIT_SHA}
