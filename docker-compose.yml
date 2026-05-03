@@ -74,6 +74,7 @@ services:
       DATABASE_URL: "ecto://nebu_app:nebu_app_dev_pw@postgres:5432/nebu"
       NEBU_INTERNAL_SECRET_FILE: "/run/secrets/internal_secret"
       NEBU_GATEWAY_INTERNAL_URL: "http://gateway:8008"
+      NEBU_SERVER_NAME: "localhost"
       NEBU_PII_ENCRYPTION_KEY: "${NEBU_PII_ENCRYPTION_KEY:-6465766b65793030303030303030303030303030303030303030303030303030}"
     ports:
       # Story 5.29a — AC8: gRPC port 9000 is NOT published to the host.

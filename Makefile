@@ -7,7 +7,7 @@ DOCKER_ELIXIR = docker run --rm -v $(PWD):/workspace -w /workspace elixir:1.19-a
 DOCKER_BUF    = docker run --rm -v $(PWD):/workspace -w /workspace bufbuild/buf
 DOCKER_NODE   = docker run --rm -v $(PWD):/workspace -w /workspace node:22-alpine
 
-.PHONY: build-gateway build-core build-admin-css download-fonts download-vendor dev setup test-unit-go test-unit-elixir test-integration test-e2e test-matrix-compat test-load-silber build-element-e2e test-e2e-element build-fluffychat-e2e test-e2e-fluffychat proto gen-api test-compose-ports
+.PHONY: build-gateway build-core build-admin-css download-fonts download-vendor dev setup test-unit-go test-unit-elixir test-integration test-integration-ci test-e2e test-matrix-compat test-load-silber build-element-e2e test-e2e-element build-fluffychat-e2e test-e2e-fluffychat proto gen-api test-compose-ports
 
 ## download-fonts: Download Inter + JetBrains Mono WOFF2 fonts (run once; commit results)
 download-fonts:
@@ -96,6 +96,25 @@ test-integration: setup
 		golang:1.26-alpine \
 		sh -c "apk add -q --no-cache gcc musl-dev && cd gateway && go test -v -tags integration ./test/integration/..."; \
 	EXIT=$$?; docker compose down; exit $$EXIT
+
+## test-integration-ci: Run full stack integration tests using pre-built registry images (CI only).
+## Requires CI_REGISTRY_IMAGE and CI_COMMIT_SHA to be set (injected automatically by GitLab CI).
+## The caller must run `docker login` before invoking this target.
+test-integration-ci: setup
+	docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d --wait --no-build && \
+	docker run --rm -v $(PWD):/workspace -w /workspace \
+		--network=nebu_default \
+		-e NEBU_TEST_GATEWAY_URL=http://gateway:8080 \
+		-e NEBU_TEST_CORE_URL=http://core:4000 \
+		-e NEBU_TEST_DEX_URL=http://dex:5556 \
+		-e NEBU_TEST_MATRIX_URL=http://gateway:8008 \
+		-e NEBU_TEST_DB_URL=postgresql://nebu_app:nebu_app_dev_pw@postgres:5432/nebu \
+		-e NEBU_TEST_MIGRATION_DB_URL=postgresql://nebu_migrate:nebu_migrate_dev_pw@postgres:5432/nebu \
+		-e NEBU_TEST_CORE_GRPC_ADDR=core:9000 \
+		-e NEBU_TEST_INTERNAL_SECRET=$$(cat .secrets/internal_secret) \
+		golang:1.26-alpine \
+		sh -c "apk add -q --no-cache gcc musl-dev && cd gateway && go test -v -tags integration ./test/integration/..."; \
+	EXIT=$$?; docker compose -f docker-compose.yml -f docker-compose.ci.yml down; exit $$EXIT
 
 ## test-matrix-compat: Matrix SDK compatibility smoke test (optional CI gate — not part of test-integration)
 ## Validates that a real matrix-js-sdk client can connect, create a room, send a message, and

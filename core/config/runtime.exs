@@ -5,6 +5,9 @@ import Config
 # config :room_manager, Nebu.Repo,
 #   url: System.get_env("NEBU_DB_URL") || raise "NEBU_DB_URL not set"
 
+# Room IDs use this server name — must match the gateway's NEBU_SERVER_NAME.
+config :event_dispatcher, server_name: System.get_env("NEBU_SERVER_NAME", "localhost")
+
 if config_env() in [:prod, :dev] do
   config :nebu_db, Nebu.Repo,
     url: System.get_env("NEBU_DB_URL") || raise("NEBU_DB_URL is not set"),

@@ -23,8 +23,11 @@ Ausführung. Jeder Schritt läuft in einem eigenen, frischen Subagenten-Kontext.
 ```
 [1] bmad-create-story        (Sonnet, frischer Kontext)
           ↓
+[1b] Matrix-Gate (Oracle)    (Sonnet, frischer Kontext)  ← nur wenn Matrix-Feature
+     Spec-Anforderungen, Fehlercodes, Testfälle → MATRIX_ORACLE_CONTEXT
+          ↓
 [2] bmad-testarch-atdd       (Sonnet, frischer Kontext)  ← TEA Gate 1
-    failing tests generieren + stagen
+    failing tests generieren + stagen (+ Oracle-Findings wenn Matrix)
           ↓
 [3] bmad-dev-story           (Sonnet, frischer Kontext)
           ↓
@@ -110,6 +113,51 @@ Zeige: `✓ Schritt 1: Story erstellt → [story-datei.md]`
 
 ---
 
+### Schritt 1b: Matrix-Gate — Oracle-Konsultation (conditional)
+
+**Modell:** `claude-sonnet-4-6` | **Kontext:** frisch (Task-Tool)
+
+**Erkennung:** Prüfe ob die Story ein Matrix-API-Feature beschreibt:
+
+```bash
+rtk grep -i "_matrix/\|m\.room\.\|m\.login\|event_type\|txnId\|sync.*since\|matrix.*spec" [STORY_DATEI_AUS_SCHRITT_1]
+```
+
+Matrix-Bezug liegt vor wenn: Endpoint-Pfade wie `/_matrix/client/`, Event-Typen wie `m.room.*`, Matrix-Fehlercodes (`M_FORBIDDEN` etc.) oder Matrix-Konzepte (sync, txnId, power_levels) im Story-Text erwähnt werden.
+
+**Wenn kein Matrix-Bezug:**
+
+`⏭️ Schritt 1b: Matrix-Gate übersprungen — kein Matrix-Feature.`  
+`MATRIX_ORACLE_CONTEXT = null`  
+Fahre direkt mit Schritt 2 fort.
+
+**Wenn Matrix-Feature erkannt:**
+
+```
+Lies und befolge die Anweisungen aus skills/agent-oracle/SKILL.md.
+
+Du bist die Oracle — Matrix Client-Server API v1.18 Expertin.
+Die folgende Story beschreibt ein Matrix-Feature für den Nebu-Server.
+
+Story-Datei: [STORY_DATEI_AUS_SCHRITT_1]
+
+Führe für diese Story aus:
+1. Spec Lookup (lade references/spec-lookup.md): Welche Matrix CS API v1.18
+   Endpoints, Event-Typen und Verhaltensregeln sind relevant?
+   Liste alle MUST-Anforderungen für dieses Feature.
+2. Test Guidance (lade references/test-guidance.md): Welche spec-definierten
+   Fehlercodes, HTTP-Status-Codes und Edge Cases MÜSSEN als Tests abgedeckt sein?
+
+Gib das Ergebnis als kompaktes Markdown zurück (max. 40 Zeilen).
+Keine Prosa — nur Anforderungen und Testfälle als Listen. Beende dann.
+```
+
+Warte auf Fertigstellung. Speichere die Ausgabe als `MATRIX_ORACLE_CONTEXT`.
+
+Zeige: `✓ Schritt 1b: Oracle konsultiert — Matrix-Spec-Context erfasst.`
+
+---
+
 ### Schritt 2: bmad-testarch-atdd (TEA Gate 1 — Failing Tests)
 
 **Modell:** `claude-sonnet-4-6` | **Kontext:** frisch (Task-Tool) | **Pflicht**
@@ -125,6 +173,15 @@ Lies und befolge die Anweisungen aus .claude/skills/bmad-testarch-atdd/SKILL.md
 Story-Datei: [STORY_DATEI_AUS_SCHRITT_1]
 Generiere failing Acceptance Tests für alle Acceptance Criteria der Story.
 Die Tests müssen FAILING sein bevor Implementation-Code existiert.
+
+[NUR WENN MATRIX_ORACLE_CONTEXT VORHANDEN — sonst diesen Block weglassen:]
+Matrix Spec-Anforderungen (aus Oracle, v1.18):
+[MATRIX_ORACLE_CONTEXT]
+Stelle sicher, dass ALLE spec-definierten Fehlercodes, HTTP-Status-Codes
+und Edge Cases oben als eigene failing Tests abgedeckt sind.
+Die Matrix-Spezifikation definiert explizit welche Fehlerantworten auf welche
+Eingaben zu erfolgen haben — teste nicht nur den Happy-Path.
+
 Beende nach Generierung der Tests.
 ```
 
@@ -210,6 +267,13 @@ Reviewe alle gestagten Änderungen (git diff --staged).
 
 Test-Review Findings (aus bmad-testarch-test-review):
 [FINDINGS_AUS_SCHRITT_4]
+
+[NUR WENN MATRIX_ORACLE_CONTEXT VORHANDEN — sonst diesen Block weglassen:]
+Matrix Spec-Anforderungen (aus Oracle, v1.18):
+[MATRIX_ORACLE_CONTEXT]
+Prüfe ob die Implementierung ALLEN oben genannten MUST-Anforderungen der
+Matrix Client-Server API v1.18 entspricht. Jede Abweichung ist ein Finding.
+Fehlende Fehlercodes (z.B. falsches errcode, falscher HTTP-Status) = MAJOR.
 
 Berücksichtige diese Test-Findings in deinem Review.
 Gib das vollständige Ergebnis aus. Klassifiziere jeden Fund explizit als
@@ -488,6 +552,7 @@ Stoppe hier und warte auf den User.
 | Schritt                      | Modell            |
 |------------------------------|-------------------|
 | bmad-create-story            | claude-sonnet-4-6 |
+| Matrix-Gate Oracle (Schritt 1b, nur bei Matrix-Stories) | claude-sonnet-4-6 |
 | bmad-testarch-atdd           | claude-sonnet-4-6 |
 | bmad-dev-story               | claude-sonnet-4-6 |
 | bmad-testarch-test-review    | claude-sonnet-4-6 |

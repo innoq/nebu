@@ -123,6 +123,28 @@ defmodule Nebu.EventDispatcher.Server do
         creator_pl = put_in(default_pl, ["users", creator_id], 100)
         :ok = Nebu.Room.Server.set_power_levels(room_id, creator_id, creator_pl)
 
+        # Emit m.room.create — persists the authoritative creator and room version.
+        create_event_map = %{
+          "room_id"          => room_id,
+          "type"             => "m.room.create",
+          "state_key"        => "",
+          "sender"           => creator_id,
+          "content"          => %{"creator" => creator_id, "room_version" => "10"},
+          "origin_server_ts" => Nebu.DB.Helpers.now_ms()
+        }
+        create_event_id = Nebu.EventId.generate(create_event_map)
+        create_event_with_id = Map.put(create_event_map, "event_id", create_event_id)
+        {_pub, priv_create} = :persistent_term.get(:nebu_signing_key)
+        create_event_json = Nebu.CanonicalJson.encode!(create_event_map)
+        create_sig = :crypto.sign(:eddsa, :none, create_event_json, [priv_create, :ed25519])
+        create_signed = Map.put(create_event_with_id, "signatures", %{"nebu" => Base.encode64(create_sig)})
+        case messages_db_module().insert_event(create_signed) do
+          :ok ->
+            Enum.each(:pg.get_local_members("room:#{room_id}"), &send(&1, {:new_event, create_signed}))
+          {:error, reason} ->
+            Logger.warning("create_room: failed to write m.room.create for #{room_id}: #{inspect(reason)}")
+        end
+
         # Emit m.room.name state event if a name was provided
         name = request.name
         if name != nil and name != "" do
@@ -1175,9 +1197,28 @@ defmodule Nebu.EventDispatcher.Server do
     {new_token, newest_event_id}
   end
 
-  # Build state events for a room: one m.room.member per active member + one m.room.power_levels
-  # + one m.room.name (if a name has been stored).
+  # Build state events for a room: m.room.create + one m.room.member per active member
+  # + one m.room.power_levels + one m.room.name (if a name has been stored).
   defp build_state_events(state, room_id) do
+    creator_id =
+      case messages_db_module().get_room_creator(room_id) do
+        {:ok, id} ->
+          id
+        _ ->
+          # Fallback for rooms created before m.room.create was persisted.
+          (state.power_levels || %{})
+          |> Map.get("users", %{})
+          |> Enum.max_by(fn {_uid, lvl} -> lvl end, fn -> {"", 0} end)
+          |> elem(0)
+      end
+
+    create_event = %Core.SyncRoomStateEvent{
+      type: "m.room.create",
+      state_key: "",
+      content: Jason.encode!(%{"creator" => creator_id, "room_version" => "10"}),
+      sender: creator_id
+    }
+
     member_events =
       state.members
       |> MapSet.to_list()
@@ -1209,7 +1250,7 @@ defmodule Nebu.EventDispatcher.Server do
         _ -> []
       end
 
-    member_events ++ [pl_event] ++ name_events
+    [create_event] ++ member_events ++ [pl_event] ++ name_events
   end
 
   # ─── Private helpers ─────────────────────────────────────────────────────────

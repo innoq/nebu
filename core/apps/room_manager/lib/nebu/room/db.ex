@@ -468,6 +468,20 @@ defmodule Nebu.Room.DB do
     - JSONB string  "{"name":"…"}" → (content#>>'{}')::jsonb->>'name' extracts via the
                                      text path operator first
   """
+  @spec get_room_creator(String.t()) :: {:ok, String.t()} | {:error, :not_found | term()}
+  def get_room_creator(room_id) do
+    sql = """
+    SELECT sender FROM events
+    WHERE room_id = $1 AND event_type = 'm.room.create'
+    ORDER BY origin_server_ts ASC LIMIT 1
+    """
+    case Ecto.Adapters.SQL.query(Nebu.Repo, sql, [room_id]) do
+      {:ok, %{rows: [[sender]]}} when not is_nil(sender) -> {:ok, sender}
+      {:ok, _} -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   @spec get_room_name(String.t()) :: {:ok, String.t()} | {:error, :not_found | term()}
   def get_room_name(room_id) do
     sql = """

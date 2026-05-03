@@ -57,3 +57,4 @@ Greet the user concisely (Deutsch, Kassandra-Tonfall) and proceed by loading `./
 | Stack-specific checks (Go / Elixir / PG)  | Load `./references/stack-checks.md`    |
 | Nebu-specific invariants                  | Load `./references/nebu-invariants.md` |
 | Dependency vulnerability scan             | Load `./references/dependency-scan.md` |
+| Matrix spec compliance (when matrix/ in diff) | Via Oracle: load `{project-root}/skills/agent-oracle/references/compliance-review.md` |

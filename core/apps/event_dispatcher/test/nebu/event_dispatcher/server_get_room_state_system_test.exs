@@ -86,6 +86,7 @@ defmodule Nebu.EventDispatcher.ServerGetRoomStateSystemTest do
     # Called by build_state_events/2 via messages_db_module().get_room_name/1.
     # Returns :not_found so no m.room.name state event is emitted (keeps test output clean).
     def get_room_name(_room_id), do: {:error, :not_found}
+    def get_room_creator(_room_id), do: {:error, :not_found}
 
     # Story 6.8: load_room_settings/1 returns {:ok, 0} (no limit) for unit tests.
     def load_room_settings(_room_id), do: {:ok, 0}
