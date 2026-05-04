@@ -328,7 +328,6 @@ integration-test-podman:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       when: manual
       allow_failure: true
-
 # ─── Integration Test — K8s-native (GitLab CI services:) ──────────────────────
 # Runs on plain K8s runners without DinD/Podman. Uses GitLab CI `services:` to
 # start sidecar containers in the same pod — no Docker daemon, no privilege
