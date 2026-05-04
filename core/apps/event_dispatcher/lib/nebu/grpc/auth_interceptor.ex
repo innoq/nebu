@@ -81,7 +81,7 @@ defmodule Nebu.Grpc.AuthInterceptor do
       nil ->
         case System.get_env("NEBU_INTERNAL_SECRET_FILE") do
           nil ->
-            ""
+            System.get_env("NEBU_INTERNAL_SECRET") || ""
 
           path ->
             case File.read(path) do

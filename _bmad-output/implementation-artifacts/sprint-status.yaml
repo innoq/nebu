@@ -1,5 +1,6 @@
 # generated: 2026-03-20
-# last_updated: 2026-05-01
+# last_updated: 2026-05-04
+# story 8-11 done (pipeline: ATDD+Dev+Code CLEAN — WaitAndRunMigrations retry loop, wait-for-stack.sh, integration-test-k8s job): 2026-05-04
 # story 6-11 created: 6-11 → ready-for-dev: 2026-05-01 (Gherkin: Admin API CRUD Flow — 3 Godog scenarios: user lifecycle deactivate/reactivate, role grant/revoke, room archive, new gateway/features/admin_api.feature + gateway/test/integration/admin_api_steps_test.go)
 # story 6-9 created: 6-9 → ready-for-dev: 2026-05-01 (Room Archivierung — POST /admin/rooms/{roomId}/archive + unarchive, proto ArchiveRoom/UnarchiveRoom, Room.Server archived init guard, SendEvent archive check, audit log)
 # story 6-8 created: 6-8 → ready-for-dev: 2026-05-01 (Room Settings Update API — PATCH /admin/rooms/{roomId}, PUT /admin/config/room-defaults, migration 000037 room_defaults, proto UpdateRoomSettings, max_members enforcement in Room GenServer, audit log)
@@ -130,7 +131,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-20
-last_updated: 2026-05-01
+last_updated: 2026-05-03
 # story 6-10 created: 6-10 → ready-for-dev: 2026-05-01 (Server Config API + Metrics API — GET/PATCH /admin/config, GET /admin/metrics, proto InvalidateAllAdminSessions, ServerConfigRepository, MetricsRepository, oidc_client_secret encryption, session invalidation on OIDC change)
 # story 6-1 created: epic-6 → in-progress, 6-1 → ready-for-dev: 2026-05-01
 # story 5-1 review: 2026-04-23 (audit-log schema + RLS + retention cleanup)
@@ -644,6 +645,22 @@ development_status:
   # P1 test gap closure (from epic-7-final-traceability-2026-04-30.md)
   7-36-p1-test-gaps-sync-propagation-private-room-exclusion: done
   epic-7-retrospective: pending  # SEC Gate 2 done; retro blocked until 7-17 (CSRF HIGH) is done
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Epic 8: Project Is Published as a Public Open-Source Repository on GitHub
+  # ─────────────────────────────────────────────────────────────────────────
+  epic-8: in-progress
+  8-1-commit-history-rewrite-co-authored-by-trailer-entfernen: ready-for-dev
+  8-2-readme-bmad-claude-attribution-development-methodology: ready-for-dev
+  8-3-contributing-md-bmad-workflow-und-conventions: ready-for-dev
+  8-4-security-md-vulnerability-disclosure-policy: ready-for-dev
+  8-5-secret-scan-gate-gitleaks-history-ci-integration: ready-for-dev
+  8-6-ci-migration-gitlab-ci-github-actions: ready-for-dev
+  8-7-github-issue-pr-templates-github-infrastructure: ready-for-dev
+  8-8-repo-metadaten-license-check-topics-description-badges: ready-for-dev
+  8-9-release-readiness-gate-full-stack-test-epic-weiter-security-review: ready-for-dev
+  8-10a-pre-release-bugfixes-invite-notification-profile-provisioning: ready-for-dev
+  8-11-service-startup-resilience-dind-free-integration-test: done
 # story 6-11 done (pipeline: ATDD+Dev+CodeReview CLEAN — Godog E2E admin lifecycle/role/archive, compliance officer auth): 2026-05-02
 # story 6-10 done (pipeline: ATDD+Dev+CodeReview+Kassandra HIGH-1-fixed (CWE-209 ResponseErrorHandlerFunc) — GET/PATCH /admin/config + GET /admin/metrics + AES-256-GCM oidc_client_secret): 2026-05-02
 # story 6-9 done (pipeline: ATDD+Dev+CodeReview+Kassandra HIGH-1 (archive race window) as follow-up 6-9b — archive/unarchive endpoints, Horde GenServer guard): 2026-05-02

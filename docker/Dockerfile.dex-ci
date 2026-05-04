@@ -1,0 +1,6 @@
+FROM dexidp/dex:v2.45.1
+
+# Bake the dev Dex config into the image so it can run as a GitLab CI service:
+# sidecar without requiring a volume mount.
+# Same config that docker-compose mounts via dev/dex/config.yaml.
+COPY dev/dex/config.yaml /etc/dex/config.yaml
