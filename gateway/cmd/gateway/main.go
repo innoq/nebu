@@ -351,7 +351,18 @@ func main() {
 	mux.Handle("POST /admin/config/role-mapping", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(roleMappingHandler.UpdateHandler)))))
 
 	// Story 7.11: Compliance Access Requests page (four-eyes approval UI).
-	complianceHandler := admin.NewComplianceHandler(tmplHandler)
+	// Story 9.5: wire real compliance DB so approve/reject persist via PostgreSQL.
+	adminComplianceDB, adminComplianceDBErr := sql.Open("pgx", cfg.DBURL)
+	if adminComplianceDBErr != nil {
+		slog.Error("failed to open DB for admin compliance handler", "err", adminComplianceDBErr)
+		os.Exit(1)
+	}
+	defer adminComplianceDB.Close()
+	complianceSvc := &admin.DBComplianceApprovalClient{
+		DB:         adminComplianceDB,
+		CoreClient: coreClient.CoreServiceClient(),
+	}
+	complianceHandler := admin.NewComplianceHandler(tmplHandler, complianceSvc)
 	mux.Handle("GET /admin/compliance", csrf(sessionGuard(http.HandlerFunc(complianceHandler.ListHandler))))
 	mux.Handle("POST /admin/compliance/{id}/approve", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(complianceHandler.ApproveHandler)))))
 	mux.Handle("POST /admin/compliance/{id}/reject", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(complianceHandler.RejectHandler)))))
