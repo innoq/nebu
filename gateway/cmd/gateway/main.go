@@ -878,11 +878,11 @@ func main() {
 
 	postgresAccountDataDB := db.NewPostgresAccountDataDB(bootstrapDB)
 	syncHandler := matrix.NewGetSyncHandler(matrix.GetSyncConfig{
-		CoreClient:          coreClient,
-		ServerName:          serverName,
-		Buffer:              msgBuf,
-		DB:                  bootstrapDB,           // for rooms.invite pending invitation queries
-		AccountDataDB:       postgresAccountDataDB, // Story 7-24 AC4: per-room account_data in sync
+		CoreClient:    coreClient,
+		ServerName:    serverName,
+		Buffer:        msgBuf,
+		DB:            bootstrapDB,                              // for rooms.invite pending invitation queries
+		AccountDataDB: postgresAccountDataDB, // Story 7-24 AC4: per-room account_data in sync
 		GlobalAccountDataDB: postgresAccountDataDB, // Story 9-24: top-level global account_data in sync
 	})
 	mux.Handle("GET /_matrix/client/v3/sync",
