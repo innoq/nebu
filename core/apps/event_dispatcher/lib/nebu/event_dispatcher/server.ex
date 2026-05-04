@@ -63,6 +63,12 @@ defmodule Nebu.EventDispatcher.Server do
     Application.get_env(:event_dispatcher, :session_supervisor_module, Nebu.Session.SessionSupervisor)
   end
 
+  # ─── Configurable AdminDB module for testability ─────────────────────────────
+  # Override via Application.put_env(:event_dispatcher, :admin_db_module, FakeAdminDB) in tests.
+  defp admin_db_module do
+    Application.get_env(:event_dispatcher, :admin_db_module, Nebu.Admin.DB)
+  end
+
   def send_event(request, _stream) do
     room_id = request.room_id
     sender_id = request.sender_id
@@ -763,8 +769,33 @@ defmodule Nebu.EventDispatcher.Server do
     %Core.GetPendingEventsResponse{}
   end
 
+  # ─── GetMetrics — Real implementation (Story 9.1, Task 8) ───────────────────
+  #
+  # Replaces the empty stub with real counts from ETS and Horde.
+  #   - active_sessions: counted from Nebu.Session.EtsStore.list_user_ids/0
+  #     (already used in invalidate_all_admin_sessions/2).
+  #   - room_count: counted from Horde.Registry.select/2
+  #     (already used in subscribe_to_all_rooms/0).
+  #   - msg_per_sec: kept at 0.0 for MVP (rolling window not yet implemented).
+
   def get_metrics(_request, _stream) do
-    %Core.GetMetricsResponse{}
+    active_sessions = Nebu.Session.EtsStore.list_user_ids() |> length()
+
+    room_count =
+      try do
+        Horde.Registry.select(Nebu.Room.Registry, [{{:"$1", :"$2", :"$3"}, [], [:"$1"]}])
+        |> length()
+      rescue
+        _ -> 0
+      catch
+        _, _ -> 0
+      end
+
+    %Core.GetMetricsResponse{
+      active_sessions: active_sessions,
+      room_count: room_count,
+      msg_per_sec: 0.0
+    }
   end
 
   # ─── AC #2: EventBus server-streaming handler ───────────────────────────────
@@ -1601,10 +1632,44 @@ defmodule Nebu.EventDispatcher.Server do
   #   Best-effort: starts the Room GenServer so it is immediately available for messages.
   #   Returns ok=true even if start_room fails (DB is authoritative; Gateway returns 200).
 
+  # ─── Story 9.1 AC:4 — ArchiveRoom with atomic SELECT FOR UPDATE ─────────────
+  #
+  # IMPORTANT CONTRACT CHANGE (Story 9.1):
+  # Pre-9.1: Go Gateway set rooms.status='archived' in DB, then called this RPC
+  #          which only terminated the GenServer.
+  # Post-9.1: Core now owns the DB write atomically (SELECT FOR UPDATE) before
+  #           terminating the GenServer. The Gateway call sequence must adapt in
+  #           Story 9.2 — the Gateway should no longer update DB before calling
+  #           this RPC; Core is now the authoritative writer for archive operations.
+  #
+  # The admin_db_module().archive_room_atomic/1 call performs:
+  #   1. BEGIN TRANSACTION
+  #   2. SELECT status FROM rooms WHERE room_id = ? FOR UPDATE
+  #   3. UPDATE rooms SET status = 'archived' WHERE room_id = ?
+  #   4. COMMIT
+  # Then the GenServer is terminated (best-effort).
+
   def archive_room(%Core.ArchiveRoomRequest{} = req, _stream) do
     room_id = req.room_id
 
-    # Terminate the running GenServer (best-effort — idempotent if not running).
+    # Step 1: Atomically update rooms.status='archived' in DB (SELECT FOR UPDATE).
+    # This replaces the old pre-9.1 contract where the Go Gateway did the DB write.
+    case admin_db_module().archive_room_atomic(room_id) do
+      :ok ->
+        :ok
+
+      {:error, :not_found} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "room not found: #{room_id}"
+
+      {:error, reason} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.internal(),
+          message: "archive_room DB update failed: #{inspect(reason)}"
+    end
+
+    # Step 2: Terminate the running GenServer (best-effort — idempotent if not running).
     # Room.Server.child_spec uses :transient restart, so Horde will NOT restart it
     # after a terminate_child call. DB status is the authoritative archived flag.
     case Nebu.Room.RoomSupervisor.lookup_room(room_id) do
@@ -1615,8 +1680,7 @@ defmodule Nebu.EventDispatcher.Server do
 
           {:error, reason} ->
             # Race: process likely crashed between lookup and terminate. The DB
-            # is already archived, so the Gateway returns 200 — but log so this
-            # isn't silently swallowed.
+            # is already archived, so this is a soft failure — log and continue.
             Logger.warning("ArchiveRoom: terminate_child failed (likely already stopped) — #{inspect(reason)}",
               room_id: room_id
             )
@@ -1648,6 +1712,354 @@ defmodule Nebu.EventDispatcher.Server do
 
     %Core.UnarchiveRoomResponse{ok: true}
   end
+
+  # ─── Story 9.1: Admin gRPC RPCs — User + Room Management ─────────────────────
+
+  # ─── ListAdminUsers ──────────────────────────────────────────────────────────
+  #
+  # Returns paginated users from PostgreSQL for the Admin UI.
+  # Email masking: returns "u***@domain" pattern (first char + *** + @domain).
+  # PII: display_name_encrypted (Tier 1) is decrypted here via admin_db_module.
+  # Email (Tier 2) is returned masked — never in plaintext.
+  # Security: admin RPCs verified via RequireRole middleware in Go Gateway (HTTP layer).
+
+  def list_admin_users(%Core.ListAdminUsersRequest{} = req, _stream) do
+    limit = if req.limit > 0, do: min(req.limit, 100), else: 20
+    cursor = req.cursor || ""
+    search = req.search || ""
+
+    {users, next_cursor} = admin_db_module().list_users(limit, cursor, search)
+
+    proto_users =
+      Enum.map(users, fn user ->
+        %Core.AdminUserProto{
+          user_id: user.user_id,
+          display_name: decrypt_display_name(user),
+          email_masked: mask_email(user),
+          is_active: user.is_active,
+          system_role: user.system_role || "user",
+          created_at: user.created_at || 0
+        }
+      end)
+
+    %Core.ListAdminUsersResponse{
+      users: proto_users,
+      total: length(proto_users),
+      next_cursor: next_cursor
+    }
+  end
+
+  # ─── GetAdminUser ────────────────────────────────────────────────────────────
+
+  def get_admin_user(%Core.GetAdminUserRequest{} = req, _stream) do
+    case admin_db_module().get_user(req.user_id) do
+      {:ok, user} ->
+        %Core.GetAdminUserResponse{
+          user: %Core.AdminUserProto{
+            user_id: user.user_id,
+            display_name: decrypt_display_name(user),
+            email_masked: mask_email(user),
+            is_active: user.is_active,
+            system_role: user.system_role || "user",
+            created_at: user.created_at || 0
+          }
+        }
+
+      {:error, :not_found} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "user not found: #{req.user_id}"
+
+      {:error, reason} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.internal(),
+          message: "get_admin_user failed: #{inspect(reason)}"
+    end
+  end
+
+  # ─── DeactivateUser ──────────────────────────────────────────────────────────
+  #
+  # Sets is_active=false in DB, then calls destroy_session/1 AFTER the DB commit.
+  # Security invariant: DB update must complete before session invalidation.
+
+  def deactivate_user(%Core.DeactivateUserRequest{} = req, _stream) do
+    user_id = req.user_id
+
+    case admin_db_module().set_is_active(user_id, false) do
+      :ok ->
+        # Session invalidation happens AFTER DB commit (sequencing invariant).
+        case session_supervisor_module().destroy_session(user_id) do
+          :ok ->
+            :ok
+
+          {:error, reason} ->
+            Logger.warning("DeactivateUser: destroy_session failed for #{user_id}: #{inspect(reason)}")
+        end
+
+        %Core.DeactivateUserResponse{ok: true}
+
+      {:error, :not_found} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "user not found: #{user_id}"
+
+      {:error, reason} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.internal(),
+          message: "deactivate_user DB update failed: #{inspect(reason)}"
+    end
+  end
+
+  # ─── ReactivateUser ──────────────────────────────────────────────────────────
+  #
+  # Sets is_active=true in DB. Does NOT call destroy_session (reactivation must
+  # not invalidate existing sessions).
+
+  def reactivate_user(%Core.ReactivateUserRequest{} = req, _stream) do
+    user_id = req.user_id
+
+    case admin_db_module().set_is_active(user_id, true) do
+      :ok ->
+        %Core.ReactivateUserResponse{ok: true}
+
+      {:error, :not_found} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "user not found: #{user_id}"
+
+      {:error, reason} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.internal(),
+          message: "reactivate_user DB update failed: #{inspect(reason)}"
+    end
+  end
+
+  # ─── UpdateUserRole ──────────────────────────────────────────────────────────
+  #
+  # Updates users.system_role directly (NOT role_overrides — those are Gateway-side
+  # overrides with TTL cache). Valid values: "user", "instance_admin", "compliance_officer".
+
+  @valid_roles ~w(user instance_admin compliance_officer)
+
+  def update_user_role(%Core.UpdateUserRoleRequest{} = req, _stream) do
+    user_id = req.user_id
+    role = req.role
+
+    unless role in @valid_roles do
+      raise GRPC.RPCError,
+        status: GRPC.Status.invalid_argument(),
+        message: "invalid role '#{role}'; must be one of: #{Enum.join(@valid_roles, ", ")}"
+    end
+
+    case admin_db_module().set_system_role(user_id, role) do
+      :ok ->
+        %Core.UpdateUserRoleResponse{ok: true}
+
+      {:error, :not_found} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "user not found: #{user_id}"
+
+      {:error, reason} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.internal(),
+          message: "update_user_role DB update failed: #{inspect(reason)}"
+    end
+  end
+
+  # ─── ListAdminRooms ──────────────────────────────────────────────────────────
+
+  def list_admin_rooms(%Core.ListAdminRoomsRequest{} = req, _stream) do
+    limit = if req.limit > 0, do: min(req.limit, 100), else: 20
+    cursor = req.cursor || ""
+    status_filter = req.status_filter || ""
+    search = req.search || ""
+
+    {rooms, next_cursor} = admin_db_module().list_rooms(limit, cursor, status_filter, search)
+
+    proto_rooms =
+      Enum.map(rooms, fn room ->
+        %Core.AdminRoomProto{
+          room_id: room.room_id,
+          name: room.name || "",
+          status: room.status || "active",
+          member_count: room.member_count || 0,
+          created_at: room.created_at || 0
+        }
+      end)
+
+    %Core.ListAdminRoomsResponse{
+      rooms: proto_rooms,
+      total: length(proto_rooms),
+      next_cursor: next_cursor
+    }
+  end
+
+  # ─── GetAdminRoom ────────────────────────────────────────────────────────────
+
+  def get_admin_room(%Core.GetAdminRoomRequest{} = req, _stream) do
+    case admin_db_module().get_room(req.room_id) do
+      {:ok, room} ->
+        %Core.GetAdminRoomResponse{
+          room: %Core.AdminRoomDetailProto{
+            room_id: room.room_id,
+            name: room.name || "",
+            status: room.status || "active",
+            member_count: room.member_count || 0,
+            max_members: room.max_members || 0,
+            visibility: room.visibility || "private",
+            created_at: room.created_at || 0
+          }
+        }
+
+      {:error, :not_found} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "room not found: #{req.room_id}"
+
+      {:error, reason} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.internal(),
+          message: "get_admin_room failed: #{inspect(reason)}"
+    end
+  end
+
+  # ─── GetServerConfig ─────────────────────────────────────────────────────────
+  #
+  # Security invariant: oidc_client_secret MUST NOT be returned in the response.
+  # It is AES-256-GCM encrypted in the DB and only the Go Gateway has the key.
+  # The admin_db_module().get_server_config/0 already filters it out at DB level.
+
+  def get_server_config(%Core.GetServerConfigRequest{} = _req, _stream) do
+    case admin_db_module().get_server_config() do
+      {:ok, config} ->
+        %Core.GetServerConfigResponse{
+          config: %Core.ServerConfigProto{
+            instance_name: Map.get(config, "instance_name", ""),
+            oidc_issuer: Map.get(config, "oidc_issuer", ""),
+            oidc_client_id: Map.get(config, "oidc_client_id", ""),
+            room_default_max_members: parse_int_config(config, "room_default_max_members"),
+            room_default_visibility: Map.get(config, "room_default_visibility", ""),
+            audit_log_retention_days: parse_int_config(config, "audit_log_retention_days")
+          }
+        }
+
+      {:error, reason} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.internal(),
+          message: "get_server_config failed: #{inspect(reason)}"
+    end
+  end
+
+  # ─── UpdateServerConfig ──────────────────────────────────────────────────────
+  #
+  # Upserts server_config table rows for provided fields.
+  # Empty string / zero fields are not updated (callers omit fields they don't change).
+  # NOTE: The Gateway calls CoreClient.InvalidateAllAdminSessions after OIDC config changes
+  # (Story 6.10) — Core only persists the data here.
+
+  def update_server_config(%Core.UpdateServerConfigRequest{} = req, _stream) do
+    changes =
+      []
+      |> maybe_add_change("instance_name", req.instance_name)
+      |> maybe_add_change("oidc_issuer", req.oidc_issuer)
+      |> maybe_add_change("oidc_client_id", req.oidc_client_id)
+      |> maybe_add_int_change("room_default_max_members", req.room_default_max_members)
+      |> maybe_add_change("room_default_visibility", req.room_default_visibility)
+      |> maybe_add_int_change("audit_log_retention_days", req.audit_log_retention_days)
+
+    if changes == [] do
+      %Core.UpdateServerConfigResponse{ok: true}
+    else
+      case admin_db_module().upsert_server_config(Map.new(changes)) do
+        :ok ->
+          %Core.UpdateServerConfigResponse{ok: true}
+
+        {:error, reason} ->
+          raise GRPC.RPCError,
+            status: GRPC.Status.internal(),
+            message: "update_server_config failed: #{inspect(reason)}"
+      end
+    end
+  end
+
+  # ─── Private helpers for admin handlers ──────────────────────────────────────
+
+  # Decrypts display_name from the user map returned by admin_db_module.
+  #
+  # Two supported layouts:
+  #   - Test fakes (FakeAdminDB): return %{display_name: "Alice"} (already plaintext).
+  #   - Real DB (Nebu.Admin.DB): returns %{display_name_encrypted: <<...>>,
+  #     display_name_nonce: <<...>>}; decrypted via Nebu.Signature.decrypt_operational_pii/3.
+  #
+  # Falls back to empty string on decryption failure or missing data.
+  defp decrypt_display_name(%{display_name: dn}) when is_binary(dn) do
+    dn
+  end
+
+  defp decrypt_display_name(%{display_name_encrypted: enc, display_name_nonce: nonce})
+       when is_binary(enc) and is_binary(nonce) do
+    server_key = Application.get_env(:signature, :pii_encryption_key)
+
+    case Nebu.Signature.decrypt_operational_pii(enc, nonce, server_key) do
+      {:ok, plaintext} -> plaintext
+      {:error, _} -> ""
+    end
+  end
+
+  defp decrypt_display_name(_), do: ""
+
+  # Masks email to "u***@domain" format.
+  #
+  # Two supported layouts:
+  #   - Test fakes (FakeAdminDB): return %{email_masked: "a***@example.com"} (pre-masked).
+  #   - Real DB (Nebu.Admin.DB): returns %{email_encrypted: <<...>>, email_nonce: <<...>>,
+  #     email_ephemeral_pub: <<...>>}; decrypted via Nebu.Signature.decrypt_sensitive_pii/4.
+  #
+  # Email masking pattern: first char of local part + "***" + "@" + domain.
+  defp mask_email(%{email_masked: masked}) when is_binary(masked) and byte_size(masked) > 0 do
+    masked
+  end
+
+  defp mask_email(%{email_encrypted: enc, email_nonce: nonce, email_ephemeral_pub: ephemeral_pub})
+       when is_binary(enc) and is_binary(nonce) and is_binary(ephemeral_pub) do
+    {_pub, priv} = :persistent_term.get(:nebu_encryption_key, {nil, nil})
+
+    case Nebu.Signature.decrypt_sensitive_pii(enc, ephemeral_pub, nonce, priv) do
+      {:ok, email} -> do_mask_email(email)
+      {:error, _} -> "***@unknown"
+    end
+  end
+
+  defp mask_email(_), do: "***@unknown"
+
+  defp do_mask_email(email) do
+    case String.split(email, "@", parts: 2) do
+      [local, domain] when byte_size(local) > 0 ->
+        first = String.first(local)
+        "#{first}***@#{domain}"
+
+      _ ->
+        "***@unknown"
+    end
+  end
+
+  defp parse_int_config(config, key) do
+    case Map.get(config, key) do
+      nil -> 0
+      val when is_integer(val) -> val
+      val when is_binary(val) -> String.to_integer(val)
+      _ -> 0
+    end
+  end
+
+  defp maybe_add_change(acc, _key, ""), do: acc
+  defp maybe_add_change(acc, key, value) when is_binary(value), do: [{key, value} | acc]
+  defp maybe_add_change(acc, _key, _), do: acc
+
+  defp maybe_add_int_change(acc, _key, 0), do: acc
+  defp maybe_add_int_change(acc, key, value) when is_integer(value) and value > 0, do: [{key, value} | acc]
+  defp maybe_add_int_change(acc, _key, _), do: acc
 
   # ─── Private helpers ──────────────────────────────────────────────────────────
 

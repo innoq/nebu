@@ -139,6 +139,35 @@ func (m *mockCoreClient) InvalidateAllAdminSessions(_ context.Context, _ *pb.Inv
 	panic("unexpected call: InvalidateAllAdminSessions")
 }
 
+// Story 9.1: Admin gRPC RPC stubs
+func (m *mockCoreClient) ListAdminUsers(_ context.Context, _ *pb.ListAdminUsersRequest, _ ...grpc.CallOption) (*pb.ListAdminUsersResponse, error) {
+	panic("unexpected call: ListAdminUsers")
+}
+func (m *mockCoreClient) GetAdminUser(_ context.Context, _ *pb.GetAdminUserRequest, _ ...grpc.CallOption) (*pb.GetAdminUserResponse, error) {
+	panic("unexpected call: GetAdminUser")
+}
+func (m *mockCoreClient) DeactivateUser(_ context.Context, _ *pb.DeactivateUserRequest, _ ...grpc.CallOption) (*pb.DeactivateUserResponse, error) {
+	panic("unexpected call: DeactivateUser")
+}
+func (m *mockCoreClient) ReactivateUser(_ context.Context, _ *pb.ReactivateUserRequest, _ ...grpc.CallOption) (*pb.ReactivateUserResponse, error) {
+	panic("unexpected call: ReactivateUser")
+}
+func (m *mockCoreClient) UpdateUserRole(_ context.Context, _ *pb.UpdateUserRoleRequest, _ ...grpc.CallOption) (*pb.UpdateUserRoleResponse, error) {
+	panic("unexpected call: UpdateUserRole")
+}
+func (m *mockCoreClient) ListAdminRooms(_ context.Context, _ *pb.ListAdminRoomsRequest, _ ...grpc.CallOption) (*pb.ListAdminRoomsResponse, error) {
+	panic("unexpected call: ListAdminRooms")
+}
+func (m *mockCoreClient) GetAdminRoom(_ context.Context, _ *pb.GetAdminRoomRequest, _ ...grpc.CallOption) (*pb.GetAdminRoomResponse, error) {
+	panic("unexpected call: GetAdminRoom")
+}
+func (m *mockCoreClient) GetServerConfig(_ context.Context, _ *pb.GetServerConfigRequest, _ ...grpc.CallOption) (*pb.GetServerConfigResponse, error) {
+	panic("unexpected call: GetServerConfig")
+}
+func (m *mockCoreClient) UpdateServerConfig(_ context.Context, _ *pb.UpdateServerConfigRequest, _ ...grpc.CallOption) (*pb.UpdateServerConfigResponse, error) {
+	panic("unexpected call: UpdateServerConfig")
+}
+
 // ─── AC11 Test 5: LogEvent_Success ───────────────────────────────────────────
 //
 // Given: Mock CoreServiceClient.WriteAuditLog returns {Ok: true}, nil

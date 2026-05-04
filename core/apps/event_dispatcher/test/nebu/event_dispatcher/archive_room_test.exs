@@ -164,6 +164,33 @@ defmodule Nebu.EventDispatcher.ArchiveRoomTest do
     def get_room_name(_room_id), do: {:error, :not_found}
   end
 
+  # ─── FakeAdminDB ─────────────────────────────────────────────────────────────
+  #
+  # Story 9.1 (AC:4): archive_room/2 now calls admin_db_module().archive_room_atomic/1
+  # for the atomic SELECT FOR UPDATE DB write. This fake satisfies that contract
+  # without requiring a real Ecto.Repo.
+  # All other callbacks are no-op stubs (archive_room_test only tests archive/unarchive).
+
+  defmodule FakeAdminDB do
+    @moduledoc "Minimal Nebu.Admin.DB fake for archive_room_test."
+
+    def list_users(_limit, _cursor, _search), do: {[], ""}
+    def get_user(_user_id), do: {:error, :not_found}
+    def set_is_active(_user_id, _is_active), do: :ok
+    def set_system_role(_user_id, _role), do: :ok
+    def list_rooms(_limit, _cursor, _status_filter, _search), do: {[], ""}
+    def get_room(_room_id), do: {:error, :not_found}
+
+    def archive_room_atomic(_room_id) do
+      # Always returns :ok for the archive_room_test context.
+      # The test only cares that GenServer is terminated; DB write is a no-op here.
+      :ok
+    end
+
+    def get_server_config, do: {:ok, %{}}
+    def upsert_server_config(_changes), do: :ok
+  end
+
   # ─── Setup / Teardown ────────────────────────────────────────────────────────
 
   setup do
@@ -174,6 +201,8 @@ defmodule Nebu.EventDispatcher.ArchiveRoomTest do
     :ets.new(:archive_room_test_db, [:named_table, :public, :set])
 
     Application.put_env(:room_manager, :db_module, FakeDB)
+    # Story 9.1: archive_room/2 now calls admin_db_module().archive_room_atomic/1.
+    Application.put_env(:event_dispatcher, :admin_db_module, FakeAdminDB)
 
     case :pg.start_link() do
       {:ok, _pid} -> :ok
@@ -186,6 +215,7 @@ defmodule Nebu.EventDispatcher.ArchiveRoomTest do
 
     on_exit(fn ->
       Application.delete_env(:room_manager, :db_module)
+      Application.delete_env(:event_dispatcher, :admin_db_module)
 
       if :ets.info(:archive_room_test_db) != :undefined do
         :ets.delete(:archive_room_test_db)
