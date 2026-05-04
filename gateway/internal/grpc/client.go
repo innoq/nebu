@@ -264,6 +264,59 @@ func (c *Client) GetEventContext(ctx context.Context, req *pb.GetEventContextReq
 	return c.core.GetEventContext(ctx, req)
 }
 
+// ListAdminUsers calls the Elixir core to list admin users with pagination.
+// Story 9.1: Admin gRPC RPCs — User + Room Management.
+func (c *Client) ListAdminUsers(ctx context.Context, req *pb.ListAdminUsersRequest) (*pb.ListAdminUsersResponse, error) {
+	return c.core.ListAdminUsers(ctx, req)
+}
+
+// GetAdminUser calls the Elixir core to fetch a single admin user by user_id.
+// Returns NOT_FOUND if the user does not exist.
+func (c *Client) GetAdminUser(ctx context.Context, req *pb.GetAdminUserRequest) (*pb.GetAdminUserResponse, error) {
+	return c.core.GetAdminUser(ctx, req)
+}
+
+// DeactivateUser calls the Elixir core to deactivate a user account.
+// Sets is_active=false and invalidates all active sessions.
+func (c *Client) DeactivateUser(ctx context.Context, req *pb.DeactivateUserRequest) (*pb.DeactivateUserResponse, error) {
+	return c.core.DeactivateUser(ctx, req)
+}
+
+// ReactivateUser calls the Elixir core to reactivate a previously deactivated user account.
+// Sets is_active=true.
+func (c *Client) ReactivateUser(ctx context.Context, req *pb.ReactivateUserRequest) (*pb.ReactivateUserResponse, error) {
+	return c.core.ReactivateUser(ctx, req)
+}
+
+// UpdateUserRole calls the Elixir core to update the system_role for a user.
+// Valid roles: "user", "instance_admin", "compliance_officer".
+func (c *Client) UpdateUserRole(ctx context.Context, req *pb.UpdateUserRoleRequest) (*pb.UpdateUserRoleResponse, error) {
+	return c.core.UpdateUserRole(ctx, req)
+}
+
+// ListAdminRooms calls the Elixir core to list admin rooms with pagination and optional status filter.
+func (c *Client) ListAdminRooms(ctx context.Context, req *pb.ListAdminRoomsRequest) (*pb.ListAdminRoomsResponse, error) {
+	return c.core.ListAdminRooms(ctx, req)
+}
+
+// GetAdminRoom calls the Elixir core to fetch detailed info for a single room.
+// Returns NOT_FOUND if the room does not exist.
+func (c *Client) GetAdminRoom(ctx context.Context, req *pb.GetAdminRoomRequest) (*pb.GetAdminRoomResponse, error) {
+	return c.core.GetAdminRoom(ctx, req)
+}
+
+// GetServerConfig calls the Elixir core to retrieve the current server configuration.
+// Note: oidc_client_secret is intentionally excluded from the response.
+func (c *Client) GetServerConfig(ctx context.Context, req *pb.GetServerConfigRequest) (*pb.GetServerConfigResponse, error) {
+	return c.core.GetServerConfig(ctx, req)
+}
+
+// UpdateServerConfig calls the Elixir core to upsert server configuration fields.
+// Empty string / zero value fields are not updated.
+func (c *Client) UpdateServerConfig(ctx context.Context, req *pb.UpdateServerConfigRequest) (*pb.UpdateServerConfigResponse, error) {
+	return c.core.UpdateServerConfig(ctx, req)
+}
+
 // CoreServiceClient returns the underlying generated gRPC client stub.
 // Used by EventBusStream (Story 4-16) which requires the raw pb.CoreServiceClient.
 func (c *Client) CoreServiceClient() pb.CoreServiceClient {

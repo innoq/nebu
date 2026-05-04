@@ -104,6 +104,34 @@ service CoreService {
   // Iterates EtsStore.list_user_ids/0 and calls SessionSupervisor.destroy_session/1 for each.
   // Returns ok=true always (best-effort — OIDC config is already updated in DB).
   rpc InvalidateAllAdminSessions(InvalidateAllAdminSessionsRequest) returns (InvalidateAllAdminSessionsResponse);
+
+  // Story 9.1: Admin gRPC RPCs — User + Room Management
+  // ListAdminUsers — paginated user listing for Admin UI.
+  rpc ListAdminUsers(ListAdminUsersRequest) returns (ListAdminUsersResponse);
+
+  // GetAdminUser — fetch a single user by user_id for Admin UI.
+  rpc GetAdminUser(GetAdminUserRequest) returns (GetAdminUserResponse);
+
+  // DeactivateUser — set is_active=false and invalidate all sessions.
+  rpc DeactivateUser(DeactivateUserRequest) returns (DeactivateUserResponse);
+
+  // ReactivateUser — set is_active=true.
+  rpc ReactivateUser(ReactivateUserRequest) returns (ReactivateUserResponse);
+
+  // UpdateUserRole — update system_role for a user.
+  rpc UpdateUserRole(UpdateUserRoleRequest) returns (UpdateUserRoleResponse);
+
+  // ListAdminRooms — paginated room listing for Admin UI.
+  rpc ListAdminRooms(ListAdminRoomsRequest) returns (ListAdminRoomsResponse);
+
+  // GetAdminRoom — fetch a single room by room_id for Admin UI.
+  rpc GetAdminRoom(GetAdminRoomRequest) returns (GetAdminRoomResponse);
+
+  // GetServerConfig — fetch current server configuration (oidc_client_secret is intentionally excluded).
+  rpc GetServerConfig(GetServerConfigRequest) returns (GetServerConfigResponse);
+
+  // UpdateServerConfig — upsert server configuration fields.
+  rpc UpdateServerConfig(UpdateServerConfigRequest) returns (UpdateServerConfigResponse);
 }
 
 // Shared event type used across multiple RPCs
@@ -482,3 +510,108 @@ message InvalidateAllAdminSessionsRequest {}
 message InvalidateAllAdminSessionsResponse {
   bool ok = 1;
 }
+
+// ── Story 9.1: Admin gRPC messages ──────────────────────────────────────────
+
+// AdminUserProto — user record for admin RPCs
+message AdminUserProto {
+  string user_id      = 1;
+  string display_name = 2;
+  string email_masked = 3;  // masked: u***@domain
+  bool   is_active    = 4;
+  string system_role  = 5;  // "user" | "instance_admin" | "compliance_officer"
+  int64  created_at   = 6;  // Unix milliseconds
+}
+
+// ListAdminUsers
+message ListAdminUsersRequest {
+  int32  limit  = 1;   // 1–100, default 20
+  string cursor = 2;   // opaque cursor (user_id); empty = first page
+  string search = 3;   // ILIKE substring match on display_name; empty = no filter
+}
+message ListAdminUsersResponse {
+  repeated AdminUserProto users       = 1;
+  int32                   total       = 2;
+  string                  next_cursor = 3;  // empty = no more pages
+}
+
+// GetAdminUser
+message GetAdminUserRequest  { string user_id = 1; }
+message GetAdminUserResponse { AdminUserProto user = 1; }
+
+// DeactivateUser
+message DeactivateUserRequest  { string user_id = 1; }
+message DeactivateUserResponse { bool ok = 1; }
+
+// ReactivateUser
+message ReactivateUserRequest  { string user_id = 1; }
+message ReactivateUserResponse { bool ok = 1; }
+
+// UpdateUserRole
+message UpdateUserRoleRequest  {
+  string user_id = 1;
+  string role    = 2;  // "user" | "instance_admin" | "compliance_officer"
+}
+message UpdateUserRoleResponse { bool ok = 1; }
+
+// AdminRoomProto — room summary for admin RPCs
+message AdminRoomProto {
+  string room_id      = 1;
+  string name         = 2;
+  string status       = 3;  // "active" | "archived"
+  int32  member_count = 4;
+  int64  created_at   = 5;  // Unix milliseconds
+}
+
+// AdminRoomDetailProto — full room detail
+message AdminRoomDetailProto {
+  string room_id      = 1;
+  string name         = 2;
+  string status       = 3;
+  int32  member_count = 4;
+  int32  max_members  = 5;  // 0 = no limit
+  string visibility   = 6;  // "public" | "private"
+  int64  created_at   = 7;
+}
+
+// ListAdminRooms
+message ListAdminRoomsRequest {
+  int32  limit         = 1;
+  string cursor        = 2;   // empty = first page
+  string status_filter = 3;   // "active" | "archived" | "" (all)
+  string search        = 4;
+}
+message ListAdminRoomsResponse {
+  repeated AdminRoomProto rooms       = 1;
+  int32                   total       = 2;
+  string                  next_cursor = 3;
+}
+
+// GetAdminRoom
+message GetAdminRoomRequest  { string room_id = 1; }
+message GetAdminRoomResponse { AdminRoomDetailProto room = 1; }
+
+// ServerConfigProto — server configuration (oidc_client_secret intentionally absent)
+message ServerConfigProto {
+  string instance_name            = 1;
+  string oidc_issuer              = 2;
+  string oidc_client_id           = 3;
+  int32  room_default_max_members = 4;
+  string room_default_visibility  = 5;
+  int32  audit_log_retention_days = 6;
+}
+
+// GetServerConfig
+message GetServerConfigRequest  {}
+message GetServerConfigResponse { ServerConfigProto config = 1; }
+
+// UpdateServerConfig — all fields optional (empty string / zero = do not update)
+message UpdateServerConfigRequest {
+  string instance_name            = 1;
+  string oidc_issuer              = 2;
+  string oidc_client_id           = 3;
+  int32  room_default_max_members = 4;
+  string room_default_visibility  = 5;
+  int32  audit_log_retention_days = 6;
+}
+message UpdateServerConfigResponse { bool ok = 1; }

@@ -815,3 +815,278 @@ defmodule Core.InvalidateAllAdminSessionsResponse do
 
   field :ok, 1, type: :bool
 end
+
+defmodule Core.AdminUserProto do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.AdminUserProto",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :user_id, 1, type: :string, json_name: "userId"
+  field :display_name, 2, type: :string, json_name: "displayName"
+  field :email_masked, 3, type: :string, json_name: "emailMasked"
+  field :is_active, 4, type: :bool, json_name: "isActive"
+  field :system_role, 5, type: :string, json_name: "systemRole"
+  field :created_at, 6, type: :int64, json_name: "createdAt"
+end
+
+defmodule Core.ListAdminUsersRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.ListAdminUsersRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :limit, 1, type: :int32
+  field :cursor, 2, type: :string
+  field :search, 3, type: :string
+end
+
+defmodule Core.ListAdminUsersResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.ListAdminUsersResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :users, 1, repeated: true, type: Core.AdminUserProto
+  field :total, 2, type: :int32
+  field :next_cursor, 3, type: :string, json_name: "nextCursor"
+end
+
+defmodule Core.GetAdminUserRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.GetAdminUserRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :user_id, 1, type: :string, json_name: "userId"
+end
+
+defmodule Core.GetAdminUserResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.GetAdminUserResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :user, 1, type: Core.AdminUserProto
+end
+
+defmodule Core.DeactivateUserRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.DeactivateUserRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :user_id, 1, type: :string, json_name: "userId"
+end
+
+defmodule Core.DeactivateUserResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.DeactivateUserResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :ok, 1, type: :bool
+end
+
+defmodule Core.ReactivateUserRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.ReactivateUserRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :user_id, 1, type: :string, json_name: "userId"
+end
+
+defmodule Core.ReactivateUserResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.ReactivateUserResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :ok, 1, type: :bool
+end
+
+defmodule Core.UpdateUserRoleRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.UpdateUserRoleRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :user_id, 1, type: :string, json_name: "userId"
+  field :role, 2, type: :string
+end
+
+defmodule Core.UpdateUserRoleResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.UpdateUserRoleResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :ok, 1, type: :bool
+end
+
+defmodule Core.AdminRoomProto do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.AdminRoomProto",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :room_id, 1, type: :string, json_name: "roomId"
+  field :name, 2, type: :string
+  field :status, 3, type: :string
+  field :member_count, 4, type: :int32, json_name: "memberCount"
+  field :created_at, 5, type: :int64, json_name: "createdAt"
+end
+
+defmodule Core.AdminRoomDetailProto do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.AdminRoomDetailProto",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :room_id, 1, type: :string, json_name: "roomId"
+  field :name, 2, type: :string
+  field :status, 3, type: :string
+  field :member_count, 4, type: :int32, json_name: "memberCount"
+  field :max_members, 5, type: :int32, json_name: "maxMembers"
+  field :visibility, 6, type: :string
+  field :created_at, 7, type: :int64, json_name: "createdAt"
+end
+
+defmodule Core.ListAdminRoomsRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.ListAdminRoomsRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :limit, 1, type: :int32
+  field :cursor, 2, type: :string
+  field :status_filter, 3, type: :string, json_name: "statusFilter"
+  field :search, 4, type: :string
+end
+
+defmodule Core.ListAdminRoomsResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.ListAdminRoomsResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :rooms, 1, repeated: true, type: Core.AdminRoomProto
+  field :total, 2, type: :int32
+  field :next_cursor, 3, type: :string, json_name: "nextCursor"
+end
+
+defmodule Core.GetAdminRoomRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.GetAdminRoomRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :room_id, 1, type: :string, json_name: "roomId"
+end
+
+defmodule Core.GetAdminRoomResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.GetAdminRoomResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :room, 1, type: Core.AdminRoomDetailProto
+end
+
+defmodule Core.ServerConfigProto do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.ServerConfigProto",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :instance_name, 1, type: :string, json_name: "instanceName"
+  field :oidc_issuer, 2, type: :string, json_name: "oidcIssuer"
+  field :oidc_client_id, 3, type: :string, json_name: "oidcClientId"
+  field :room_default_max_members, 4, type: :int32, json_name: "roomDefaultMaxMembers"
+  field :room_default_visibility, 5, type: :string, json_name: "roomDefaultVisibility"
+  field :audit_log_retention_days, 6, type: :int32, json_name: "auditLogRetentionDays"
+end
+
+defmodule Core.GetServerConfigRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.GetServerConfigRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+end
+
+defmodule Core.GetServerConfigResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.GetServerConfigResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :config, 1, type: Core.ServerConfigProto
+end
+
+defmodule Core.UpdateServerConfigRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.UpdateServerConfigRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :instance_name, 1, type: :string, json_name: "instanceName"
+  field :oidc_issuer, 2, type: :string, json_name: "oidcIssuer"
+  field :oidc_client_id, 3, type: :string, json_name: "oidcClientId"
+  field :room_default_max_members, 4, type: :int32, json_name: "roomDefaultMaxMembers"
+  field :room_default_visibility, 5, type: :string, json_name: "roomDefaultVisibility"
+  field :audit_log_retention_days, 6, type: :int32, json_name: "auditLogRetentionDays"
+end
+
+defmodule Core.UpdateServerConfigResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.UpdateServerConfigResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :ok, 1, type: :bool
+end
