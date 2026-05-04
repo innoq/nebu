@@ -114,6 +114,9 @@ defmodule Nebu.RoomTest do
     def fetch_events_since(_room_id, _last_event_id, _limit), do: {:error, :db_connection_lost}
     def get_event_timestamp(_event_id), do: {:error, :db_connection_lost}
     def get_room_name(_room_id), do: {:error, :db_connection_lost}
+    def get_room_creator(_room_id), do: {:error, :db_connection_lost}
+    # Story 9-7: returns empty list (no generic state events in unit tests).
+    def get_generic_state_events(_room_id), do: {:ok, []}
   end
 
   # ─── Setup ──────────────────────────────────────────────────────────────────
@@ -483,6 +486,177 @@ defmodule Nebu.RoomTest do
       # AC #3: no broadcast must have been delivered on DB failure
       refute_receive {:new_event, _}, 100
     end
+
+    # ─── Story 9-7: state_key propagation tests ────────────────────────────────
+    #
+    # These tests verify that state_key is correctly propagated through the
+    # send_event/6 call chain and stored in the persisted event map.
+
+    test "6-arg form: stored event contains state_key from argument" do
+      # AC: When send_event/6 is called with an explicit state_key (non-nil, even ""),
+      # the persisted event map must include "state_key" => <that value>.
+      # SEC Gate 1: the caller must have :change_state power (state_default=50)
+      # because an explicit state_key signals this is a state event.
+      room_id = unique_room_id("9-7-state-key-6arg")
+      {:ok, _pid} = start_and_track(room_id)
+
+      # Grant alice admin power (100 >= state_default 50) for the :change_state check.
+      admin_power_levels = Nebu.Room.PowerLevels.default_levels()
+        |> Map.put("users", %{"@alice:nebu.local" => 100})
+      :ok = Nebu.Room.Server.set_power_levels(room_id, "@alice:nebu.local", admin_power_levels)
+
+      {:ok, event_id} =
+        Nebu.Room.Server.send_event(
+          room_id,
+          "@alice:nebu.local",
+          "m.room.name",
+          %{"name" => "Test"},
+          "txn-state-key-1",
+          ""
+        )
+
+      [{_, stored_event}] = :ets.lookup(:fake_room_db, {:event, event_id})
+      assert stored_event["state_key"] == "",
+             "expected state_key to be \"\" in stored event, got: #{inspect(stored_event["state_key"])}"
+    end
+
+    test "5-arg backward-compat form: stored event contains state_key of empty string" do
+      # AC: When send_event/5 is called (no explicit state_key),
+      # the persisted event map must default to "state_key" => "".
+      # This verifies the 5-arg backward-compat clause in handle_call delegates correctly.
+      room_id = unique_room_id("9-7-state-key-5arg")
+      {:ok, _pid} = start_and_track(room_id)
+
+      {:ok, event_id} =
+        Nebu.Room.Server.send_event(
+          room_id,
+          "@alice:nebu.local",
+          "m.room.name",
+          %{"name" => "BackCompat"},
+          "txn-state-key-2"
+        )
+
+      [{_, stored_event}] = :ets.lookup(:fake_room_db, {:event, event_id})
+      assert stored_event["state_key"] == "",
+             "expected state_key to be \"\" (default from 5-arg form), got: #{inspect(stored_event["state_key"])}"
+    end
+
+    # ─── SEC Gate 1 fix: state events use :change_state power level check ─────
+    #
+    # CRITICAL security fix (Story 9-7 / SEC Gate 1):
+    # State events must require state_default (50) not events_default (0).
+    # Without this fix, any joined room member could change m.room.name,
+    # m.room.topic, m.room.join_rules, m.room.history_visibility, etc.
+
+    test "SEC-CRIT: non-admin user is forbidden from sending state events (state_key != nil)" do
+      # Arrange: room with power levels set — alice is a regular member (level 0),
+      # admin is level 100. state_default = 50.
+      room_id = unique_room_id("9-7-sec-state-forbidden")
+      {:ok, _pid} = start_and_track(room_id)
+
+      # Bootstrap power levels: alice has default (0), state_default = 50.
+      power_levels = Nebu.Room.PowerLevels.default_levels()
+        |> Map.put("users", %{"@admin:nebu.local" => 100})
+
+      :ok = Nebu.Room.Server.set_power_levels(room_id, "@admin:nebu.local", power_levels)
+
+      # Act: alice (level 0) attempts to send a state event (m.room.name).
+      # State events use state_key = "" (explicit empty string, not nil),
+      # which triggers the :change_state check (state_default = 50).
+      result =
+        Nebu.Room.Server.send_event(
+          room_id,
+          "@alice:nebu.local",
+          "m.room.name",
+          %{"name" => "Hijacked"},
+          "txn-sec-crit-1",
+          "" # explicit state_key — triggers :change_state check
+        )
+
+      # Assert: alice must be forbidden.
+      assert result == {:error, :forbidden},
+             "expected {:error, :forbidden} for non-admin state event, got: #{inspect(result)}"
+    end
+
+    test "SEC-CRIT: non-admin user can still send regular events (5-arg form, state_key nil)" do
+      # Regular events must NOT be affected by the :change_state fix.
+      # send_event/5 passes state_key=nil → :send_event check → events_default = 0.
+      room_id = unique_room_id("9-7-sec-regular-allowed")
+      {:ok, _pid} = start_and_track(room_id)
+
+      # Bootstrap power levels — alice stays at default (0).
+      power_levels = Nebu.Room.PowerLevels.default_levels()
+        |> Map.put("users", %{"@admin:nebu.local" => 100})
+
+      :ok = Nebu.Room.Server.set_power_levels(room_id, "@admin:nebu.local", power_levels)
+
+      # Act: alice sends a regular message event (5-arg, no explicit state_key).
+      result =
+        Nebu.Room.Server.send_event(
+          room_id,
+          "@alice:nebu.local",
+          "m.room.message",
+          %{"msgtype" => "m.text", "body" => "Hello"},
+          "txn-sec-regular-1"
+          # no state_key argument → nil → :send_event check → allowed at level 0
+        )
+
+      assert {:ok, _event_id} = result,
+             "expected {:ok, event_id} for regular event from non-admin, got: #{inspect(result)}"
+    end
+
+    test "SEC-CRIT: admin user (level >= state_default) CAN send state events" do
+      # Admin must still be able to change state events after the fix.
+      room_id = unique_room_id("9-7-sec-state-admin-allowed")
+      {:ok, _pid} = start_and_track(room_id)
+
+      # Bootstrap power levels — admin gets level 100.
+      power_levels = Nebu.Room.PowerLevels.default_levels()
+        |> Map.put("users", %{"@admin:nebu.local" => 100})
+
+      :ok = Nebu.Room.Server.set_power_levels(room_id, "@admin:nebu.local", power_levels)
+
+      # Act: admin sends a state event with explicit state_key = "".
+      result =
+        Nebu.Room.Server.send_event(
+          room_id,
+          "@admin:nebu.local",
+          "m.room.name",
+          %{"name" => "Legitimate Name Change"},
+          "txn-sec-admin-1",
+          "" # explicit state_key — triggers :change_state check
+        )
+
+      # Admin (level 100 >= state_default 50) must succeed.
+      assert {:ok, _event_id} = result,
+             "expected {:ok, event_id} for admin state event, got: #{inspect(result)}"
+    end
+
+    test "SEC-CRIT: moderator (level == state_default) CAN send state events" do
+      # Edge case: a user with exactly state_default level must be allowed.
+      room_id = unique_room_id("9-7-sec-state-moderator-allowed")
+      {:ok, _pid} = start_and_track(room_id)
+
+      # Bootstrap power levels — moderator gets exactly level 50 = state_default.
+      power_levels = Nebu.Room.PowerLevels.default_levels()
+        |> Map.put("users", %{"@admin:nebu.local" => 100, "@mod:nebu.local" => 50})
+
+      :ok = Nebu.Room.Server.set_power_levels(room_id, "@admin:nebu.local", power_levels)
+
+      result =
+        Nebu.Room.Server.send_event(
+          room_id,
+          "@mod:nebu.local",
+          "m.room.topic",
+          %{"topic" => "New Topic"},
+          "txn-sec-mod-1",
+          "" # state_key — triggers :change_state check
+        )
+
+      # Moderator (level 50 == state_default 50) must succeed.
+      assert {:ok, _event_id} = result,
+             "expected {:ok, event_id} for moderator state event, got: #{inspect(result)}"
+    end
   end
 
   # ─── Story 6-8: max_members Enforcement + update_settings ───────────────────
@@ -699,6 +873,9 @@ defmodule Nebu.RoomTest do
         def fetch_events_since(_room_id, _last_event_id, _limit), do: {:ok, []}
         def get_event_timestamp(_event_id), do: {:error, :not_found}
         def get_room_name(_room_id), do: {:error, :not_found}
+        def get_room_creator(_room_id), do: {:error, :not_found}
+        # Story 9-7: returns empty list (no generic state events in unit tests).
+        def get_generic_state_events(_room_id), do: {:ok, []}
       end
 
       Application.put_env(:room_manager, :db_module, FakeDBWithMaxMembers)

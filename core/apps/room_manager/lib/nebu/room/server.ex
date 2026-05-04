@@ -143,11 +143,17 @@ defmodule Nebu.Room.Server do
 
   Returns `{:ok, event_id}` on success or `{:error, reason}` on DB failure.
   On DB failure: ETS is NOT updated and NO broadcast is sent.
+
+  `state_key` is optional (default `nil`). For state events, pass the Matrix
+  state_key as a string (e.g. `""` for m.room.name, user_id for m.room.member).
+  A non-nil `state_key` (including `""`) signals that this is a state event and
+  triggers the `:change_state` power level check (state_default = 50) instead of
+  the `:send_event` check (events_default = 0). Story 9-7 / SEC Gate 1 fix.
   """
-  @spec send_event(String.t(), String.t(), String.t(), map(), String.t()) ::
+  @spec send_event(String.t(), String.t(), String.t(), map(), String.t(), String.t() | nil) ::
           {:ok, String.t()} | {:error, term()}
-  def send_event(room_id, user_id, event_type, content, txn_id) do
-    GenServer.call(via(room_id), {:send_event, user_id, event_type, content, txn_id})
+  def send_event(room_id, user_id, event_type, content, txn_id, state_key \\ nil) do
+    GenServer.call(via(room_id), {:send_event, user_id, event_type, content, txn_id, state_key})
   end
 
   # ─── Child Spec ────────────────────────────────────────────────────────────
@@ -335,13 +341,29 @@ defmodule Nebu.Room.Server do
     end
   end
 
+  # Backward-compat 5-arg clause: forwards to the 6-arg implementation with state_key=nil.
+  # nil signals a regular (non-state) event → `:send_event` power level check (events_default = 0).
+  # Kept so any internal callers that still use the 5-arg GenServer.call tuple continue to work.
   @impl GenServer
-  def handle_call({:send_event, user_id, event_type, content, txn_id}, _from, state) do
+  def handle_call({:send_event, user_id, event_type, content, txn_id}, from, state) do
+    handle_call({:send_event, user_id, event_type, content, txn_id, nil}, from, state)
+  end
+
+  @impl GenServer
+  def handle_call({:send_event, user_id, event_type, content, txn_id, state_key}, _from, state) do
     room_id = state.room_id
 
     # Step 0 — Power level check: reject before idempotency lookup.
     # An unauthorized user must not receive an event_id — not even a cached one.
-    unless Nebu.Room.PowerLevels.can?(state.power_levels, user_id, :send_event) do
+    #
+    # SEC Gate 1 fix (Story 9-7): state events (state_key != nil) must be gated through
+    # the `:change_state` power level (state_default = 50, Matrix spec default), NOT the
+    # `:send_event` check (events_default = 0). Without this distinction, any joined
+    # room member could change m.room.name, m.room.topic, m.room.join_rules, etc.
+    # Regular events (state_key == nil) continue to use the `:send_event` check.
+    power_level_action = if is_nil(state_key), do: :send_event, else: :change_state
+
+    unless Nebu.Room.PowerLevels.can?(state.power_levels, user_id, power_level_action) do
       {:reply, {:error, :forbidden}, state}
     else
 
@@ -352,11 +374,15 @@ defmodule Nebu.Room.Server do
 
       [] ->
         # Step 2 — Build event map with string keys only (architecture rule: no atom keys).
+        # Story 9-7: include state_key so state events are correctly persisted and
+        # returned by GET /rooms/{roomId}/state/{eventType}.
+        # state_key nil (regular events) is stored as "" per Matrix spec.
         event_map = %{
-          "room_id" => room_id,
-          "type" => event_type,
-          "sender" => user_id,
-          "content" => content,
+          "room_id"          => room_id,
+          "type"             => event_type,
+          "state_key"        => state_key || "",
+          "sender"           => user_id,
+          "content"          => content,
           "origin_server_ts" => Nebu.DB.Helpers.now_ms()
         }
 

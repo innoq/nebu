@@ -1322,6 +1322,13 @@ func (m *mockSetRoomStateCoreClient) SetPowerLevels(_ context.Context, req *pb.S
 	return m.resp, m.err
 }
 
+// SendEvent stub — required after Story 9-7 extended SetRoomStateCoreClient.
+// Existing SetRoomState tests only exercise the power_levels branch which calls
+// SetPowerLevels, so this stub is never invoked; it just satisfies the interface.
+func (m *mockSetRoomStateCoreClient) SendEvent(_ context.Context, _ *pb.SendEventRequest) (*pb.SendEventResponse, error) {
+	return nil, nil
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 // buildAuthedSetRoomStateHandler wraps SetRoomStateHandler.PutSetRoomState in JWTMiddleware

@@ -26,6 +26,8 @@ defmodule Core.SendEventRequest do
   field :txn_id, 4, type: :string, json_name: "txnId"
   field :content, 5, type: :bytes
   field :origin_ts, 6, type: :int64, json_name: "originTs"
+  field :state_key, 7, type: :string, json_name: "stateKey"
+  field :is_state_event, 8, type: :bool, json_name: "isStateEvent"
 end
 
 defmodule Core.SendEventResponse do

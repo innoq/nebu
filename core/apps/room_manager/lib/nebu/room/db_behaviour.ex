@@ -158,4 +158,27 @@ defmodule Nebu.Room.DBBehaviour do
   """
   @callback get_room_status(room_id :: String.t()) ::
               {:ok, String.t()} | {:error, :not_found | term()}
+
+  @doc """
+  Returns the user_id of the room creator from the most recent m.room.create event.
+
+  Returns `{:ok, String.t()}` on success.
+  Returns `{:error, :not_found}` if no m.room.create event exists.
+  Returns `{:error, reason}` on DB error.
+  """
+  @callback get_room_creator(room_id :: String.t()) ::
+              {:ok, String.t()} | {:error, :not_found | term()}
+
+  @doc """
+  Returns the most recent state event per (event_type, state_key) for `room_id`,
+  excluding types assembled from GenServer state (member, power_levels, create, name).
+
+  Story 9-7: used by build_state_events/2 in EventDispatcher.Server to include
+  state events set via PUT /rooms/{roomId}/state/{eventType}.
+
+  Returns `{:ok, [%{type, state_key, content_json, sender}]}` on success.
+  Returns `{:error, reason}` on DB error.
+  """
+  @callback get_generic_state_events(room_id :: String.t()) ::
+              {:ok, list(map())} | {:error, term()}
 end

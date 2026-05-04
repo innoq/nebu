@@ -2,7 +2,10 @@ package matrix
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -301,10 +304,12 @@ func (h *InviteUserHandler) PostInviteUser(w http.ResponseWriter, r *http.Reques
 
 // ─── SetRoomStateHandler ──────────────────────────────────────────────────────
 
-// SetRoomStateCoreClient is a consumer-defined interface for the SetPowerLevels gRPC call.
+// SetRoomStateCoreClient is a consumer-defined interface for state event gRPC calls.
 // Keep it minimal — only what this handler needs (Go interface convention, ADR-009).
+// Story 9-7: SendEvent added so all whitelisted state event types can delegate to Core.
 type SetRoomStateCoreClient interface {
 	SetPowerLevels(ctx context.Context, req *pb.SetPowerLevelsRequest) (*pb.SetPowerLevelsResponse, error)
+	SendEvent(ctx context.Context, req *pb.SendEventRequest) (*pb.SendEventResponse, error)
 }
 
 // setRoomStateResponse is the JSON response for a successful state event.
@@ -393,8 +398,60 @@ func (h *SetRoomStateHandler) PutSetRoomState(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// For other state event types, return 501 Not Implemented (MVP scope).
-	writeMatrixError(w, http.StatusNotImplemented, "M_UNRECOGNIZED", "Unsupported state event type")
+	// For all other whitelisted state event types: delegate to Core via SendEvent.
+	// State events follow the same persistence path as regular events — the Room
+	// GenServer signs, persists, and broadcasts them. The state_key identifies
+	// which "slot" the event occupies in the room state (e.g. "" for m.room.name,
+	// userId for m.room.member). Story 9-7: replaces the 501 fallback.
+	stateKey := r.PathValue("stateKey")
+
+	contentJSON, err := json.Marshal(body)
+	if err != nil {
+		writeMatrixError(w, http.StatusBadRequest, "M_BAD_JSON", "Cannot encode state event content")
+		return
+	}
+
+	// State events do not use client-supplied txn_ids — Matrix spec idempotency
+	// for state events is by (roomId, eventType, stateKey), not by txn_id.
+	// Generate a unique txn_id per request so the ETS dedup cache (keyed on
+	// {room_id, user_id, txn_id}) never silently drops a second state event
+	// from the same user in the same room. (MAJOR-1 fix, code review story 9-7)
+	//
+	// LOW fix (SEC Gate 1): append 8 crypto/rand bytes (hex-encoded) to eliminate
+	// the theoretical nanosecond-collision window across multiple gateway pods.
+	randBytes := make([]byte, 8)
+	rand.Read(randBytes) //nolint:errcheck // crypto/rand.Read never returns an error on supported platforms
+	stateTxnID := fmt.Sprintf("state-%d-%s-%s", time.Now().UnixNano(), eventType, hex.EncodeToString(randBytes))
+
+	resp, err := h.coreClient.SendEvent(grpcCtx, &pb.SendEventRequest{
+		RoomId:       roomID,
+		SenderId:     userID,
+		EventType:    eventType,
+		TxnId:        stateTxnID,
+		Content:      contentJSON,
+		OriginTs:     time.Now().UnixMilli(),
+		StateKey:     stateKey,
+		IsStateEvent: true, // SEC Gate 1: signals :change_state power check in Room.Server
+	})
+	if err != nil {
+		st, _ := status.FromError(err)
+		switch st.Code() {
+		case codes.PermissionDenied:
+			writeMatrixError(w, http.StatusForbidden, "M_FORBIDDEN", "You do not have permission to set this state event")
+		case codes.NotFound:
+			writeMatrixError(w, http.StatusNotFound, "M_NOT_FOUND", "Room not found")
+		default:
+			writeMatrixError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
+		}
+		return
+	}
+	if resp == nil {
+		writeMatrixError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(setRoomStateResponse{EventID: resp.EventId})
 }
 
 // ─── SendEventHandler ─────────────────────────────────────────────────────────

@@ -100,6 +100,9 @@ defmodule Nebu.EventDispatcher.AuditArchiveOpsTest do
     def fetch_events_since(_room_id, _last_event_id, _limit), do: {:ok, []}
     def get_event_timestamp(_event_id), do: {:error, :not_found}
     def get_room_name(_room_id), do: {:error, :not_found}
+    def get_room_creator(_room_id), do: {:error, :not_found}
+    # Story 9-7: returns empty list (no generic state events in unit tests).
+    def get_generic_state_events(_room_id), do: {:ok, []}
   end
 
   # ─── FakeAdminDB ─────────────────────────────────────────────────────────────

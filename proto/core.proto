@@ -147,12 +147,14 @@ message Event {
 
 // SendEvent
 message SendEventRequest {
-  string room_id    = 1;
-  string sender_id  = 2;
-  string event_type = 3;
-  string txn_id     = 4;  // idempotency key
-  bytes  content    = 5;
-  int64  origin_ts  = 6;  // Unix milliseconds
+  string room_id        = 1;
+  string sender_id      = 2;
+  string event_type     = 3;
+  string txn_id         = 4;  // idempotency key
+  bytes  content        = 5;
+  int64  origin_ts      = 6;  // Unix milliseconds
+  string state_key      = 7;  // Story 9-7: Matrix state_key (may be "" for types like m.room.name)
+  bool   is_state_event = 8;  // SEC Gate 1: true when this is a state event (even if state_key="")
 }
 message SendEventResponse {
   string event_id = 1;

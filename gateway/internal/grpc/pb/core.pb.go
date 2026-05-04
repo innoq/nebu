@@ -123,6 +123,8 @@ type SendEventRequest struct {
 	TxnId         string                 `protobuf:"bytes,4,opt,name=txn_id,json=txnId,proto3" json:"txn_id,omitempty"` // idempotency key
 	Content       []byte                 `protobuf:"bytes,5,opt,name=content,proto3" json:"content,omitempty"`
 	OriginTs      int64                  `protobuf:"varint,6,opt,name=origin_ts,json=originTs,proto3" json:"origin_ts,omitempty"` // Unix milliseconds
+	StateKey      string                 `protobuf:"bytes,7,opt,name=state_key,json=stateKey,proto3" json:"state_key,omitempty"`         // Story 9-7: Matrix state_key (may be "" for types like m.room.name)
+	IsStateEvent  bool                   `protobuf:"varint,8,opt,name=is_state_event,json=isStateEvent,proto3" json:"is_state_event,omitempty"` // SEC Gate 1: true when this is a state event (even if state_key="")
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -197,6 +199,20 @@ func (x *SendEventRequest) GetOriginTs() int64 {
 		return x.OriginTs
 	}
 	return 0
+}
+
+func (x *SendEventRequest) GetStateKey() string {
+	if x != nil {
+		return x.StateKey
+	}
+	return ""
+}
+
+func (x *SendEventRequest) GetIsStateEvent() bool {
+	if x != nil {
+		return x.IsStateEvent
+	}
+	return false
 }
 
 type SendEventResponse struct {
@@ -5035,7 +5051,7 @@ const file_core_proto_rawDesc = "" +
 	"event_type\x18\x04 \x01(\tR\teventType\x12\x18\n" +
 	"\acontent\x18\x05 \x01(\fR\acontent\x12\x1b\n" +
 	"\torigin_ts\x18\x06 \x01(\x03R\boriginTs\x12\x1b\n" +
-	"\tserver_ts\x18\a \x01(\x03R\bserverTs\"\xb5\x01\n" +
+	"\tserver_ts\x18\a \x01(\x03R\bserverTs\"\xd2\x01\n" +
 	"\x10SendEventRequest\x12\x17\n" +
 	"\aroom_id\x18\x01 \x01(\tR\x06roomId\x12\x1b\n" +
 	"\tsender_id\x18\x02 \x01(\tR\bsenderId\x12\x1d\n" +
@@ -5043,7 +5059,8 @@ const file_core_proto_rawDesc = "" +
 	"event_type\x18\x03 \x01(\tR\teventType\x12\x15\n" +
 	"\x06txn_id\x18\x04 \x01(\tR\x05txnId\x12\x18\n" +
 	"\acontent\x18\x05 \x01(\fR\acontent\x12\x1b\n" +
-	"\torigin_ts\x18\x06 \x01(\x03R\boriginTs\".\n" +
+	"\torigin_ts\x18\x06 \x01(\x03R\boriginTs\x12\x1b\n" +
+	"\tstate_key\x18\a \x01(\tR\bstateKey\".\n" +
 	"\x11SendEventResponse\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\"\x96\x01\n" +
 	"\x11CreateRoomRequest\x12\x1d\n" +

@@ -1,5 +1,7 @@
 # generated: 2026-03-20
-# last_updated: 2026-05-04
+# last_updated: 2026-05-05
+# story 9-7 done (pipeline: ATDD+Dev+Test-Review (3 MAJOR fixed: AC3 sync+AC5 GET/state+Elixir state_key test)+Code-Review (2 MAJOR fixed: txn_id dedup+state_key NULL)+Kassandra CRITICAL fixed (state events `:change_state` power level)): 2026-05-05
+# story 9-7 created: 9-7 → ready-for-dev: 2026-05-05 (Room State Event Types Full Implementation — replace 501 fallback with SendEvent gRPC, add state_key to proto, extend build_state_events)
 # story 9-6 done (pipeline: ATDD+Dev+Test-Review CLEAN+Code-Review (1 MINOR gofmt)+Kassandra CLEAN): 2026-05-04
 # story 9-6 created: 9-6 → ready-for-dev: 2026-05-04
 # story 9-5 done (pipeline: ATDD+Dev+Test-Review (0 MAJOR)+Code-Review (2 HIGH fixed: four-eyes self-approval + note length cap)+Kassandra CLEAN): 2026-05-04
@@ -155,7 +157,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-20
-last_updated: 2026-05-04
+last_updated: 2026-05-05
 # story 6-10 created: 6-10 → ready-for-dev: 2026-05-01 (Server Config API + Metrics API — GET/PATCH /admin/config, GET /admin/metrics, proto InvalidateAllAdminSessions, ServerConfigRepository, MetricsRepository, oidc_client_secret encryption, session invalidation on OIDC change)
 # story 6-1 created: epic-6 → in-progress, 6-1 → ready-for-dev: 2026-05-01
 # story 5-1 review: 2026-04-23 (audit-log schema + RLS + retention cleanup)
@@ -700,7 +702,7 @@ development_status:
   9-4-admin-ui-config-role-mapping-api-integration: done  # story 9-4 created: 9-4 → ready-for-dev: 2026-05-04
   9-5-admin-ui-compliance-api-integration: done
   9-6-state-event-type-whitelist-gateway-middleware: done
-  9-7-room-state-event-types-full-implementation: backlog
+  9-7-room-state-event-types-full-implementation: done
   9-8-room-version-upgrade-full-implementation: backlog
   9-9-archive-toctou-fix: backlog
   9-10a-matrix-event-correctness-spike-dm-loop-root-cause: backlog

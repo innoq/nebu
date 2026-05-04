@@ -177,15 +177,16 @@ defmodule Nebu.Room.DB do
   end
 
   @sql_insert_event """
-  INSERT INTO events (event_id, room_id, sender, event_type, content, origin_server_ts, signatures)
-  VALUES ($1, $2, $3, $4, $5, $6, $7)
+  INSERT INTO events (event_id, room_id, sender, event_type, content, origin_server_ts, signatures, state_key)
+  VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
   """
 
   @doc """
   Inserts a signed event into the `events` append-only table.
 
   Expects the event map to have string keys: `"event_id"`, `"room_id"`, `"sender"`,
-  `"type"`, `"content"`, `"origin_server_ts"`, and optionally `"signatures"`.
+  `"type"`, `"content"`, `"origin_server_ts"`, and optionally `"signatures"` and
+  `"state_key"` (Story 9-7: state events; nil/absent for regular events).
 
   JSONB columns (`content`, `signatures`) are JSON-encoded before passing to Postgrex.
 
@@ -193,6 +194,15 @@ defmodule Nebu.Room.DB do
   """
   @spec insert_event(map()) :: :ok | {:error, term()}
   def insert_event(event) do
+    # Story 9-7: state_key is nil for regular (non-state) events and is stored
+    # as NULL in the DB. State events always have a state_key — either "" (empty
+    # string, the default for m.room.name, m.room.topic, m.room.join_rules, etc.)
+    # or a user/server ID (e.g. for m.room.member). We pass the value through
+    # unchanged so that "" is stored as "" (NOT NULL), making it visible to the
+    # WHERE state_key IS NOT NULL query in get_generic_state_events/1.
+    # (MAJOR-2 fix, code review story 9-7 — removing the erroneous "" -> nil branch)
+    state_key = Map.get(event, "state_key")
+
     with {:ok, content_json} <- Jason.encode(event["content"]),
          {:ok, sigs_json} <- encode_nullable(event["signatures"]) do
       case Ecto.Adapters.SQL.query(
@@ -205,7 +215,8 @@ defmodule Nebu.Room.DB do
                event["type"],
                content_json,
                event["origin_server_ts"],
-               sigs_json
+               sigs_json,
+               state_key
              ]
            ) do
         {:ok, _} -> :ok
@@ -497,6 +508,53 @@ defmodule Nebu.Room.DB do
       {:ok, %{rows: [[name]]}} when not is_nil(name) -> {:ok, name}
       {:ok, _} -> {:error, :not_found}
       {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  Returns the most recent state event per (event_type, state_key) for `room_id`,
+  excluding event types handled separately (m.room.member, m.room.power_levels,
+  m.room.create, m.room.name — those have dedicated DB helpers or are assembled
+  from GenServer state).
+
+  Story 9-7: extends build_state_events in EventDispatcher.Server to include
+  state events set via PUT /rooms/{roomId}/state/{eventType}.
+
+  Returns `{:ok, [%{type, state_key, content_json, sender}]}` or `{:error, reason}`.
+  """
+  @spec get_generic_state_events(String.t()) ::
+          {:ok, list(map())} | {:error, term()}
+  def get_generic_state_events(room_id) do
+    sql = """
+    SELECT DISTINCT ON (event_type, state_key)
+      event_type, state_key, content::text, sender
+    FROM events
+    WHERE room_id = $1
+      AND state_key IS NOT NULL
+      AND event_type NOT IN (
+        'm.room.member',
+        'm.room.power_levels',
+        'm.room.create',
+        'm.room.name'
+      )
+    ORDER BY event_type, state_key, origin_server_ts DESC
+    """
+
+    case Ecto.Adapters.SQL.query(Nebu.Repo, sql, [room_id]) do
+      {:ok, %{rows: rows}} ->
+        events =
+          Enum.map(rows, fn [event_type, state_key, content_json, sender] ->
+            %{
+              type: event_type,
+              state_key: state_key || "",
+              content_json: content_json || "{}",
+              sender: sender || ""
+            }
+          end)
+        {:ok, events}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 end

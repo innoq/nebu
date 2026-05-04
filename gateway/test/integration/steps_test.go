@@ -111,4 +111,5 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	initializeNotificationsSteps(sc)     // notifications API step definitions (Story 7-29)
 	initializePushRulesSteps(sc)          // push rules + pushers API step definitions (Story 7-30)
 	initializeAdminAPISteps(sc)           // Admin API step definitions (Story 6-11)
+	initializeSetRoomStateFullSteps(sc)   // room state full implementation + whitelist steps (Story 9-7 / 9-6)
 }

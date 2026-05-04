@@ -74,6 +74,15 @@ defmodule Nebu.EventDispatcher.Server do
     sender_id = request.sender_id
     event_type = request.event_type
     txn_id = request.txn_id
+    # Story 9-7: extract state_key (field 7 in SendEventRequest).
+    # SEC Gate 1 fix: use is_state_event (field 8) to decide the power level check.
+    # When is_state_event=true, Room.Server uses :change_state (state_default=50).
+    # When is_state_event=false (default), Room.Server uses :send_event (events_default=0).
+    # state_key is passed as the Matrix state_key string (may be "" for m.room.name).
+    # Pass nil when NOT a state event so Room.Server applies the correct power check.
+    is_state_event = Map.get(request, :is_state_event, false)
+    raw_state_key = Map.get(request, :state_key, "")
+    state_key = if is_state_event, do: raw_state_key, else: nil
 
     # Decode content bytes from protobuf (bytes field → binary → decode to map).
     content =
@@ -100,7 +109,9 @@ defmodule Nebu.EventDispatcher.Server do
         end
 
         # Delegate to Room.Server — handles idempotency, signing, persistence, broadcast.
-        case Nebu.Room.Server.send_event(room_id, sender_id, event_type, content, txn_id) do
+        # Story 9-7: pass state_key so state events are persisted with their key.
+        # SEC Gate 1: state_key=nil triggers :send_event check; state_key=string triggers :change_state.
+        case Nebu.Room.Server.send_event(room_id, sender_id, event_type, content, txn_id, state_key) do
           {:ok, event_id} ->
             %Core.SendEventResponse{event_id: event_id}
 
@@ -1281,7 +1292,24 @@ defmodule Nebu.EventDispatcher.Server do
         _ -> []
       end
 
-    [create_event] ++ member_events ++ [pl_event] ++ name_events
+    # Story 9-7: load generic state events persisted via PUT /rooms/{roomId}/state/{eventType}.
+    # These cover m.room.topic, m.room.join_rules, m.room.encryption, m.room.avatar, etc.
+    # Excludes types already assembled above (member, power_levels, create, name).
+    generic_state_events =
+      case messages_db_module().get_generic_state_events(room_id) do
+        {:ok, evs} ->
+          Enum.map(evs, fn ev ->
+            %Core.SyncRoomStateEvent{
+              type: ev.type,
+              state_key: ev.state_key,
+              content: ev.content_json,
+              sender: ev.sender
+            }
+          end)
+        _ -> []
+      end
+
+    [create_event] ++ member_events ++ [pl_event] ++ name_events ++ generic_state_events
   end
 
   # ─── Private helpers ─────────────────────────────────────────────────────────
