@@ -41,3 +41,8 @@
 
 - **loginToken TTL mismatch**: Kommentar in `sso.go:274` gibt 30s an, Implementation nutzt `5*time.Minute` (300s). Potentiell längeres Exposure-Fenster als beabsichtigt. Pre-existing.
 - **Global SSO State Race**: `globalSSOState` und `globalLoginTokens` sind Package-Singletons ohne Reset zwischen E2E-Testiterationen. Cleanup-Loop wird nur bei Writes getriggert. Pre-existing Architektur-Eigenschaft.
+
+## Deferred from: code review of 8-11-service-startup-resilience-dind-free-integration-test (2026-05-04)
+
+- ~~**Dev credentials in CI YAML**~~: Resolved via ADR-012 (2026-05-04) — `POSTGRES_HOST_AUTH_METHOD: trust` ersetzt statisches Passwort; Repo-Richtlinie "nur Referenzimplementierung, keine echten Deployments" dokumentiert.
+- **`elapsed`-Drift in `wait-for-stack.sh`**: Der Counter wird um `INTERVAL=2` inkrementiert, aber jede Loop-Iteration braucht zusätzlich Zeit für die vier Probe-Calls. Bei langsamen Probes kann der reale Timeout deutlich über 120s liegen. Nicht kritisch; kann als Follow-up geglättet werden.

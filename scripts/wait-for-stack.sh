@@ -26,8 +26,8 @@ check_postgres() {
         pg_isready -h postgres -U nebu -d nebu >/dev/null 2>&1
         return $?
     fi
-    # Fallback: TCP probe via wget/curl
-    wget -q --spider tcp://postgres:5432
+    # Fallback: bash TCP redirect (no external tool required)
+    (bash -c 'cat /dev/null > /dev/tcp/postgres/5432') 2>/dev/null
 }
 
 check_dex() {

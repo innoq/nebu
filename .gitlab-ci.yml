@@ -342,6 +342,10 @@ integration-test-podman:
 # there are no persistent volumes. We use the `nebu` superuser for all DB
 # connections — the role split (nebu_migrate / nebu_app) is a production
 # hardening, not required for CI testing.
+#
+# Credentials policy (ADR-012): all values below are example-only CI credentials.
+# This upstream repo is never used for real deployments. Anyone deploying Nebu
+# must fork and supply their own secrets. See ADR-012 and docs/architecture/adr/ADR-012.
 
 integration-test-k8s:
   stage: integration
@@ -352,7 +356,7 @@ integration-test-k8s:
        variables:
          POSTGRES_DB: nebu
          POSTGRES_USER: nebu
-         POSTGRES_PASSWORD: nebu_dev_password
+         POSTGRES_HOST_AUTH_METHOD: trust
      - name: $CI_REGISTRY_IMAGE/ci-dex:v2.45.1
        alias: dex
      - name: $CI_REGISTRY_IMAGE/core:${CI_COMMIT_SHA}
@@ -363,7 +367,8 @@ integration-test-k8s:
     NEBU_DB_URL: "postgresql://nebu@postgres:5432/nebu"
     NEBU_DB_URL_MIGRATE: "postgresql://nebu@postgres:5432/nebu"
     NEBU_CORE_GRPC_ADDR: "core:9000"
-    NEBU_INTERNAL_SECRET_FILE: "/run/secrets/internal_secret"
+    NEBU_INTERNAL_SECRET_FILE: ""
+    NEBU_INTERNAL_SECRET: "ci-example-secret"
     NEBU_SERVER_NAME: "localhost"
     NEBU_OIDC_ISSUER: "http://dex:5556/dex"
     NEBU_OIDC_CLIENT_ID: "nebu-gateway"
@@ -371,9 +376,6 @@ integration-test-k8s:
     NEBU_OIDC_CLAIM_ROLE: "groups"
     NEBU_ENV: "dev"
     NEBU_ALLOW_INSECURE_OIDC_ISSUER: "true"
-    POSTGRES_DB: nebu
-    POSTGRES_USER: nebu
-    POSTGRES_PASSWORD: nebu_dev_password
   before_script:
      - apk add --no-cache postgresql-client openssl
      - scripts/wait-for-stack.sh
@@ -387,7 +389,7 @@ integration-test-k8s:
        NEBU_TEST_DB_URL=postgresql://nebu@postgres:5432/nebu \
        NEBU_TEST_MIGRATION_DB_URL=postgresql://nebu@postgres:5432/nebu \
        NEBU_TEST_CORE_GRPC_ADDR=core:9000 \
-       NEBU_TEST_INTERNAL_SECRET=test-secret \
+       NEBU_TEST_INTERNAL_SECRET=ci-example-secret \
        go test -v -tags integration ./test/integration/...
   rules:
      - if: '$CI_COMMIT_BRANCH == "main"'

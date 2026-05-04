@@ -4,7 +4,7 @@ security_review: not-needed
 
 # Story 8.11: Service Startup Resilience + DinD-free Integration Test (GitLab CI `services:`)
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -105,6 +105,17 @@ GitLab CI `services:` starts each service as a sidecar container in the same K8s
   - [ ] 4.3 Add `before_script: apk add postgresql-client && scripts/wait-for-stack.sh`
   - [ ] 4.4 Set `when: manual`, `allow_failure: true`, no `tags:`
   - [ ] 4.5 Verify `build-ci-dex` Kaniko job has been run at least once before first test pipeline
+
+### Review Findings
+
+- [x] [Review][Patch] NEBU_INTERNAL_SECRET missing from `integration-test-k8s` variables — gateway service crashes at startup [`.gitlab-ci.yml:variables`]
+- [x] [Review][Patch] NEBU_DB_URL missing password — PostgreSQL 16 auth fails in `integration-test-k8s` job [`.gitlab-ci.yml:NEBU_DB_URL`]
+- [x] [Review][Patch] `WaitAndRunMigrations` retries on `migrate.ErrDirty` indefinitely — dirty migration state cannot self-heal [`gateway/internal/db/db.go:WaitAndRunMigrations`]
+- [x] [Review][Patch] Pre-cancelled context executes one `RunMigrations` attempt before detecting cancellation — test comment states wrong contract [`gateway/internal/db/db.go:67`, `db_test.go:68`]
+- [x] [Review][Patch] `wget --spider tcp://postgres:5432` is invalid — postgres TCP fallback in `wait-for-stack.sh` always fails [`scripts/wait-for-stack.sh:29`]
+- [x] [Review][Patch] `slog.Error` uses string concatenation instead of structured `"err"` attribute [`gateway/cmd/gateway/main.go:112`]
+- [x] [Review][Defer] Dev credentials hardcoded in CI YAML (`POSTGRES_PASSWORD`, `OIDC_CLIENT_SECRET`) — pre-existing project-wide CI pattern [`.gitlab-ci.yml`] — deferred, pre-existing
+- [x] [Review][Defer] `elapsed` counter in `wait-for-stack.sh` drifts from wall clock under slow probes — minor timing imprecision [`scripts/wait-for-stack.sh`] — deferred, pre-existing
 
 ---
 

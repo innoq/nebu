@@ -109,7 +109,7 @@ func main() {
 	migrationCtx, migrationCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer migrationCancel()
 	if err := db.WaitAndRunMigrations(migrationCtx, cfg.DBURL, cfg.DBURLMigrate); err != nil {
-		slog.Error("database connection failed: " + err.Error())
+		slog.Error("database connection failed", "err", err)
 		os.Exit(1)
 	}
 
@@ -822,7 +822,7 @@ func main() {
 		CoreClient:    coreClient,
 		ServerName:    serverName,
 		Buffer:        msgBuf,
-		DB:            bootstrapDB, // for rooms.invite pending invitation queries
+		DB:            bootstrapDB,                              // for rooms.invite pending invitation queries
 		AccountDataDB: db.NewPostgresAccountDataDB(bootstrapDB), // Story 7-24 AC4: account_data in sync
 	})
 	mux.Handle("GET /_matrix/client/v3/sync",
