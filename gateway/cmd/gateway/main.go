@@ -322,7 +322,8 @@ func main() {
 	mux.Handle("GET /admin/dashboard", csrf(sessionGuard(http.HandlerFunc(dashboardHandler.Handler))))
 
 	// Story 7.2: Users + Rooms master-detail routes — registered BEFORE catch-all
-	usersHandler := admin.NewUsersHandler(tmplHandler)
+	// Story 9.2: pass gRPC client so handlers use real Core RPCs instead of stubs.
+	usersHandler := admin.NewUsersHandler(tmplHandler, coreClient)
 	mux.Handle("GET /admin/users", csrf(sessionGuard(http.HandlerFunc(usersHandler.ListHandler))))
 	mux.Handle("GET /admin/users/{userId}", csrf(sessionGuard(http.HandlerFunc(usersHandler.DetailHandler))))
 	mux.Handle("POST /admin/users/{userId}/display-name", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(usersHandler.UpdateDisplayNameHandler)))))

@@ -1782,8 +1782,9 @@ defmodule Nebu.EventDispatcher.Server do
   # Sets is_active=false in DB, then calls destroy_session/1 AFTER the DB commit.
   # Security invariant: DB update must complete before session invalidation.
 
-  def deactivate_user(%Core.DeactivateUserRequest{} = req, _stream) do
+  def deactivate_user(%Core.DeactivateUserRequest{} = req, stream) do
     user_id = req.user_id
+    {actor_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
 
     case admin_db_module().set_is_active(user_id, false) do
       :ok ->
@@ -1795,6 +1796,15 @@ defmodule Nebu.EventDispatcher.Server do
           {:error, reason} ->
             Logger.warning("DeactivateUser: destroy_session failed for #{user_id}: #{inspect(reason)}")
         end
+
+        audit_writer_module().log(
+          actor_id,
+          "user_deactivated",
+          "user",
+          user_id,
+          %{},
+          "success"
+        )
 
         %Core.DeactivateUserResponse{ok: true}
 
@@ -1815,11 +1825,21 @@ defmodule Nebu.EventDispatcher.Server do
   # Sets is_active=true in DB. Does NOT call destroy_session (reactivation must
   # not invalidate existing sessions).
 
-  def reactivate_user(%Core.ReactivateUserRequest{} = req, _stream) do
+  def reactivate_user(%Core.ReactivateUserRequest{} = req, stream) do
     user_id = req.user_id
+    {actor_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
 
     case admin_db_module().set_is_active(user_id, true) do
       :ok ->
+        audit_writer_module().log(
+          actor_id,
+          "user_reactivated",
+          "user",
+          user_id,
+          %{},
+          "success"
+        )
+
         %Core.ReactivateUserResponse{ok: true}
 
       {:error, :not_found} ->
@@ -1841,9 +1861,10 @@ defmodule Nebu.EventDispatcher.Server do
 
   @valid_roles ~w(user instance_admin compliance_officer)
 
-  def update_user_role(%Core.UpdateUserRoleRequest{} = req, _stream) do
+  def update_user_role(%Core.UpdateUserRoleRequest{} = req, stream) do
     user_id = req.user_id
     role = req.role
+    {actor_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
 
     unless role in @valid_roles do
       raise GRPC.RPCError,
@@ -1853,6 +1874,15 @@ defmodule Nebu.EventDispatcher.Server do
 
     case admin_db_module().set_system_role(user_id, role) do
       :ok ->
+        audit_writer_module().log(
+          actor_id,
+          "update_user_role",
+          "user",
+          user_id,
+          %{"role" => role},
+          "success"
+        )
+
         %Core.UpdateUserRoleResponse{ok: true}
 
       {:error, :not_found} ->
