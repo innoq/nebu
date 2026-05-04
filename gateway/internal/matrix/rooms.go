@@ -336,14 +336,23 @@ func NewSetRoomStateHandler(cfg SetRoomStateConfig) *SetRoomStateHandler {
 //
 // Flow:
 //  1. Extract roomId, eventType, stateKey from URL path via Go 1.22+ r.PathValue.
-//  2. Extract sub + systemRole from JWT context (set by JWTMiddleware).
-//  3. Decode JSON body; return 400 M_BAD_JSON on failure.
-//  4. For m.room.power_levels: JSON-encode the body and call gRPC CoreService.SetPowerLevels.
-//  5. Map gRPC errors: PERMISSION_DENIED → 403 M_FORBIDDEN, NOT_FOUND → 404 M_NOT_FOUND.
-//  6. Return 200 {"event_id": ""} on success — state events don't generate event_ids in MVP.
+//  2. Check eventType against allowedStateEventTypes — reject unknown types with 400 M_BAD_JSON
+//     before any body decoding (Story 9-6, AC3 / AC4).
+//  3. Extract sub + systemRole from JWT context (set by JWTMiddleware).
+//  4. Decode JSON body; return 400 M_BAD_JSON on failure.
+//  5. For m.room.power_levels: JSON-encode the body and call gRPC CoreService.SetPowerLevels.
+//  6. Map gRPC errors: PERMISSION_DENIED → 403 M_FORBIDDEN, NOT_FOUND → 404 M_NOT_FOUND.
+//  7. Return 200 {"event_id": ""} on success — state events don't generate event_ids in MVP.
 func (h *SetRoomStateHandler) PutSetRoomState(w http.ResponseWriter, r *http.Request) {
 	roomID := r.PathValue("roomId")
 	eventType := r.PathValue("eventType")
+
+	// Story 9-6 AC3 / AC4: reject any event type not in the single authoritative whitelist.
+	// The check fires before body decoding so unknown types are rejected immediately.
+	if !allowedStateEventTypes[eventType] {
+		writeMatrixError(w, http.StatusBadRequest, "M_BAD_JSON", "unknown state event type: "+eventType)
+		return
+	}
 
 	userID, _ := r.Context().Value(middleware.ContextKeyUserID).(string)
 	systemRole, _ := r.Context().Value(middleware.ContextKeySystemRole).(string)
