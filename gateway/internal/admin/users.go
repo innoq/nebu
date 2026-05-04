@@ -314,8 +314,9 @@ func (h *UsersHandler) UpdateRoleHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	if h.core != nil {
-		// gRPC path
-		_, err := h.core.UpdateUserRole(r.Context(), &pb.UpdateUserRoleRequest{
+		// gRPC path — enrich context with admin identity so Core audit log records actor_user_id.
+		grpcCtx := contextWithAdminIdentity(r.Context(), AdminSubFromContext(r.Context()))
+		_, err := h.core.UpdateUserRole(grpcCtx, &pb.UpdateUserRoleRequest{
 			UserId: userID,
 			Role:   role,
 		})
@@ -348,8 +349,9 @@ func (h *UsersHandler) DeactivateUserHandler(w http.ResponseWriter, r *http.Requ
 	userID := r.PathValue("userId")
 
 	if h.core != nil {
-		// gRPC path
-		_, err := h.core.DeactivateUser(r.Context(), &pb.DeactivateUserRequest{UserId: userID})
+		// gRPC path — enrich context with admin identity so Core audit log records actor_user_id.
+		grpcCtx := contextWithAdminIdentity(r.Context(), AdminSubFromContext(r.Context()))
+		_, err := h.core.DeactivateUser(grpcCtx, &pb.DeactivateUserRequest{UserId: userID})
 		if err != nil {
 			if st, ok := status.FromError(err); ok && st.Code() == codes.NotFound {
 				http.Redirect(w, r, "/admin/users/"+userID+"?flash=User+not+found", http.StatusFound)
@@ -380,8 +382,9 @@ func (h *UsersHandler) ReactivateUserHandler(w http.ResponseWriter, r *http.Requ
 	userID := r.PathValue("userId")
 
 	if h.core != nil {
-		// gRPC path
-		_, err := h.core.ReactivateUser(r.Context(), &pb.ReactivateUserRequest{UserId: userID})
+		// gRPC path — enrich context with admin identity so Core audit log records actor_user_id.
+		grpcCtx := contextWithAdminIdentity(r.Context(), AdminSubFromContext(r.Context()))
+		_, err := h.core.ReactivateUser(grpcCtx, &pb.ReactivateUserRequest{UserId: userID})
 		if err != nil {
 			if st, ok := status.FromError(err); ok && st.Code() == codes.NotFound {
 				http.Redirect(w, r, "/admin/users/"+userID+"?flash=User+not+found", http.StatusFound)

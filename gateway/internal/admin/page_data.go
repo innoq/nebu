@@ -159,11 +159,14 @@ type UsersPageData struct {
 
 // StubRoom is a fake room record used for the Rooms master-detail page until
 // Epic 6 implements the real Room Management API.
+// MaxMembers (0 = no limit) and Visibility are populated by the detail handler from
+// AdminRoomDetailProto (Story 9.3 — gRPC integration).
 type StubRoom struct {
 	ID          string
 	Name        string
 	Visibility  string // "public" | "private"
 	MemberCount int
+	MaxMembers  int    // 0 = no limit; populated in detail view only
 	Status      string // "active" | "archived"
 }
 

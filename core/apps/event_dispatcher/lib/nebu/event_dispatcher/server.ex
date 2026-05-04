@@ -1649,8 +1649,9 @@ defmodule Nebu.EventDispatcher.Server do
   #   4. COMMIT
   # Then the GenServer is terminated (best-effort).
 
-  def archive_room(%Core.ArchiveRoomRequest{} = req, _stream) do
+  def archive_room(%Core.ArchiveRoomRequest{} = req, stream) do
     room_id = req.room_id
+    {actor_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
 
     # Step 1: Atomically update rooms.status='archived' in DB (SELECT FOR UPDATE).
     # This replaces the old pre-9.1 contract where the Go Gateway did the DB write.
@@ -1693,11 +1694,22 @@ defmodule Nebu.EventDispatcher.Server do
         :ok
     end
 
+    # Story 9.3: Audit log for room archival (mirrors deactivate_user pattern from Story 9.2).
+    audit_writer_module().log(
+      actor_id,
+      "room_archived",
+      "room",
+      room_id,
+      %{},
+      "success"
+    )
+
     %Core.ArchiveRoomResponse{ok: true}
   end
 
-  def unarchive_room(%Core.UnarchiveRoomRequest{} = req, _stream) do
+  def unarchive_room(%Core.UnarchiveRoomRequest{} = req, stream) do
     room_id = req.room_id
+    {actor_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
 
     # Start the Room GenServer so it is immediately available.
     # Room.Server.init/1 now calls get_room_status/1 on start:
@@ -1709,6 +1721,16 @@ defmodule Nebu.EventDispatcher.Server do
       {:ok, _pid} -> :ok
       {:error, _reason} -> :ok
     end
+
+    # Story 9.3: Audit log for room unarchival (mirrors reactivate_user pattern from Story 9.2).
+    audit_writer_module().log(
+      actor_id,
+      "room_unarchived",
+      "room",
+      room_id,
+      %{},
+      "success"
+    )
 
     %Core.UnarchiveRoomResponse{ok: true}
   end

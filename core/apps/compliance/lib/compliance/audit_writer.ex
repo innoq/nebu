@@ -44,6 +44,8 @@ defmodule Compliance.AuditWriter do
     user_deactivated
     user_reactivated
     update_user_role
+    room_archived
+    room_unarchived
   )
 
   # Configurable repo for test injection. Production uses Nebu.Repo.

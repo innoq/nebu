@@ -305,6 +305,25 @@ func (c *Client) GetAdminRoom(ctx context.Context, req *pb.GetAdminRoomRequest) 
 	return c.core.GetAdminRoom(ctx, req)
 }
 
+// ArchiveRoom calls the Elixir core to archive a room (sets status=archived, terminates GenServer).
+// Story 9.3: Admin UI Rooms API Integration.
+func (c *Client) ArchiveRoom(ctx context.Context, req *pb.ArchiveRoomRequest) (*pb.ArchiveRoomResponse, error) {
+	return c.core.ArchiveRoom(ctx, req)
+}
+
+// UnarchiveRoom calls the Elixir core to unarchive a room (sets status=active, starts GenServer).
+// Story 9.3: Admin UI Rooms API Integration.
+func (c *Client) UnarchiveRoom(ctx context.Context, req *pb.UnarchiveRoomRequest) (*pb.UnarchiveRoomResponse, error) {
+	return c.core.UnarchiveRoom(ctx, req)
+}
+
+// UpdateRoomSettings calls the Elixir core to update room settings (max_members).
+// Story 9.3: Admin UI Rooms API Integration.
+// Note: UpdateRoomSettingsRequest only carries max_members; visibility changes are not in the proto.
+func (c *Client) UpdateRoomSettings(ctx context.Context, req *pb.UpdateRoomSettingsRequest) (*pb.UpdateRoomSettingsResponse, error) {
+	return c.core.UpdateRoomSettings(ctx, req)
+}
+
 // GetServerConfig calls the Elixir core to retrieve the current server configuration.
 // Note: oidc_client_secret is intentionally excluded from the response.
 func (c *Client) GetServerConfig(ctx context.Context, req *pb.GetServerConfigRequest) (*pb.GetServerConfigResponse, error) {

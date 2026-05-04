@@ -330,12 +330,14 @@ func main() {
 	mux.Handle("POST /admin/users/{userId}/role", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(usersHandler.UpdateRoleHandler)))))
 	mux.Handle("POST /admin/users/{userId}/deactivate", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(usersHandler.DeactivateUserHandler)))))
 	mux.Handle("POST /admin/users/{userId}/reactivate", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(usersHandler.ReactivateUserHandler)))))
-	roomsHandler := admin.NewRoomsHandler(tmplHandler)
+	// Story 9.3: pass gRPC client so handlers use real Core RPCs instead of stubs.
+	roomsHandler := admin.NewRoomsHandler(tmplHandler, coreClient)
 	mux.Handle("GET /admin/rooms", csrf(sessionGuard(http.HandlerFunc(roomsHandler.ListHandler))))
 	mux.Handle("GET /admin/rooms/{roomId}", csrf(sessionGuard(http.HandlerFunc(roomsHandler.DetailHandler))))
 	mux.Handle("POST /admin/rooms/{roomId}/name", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(roomsHandler.UpdateRoomNameHandler)))))
 	mux.Handle("POST /admin/rooms/{roomId}/archive", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(roomsHandler.ArchiveRoomHandler)))))
 	mux.Handle("POST /admin/rooms/{roomId}/unarchive", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(roomsHandler.UnarchiveRoomHandler)))))
+	mux.Handle("POST /admin/rooms/{roomId}/settings", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(roomsHandler.UpdateRoomSettingsHandler)))))
 	// Story 7.10: Server Configuration page.
 	configHandler := admin.NewConfigHandler(tmplHandler)
 	mux.Handle("GET /admin/config", csrf(sessionGuard(http.HandlerFunc(configHandler.Handler))))

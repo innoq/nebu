@@ -13,6 +13,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	coregrpc "github.com/nebu/nebu/internal/grpc"
 )
 
 // contextKey is an unexported typed key for values stored in request contexts.
@@ -300,4 +302,20 @@ func CSRFMiddleware() func(http.Handler) http.Handler {
 			}
 		})
 	}
+}
+
+// contextWithAdminIdentity enriches ctx with the admin user's identity as
+// outgoing gRPC metadata so that Core audit handlers can attribute actions to
+// the acting admin.
+//
+// The metadata key "x-user-id" is read by Nebu.Grpc.Metadata.user_id/1 in the
+// Elixir core. The system role is always "instance_admin" for admin UI actions
+// (all users who reach these handlers have been verified as instance_admin by
+// the SessionGuard middleware).
+//
+// Usage: replace r.Context() with contextWithAdminIdentity(r.Context(), adminUserID)
+// in every state-changing admin gRPC call (ArchiveRoom, UnarchiveRoom,
+// DeactivateUser, ReactivateUser, UpdateUserRole, UpdateRoomSettings).
+func contextWithAdminIdentity(ctx context.Context, adminUserID string) context.Context {
+	return coregrpc.WithUserMetadata(ctx, adminUserID, "instance_admin")
 }

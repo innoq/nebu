@@ -86,6 +86,25 @@
         </dd>
       </div>
     </dl>
+
+    {{/* Room settings form — max_members (Story 9.3 AC3) */}}
+    <form method="POST" action="/admin/rooms/{{ .ActiveItemID }}/settings" class="mt-4">
+      <input type="hidden" name="_csrf" value="{{ .PageData.CSRFToken }}">
+      <div class="form-control mb-3">
+        <label class="label" for="max-members-input">
+          <span class="label-text text-sm">Max members <span class="text-base-content/50">(0 = no limit)</span></span>
+        </label>
+        <input id="max-members-input"
+               type="number"
+               name="max_members"
+               min="0"
+               max="1000000"
+               value="{{ .ActiveRoom.MaxMembers }}"
+               class="input input-bordered input-sm w-full">
+      </div>
+      <button type="submit" class="btn btn-sm btn-primary w-full">Save</button>
+    </form>
+
     {{ template "confirm_dialog" .ActiveRoomConfirmDialog }}
   {{ end }}
 {{ end }}
