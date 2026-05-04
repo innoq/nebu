@@ -65,6 +65,7 @@ description:
 
   en:
     localisedName: Nebu
+    genericName: Chat
     shortDescription: >-
       Enterprise-grade, Matrix-compatible chat server — Apache 2.0, no federation overhead, horizontally scalable.
     longDescription: >-
