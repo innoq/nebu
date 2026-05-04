@@ -1,5 +1,5 @@
 ---
-stepsCompleted: ['step-01-validate-prerequisites', 'step-02-design-epics', 'step-03-epic-1', 'step-03-epic-2', 'step-03-epic-3', 'step-03-epic-4', 'step-03-epic-5', 'step-03-epic-6', 'step-03-epic-7']
+stepsCompleted: ['step-01-validate-prerequisites', 'step-02-design-epics', 'step-03-epic-1', 'step-03-epic-2', 'step-03-epic-3', 'step-03-epic-4', 'step-03-epic-5', 'step-03-epic-6', 'step-03-epic-7', 'step-03-epic-8', 'step-03-epic-9', 'step-03-epic-10', 'step-03-epic-11', 'step-03-epic-12']
 inputDocuments:
   - '_bmad-output/planning-artifacts/prd.md'
   - '_bmad-output/planning-artifacts/architecture.md'
@@ -2945,6 +2945,26 @@ Admins können Nutzer, Rooms und Rollen über eine vollständige Web-UI verwalte
 
 ---
 
+### Story 6.9b: Core `send_event` Archived-Status Check — TOCTOU Race Window Close
+
+**As a** developer,
+**I want** the Elixir Core `send_event` handler to re-verify the room's archived status before writing an event,
+**so that** a message cannot slip through the race window between the gateway's archive guard and the Core write.
+
+**Size:** XS
+
+**Background:** Story 6.9 added a gateway-level `403 M_ROOM_ARCHIVED` guard and a Horde GenServer termination on archive. SEC Gate 2 (HIGH-2) identified that a message in-flight at the exact moment of archival could still be written to the `events` table because the GenServer checks its in-memory `archived` flag, which is set asynchronously via the gRPC `ArchiveRoom` call. This story closes the gap at the DB layer.
+
+**Acceptance Criteria:**
+
+- In `RoomServer.handle_call({:send_event, ...})`, before inserting the event, the handler reads `rooms.status` from PostgreSQL (`SELECT status FROM rooms WHERE id = ?`)
+- If `status = 'archived'`, the call returns `{:error, :room_archived}` without writing to `events`
+- The gRPC response propagates as `M_ROOM_ARCHIVED` (same error path as the gateway guard)
+- Unit test: Room GenServer receives a `send_event` call immediately after an `ArchiveRoom` call on the same room — event is NOT written to `events` table
+- Existing `send_event` happy-path tests remain green
+
+---
+
 ## Epic 7: Instance Admins Have a Full Admin UI for Day-to-Day Operations
 
 ### Story 7.1: Obsidian Color System vollständig + Typography (UX-DR1, UX-DR2)
@@ -3534,3 +3554,1038 @@ Der Nebu-Maintainer kann das Repository von GitLab (privat) nach GitHub (öffent
 - GitLab-Origin-Entscheidung dokumentiert: Mirror-Config behalten ODER Repo archivieren
 - Release-Announcement-Draft für Hacker News / r/selfhosted / Matrix-Community vorbereitet (nicht publiziert, nur Entwurf)
 - Release-Readiness-Report aus Story 8.9 wird als Repo-Release v0.1.0 Asset/Attachment angehängt oder im README verlinkt
+
+## Epic 9: Post-MVP API & Admin Completeness
+
+Admin UI nutzt die echte Epic-6-API statt In-Memory-Stubs; alle relevanten Matrix State Event Types sind implementiert; Room Version Upgrade läuft produktiv; Matrix-Event-Korrektheit ist systematisch getestet.
+**Pre-Epic-TODO:** —
+**FRs covered:** FR22, FR23, FR24, FR36, FR37, FR38, FR39, FR40 (Admin UI wire-up); Extension: Matrix Protocol Completeness
+
+## Epic 10: Managed E2EE — Key Escrow
+
+Nebu implementiert ein Server-Side Key Escrow Modell: End-User erhalten E2EE-Komfort, Compliance-Zugriff bleibt über Vier-Augen-Genehmigung erhalten. Key Material liegt nie im Klartext im Speicher.
+**Pre-Epic-TODO:** ADR-011 finalisieren (Threat Model, Key-Escrow-Architektur, DB-Schema-Entscheidung, Security Assumptions & Out-of-Scope Threats) — vor dem ersten Sprint
+**FRs covered:** FR25, FR26, FR27, FR30, FR31, FR32, FR33 (Extension: Managed E2EE)
+
+## Epic 11: Full-Text Search
+
+End-User können `POST /_matrix/client/v3/search` nutzen um Nachrichten in ihren Räumen zu suchen. Suchergebnisse sind scope-enforced (kein Zugriff auf fremde Räume), paginiert und rate-limited.
+**Pre-Epic-TODO:** ADR-010 finalisieren (tsvector vs. pgvector, Community-Input auswerten, PoC-Query dokumentieren) — vor dem ersten Sprint
+**FRs covered:** Extension: Matrix Full-Text Search (Story 7-31 unblocked)
+
+## Epic 12: Media Gateway Phase 2 — Object Storage & Thumbnails
+
+Das Media Gateway nutzt MinIO als S3-kompatiblen Object Store; Thumbnails werden on-demand generiert; Blurhash wird korrekt durchgereicht. Keine Credentials in Git-History.
+**Pre-Epic-TODO:** ADR-013 finalisieren (MinIO als Default, Thumbnail-Library govips vs. pure-Go, Pre-Signed-URL-Policy) — vor dem ersten Sprint
+**FRs covered:** Extension: Media Gateway Phase 2
+
+---
+
+## Epic 9: Post-MVP API & Admin Completeness
+
+**Goal:** Admin UI nutzt die echte Epic-6 Admin API statt In-Memory-Stubs; alle relevanten Matrix State Event Types werden korrekt verarbeitet; Room Version Upgrade ist produktiv implementiert; Matrix-Event-Korrektheit ist systematisch mit /agent-oracle geprüft und als Godog-Szenarien abgesichert.
+
+**Pre-Epic-TODO:** —
+
+---
+
+### Story 9.1: Admin gRPC RPCs in Core — User + Room Management
+
+As a developer,
+I want the Elixir Core to expose gRPC RPCs for admin user and room management,
+So that the Admin UI gateway handlers can delegate to Core instead of using in-memory stubs.
+
+**Size:** S
+
+**Acceptance Criteria:**
+
+**Given** `proto/core.proto` is loaded,
+**When** the proto file is inspected,
+**Then** folgende RPCs sind definiert: `ListAdminUsers`, `GetAdminUser`, `DeactivateUser`, `ReactivateUser`, `UpdateUserRole`, `ListAdminRooms`, `GetAdminRoom`, `ArchiveRoom`, `UnarchiveRoom`, `GetServerConfig`, `UpdateServerConfig`, `GetMetrics`
+
+**Given** the Core gRPC server is running,
+**When** `grpcurl` calls `ListAdminUsers` with a valid admin token in metadata,
+**Then** the response contains a paginated list of users from the PostgreSQL users table
+
+**Given** the Core gRPC server is running,
+**When** `DeactivateUser` is called with a valid user_id,
+**Then** the user's `is_active` flag is set to false in the DB and `InvalidateUserSessions` is triggered
+
+**Given** the Core gRPC server is running,
+**When** `ArchiveRoom` is called with a valid room_id,
+**Then** the room's status is set to `archived` in the DB atomically (SELECT FOR UPDATE)
+
+**Given** `make proto` runs,
+**When** the generated Go stubs and Elixir stubs are inspected,
+**Then** all new RPCs have corresponding generated client/server code without compile errors
+
+---
+
+### Story 9.2: Admin UI — Users API Integration
+
+As an instance admin,
+I want the Admin UI user management pages to use the real Admin API,
+So that user data reflects the actual database state instead of static stub data.
+
+**Size:** S
+
+**Acceptance Criteria:**
+
+**Given** the Admin UI is running with a real backend,
+**When** I navigate to the Users list page,
+**Then** real users from the database are displayed (not `stubUsers`)
+
+**Given** I am on the User Detail page for a real user,
+**When** I click "Deactivate",
+**Then** `POST /api/v1/admin/users/{userId}/deactivate` is called, the UI reflects the updated status, and `stubUsers` is not mutated
+
+**Given** I am on the User Detail page,
+**When** I update the user's role via the role assignment UI,
+**Then** `POST /api/v1/admin/users/{userId}/roles` is called with the new role and the UI refreshes
+
+**Given** I am on the User Detail page,
+**When** I click "Reactivate" on a deactivated user,
+**Then** `POST /api/v1/admin/users/{userId}/reactivate` is called and the user status changes to active
+
+**Given** `gateway/internal/admin/users.go` is inspected,
+**When** searching for `TODO(epic-6)`,
+**Then** zero matches are found
+
+---
+
+### Story 9.3: Admin UI — Rooms API Integration
+
+As an instance admin,
+I want the Admin UI room management pages to use the real Admin API,
+So that room data reflects actual state and mutations are persisted.
+
+**Size:** S
+
+**Acceptance Criteria:**
+
+**Given** the Admin UI is running,
+**When** I navigate to the Rooms list page,
+**Then** real rooms from the database are displayed (not `stubRooms`)
+
+**Given** I am on the Room Detail page,
+**When** I click "Archive",
+**Then** `POST /api/v1/admin/rooms/{roomId}/archive` is called, the room status changes to `archived` in the UI
+
+**Given** I am on the Room Detail page,
+**When** I update room settings (max_members, visibility),
+**Then** `PATCH /api/v1/admin/rooms/{roomId}` is called with the updated fields
+
+**Given** `gateway/internal/admin/rooms.go` is inspected,
+**When** searching for `TODO(epic-6)`,
+**Then** zero matches are found
+
+---
+
+### Story 9.4: Admin UI — Config & Role Mapping API Integration
+
+As an instance admin,
+I want the server config and role mapping UI pages to persist changes via the real API,
+So that configuration changes survive server restarts.
+
+**Size:** XS
+
+**Acceptance Criteria:**
+
+**Given** I update the OIDC issuer URL in the Server Config UI,
+**When** the form is submitted,
+**Then** `PATCH /api/v1/admin/config` is called and the new value is persisted in PostgreSQL (not `stubConfig`)
+
+**Given** I add a new role mapping regex in the Role Mapping UI,
+**When** I save,
+**Then** `PUT /api/v1/admin/config/role-mappings` is called and the mapping is persisted
+
+**Given** `gateway/internal/admin/config.go` and `role_mapping.go` are inspected,
+**When** searching for `TODO(epic-6)`,
+**Then** zero matches are found
+
+---
+
+### Story 9.5: Admin UI — Compliance API Integration
+
+As a compliance officer,
+I want the Compliance Request UI to approve and reject requests via the real API,
+So that decisions are persisted and audited correctly.
+
+**Size:** XS
+
+**Acceptance Criteria:**
+
+**Given** a pending compliance request exists in the DB,
+**When** I click "Approve" in the Admin UI,
+**Then** `POST /api/v1/admin/compliance/{requestId}/approve` is called, the request status changes to `approved`, and an audit log entry is written
+
+**Given** a pending compliance request exists,
+**When** I click "Reject",
+**Then** `POST /api/v1/admin/compliance/{requestId}/reject` is called with the rejection reason and the status changes to `rejected`
+
+**Given** `gateway/internal/admin/compliance_handler.go` is inspected,
+**When** searching for `TODO(epic-6)`,
+**Then** zero matches are found
+
+---
+
+### Story 9.6: State Event Type Whitelist — Gateway Middleware
+
+As a system operator,
+I want the gateway to validate state event types against a whitelist before forwarding to Core,
+So that unknown or malformed event types cannot be injected into the system.
+
+**Size:** XS
+
+**Acceptance Criteria:**
+
+**Given** a client sends `PUT /rooms/{roomId}/state/m.room.name`,
+**When** `m.room.name` is in the whitelist,
+**Then** the request is forwarded to Core (not rejected at gateway level)
+
+**Given** a client sends `PUT /rooms/{roomId}/state/m.room.encryption`,
+**When** `m.room.encryption` is in the whitelist (pass-through required by Matrix spec),
+**Then** the request is forwarded to Core for storage
+
+**Given** a client sends `PUT /rooms/{roomId}/state/evil.custom.inject`,
+**When** the type is not in the whitelist,
+**Then** the gateway returns `400 M_BAD_JSON` without forwarding to Core
+
+**Given** the whitelist middleware exists,
+**When** new Matrix-standard types need to be added,
+**Then** the whitelist is a single Go variable (not scattered across handlers) that can be extended in one place
+
+---
+
+### Story 9.7: Room State Event Types — Full Implementation
+
+As a Matrix client user,
+I want the server to correctly store and return all standard Matrix room state event types,
+So that room name, topic, avatar, join rules, and history visibility behave as per spec.
+
+**Size:** S
+
+**Acceptance Criteria:**
+
+**Given** a client sends `PUT /rooms/{roomId}/state/m.room.name` with `{"name": "My Room"}`,
+**When** the request is processed,
+**Then** the state is persisted in Core and subsequent `GET /rooms/{roomId}/state/m.room.name` returns `{"name": "My Room"}`
+
+**Given** a client sends `PUT /rooms/{roomId}/state/m.room.encryption` with `{"algorithm": "m.megolm.v1.aes-sha2"}`,
+**When** the request is processed,
+**Then** the state is stored (pass-through per Matrix spec Section 11.2.1) and returns 200 with an event_id — NOT 501
+
+**Given** a client sends `PUT /rooms/{roomId}/state/m.room.join_rules` with `{"join_rule": "invite"}`,
+**When** the request is processed,
+**Then** the state is persisted and `GET /sync` reflects the updated join_rules in the room state
+
+**Given** `gateway/internal/matrix/rooms.go` line 387,
+**When** the handler is inspected,
+**Then** the 501 fallback is replaced by a Core delegation for all whitelisted types
+
+**Given** all whitelisted state event types are sent in sequence,
+**When** `GET /rooms/{roomId}/state` is called,
+**Then** all state events appear in the response with correct `type`, `content`, and `state_key` fields
+
+---
+
+### Story 9.8: Room Version Upgrade — Full Implementation
+
+As a Matrix client user,
+I want `POST /rooms/{roomId}/upgrade` to create a properly tombstoned replacement room,
+So that "Upgrade to recommended chat version" works correctly in Element Web.
+
+**Size:** M
+
+**Acceptance Criteria:**
+
+**Given** a room owner sends `POST /rooms/{roomId}/upgrade` with `{"new_version": "10"}`,
+**When** the request is processed,
+**Then** a `m.room.tombstone` state event is written to the old room with `body` and `replacement_room` fields per Matrix spec Section 11.35.1
+
+**Given** the tombstone event is written,
+**When** the new room is created,
+**Then** its `m.room.create` event contains `predecessor: { "room_id": "<old_room_id>", "event_id": "<tombstone_event_id>" }`
+
+**Given** the new room is created,
+**When** the state is copied,
+**Then** events are copied in spec-mandated order: `m.room.create`, `m.room.member` (upgrading user only), all other non-alias state events, `m.room.power_levels`, `m.room.join_rules`
+
+**Given** the old room had 3 joined members,
+**When** the upgrade completes,
+**Then** all 3 members receive an invite event in the new room (server-generated, not client-triggered)
+
+**Given** a non-owner attempts the upgrade,
+**When** the request is processed,
+**Then** the server returns `403 M_FORBIDDEN`
+
+**Given** `GET /_matrix/client/v3/capabilities` is called,
+**When** the response is inspected,
+**Then** `m.room_versions` contains the supported versions including `"10"` and a `default` field
+
+---
+
+### Story 9.9: Archive TOCTOU Fix
+
+As a system operator,
+I want Core's `send_event` to atomically check archived status before accepting events,
+So that events cannot be written to an archived room during the archive race window.
+
+**Size:** XS
+
+**Acceptance Criteria:**
+
+**Given** a room is in the process of being archived,
+**When** a concurrent `send_event` call arrives,
+**Then** the archived-status check uses `SELECT ... FOR UPDATE` so the write either completes before archive or is rejected after
+
+**Given** a room is archived,
+**When** any client attempts to send a message,
+**Then** Core returns an error that the gateway maps to `403 M_FORBIDDEN` with `"Room is archived"`
+
+**Given** two concurrent archive requests arrive for the same room,
+**When** both are processed,
+**Then** exactly one succeeds and one returns a conflict — no double-archive state
+
+---
+
+### Story 9.10a: Matrix Event Correctness — Spike (DM-Loop Root Cause)
+
+As a developer,
+I want a systematic investigation of the Element Web DM creation loop using /agent-oracle,
+So that the root causes are documented with reproducing Godog tests before any fixes are implemented.
+
+**Size:** S
+
+**Acceptance Criteria:**
+
+**Given** the /agent-oracle Matrix spec expert is consulted,
+**When** the following endpoints are audited: `keys/query` response format, `m.room.encryption` state event handling, `unsigned.age` in sync events, `device_lists` + `device_one_time_keys_count` in `/sync` response,
+**Then** each is classified as PASS / DEVIATION with spec section reference
+
+**Given** the DM creation flow is executed with a real Element Web client,
+**When** the flow is traced (Network tab + server logs),
+**Then** the exact request/response pair that causes the loop is identified and documented in `docs/matrix-event-audit-{YYYY-MM-DD}.md`
+
+**Given** the audit document exists,
+**When** it is reviewed,
+**Then** it contains: (1) list of all DEVIATION findings rated CRITICAL/HIGH/MEDIUM, (2) for each CRITICAL: a failing Godog scenario stub that reproduces the issue, (3) spec citations for each finding
+
+**Given** `gateway/internal/matrix/` handlers are checked,
+**When** `keys/query` response is tested with a real client,
+**Then** the response contains `{ "failures": {}, "device_keys": { "@user:server": {} } }` — NOT `{}`
+
+---
+
+### Story 9.10b: Matrix Event Correctness — Godog Scenarios & Fixes
+
+As a developer,
+I want all CRITICAL/HIGH deviations from story 9.10a fixed and covered by green Godog scenarios,
+So that Matrix event correctness is continuously verified in CI.
+
+**Size:** M
+
+**Acceptance Criteria:**
+
+**Given** story 9.10a produced a list of CRITICAL/HIGH findings,
+**When** each fix is implemented,
+**Then** the corresponding failing Godog scenario from 9.10a turns green
+
+**Given** the DM creation flow is exercised end-to-end via Godog,
+**When** the scenario runs,
+**Then** the DM room is created without looping (room creation completes in one pass, `m.room.encryption` state is stored, `keys/query` returns correct format)
+
+**Given** `unsigned.age` audit finding,
+**When** `/sync` events are inspected in the Godog test,
+**Then** every event in the timeline contains `unsigned.age` as a positive integer
+
+**Given** all 9.10b Godog scenarios pass,
+**When** `make test-integration` runs,
+**Then** zero failures on the new Matrix event correctness suite
+
+---
+
+### Story 9.11: arc42-Dokumentation aus BMAD-Artefakten generieren + BMAD-Skill für laufende Pflege
+
+**As a** maintainer or external contributor landing on the Nebu repository,
+**I want** a complete `docs/` folder in arc42 format derived from the existing BMAD planning artifacts and kept current via a dedicated BMAD pipeline skill,
+**so that** I can understand the architecture, ADRs, and project scope without needing to know the BMAD toolchain or read the raw `_bmad-output/` internals.
+
+**Size:** M
+
+**Background:** Stories 8.2/8.3/8.8 delivered README, CONTRIBUTING, and repo metadata. Five `_(coming soon)_` doc links in README still resolve to missing files. All source content already exists in `_bmad-output/planning-artifacts/`. This story produces those docs and installs the `/bmad-generate-arc42` skill so the docs stay current. Starting from Epic 10, running the skill is a mandatory pipeline gate alongside `/bmad-testarch-trace`.
+
+**Acceptance Criteria:**
+
+See full acceptance criteria in story file `9-11-arc42-docs-generation-from-bmad-artifacts.md` (originally drafted as Story 9.1 before epic restructuring).
+
+Summary:
+- All arc42 section files (`docs/architecture/README.md` through `12-glossary.md`) generated and non-empty
+- All five `_(coming soon)_` links in README removed and resolved
+- `docs/.arc42-manifest.json` is valid JSON with `generated_at`, `source_artifacts`, `files`
+- `scripts/verify-docs.sh` passes (exists, non-empty, manifest fresh)
+- CI `docs` job added to `.github/workflows/ci.yml` + `.gitlab-ci.yml` (`allow_failure: true` initially)
+- `.claude/skills/bmad-generate-arc42/` skill installable and invokable
+- `docs/getting-started.md` covers full local dev setup through Matrix client connection
+- `docs/matrix-api-scope.md` contains full endpoint table (Implemented / Stub / Not implemented)
+
+---
+
+### Story 9.12: arc42-Dokumentationspflege als Standard-Pipeline-Gate ab Epic 10
+
+**As a** maintainer,
+**I want** the `bmad-generate-arc42` skill to run automatically at the end of every epic and produce a verifiable freshness signal in CI,
+**so that** architecture documentation never drifts more than one epic behind the implementation without a blocking CI warning.
+
+**Size:** S
+
+**Background:** Story 9.11 delivered the `/bmad-generate-arc42` skill and the initial `docs/` tree. The CI job was added with `allow_failure: true` as a soft gate. This story hardens the integration: the skill becomes a mandatory pipeline step (alongside `/bmad-testarch-trace`) in `CLAUDE.md` and `bmad-pipeline`, the CI job flips to `allow_failure: false`, and a lightweight `bmad-maintain-arc42` skill is introduced for incremental per-story updates (delta mode, not full regeneration).
+
+**Acceptance Criteria:**
+
+**AC1 — `CLAUDE.md` pipeline gate updated:**
+The Epic Completion section in `CLAUDE.md` lists `/bmad-generate-arc42` as a required step before epic retrospective, alongside `/bmad-testarch-trace`. Gate description: "re-generate arc42 docs from updated BMAD artifacts; commit resulting diff".
+
+**AC2 — `bmad-pipeline` skill updated:**
+`bmad-pipeline`'s workflow includes a doc-generation step at the epic-end gate. The step invokes `/bmad-generate-arc42` and checks that `docs/.arc42-manifest.json` `generated_at` is ≤ 24 h old after the run.
+
+**AC3 — CI gate hardened:**
+`allow_failure: true` on the `docs` CI job in `.github/workflows/ci.yml` and `.gitlab-ci.yml` changed to `allow_failure: false`. Failing doc verification blocks merge.
+
+**AC4 — `bmad-maintain-arc42` delta skill:**
+A new skill `.claude/skills/bmad-maintain-arc42/` is installed. It runs the arc42 generator in delta mode: only re-generates sections whose source artifact has a `git diff` since the manifest's `generated_at`. Invokable via `/bmad-maintain-arc42`. Intended for lightweight per-PR updates between full epic runs.
+
+**AC5 — `scripts/verify-docs.sh` staleness threshold:**
+The staleness threshold for `editable: false` files changes from 180 days (warning) to 60 days (error, CI-blocking). This ensures docs are refreshed at least every 1–2 epics.
+
+**AC6 — Verify script updated:**
+`scripts/verify-docs.sh` passes all checks after running `/bmad-generate-arc42` fresh. `make test-integration` (or equivalent CI suite) is green.
+
+---
+
+## Epic 10: Managed E2EE — Key Escrow
+
+**Goal:** Nebu implementiert ein Server-Side Key Escrow Modell: End-User erhalten E2EE-Komfort via Standard-Matrix-Clients; Key Material liegt nie im Klartext im Elixir-Heap; Compliance-Zugriff auf E2EE-Content ist über Vier-Augen-Genehmigung mit immutablem Audit-Log möglich.
+
+**Pre-Epic-TODO:** ADR-011 finalisieren — Threat Model, Key-Escrow-Architektur, DB-Schema-Entscheidung, Security Assumptions & Out-of-Scope Threats. Muss `Accepted` sein bevor Story 10.1 startet.
+
+---
+
+### Story 10.1: Key Material Memory Hygiene
+
+As a security-conscious operator,
+I want key material to be immediately persisted to the encrypted database and never held in GenServer state,
+So that Core process dumps, observer attaches, and Horde migration logs cannot leak private keys.
+
+**Size:** M
+
+**Acceptance Criteria:**
+
+**Given** a `keys/upload` request arrives at Core,
+**When** Core processes the key material,
+**Then** it is written to PostgreSQL via `pgcrypto` (AES-256-GCM) before the gRPC response is sent — no key material stored in GenServer state
+
+**Given** any Core GenServer that handles key operations,
+**When** its state is inspected via `:sys.get_state/1` in a test,
+**Then** no binary that looks like a private key (length ≥ 32 bytes, high entropy) is present in the returned state
+
+**Given** the Elixir binary holding key material after DB write,
+**When** the function scope exits,
+**Then** the binary is dereferenced and eligible for GC — documented with a comment explaining why deterministic zeroing is not possible in BEAM and why immediate DB persistence is the mitigation
+
+**Given** the pgcrypto encryption key,
+**When** the system starts,
+**Then** it is loaded from Docker Secret / env var (same mechanism as `NEBU_INTERNAL_SECRET_FILE`) — never hardcoded
+
+---
+
+### Story 10.2: Escrow Audit Log Immutability
+
+As a compliance officer,
+I want escrow access events to be recorded in a separate, immutable audit table,
+So that a compromised compliance officer cannot tamper with the evidence of their own access.
+
+**Size:** M
+
+**Acceptance Criteria:**
+
+**Given** migration `000X_escrow_audit_log.up.sql` runs,
+**When** the DB schema is inspected,
+**Then** table `escrow_access_log` exists with columns: `id BIGSERIAL`, `requester_id TEXT`, `approver_id TEXT`, `room_id TEXT`, `user_id TEXT`, `accessed_at TIMESTAMPTZ`, `justification TEXT`, `decryption_key_hash TEXT`
+
+**Given** the `nebu_app` DB role (used by Core),
+**When** `\dp escrow_access_log` is run,
+**Then** the role has INSERT only — no UPDATE, DELETE, TRUNCATE
+
+**Given** `BYPASSRLS` is set for `nebu_migrate` role,
+**When** a migration attempts to DELETE from `escrow_access_log`,
+**Then** it succeeds (migration role bypass) but normal app operations cannot
+
+**Given** a compliance escrow access occurs,
+**When** the four-eyes approval completes,
+**Then** both `requester_id` AND `approver_id` are written to the same `escrow_access_log` row before the decryption key is released
+
+**Given** a test attempts to call Core's escrow service with both approvals from the same session,
+**When** the request is processed,
+**Then** it is rejected with an error: "requester and approver must be distinct principals"
+
+---
+
+### Story 10.3: `keys/upload` — Device Key Persistence
+
+As a Matrix client user,
+I want my device keys uploaded to the server to be actually stored,
+So that other users can retrieve my keys and send me encrypted messages.
+
+**Size:** M
+
+**Acceptance Criteria:**
+
+**Given** migration `000X_device_keys.up.sql` runs,
+**When** the schema is inspected,
+**Then** tables `device_keys` (`user_id`, `device_id`, `key_type`, `algorithm`, `public_key_b64`, `signatures_json`, `created_at`) and `one_time_keys` (`user_id`, `device_id`, `key_id`, `key_data_encrypted`, `used`, `created_at`) exist
+
+**Given** a client sends `POST /_matrix/client/v3/keys/upload` with device keys and one-time keys,
+**When** the gateway processes the request,
+**Then** it delegates to Core via `UploadKeys` gRPC RPC, Core persists the keys, and the response contains `one_time_key_counts` with correct counts per algorithm
+
+**Given** 10 one-time keys are uploaded,
+**When** `keys/upload` is called again,
+**Then** `one_time_key_counts` reflects the correct remaining count (not always 0 or always max)
+
+**Given** a test checks GenServer state after `UploadKeys`,
+**When** `:sys.get_state/1` is called on the handling process,
+**Then** no key material binaries are present (Story 10.1 invariant holds)
+
+---
+
+### Story 10.4: `keys/query` — Device Keys from Database
+
+As a Matrix client user,
+I want `POST /keys/query` to return actual stored device keys,
+So that clients can encrypt messages for specific devices.
+
+**Size:** S
+
+**Acceptance Criteria:**
+
+**Given** user `@alice:server` has uploaded device keys (Story 10.3),
+**When** `@bob:server` calls `POST /_matrix/client/v3/keys/query` with `{"device_keys": {"@alice:server": []}}`,
+**Then** the response contains `{ "failures": {}, "device_keys": { "@alice:server": { "<device_id>": { ... } } } }`
+
+**Given** user `@unknown:server` does not exist,
+**When** their ID is included in a `keys/query` request,
+**Then** they are omitted from `device_keys` (not in `failures`) — spec-compliant unknown-user handling
+
+**Given** `gateway/internal/matrix/keys_query.go` is inspected,
+**When** the handler is reviewed,
+**Then** it delegates to Core via `QueryKeys` gRPC RPC instead of using the DB existence-check stub
+
+---
+
+### Story 10.5: `keys/claim` — One-Time Key Claiming
+
+As a Matrix client user,
+I want `POST /keys/claim` to work correctly,
+So that clients can retrieve one-time keys before sending the first encrypted message to a device.
+
+**Size:** S
+
+**Acceptance Criteria:**
+
+**Given** `@alice:server` has one-time keys in the DB,
+**When** `@bob:server` calls `POST /_matrix/client/v3/keys/claim` with `{"one_time_keys": {"@alice:server": {"<device_id>": "signed_curve25519"}}}`,
+**Then** the response contains exactly one one-time key for the requested device and that key is marked as `used` in the DB
+
+**Given** a one-time key is claimed,
+**When** the same key_id is claimed again,
+**Then** the server returns an empty result for that device (key already used — not reused)
+
+**Given** `@alice:server` has no remaining one-time keys,
+**When** `keys/claim` is called for her device,
+**Then** the response contains an empty map for that device (not an error) and `one_time_key_counts` in the next `keys/upload` response signals 0
+
+---
+
+### Story 10.6: `keys/changes` — Key Change Tracking
+
+As a Matrix client user,
+I want `GET /keys/changes` to return users who have changed their keys,
+So that my client can re-download keys for devices that have rotated or been added.
+
+**Size:** S
+
+**Acceptance Criteria:**
+
+**Given** `@alice:server` uploads new device keys at time T,
+**When** `GET /_matrix/client/v3/keys/changes?from=<sync_token_before_T>&to=<sync_token_after_T>` is called,
+**Then** the response contains `{ "changed": ["@alice:server"], "left": [] }`
+
+**Given** `@bob:server` leaves a shared room,
+**When** `GET /keys/changes` is called with the relevant token range,
+**Then** `@bob:server` appears in `"left"` if he is no longer in any shared room with the querying user
+
+**Given** no keys have changed in the token range,
+**When** `GET /keys/changes` is called,
+**Then** the response is `{ "changed": [], "left": [] }` — not a 404 or 501
+
+---
+
+### Story 10.7: Cross-Signing — `keys/device_signing/upload` + `keys/signatures/upload`
+
+As a Matrix client user,
+I want to upload cross-signing keys and signatures,
+So that my devices can verify each other without manual verification prompts.
+
+**Size:** M
+
+**Acceptance Criteria:**
+
+**Given** migration `000X_cross_signing_keys.up.sql` runs,
+**When** the schema is inspected,
+**Then** table `cross_signing_keys` exists with columns: `user_id`, `key_type` (master/self_signing/user_signing), `public_key_b64`, `signatures_json`
+
+**Given** a client calls `POST /_matrix/client/v3/keys/device_signing/upload` with master, self-signing, and user-signing keys,
+**When** Core processes the request,
+**Then** the signature of each key is verified against the master key before storage — invalid signatures return `400 M_BAD_JSON` and nothing is stored
+
+**Given** valid cross-signing keys are stored,
+**When** a client calls `POST /_matrix/client/v3/keys/signatures/upload` with device signature data,
+**Then** the signatures are stored and subsequent `keys/query` responses include the cross-signing signature data
+
+**Given** a UIA flow is required for `device_signing/upload` (Matrix spec),
+**When** the request arrives without a valid UIA auth block,
+**Then** the server returns `401` with a UIA flows response (at minimum `m.login.dummy` stage for MVP)
+
+---
+
+### Story 10.8: `room_keys/*` — Key Backup Endpoints
+
+As a Matrix client user,
+I want room key backup endpoints to work correctly,
+So that my Megolm session keys are safely backed up and restorable.
+
+**Size:** S
+
+**Acceptance Criteria:**
+
+**Given** migrations for `room_key_backup_versions` and `room_key_backups` exist,
+**When** a client calls `POST /_matrix/client/v3/room_keys/version` to create a backup,
+**Then** a new backup version is created and the version string is returned
+
+**Given** a backup version exists,
+**When** a client calls `PUT /_matrix/client/v3/room_keys/keys/{roomId}/{sessionId}` to store a session key,
+**Then** the key is stored with `INSERT ... ON CONFLICT DO NOTHING` — existing keys are never overwritten (immutability invariant)
+
+**Given** keys are stored in a backup,
+**When** `GET /_matrix/client/v3/room_keys/keys` is called,
+**Then** all backed-up sessions for the user are returned with correct `session_id` and `session_data`
+
+---
+
+### Story 10.9: Escrow-Compliance Integration
+
+As a compliance officer,
+I want to decrypt E2EE message content via four-eyes approval and the escrow key,
+So that legal content access is possible while maintaining compliance audit trails.
+
+**Size:** L
+
+**Acceptance Criteria:**
+
+**Given** ADR-011 defines the escrow key architecture,
+**When** a room has `m.room.encryption` state and messages encrypted with the Megolm session key,
+**Then** the server holds an escrow copy of the Megolm session key (encrypted with the compliance escrow master key) in `room_key_backups`
+
+**Given** a valid four-eyes approved compliance access request (requester + approver are distinct principals),
+**When** the compliance officer calls the decryption service,
+**Then** the escrow master key is used to decrypt the session key, the session key is used to decrypt the message, and the access is logged to `escrow_access_log` with both principal IDs
+
+**Given** the decryption service is called,
+**When** both approvals come from the same authenticated session or user,
+**Then** the request is rejected with `403 M_FORBIDDEN` — "self-approval not permitted"
+
+**Given** the compliance session expires (24h TTL from Epic 5),
+**When** a decryption attempt is made with the expired session,
+**Then** the server returns `401 M_UNKNOWN_TOKEN`
+
+---
+
+### Story 10.10: OTK Rotation — One-Time Key Replenishment
+
+As a system operator,
+I want Core to automatically signal clients when one-time key counts are low,
+So that clients replenish their one-time keys before they run out, preventing encryption failures.
+
+**Size:** S
+
+**Acceptance Criteria:**
+
+**Given** a user's one-time key count for a device drops below a threshold (e.g. 5),
+**When** `/sync` is called by that user's client,
+**Then** the `device_one_time_keys_count` field in the sync response shows the correct low count, prompting the client to upload more
+
+**Given** `/sync` is always called after any keys operation,
+**When** the response is inspected,
+**Then** `device_one_time_keys_count` is always present (not omitted when zero) — per Matrix spec Section 5.4
+
+**Given** the `device_one_time_keys_count` field is present in sync,
+**When** an Element Web client receives a count below its threshold,
+**Then** it automatically triggers a `keys/upload` to replenish (verified via integration test: count before, upload, count after)
+
+---
+
+## Epic 11: Full-Text Search
+
+**Goal:** `POST /_matrix/client/v3/search` ist produktiv implementiert. User können Nachrichten in ihren Räumen durchsuchen. Suchergebnisse sind scope-enforced, enthalten `rank`, `context`, `state`, und `highlights`. Rate-Limiting schützt PostgreSQL.
+
+**Pre-Epic-TODO:** ADR-010 finalisieren — tsvector (`plainto_tsquery` / `websearch_to_tsquery`) vs. pgvector (Embedding-Pipeline), PoC-Query dokumentieren, Community-Input auswerten. Muss `Accepted` sein bevor Story 11.1 startet.
+
+---
+
+### Story 11.1: DB Migration + Search Index
+
+As a developer,
+I want the database to have a full-text search index on message content,
+So that the search handler can query it efficiently.
+
+**Size:** M
+
+**Acceptance Criteria:**
+
+**Given** ADR-010 chose tsvector (primary path),
+**When** migration `000X_search_vector.up.sql` runs,
+**Then** column `search_vector tsvector` is added to the `events` table (or equivalent message store) with a GIN index `CREATE INDEX CONCURRENTLY`
+
+**Given** the index exists,
+**When** a new message event is inserted,
+**Then** `search_vector` is populated automatically via a DB trigger using `tsvector_update_trigger` with language `pg_catalog.simple` (multilingual-safe default)
+
+**Given** ADR-010 chose pgvector (alternative path),
+**When** migration runs,
+**Then** the `pgvector` extension is enabled and an `embedding vector(1536)` column + HNSW index exists — Dockerfile includes the extension
+
+**Given** the migration runs on a DB with existing messages,
+**When** backfill is completed,
+**Then** all existing events have a non-null `search_vector` (tsvector path) or `embedding` (pgvector path)
+
+---
+
+### Story 11.2: Search Membership Enforcement
+
+As a Matrix client user,
+I want search results to only include messages from rooms I am a member of,
+So that I cannot read messages from private rooms I was never invited to.
+
+**Size:** S
+
+**Acceptance Criteria:**
+
+**Given** user `@alice:server` is a member of room A but not room B,
+**When** Alice calls `POST /search` with a term that matches messages in both rooms,
+**Then** results contain only messages from room A — zero results from room B
+
+**Given** the search SQL query in Core,
+**When** it is inspected,
+**Then** the membership filter is a `WHERE events.room_id IN (SELECT room_id FROM room_members WHERE user_id = $1 AND membership = 'join')` — not an application-layer post-filter
+
+**Given** `@alice:server` is kicked from room A after a message is sent,
+**When** Alice searches for content from that message,
+**Then** no results are returned for room A (membership is checked at query time, not at message-send time)
+
+---
+
+### Story 11.3: Elixir Core — `SearchMessages` gRPC Handler
+
+As a developer,
+I want the Elixir Core to handle `SearchMessages` gRPC calls,
+So that the Go gateway can delegate search queries to Core.
+
+**Size:** M
+
+**Acceptance Criteria:**
+
+**Given** `proto/core.proto` is updated,
+**When** it is inspected,
+**Then** `SearchMessages` RPC is defined with request fields: `user_id`, `search_term`, `room_filter` (repeated string), `sender_filter` (repeated string), `limit`, `next_batch`; response fields: `results` (list of events with rank), `next_batch`, `total_count`, `state` (map room_id → state events)
+
+**Given** the Core gRPC handler receives a `SearchMessages` request,
+**When** the query executes,
+**Then** it uses exclusively Ecto prepared statements — no string interpolation in SQL; `websearch_to_tsquery($1)` for tsvector or parameterized vector query for pgvector
+
+**Given** the query returns results,
+**When** results are assembled,
+**Then** each result includes: `rank` (float from `ts_rank()`), the full event JSON, `events_before` and `events_after` context (configurable limit), and profile info (`displayname`, `avatar_url`) for each sender
+
+**Given** a search term with special characters (`'`, `&`, `)`, `:`),
+**When** the query runs,
+**Then** no SQL error occurs and results are returned safely (prepared statement handles escaping)
+
+---
+
+### Story 11.4: Gateway `POST /search` Handler
+
+As a Matrix client user,
+I want `POST /_matrix/client/v3/search` to return properly formatted results,
+So that Element Web can display search results with context, highlights, and room grouping.
+
+**Size:** M
+
+**Acceptance Criteria:**
+
+**Given** a client sends `POST /search` with `{"search_categories": {"room_events": {"search_term": "hello", "order_by": "rank"}}}`,
+**When** the handler processes it,
+**Then** the response matches Matrix spec Section 11.14.1 format: `search_categories.room_events` contains `count`, `results` (with `rank`, `result`, `context.events_before`, `context.events_after`, `context.profile_info`, `highlights`), `next_batch`, `groups`, `state`
+
+**Given** the filter block in the request contains `rooms: ["!room1:server"]`,
+**When** the handler processes it,
+**Then** only results from `!room1:server` are returned (and only if the user is a member)
+
+**Given** the response is assembled,
+**When** `groups` is inspected,
+**Then** results are grouped by `room_id` with per-group `results` arrays and `next_batch` tokens
+
+**Given** the JWT middleware is applied to `POST /search`,
+**When** an unauthenticated request arrives,
+**Then** the server returns `401 M_UNKNOWN_TOKEN`
+
+---
+
+### Story 11.5: Search Rate-Limiting
+
+As a system operator,
+I want full-text search to be rate-limited per user,
+So that expensive PostgreSQL queries cannot be used to DoS the database.
+
+**Size:** S
+
+**Acceptance Criteria:**
+
+**Given** a user sends more than 10 search requests per minute,
+**When** the 11th request arrives,
+**Then** the server returns `429 M_LIMIT_EXCEEDED` with `retry_after_ms` set to a positive value
+
+**Given** the rate limiter is implemented,
+**When** it is inspected,
+**Then** it uses the existing per-IP/per-user rate limiting infrastructure from Epic 5 (story 5-21) — no new rate-limiter from scratch
+
+**Given** two different users each send 10 requests per minute,
+**When** their requests are processed,
+**Then** neither is blocked — rate limits are per-user, not global
+
+---
+
+### Story 11.6: Gherkin E2E Search Flow
+
+As a developer,
+I want Godog scenarios covering the full search flow including negative permission tests,
+So that search correctness and access control are continuously verified in CI.
+
+**Size:** S
+
+**Acceptance Criteria:**
+
+**Given** `gateway/features/search.feature` exists,
+**When** `make test-integration` runs,
+**Then** the following scenarios pass:
+  - Happy path: user sends message, searches for it, finds it in results with non-zero rank
+  - Negative: user searches in a room they are not a member of, gets zero results
+  - Pagination: search with `next_batch` token returns the next page of results
+  - Rate limit: > 10 requests/min returns 429
+
+**Given** the negative permission scenario runs,
+**When** user B searches for a term only in user A's private room,
+**Then** the test asserts zero results are returned — this is a mandatory assertion, not optional
+
+---
+
+## Epic 12: Media Gateway Phase 2 — Object Storage & Thumbnails
+
+**Goal:** Media Gateway speichert Dateien in MinIO (S3-kompatibel, Docker-runnable); Thumbnails werden on-demand generiert mit korrektem crop/scale-Verhalten; Blurhash wird korrekt als client-gesendetes Feld durchgereicht. Keine Credentials in Git-History.
+
+**Pre-Epic-TODO:** ADR-013 finalisieren — MinIO als Default, Thumbnail-Library (govips vs. pure-Go `imaging`), Pre-Signed-URL-Policy (max TTL), Bucket-IAM-Policy. Muss `Accepted` sein bevor Story 12.1 startet.
+
+---
+
+### Story 12.1: MinIO Docker Compose + Credentials via Secrets
+
+As a system operator,
+I want MinIO integrated into the Docker Compose stack with credentials managed via Docker Secrets,
+So that object storage is available locally and no credentials are committed to Git.
+
+**Size:** S
+
+**Acceptance Criteria:**
+
+**Given** `docker-compose.yml` is updated,
+**When** `make dev` runs,
+**Then** a MinIO service starts, is healthy, and a bucket `nebu-media` is initialized automatically
+
+**Given** `make setup` is run,
+**When** it completes,
+**Then** `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` are generated and stored in `.secrets/minio_root_user` and `.secrets/minio_root_password` (not hardcoded in docker-compose.yml)
+
+**Given** `.gitignore` is inspected,
+**When** `.secrets/` is listed,
+**Then** it is excluded from Git tracking
+
+**Given** the README and ADR-013 are inspected,
+**When** the credentials section is read,
+**Then** an explicit warning is present: "These are example credentials. Replace before first production start."
+
+**Given** `git log -- .secrets/` is run,
+**When** the output is inspected,
+**Then** no `.secrets/` files have ever been committed (verified via gitleaks scan)
+
+---
+
+### Story 12.2: Storage Interface Refactor
+
+As a developer,
+I want the media gateway to use a `Storer` interface instead of direct filesystem calls,
+So that the MinIO backend can be swapped in without rewriting upload/download logic.
+
+**Size:** S
+
+**Acceptance Criteria:**
+
+**Given** `media/internal/storage/storage.go` exists,
+**When** it is inspected,
+**Then** it defines: `type Storer interface { Put(ctx, key, reader, size) error; Get(ctx, key) (io.ReadCloser, error); Delete(ctx, key) error }`
+
+**Given** `media/internal/storage/local.go` exists,
+**When** it is inspected,
+**Then** it implements `Storer` using the existing local filesystem logic (behaviour-preserving refactor — no functional changes)
+
+**Given** `media/internal/storage/minio.go` exists,
+**When** it is inspected,
+**Then** it implements `Storer` using the MinIO Go SDK (`minio-go/v7`)
+
+**Given** the existing upload and download handlers,
+**When** they are updated,
+**Then** they depend on `Storer` (injected via config struct) — not on concrete `local` or `minio` types
+
+**Given** unit tests for the upload handler,
+**When** they run with a fake `Storer`,
+**Then** all pass without a real filesystem or MinIO — Storer is fully mockable
+
+---
+
+### Story 12.3: Media Upload — MinIO Backend + IAM Hardening
+
+As a Matrix client user,
+I want uploaded media to be stored in MinIO,
+So that files persist across Gateway restarts and are not tied to local disk.
+
+**Size:** M
+
+**Acceptance Criteria:**
+
+**Given** the Media Gateway is configured with `NEBU_STORAGE_BACKEND=minio`,
+**When** a client uploads a file via `PUT /_matrix/media/v3/upload`,
+**Then** the encrypted file is stored in MinIO bucket `nebu-media` under key `<server_name>/<media_id>` and the gateway returns a valid `mxc://` URI
+
+**Given** MinIO IAM policy is configured,
+**When** the policy is inspected via `mc admin policy info`,
+**Then** the `nebu-app` MinIO user has only: `s3:PutObject`, `s3:GetObject` on `nebu-media/*` — no `s3:DeleteObject`, no `s3:*`, no `s3:ListBucket` (or list is explicitly scoped)
+
+**Given** the bucket policy is inspected,
+**When** anonymous access is checked,
+**Then** the bucket has no public-read or public-write policy — all access via authenticated MinIO user
+
+**Given** an upload test runs with `NEBU_STORAGE_BACKEND=local` (default for tests),
+**When** the test passes,
+**Then** the `Storer` interface ensures no MinIO connection is needed in unit tests
+
+---
+
+### Story 12.4: Media Download — MinIO Backend + Pre-Signed URL Security
+
+As a Matrix client user,
+I want to download media stored in MinIO,
+So that files uploaded after the MinIO migration are retrievable.
+
+**Size:** S
+
+**Acceptance Criteria:**
+
+**Given** a file is stored in MinIO (uploaded via Story 12.3),
+**When** a client calls `GET /_matrix/media/v3/download/{serverName}/{mediaId}`,
+**Then** the gateway retrieves the file from MinIO via the `Storer.Get` interface, decrypts it (AES-256-GCM, existing logic), and streams it to the client
+
+**Given** pre-signed URLs are used internally (if ADR-013 chose this approach),
+**When** a pre-signed URL is generated,
+**Then** it has a maximum TTL of 15 minutes and is bound to the specific object key — not a wildcard
+
+**Given** the authenticated gateway request arrives,
+**When** the media_id does not exist in MinIO,
+**Then** the server returns `404 M_NOT_FOUND` (not a 500 or MinIO SDK panic)
+
+**Given** the MinIO service is unavailable,
+**When** a download is attempted,
+**Then** the gateway returns `502 M_UNKNOWN` with a log entry — no panic, no credential leak in response body
+
+---
+
+### Story 12.5: Thumbnail Generation — On-Demand, Sandboxed
+
+As a Matrix client user,
+I want `GET /_matrix/media/v3/thumbnail/{serverName}/{mediaId}` to return a correctly sized thumbnail,
+So that avatars and image previews display correctly in Element Web and other clients.
+
+**Size:** M
+
+**Acceptance Criteria:**
+
+**Given** a JPEG image is stored in MinIO,
+**When** `GET /thumbnail/{serverName}/{mediaId}?width=100&height=100&method=scale` is called,
+**Then** the response is a JPEG or WebP image with aspect-ratio-preserved dimensions ≤ 100×100 and `Content-Type: image/jpeg` or `image/webp`
+
+**Given** `method=crop` is specified,
+**When** the thumbnail is generated,
+**Then** the output is exactly 100×100 pixels (center-cropped) — not aspect-ratio-preserved
+
+**Given** an SVG, PDF, PS, or EPS file is uploaded and a thumbnail is requested,
+**When** the request is processed,
+**Then** the server returns `400 M_BAD_JSON` — format rejected before processing (MIME type from magic bytes, not Content-Type header)
+
+**Given** the thumbnail service processes an uploaded image,
+**When** the image processing runs,
+**Then** it executes without network access and without shell exec (sandboxed via `seccomp` profile or separate container depending on ADR-013 library choice)
+
+**Given** a thumbnail is generated,
+**When** the response headers are inspected,
+**Then** `Cache-Control: max-age=86400` is set
+
+**Given** `animated=true` is passed and the source is a GIF,
+**When** the thumbnail is served,
+**Then** the response is an animated GIF or WebP — not a static frame
+
+---
+
+### Story 12.6: Blurhash Pass-Through + Animated Thumbnail Correctness
+
+As a Matrix client user,
+I want blurhash data to be correctly stored and returned with media metadata,
+So that clients can show loading placeholders before the full image loads.
+
+**Size:** S
+
+**Acceptance Criteria:**
+
+**Given** a client uploads an image with `content.info.blurhash` in the `m.room.message` event,
+**When** the event is stored,
+**Then** the `blurhash` field is persisted as part of `content.info` in the events table — the server does NOT compute blurhash (client-provided value only)
+
+**Given** `/sync` returns a `m.room.message` event with an image,
+**When** the event `content.info` is inspected,
+**Then** `blurhash` is present if the client provided it during send — not stripped or modified
+
+**Given** `GET /thumbnail?animated=false` is called on an animated GIF source,
+**When** the thumbnail is generated,
+**Then** the response is a static single-frame image (not animated) — correct `Content-Type: image/jpeg` or `image/png`
+
+**Given** `GET /thumbnail` is called without `width` or `height` params,
+**When** the request is processed,
+**Then** the server returns `400 M_BAD_JSON` — both params are required per Matrix spec Section 13.8.2
+

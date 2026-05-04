@@ -2,7 +2,7 @@
 security_review: not-needed
 ---
 
-# Story 9.1: arc42-Dokumentation aus BMAD-Artefakten generieren + BMAD-Skill für laufende Pflege
+# Story 9.11: arc42-Dokumentation aus BMAD-Artefakten generieren + BMAD-Skill für laufende Pflege
 
 Status: review
 
