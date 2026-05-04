@@ -339,12 +339,14 @@ func main() {
 	mux.Handle("POST /admin/rooms/{roomId}/unarchive", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(roomsHandler.UnarchiveRoomHandler)))))
 	mux.Handle("POST /admin/rooms/{roomId}/settings", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(roomsHandler.UpdateRoomSettingsHandler)))))
 	// Story 7.10: Server Configuration page.
-	configHandler := admin.NewConfigHandler(tmplHandler)
+	// Story 9.4: pass gRPC client so handler uses real Core RPCs instead of stubs.
+	configHandler := admin.NewConfigHandler(tmplHandler, coreClient)
 	mux.Handle("GET /admin/config", csrf(sessionGuard(http.HandlerFunc(configHandler.Handler))))
 	mux.Handle("POST /admin/config", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(configHandler.UpdateConfigHandler)))))
 
 	// Story 7.15: Role Mapping configuration page.
-	roleMappingHandler := admin.NewRoleMappingHandler(tmplHandler)
+	// Story 9.4: variadic client passed for future wiring; role mapping deferred to epic-9 follow-up.
+	roleMappingHandler := admin.NewRoleMappingHandler(tmplHandler, coreClient)
 	mux.Handle("GET /admin/config/role-mapping", csrf(sessionGuard(http.HandlerFunc(roleMappingHandler.Handler))))
 	mux.Handle("POST /admin/config/role-mapping", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(roleMappingHandler.UpdateHandler)))))
 

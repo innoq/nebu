@@ -2010,7 +2010,9 @@ defmodule Nebu.EventDispatcher.Server do
   # NOTE: The Gateway calls CoreClient.InvalidateAllAdminSessions after OIDC config changes
   # (Story 6.10) — Core only persists the data here.
 
-  def update_server_config(%Core.UpdateServerConfigRequest{} = req, _stream) do
+  def update_server_config(%Core.UpdateServerConfigRequest{} = req, stream) do
+    {actor_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
+
     changes =
       []
       |> maybe_add_change("instance_name", req.instance_name)
@@ -2025,6 +2027,16 @@ defmodule Nebu.EventDispatcher.Server do
     else
       case admin_db_module().upsert_server_config(Map.new(changes)) do
         :ok ->
+          # Audit log for server config update (Story 9.4 — mirrors deactivate_user pattern from Story 9.2).
+          audit_writer_module().log(
+            actor_id,
+            "server_config_updated",
+            "server_config",
+            "config",
+            %{changed_keys: Map.keys(Map.new(changes))},
+            "success"
+          )
+
           %Core.UpdateServerConfigResponse{ok: true}
 
         {:error, reason} ->

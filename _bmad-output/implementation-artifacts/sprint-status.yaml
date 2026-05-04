@@ -1,5 +1,7 @@
 # generated: 2026-03-20
 # last_updated: 2026-05-04
+# story 9-4 done (pipeline: ATDD+Dev+Test-Review (0 MAJOR)+Code-Review (1 MEDIUM fixed: flash allowlist)+Kassandra CLEAN): 2026-05-04
+# story 9-4 created: 9-4 → ready-for-dev: 2026-05-04
 # story 9-3 done (pipeline: ATDD+Dev+Test-Review (2 MAJOR fixed: Playwright strict-mode selector + audit archive test)+Code-Review (1 MAJOR fixed: UpdateRoomNameHandler 404)+Kassandra HIGH-1-fixed (actor_id via contextWithAdminIdentity; 6 identity-propagation tests added)): 2026-05-04
 # story 9-3 created: 9-3 → ready-for-dev: 2026-05-04
 # story 9-2 done (pipeline: ATDD+Dev+Test-Review (0 MAJOR + 5 MINOR; M-1 loginAsAdmin extracted + M-3 double login removed)+Code-Review CLEAN+Kassandra HIGH-1-fixed (audit log: deactivate/reactivate/role in Core server.ex + audit_writer allowlist)): 2026-05-04
@@ -691,7 +693,7 @@ development_status:
   9-1-admin-grpc-rpcs-core-user-room-management: done
   9-2-admin-ui-users-api-integration: done
   9-3-admin-ui-rooms-api-integration: done
-  9-4-admin-ui-config-role-mapping-api-integration: backlog
+  9-4-admin-ui-config-role-mapping-api-integration: done  # story 9-4 created: 9-4 → ready-for-dev: 2026-05-04
   9-5-admin-ui-compliance-api-integration: backlog
   9-6-state-event-type-whitelist-gateway-middleware: backlog
   9-7-room-state-event-types-full-implementation: backlog

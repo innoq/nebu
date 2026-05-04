@@ -272,6 +272,19 @@ defmodule Nebu.EventDispatcher.AdminGrpcTest do
     end
   end
 
+  # ─── FakeAuditWriter ─────────────────────────────────────────────────────────
+  #
+  # No-op spy for Compliance.AuditWriter. Returns :ok for all log calls.
+  # Injected via Application.put_env(:compliance, :audit_writer, FakeAuditWriter)
+  # so that tests that call handlers with audit log paths don't hit a real DB.
+  # Story 9.4: added to support update_server_config which now emits audit entries.
+
+  defmodule FakeAuditWriter do
+    @moduledoc "No-op audit writer for admin_grpc_test."
+    def log(_actor, _action, _target_type, _target_id, _metadata, _outcome), do: :ok
+    def log(_actor, _action, _target_type, _target_id, _metadata, _outcome, _error_detail), do: :ok
+  end
+
   # ─── Setup / Teardown ─────────────────────────────────────────────────────────
 
   setup do
@@ -286,11 +299,15 @@ defmodule Nebu.EventDispatcher.AdminGrpcTest do
     Application.put_env(:event_dispatcher, :admin_db_module, FakeAdminDB)
     Application.put_env(:event_dispatcher, :session_supervisor_module, FakeSessionSupervisor)
     Application.put_env(:event_dispatcher, :__admin_test_pid__, self())
+    # Story 9.4: inject FakeAuditWriter so audit log calls in update_server_config
+    # (and deactivate_user / reactivate_user / update_user_role) don't hit a real DB.
+    Application.put_env(:compliance, :audit_writer, FakeAuditWriter)
 
     on_exit(fn ->
       Application.delete_env(:event_dispatcher, :admin_db_module)
       Application.delete_env(:event_dispatcher, :session_supervisor_module)
       Application.delete_env(:event_dispatcher, :__admin_test_pid__)
+      Application.delete_env(:compliance, :audit_writer)
 
       if :ets.info(:admin_grpc_test_db) != :undefined do
         :ets.delete(:admin_grpc_test_db)
