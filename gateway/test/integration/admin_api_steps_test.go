@@ -303,12 +303,8 @@ func adminAPIDoRequest(method, url, bearerToken, body string) error {
 func initializeAdminAPISteps(sc *godog.ScenarioContext) {
 	// Reset all scenario-local state before each scenario so scenarios are isolated.
 	sc.Before(func(ctx context.Context, scenario *godog.Scenario) (context.Context, error) {
-		adminAPIAdminToken = ""
-		adminAPIAdminUserID = ""
-		adminAPITargetToken = ""
-		adminAPITargetUserID = ""
-		adminAPIComplianceToken = ""
-		adminAPIComplianceUserID = ""
+		// Auth tokens are intentionally NOT reset between scenarios — sessions remain valid
+		// for the full suite run. Resetting on every scenario exhausts the /login burst (10).
 		adminAPIRoomID = ""
 		adminAPITxnCounter = 0
 		return ctx, nil

@@ -45,6 +45,12 @@ var kaiIncrementalSyncBody string
 //   - We copy lastAccessToken → *accessToken before calling the next user's auth (which
 //     would overwrite lastAccessToken).
 func authenticateUser(username, password string, accessToken, userID *string) error {
+	// Idempotent: skip re-login if a token is already cached for this variable.
+	// The /login endpoint has burst=10; with 40+ scenarios each calling a Background
+	// auth step, repeated logins exhaust the bucket and cause 429s.
+	if *accessToken != "" {
+		return nil
+	}
 	// Step 1: Dex authorization code flow → lastDexIDToken
 	if err := iObtainDexTokenFor(username, password); err != nil {
 		return fmt.Errorf("Dex auth for %s: %w", username, err)
@@ -74,13 +80,23 @@ func authenticateUser(username, password string, accessToken, userID *string) er
 
 // kaiIsAuthenticated authenticates kai@example.com via Dex and Matrix login,
 // storing the result in kaiAccessToken and kaiUserID.
+// Idempotent: skips re-login if a token is already cached. This avoids exhausting
+// the /login rate-limit bucket (burst=10) when many Godog scenarios share the
+// same Background step across a full suite run.
 func kaiIsAuthenticated() error {
+	if kaiAccessToken != "" {
+		return nil
+	}
 	return authenticateUser("kai@example.com", "changeme", &kaiAccessToken, &kaiUserID)
 }
 
 // alexIsAuthenticated authenticates alex@example.com via Dex and Matrix login,
 // storing the result in alexAccessToken and alexUserID.
+// Idempotent: skips re-login if a token is already cached.
 func alexIsAuthenticated() error {
+	if alexAccessToken != "" {
+		return nil
+	}
 	return authenticateUser("alex@example.com", "changeme", &alexAccessToken, &alexUserID)
 }
 
@@ -340,7 +356,11 @@ func theBodyContainsExactlyOnce(substr string) error {
 }
 
 // marieIsAuthenticated authenticates marie@example.com.
+// Idempotent: skips re-login if a token is already cached.
 func marieIsAuthenticated() error {
+	if marieAccessToken != "" {
+		return nil
+	}
 	return authenticateUser("marie@example.com", "changeme", &marieAccessToken, &marieUserID)
 }
 
@@ -506,12 +526,11 @@ func initializeRoomFlowSteps(sc *godog.ScenarioContext) {
 	sc.Before(func(ctx context.Context, sc *godog.Scenario) (context.Context, error) {
 		lastRoomID = ""
 		lastEventID = ""
-		kaiAccessToken = ""
-		alexAccessToken = ""
-		marieAccessToken = ""
-		kaiUserID = ""
-		alexUserID = ""
-		marieUserID = ""
+		// Access tokens are intentionally NOT reset between scenarios.
+		// Sessions remain valid for the full suite run; re-authenticating every scenario
+		// exhausts the /login rate-limit burst (10) and causes 429 failures.
+		// Scenarios that need a fresh login must explicitly call the login step or clear
+		// the token variable before calling an auth step.
 		marieCapturedSyncToken = ""
 		marieIncrementalSyncBody = ""
 		kaiCapturedSyncToken = ""

@@ -56,11 +56,11 @@ Feature: Matrix Event Correctness — spec compliance for DM creation flow
     # AC4 — §11.12.1: device_keys must contain an entry for known users
     When kai sends POST /_matrix/client/v3/keys/query with body:
       """
-      {"device_keys":{"@kai:test.local":[]}}
+      {"device_keys":{"@kai:localhost":[]}}
       """
     Then the response status is 200
-    And the response JSON has key "device_keys" with child key "@kai:test.local"
-    And the response JSON "failures" does not contain key "@kai:test.local"
+    And the response JSON has key "device_keys" with child key "@kai:localhost"
+    And the response JSON "failures" does not contain key "@kai:localhost"
 
   Scenario: KeysQuery_UnknownUser_NotInFailures — unknown user is omitted from device_keys, not in failures
     # AC4 — §11.12.1: non-existent users must be silently omitted, NOT listed in failures
@@ -160,8 +160,8 @@ Feature: Matrix Event Correctness — spec compliance for DM creation flow
   Scenario: DMCreation_KeysQuery_Completes — DM room creation and keys/query both complete without looping
     # AC2 — DM loop root cause: verify both DM creation and keys/query return 200 cleanly
     Given marie is authenticated via OIDC
-    When kai creates a DM room with "@marie:test.local" and captures the room ID
+    When kai creates a DM room with "@marie:localhost" and captures the room ID
     Then the response status is 200
-    When kai sends keys/query for "@marie:test.local"
+    When kai sends keys/query for "@marie:localhost"
     Then the response status is 200
-    And the response JSON has key "device_keys" with child key "@marie:test.local"
+    And the response JSON has key "device_keys" with child key "@marie:localhost"
