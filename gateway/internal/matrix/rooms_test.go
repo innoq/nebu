@@ -1703,3 +1703,217 @@ func TestPutSendEvent_StatusCheckerError_FailOpen(t *testing.T) {
 type testArchiveStatusError struct{ msg string }
 
 func (e *testArchiveStatusError) Error() string { return e.msg }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Story 9-9: Core gRPC FailedPrecondition → 403 M_ROOM_ARCHIVED (AC2)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// These tests cover AC2 of Story 9-9: when Core.SendEvent returns a gRPC
+// FAILED_PRECONDITION error with message "M_ROOM_ARCHIVED", the gateway's
+// PutSendEventHandler must map it to 403 {"errcode":"M_ROOM_ARCHIVED","error":"Room is archived"}.
+//
+// This path is distinct from the gateway-level archive guard (Story 6.9):
+//   - Story 6.9: Gateway checks room status before calling Core → 403 M_ROOM_ARCHIVED
+//   - Story 9-9: Core returns FAILED_PRECONDITION (race window) → 403 M_ROOM_ARCHIVED
+//
+// Both paths produce identical 403 M_ROOM_ARCHIVED responses — this is intentional.
+//
+// RED PHASE — these tests fail until:
+//   - The switch st.Code() in PutSendEventHandler gains a codes.FailedPrecondition case
+//   - That case calls writeMatrixError(w, http.StatusForbidden, "M_ROOM_ARCHIVED", "Room is archived")
+//
+// Test strategy:
+//   - mockSendEventCoreClient.err set to status.Error(codes.FailedPrecondition, "M_ROOM_ARCHIVED")
+//   - No StatusChecker needed (use buildSendEventHandler without status checker)
+//     so the gateway-level archive guard is bypassed — only the Core error path is tested.
+//   - Verify: 403 response + {"errcode":"M_ROOM_ARCHIVED","error":"Room is archived"}
+
+// TestPutSendEvent_CoreFailedPrecondition_Returns403_MRoomArchived covers AC2 [P0]:
+// When Core.SendEvent returns FAILED_PRECONDITION with "M_ROOM_ARCHIVED",
+// PutSendEventHandler must return 403 with errcode M_ROOM_ARCHIVED.
+//
+// RED: fails until PutSendEventHandler's switch handles codes.FailedPrecondition.
+func TestPutSendEvent_CoreFailedPrecondition_Returns403_MRoomArchived(t *testing.T) {
+	// Arrange: Core returns FAILED_PRECONDITION (the race window was closed in Core).
+	// The gateway's StatusChecker was bypassed (passed the status check or no checker),
+	// but Core rejects the event via SELECT FOR UPDATE check.
+	coreMock := &mockSendEventCoreClient{
+		err: status.Error(codes.FailedPrecondition, "M_ROOM_ARCHIVED"),
+	}
+
+	// Use a handler without a StatusChecker so the gateway-level guard is not involved.
+	// This isolates the Core error-path mapping in PutSendEventHandler.
+	handler := buildSendEventHandler(coreMock)
+
+	oidcSrv, privateKey := setupOIDCServer(t)
+	t.Cleanup(oidcSrv.Close)
+
+	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
+	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+		http.HandlerFunc(handler.PutSendEvent),
+	)
+
+	mux := http.NewServeMux()
+	mux.Handle("PUT /_matrix/client/v3/rooms/{roomId}/send/{eventType}/{txnId}", authedHandler)
+
+	token := signJWT(t, oidcSrv.URL, privateKey, time.Now().Add(time.Hour), nil)
+
+	req := httptest.NewRequest(http.MethodPut,
+		"/_matrix/client/v3/rooms/!archivedroom:test.local/send/m.room.message/txn-9-9-1",
+		strings.NewReader(`{"msgtype":"m.text","body":"Sending to archived room"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	// Assert 1: HTTP status must be 403 Forbidden.
+	// RED: fails until codes.FailedPrecondition case is added to the switch in rooms.go.
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("[9-9 AC2] expected status 403 for Core FailedPrecondition, got %d; body: %s",
+			w.Code, w.Body.String())
+	}
+
+	// Assert 2: response body must be {"errcode":"M_ROOM_ARCHIVED","error":"Room is archived"}.
+	var errResp matrixError
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("[9-9 AC2] response body is not valid JSON: %v; body: %s", err, w.Body.String())
+	}
+
+	if errResp.ErrCode != "M_ROOM_ARCHIVED" {
+		t.Errorf("[9-9 AC2] expected errcode M_ROOM_ARCHIVED, got %q", errResp.ErrCode)
+	}
+
+	if errResp.Err != "Room is archived" {
+		t.Errorf("[9-9 AC2] expected error message %q, got %q", "Room is archived", errResp.Err)
+	}
+}
+
+// TestPutSendEvent_CoreFailedPrecondition_WithNonArchiveMessage_Returns403 covers AC2 [P1]:
+// Even when Core returns FailedPrecondition with a different message (not "M_ROOM_ARCHIVED"),
+// the gateway must still return 403 M_ROOM_ARCHIVED — the errcode is derived from the
+// gRPC status code, not from the message string.
+//
+// This verifies the switch is on codes.FailedPrecondition, not on message content.
+// RED: fails until codes.FailedPrecondition case is added to the switch.
+func TestPutSendEvent_CoreFailedPrecondition_WithNonArchiveMessage_Returns403(t *testing.T) {
+	coreMock := &mockSendEventCoreClient{
+		// Core returned FailedPrecondition but with a different internal message.
+		// Gateway must still map to 403 M_ROOM_ARCHIVED by code alone.
+		err: status.Error(codes.FailedPrecondition, "precondition failed"),
+	}
+
+	handler := buildSendEventHandler(coreMock)
+
+	oidcSrv, privateKey := setupOIDCServer(t)
+	t.Cleanup(oidcSrv.Close)
+
+	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
+	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+		http.HandlerFunc(handler.PutSendEvent),
+	)
+
+	mux := http.NewServeMux()
+	mux.Handle("PUT /_matrix/client/v3/rooms/{roomId}/send/{eventType}/{txnId}", authedHandler)
+
+	token := signJWT(t, oidcSrv.URL, privateKey, time.Now().Add(time.Hour), nil)
+
+	req := httptest.NewRequest(http.MethodPut,
+		"/_matrix/client/v3/rooms/!archivedroom:test.local/send/m.room.message/txn-9-9-2",
+		strings.NewReader(`{"msgtype":"m.text","body":"Another test"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("[9-9 AC2] expected 403 for FailedPrecondition, got %d; body: %s",
+			w.Code, w.Body.String())
+	}
+
+	var errResp matrixError
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("[9-9 AC2] response body is not valid JSON: %v; body: %s", err, w.Body.String())
+	}
+
+	if errResp.ErrCode != "M_ROOM_ARCHIVED" {
+		t.Errorf("[9-9 AC2] expected errcode M_ROOM_ARCHIVED for any FailedPrecondition, got %q",
+			errResp.ErrCode)
+	}
+}
+
+// TestPutSendEvent_OtherErrors_NotAffectedByFailedPreconditionFix covers AC4 regression [P1]:
+// Adding codes.FailedPrecondition must not affect the existing NotFound and PermissionDenied
+// error-code mappings in PutSendEventHandler.
+func TestPutSendEvent_OtherErrors_NotAffectedByFailedPreconditionFix(t *testing.T) {
+	tests := []struct {
+		name           string
+		grpcCode       codes.Code
+		grpcMsg        string
+		expectedStatus int
+		expectedErrCode string
+	}{
+		{
+			name:            "NotFound still returns 404 M_NOT_FOUND",
+			grpcCode:        codes.NotFound,
+			grpcMsg:         "room not found",
+			expectedStatus:  http.StatusNotFound,
+			expectedErrCode: "M_NOT_FOUND",
+		},
+		{
+			name:            "PermissionDenied still returns 403 M_FORBIDDEN",
+			grpcCode:        codes.PermissionDenied,
+			grpcMsg:         "not a member",
+			expectedStatus:  http.StatusForbidden,
+			expectedErrCode: "M_FORBIDDEN",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			coreMock := &mockSendEventCoreClient{
+				err: status.Error(tc.grpcCode, tc.grpcMsg),
+			}
+
+			handler := buildSendEventHandler(coreMock)
+
+			oidcSrv, privateKey := setupOIDCServer(t)
+			t.Cleanup(oidcSrv.Close)
+
+			provider := auth.NewProvider(context.Background(), oidcSrv.URL)
+			authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+				http.HandlerFunc(handler.PutSendEvent),
+			)
+
+			mux := http.NewServeMux()
+			mux.Handle("PUT /_matrix/client/v3/rooms/{roomId}/send/{eventType}/{txnId}", authedHandler)
+
+			token := signJWT(t, oidcSrv.URL, privateKey, time.Now().Add(time.Hour), nil)
+
+			req := httptest.NewRequest(http.MethodPut,
+				"/_matrix/client/v3/rooms/!someroom:test.local/send/m.room.message/txn-regression",
+				strings.NewReader(`{"msgtype":"m.text","body":"test"}`))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Bearer "+token)
+
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+
+			if w.Code != tc.expectedStatus {
+				t.Errorf("[9-9 AC4 regression] %s: expected status %d, got %d; body: %s",
+					tc.name, tc.expectedStatus, w.Code, w.Body.String())
+			}
+
+			var errResp matrixError
+			if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+				t.Fatalf("[9-9 AC4 regression] response body is not valid JSON: %v", err)
+			}
+
+			if errResp.ErrCode != tc.expectedErrCode {
+				t.Errorf("[9-9 AC4 regression] %s: expected errcode %q, got %q",
+					tc.name, tc.expectedErrCode, errResp.ErrCode)
+			}
+		})
+	}
+}

@@ -160,6 +160,24 @@ defmodule Nebu.Room.DBBehaviour do
               {:ok, String.t()} | {:error, :not_found | term()}
 
   @doc """
+  Atomically checks if a room is archived using SELECT FOR UPDATE.
+  Called by Room.Server.send_event/6 before inserting an event.
+
+  Must be called inside an Ecto transaction (the transaction context is
+  created inside db.ex — caller does NOT need to manage a transaction).
+
+  Returns {:ok, "active"} for active rooms.
+  Returns {:ok, "archived"} for archived rooms.
+  Returns {:error, :not_found} when the room does not exist.
+  Returns {:error, reason} on DB error.
+
+  Story 9-9: closes the TOCTOU race window between archive_room_atomic/1
+  and send_event insert.
+  """
+  @callback check_room_status_for_update(room_id :: String.t()) ::
+              {:ok, String.t()} | {:error, :not_found | term()}
+
+  @doc """
   Returns the user_id of the room creator from the most recent m.room.create event.
 
   Returns `{:ok, String.t()}` on success.

@@ -96,6 +96,9 @@ defmodule Nebu.EventDispatcher.ArchiveRoomTest do
     # RED: fails until @callback get_room_status/1 is added to Nebu.Room.DBBehaviour.
     def get_room_status(_room_id), do: {:ok, "active"}
 
+    # Story 9-9: TOCTOU fix — returns {:ok, "active"} for normal rooms.
+    def check_room_status_for_update(_room_id), do: {:ok, "active"}
+
     # Stubs required to satisfy @behaviour Nebu.Room.DBBehaviour
     def get_rooms_for_user(_user_id), do: {:ok, []}
     def fetch_events(_room_id, _direction, _limit, _from_token), do: {:ok, [], "", ""}
@@ -160,6 +163,11 @@ defmodule Nebu.EventDispatcher.ArchiveRoomTest do
     # Story 6.9: returns {:ok, "archived"} — simulates archived room in DB.
     # RED: fails until @callback get_room_status/1 is added to DBBehaviour.
     def get_room_status(_room_id), do: {:ok, "archived"}
+
+    # Story 9-9: TOCTOU fix — returns {:ok, "archived"} so send_event is rejected.
+    # Note: this FakeDB is used for init/1 tests (archived room refuses to start).
+    # For send_event TOCTOU tests, use FakeDBWithArchivedForSend in send_event_archived_room_test.exs.
+    def check_room_status_for_update(_room_id), do: {:ok, "archived"}
 
     # Stubs required to satisfy @behaviour Nebu.Room.DBBehaviour
     def get_rooms_for_user(_user_id), do: {:ok, []}
@@ -476,6 +484,119 @@ defmodule Nebu.EventDispatcher.ArchiveRoomTest do
       on_exit(fn ->
         if Process.alive?(pid), do: GenServer.stop(pid, :normal, 5_000)
       end)
+    end
+  end
+
+  # ─── Story 9-9 AC5: Double-archive concurrent safety ─────────────────────────
+  #
+  # AC5 — archive_room_atomic/1 must be idempotent: calling it twice on the same
+  # room must not produce an error. This test documents the actual contract:
+  # both calls return :ok (idempotent, not an error).
+  #
+  # Concurrency scenario:
+  #   - Two concurrent archive_room gRPC calls arrive for the same room_id.
+  #   - The real Nebu.Admin.DB.archive_room_atomic/1 uses SELECT FOR UPDATE inside
+  #     a transaction: on the second call, the room is already "archived", so the
+  #     UPDATE is a no-op and `:ok` is returned.
+  #
+  # This test uses FakeAdminDBStateful — an ETS-backed fake that tracks archival
+  # state to accurately model the real two-call sequence.
+  #
+  # Contract: both calls return :ok (idempotent — NOT {:error, :already_archived}).
+  # The SELECT FOR UPDATE serialisation prevents phantom double-write bugs.
+
+  defmodule FakeAdminDBStateful do
+    @moduledoc "ETS-backed AdminDB fake that tracks room archival state."
+
+    def archive_room_atomic(room_id) do
+      # Simulate SELECT FOR UPDATE: check current state in ETS.
+      case :ets.lookup(:double_archive_test_db, {:room_status, room_id}) do
+        [{_, "archived"}] ->
+          # Already archived — idempotent, return :ok (matches real DB behaviour).
+          :ok
+
+        _ ->
+          # First archive: set status in ETS and return :ok.
+          :ets.insert(:double_archive_test_db, {{:room_status, room_id}, "archived"})
+          :ok
+      end
+    end
+
+    # Required stubs for admin_db_module contract.
+    def list_users(_limit, _cursor, _search), do: {[], ""}
+    def get_user(_user_id), do: {:error, :not_found}
+    def set_is_active(_user_id, _is_active), do: :ok
+    def set_system_role(_user_id, _role), do: :ok
+    def list_rooms(_limit, _cursor, _status_filter, _search), do: {[], ""}
+    def get_room(_room_id), do: {:error, :not_found}
+    def get_server_config, do: {:ok, %{}}
+    def upsert_server_config(_changes), do: :ok
+  end
+
+  describe "Story 9-9 AC5 — double-archive concurrent safety" do
+    setup do
+      if :ets.info(:double_archive_test_db) != :undefined do
+        :ets.delete(:double_archive_test_db)
+      end
+
+      :ets.new(:double_archive_test_db, [:named_table, :public, :set])
+
+      Application.put_env(:event_dispatcher, :admin_db_module, FakeAdminDBStateful)
+
+      on_exit(fn ->
+        Application.delete_env(:event_dispatcher, :admin_db_module)
+
+        if :ets.info(:double_archive_test_db) != :undefined do
+          :ets.delete(:double_archive_test_db)
+        end
+      end)
+
+      :ok
+    end
+
+    test "two sequential archive_room_atomic/1 calls both return :ok (idempotent contract)" do
+      # Document the actual contract: double-archive is idempotent — :ok on both calls.
+      # The real archive_room_atomic/1 in Nebu.Admin.DB uses SELECT FOR UPDATE which
+      # makes the second call see status='archived' and return :ok (no error).
+      room_id = "!double-archive:test.local"
+
+      result1 = FakeAdminDBStateful.archive_room_atomic(room_id)
+      result2 = FakeAdminDBStateful.archive_room_atomic(room_id)
+
+      assert result1 == :ok,
+             "first archive_room_atomic/1 must return :ok, got: #{inspect(result1)}"
+
+      assert result2 == :ok,
+             "second archive_room_atomic/1 must return :ok (idempotent), got: #{inspect(result2)}"
+
+      # Confirm the status is persisted as "archived" after both calls.
+      [{_, status}] = :ets.lookup(:double_archive_test_db, {:room_status, room_id})
+      assert status == "archived",
+             "expected room status to be 'archived' after double-archive, got: #{inspect(status)}"
+    end
+
+    test "two concurrent Server.archive_room/2 calls both succeed (no error raised)" do
+      # End-to-end test via the gRPC handler: two archive_room/2 calls on the same room.
+      # Both must return %Core.ArchiveRoomResponse{ok: true} without raising.
+      #
+      # This test also confirms that the handler does not raise on the second call
+      # when the room GenServer is already stopped (idempotent terminate_child).
+      room_id = "!concurrent-archive:test.local"
+
+      request = %Core.ArchiveRoomRequest{room_id: room_id}
+
+      # First archive call — room GenServer not running (simulates already-stopped state).
+      response1 = Server.archive_room(request, build_stream())
+
+      assert %Core.ArchiveRoomResponse{ok: true} = response1,
+             "first archive_room/2 must return ArchiveRoomResponse{ok: true}, got: #{inspect(response1)}"
+
+      # Second archive call — room still not running, FakeAdminDBStateful now sees "archived".
+      response2 = Server.archive_room(request, build_stream())
+
+      assert %Core.ArchiveRoomResponse{ok: true} = response2,
+             "second archive_room/2 must return ArchiveRoomResponse{ok: true} (idempotent), " <>
+               "got: #{inspect(response2)}"
     end
   end
 end

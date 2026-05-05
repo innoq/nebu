@@ -53,7 +53,9 @@ defmodule Nebu.Room.DBBehaviourTest do
         # Story 6.8: load_room_settings/1 callback for max_members recovery on restart.
         {:load_room_settings, 1},
         # Story 6.9: get_room_status/1 callback for archived room guard in init/1.
-        {:get_room_status, 1}
+        {:get_room_status, 1},
+        # Story 9-9: check_room_status_for_update/1 — SELECT FOR UPDATE TOCTOU fix.
+        {:check_room_status_for_update, 1}
       ]
 
       for {fun, arity} <- required do

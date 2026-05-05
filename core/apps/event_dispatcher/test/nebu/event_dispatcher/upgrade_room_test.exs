@@ -117,6 +117,9 @@ defmodule Nebu.EventDispatcher.UpgradeRoomTest do
     # Story 6.9: rooms are active in tests.
     def get_room_status(_room_id), do: {:ok, "active"}
 
+    # Story 9-9: TOCTOU fix — returns {:ok, "active"} for normal rooms.
+    def check_room_status_for_update(_room_id), do: {:ok, "active"}
+
     # Story 9-7: returns empty list by default (no existing state events).
     # Override this at the ETS level for AC3 ordering tests by seeding the list.
     def get_generic_state_events(room_id) do
@@ -730,6 +733,8 @@ defmodule Nebu.EventDispatcher.UpgradeRoomTest do
 
         def load_room_settings(_room_id), do: {:ok, 0}
         def get_room_status(_room_id), do: {:ok, "active"}
+        # Story 9-9: TOCTOU fix — returns {:ok, "active"} for normal rooms.
+        def check_room_status_for_update(_room_id), do: {:ok, "active"}
 
         def get_generic_state_events(room_id) do
           case :ets.lookup(:upgrade_room_test_db, {:generic_state_events, room_id}) do

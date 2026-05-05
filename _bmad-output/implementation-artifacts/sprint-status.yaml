@@ -1,5 +1,7 @@
 # generated: 2026-03-20
 # last_updated: 2026-05-05
+# story 9-9 done (pipeline: ATDD+Dev+Test-Review (2 MAJOR fixed: FAILED_PRECONDITION ExUnit+double-archive AC5)+Code-Review CLEAN (6 INFO only)+Kassandra CLEAN (0 HIGH, 1 MEDIUM non-blocking)): 2026-05-05
+# story 9-9 created: 9-9 → ready-for-dev: 2026-05-05 (Archive TOCTOU Fix — SELECT FOR UPDATE in send_event, FAILED_PRECONDITION propagation, gateway FailedPrecondition→403 M_ROOM_ARCHIVED; SEC Gate 2 HIGH-2 follow-up from epic-6)
 # story 9-8 done (pipeline: ATDD+Dev+Test-Review (5 MAJOR fixed: AC4+ExUnit+crash/restart+ordering+audit)+Code-Review (3 MAJOR fixed: m.room.name lost+predecessor missing+create-before-member order)+Kassandra HIGH-1 fixed (requester_id from gRPC metadata); 3 MEDIUM follow-up stories): 2026-05-05
 # story 9-8 created: 9-8 → ready-for-dev: 2026-05-05 (Room Version Upgrade — new UpgradeRoom gRPC RPC, tombstone+new room+state copy+invitations, capabilities version 10)
 # story 9-7 done (pipeline: ATDD+Dev+Test-Review (3 MAJOR fixed: AC3 sync+AC5 GET/state+Elixir state_key test)+Code-Review (2 MAJOR fixed: txn_id dedup+state_key NULL)+Kassandra CRITICAL fixed (state events `:change_state` power level)): 2026-05-05
@@ -706,7 +708,7 @@ development_status:
   9-6-state-event-type-whitelist-gateway-middleware: done
   9-7-room-state-event-types-full-implementation: done
   9-8-room-version-upgrade-full-implementation: done
-  9-9-archive-toctou-fix: backlog
+  9-9-archive-toctou-fix: done
   9-10a-matrix-event-correctness-spike-dm-loop-root-cause: backlog
   9-10b-matrix-event-correctness-godog-scenarios-and-fixes: backlog
   9-11-arc42-docs-generation-from-bmad-artifacts: review  # originally drafted as 9.1 pre-restructuring; moved to end of Epic 9; standard pipeline gate from Epic 10 onward

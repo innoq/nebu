@@ -120,6 +120,11 @@ defmodule Nebu.EventDispatcher.Server do
               status: GRPC.Status.permission_denied(),
               message: "#{sender_id} lacks power level to send events in #{room_id}"
 
+          {:error, :room_archived} ->
+            raise GRPC.RPCError,
+              status: GRPC.Status.failed_precondition(),
+              message: "M_ROOM_ARCHIVED: room is archived"
+
           {:error, reason} ->
             raise GRPC.RPCError,
               status: GRPC.Status.internal(),

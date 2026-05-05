@@ -201,6 +201,8 @@ defmodule Nebu.EventDispatcher.SyncTest do
 
     # Story 6.9: get_room_status/1 — returns {:ok, "active"} so normal rooms start correctly.
     def get_room_status(_room_id), do: {:ok, "active"}
+    # Story 9-9: TOCTOU fix — returns {:ok, "active"} for normal rooms.
+    def check_room_status_for_update(_room_id), do: {:ok, "active"}
     def get_room_creator(_room_id), do: {:error, :not_found}
     # Story 9-7: returns empty list (no generic state events in unit tests).
     def get_generic_state_events(_room_id), do: {:ok, []}

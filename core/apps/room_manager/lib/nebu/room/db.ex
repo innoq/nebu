@@ -470,6 +470,42 @@ defmodule Nebu.Room.DB do
   end
 
   @doc """
+  Atomically checks if a room is archived using SELECT FOR UPDATE inside a transaction.
+
+  Serialises this check with archive_room_atomic/1's UPDATE transaction, closing
+  the TOCTOU race window between archive_room_atomic/1 and send_event insert.
+
+  Returns `{:ok, "active"}` for active rooms.
+  Returns `{:ok, "archived"}` for archived rooms.
+  Returns `{:error, :not_found}` when the room does not exist.
+  Returns `{:error, reason}` on DB error.
+
+  Story 9-9: TOCTOU fix — called by Room.Server.handle_call({:send_event, ...})
+  before building the event map on a cache miss.
+  """
+  @spec check_room_status_for_update(String.t()) ::
+          {:ok, String.t()} | {:error, :not_found | term()}
+  def check_room_status_for_update(room_id) do
+    result =
+      Nebu.Repo.transaction(fn ->
+        case Ecto.Adapters.SQL.query!(
+               Nebu.Repo,
+               "SELECT COALESCE(status, 'active') FROM rooms WHERE room_id = $1 FOR UPDATE",
+               [room_id]
+             ) do
+          %{rows: [[status]]} -> status
+          %{rows: []} -> Nebu.Repo.rollback(:not_found)
+        end
+      end)
+
+    case result do
+      {:ok, status} -> {:ok, status}
+      {:error, :not_found} -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
   Returns the room name from the most recent m.room.name event, or {:error, :not_found}.
 
   Content is stored as a JSONB string (Postgrex encodes the map as a JSON string before

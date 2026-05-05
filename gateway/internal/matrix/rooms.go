@@ -561,6 +561,8 @@ func (h *SendEventHandler) PutSendEvent(w http.ResponseWriter, r *http.Request) 
 			writeMatrixError(w, http.StatusForbidden, "M_FORBIDDEN", "You are not allowed to send events to this room")
 		case codes.ResourceExhausted:
 			writeMatrixError(w, http.StatusTooManyRequests, "M_LIMIT_EXCEEDED", "Rate limit exceeded")
+		case codes.FailedPrecondition:
+			writeMatrixError(w, http.StatusForbidden, "M_ROOM_ARCHIVED", "Room is archived")
 		default:
 			writeMatrixError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
 		}

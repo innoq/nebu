@@ -92,6 +92,9 @@ defmodule Nebu.RoomTest do
     # RED: fails to compile until @callback get_room_status/1 is added to DBBehaviour.
     # Once DBBehaviour is updated, this stub ensures FakeDB satisfies the contract.
     def get_room_status(_room_id), do: {:ok, "active"}
+
+    # Story 9-9: TOCTOU fix — returns {:ok, "active"} for normal rooms.
+    def check_room_status_for_update(_room_id), do: {:ok, "active"}
   end
 
   # Fake DB that always returns a DB error on writes — for testing fail-safe behavior
@@ -108,6 +111,8 @@ defmodule Nebu.RoomTest do
     # Story 6.9: get_room_status/1 — fail-open: return "active" so GenServer starts normally.
     # The archive guard in init/1 only stops when status is explicitly "archived".
     def get_room_status(_room_id), do: {:ok, "active"}
+    # Story 9-9: TOCTOU fix — returns {:ok, "active"} for normal rooms.
+    def check_room_status_for_update(_room_id), do: {:ok, "active"}
     # Unused by write-error tests — stubs required to satisfy @behaviour contract.
     def get_rooms_for_user(_user_id), do: {:error, :db_connection_lost}
     def fetch_events(_room_id, _dir, _limit, _from), do: {:error, :db_connection_lost}
@@ -868,6 +873,9 @@ defmodule Nebu.RoomTest do
         # Story 6.9: get_room_status/1 — returns {:ok, "active"} so init/1 proceeds normally.
         # This module is only used to test max_members recovery; rooms are active here.
         def get_room_status(_room_id), do: {:ok, "active"}
+
+        # Story 9-9: TOCTOU fix — returns {:ok, "active"} for normal rooms.
+        def check_room_status_for_update(_room_id), do: {:ok, "active"}
 
         # Stubs required by @behaviour Nebu.Room.DBBehaviour:
         def get_rooms_for_user(_user_id), do: {:ok, []}
