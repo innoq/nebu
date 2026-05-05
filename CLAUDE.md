@@ -305,6 +305,7 @@ Every story document MUST contain an **"Acceptance Tests"** section (written by 
 | During implementation, for complex tests | `/bmad-tea` | Dev | On demand |
 | During code review | `/bmad-testarch-test-review` | Reviewer | **Yes** |
 | End of epic | `/bmad-testarch-trace` | SM | **Yes** |
+| End of epic | `/bmad-generate-arc42` | SM | **Yes** |
 | When test strategy needed for a new epic | `/bmad-testarch-test-design` | SM/Arch | On demand |
 | When NFRs need validation | `/bmad-testarch-nfr` | Dev/Arch | On demand |
 

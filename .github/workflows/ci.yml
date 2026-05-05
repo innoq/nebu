@@ -130,7 +130,7 @@ jobs:
   verify-docs:
     runs-on: ubuntu-22.04
     timeout-minutes: 30
-    continue-on-error: true   # allow_failure: true (warning only until docs are authoritative)
+    continue-on-error: false   # CI-blocking: arc42 docs are now authoritative (Story 9-12)
     steps:
       - name: Checkout
         uses: actions/checkout@v6 # v4.1.1
