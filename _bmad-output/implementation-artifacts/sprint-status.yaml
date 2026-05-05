@@ -1,5 +1,5 @@
 # generated: 2026-03-20
-# last_updated: 2026-05-05
+# last_updated: 2026-05-05 (stories 9-13 + 9-14 added)
 # story 9-10b done (pipeline: ATDD(pre-existing stubs from 9-10a)+Dev+Test-Review (2 MINOR fixed: matrixURL, vacuous-pass note)+Code-Review CLEAN; unsigned.age fix in sync.go + 10 Godog step defs; security_review not-needed): 2026-05-05
 # story 9-10b created: 9-10b → ready-for-dev: 2026-05-05 (Matrix Event Correctness Godog Scenarios & Fixes — implement 10 new Godog step defs, fix unsigned.age HIGH deviation in sync.go; 1 production fix + step infra for all 6 scenarios green)
 # story 9-10a done (pipeline: ATDD+Dev+Code-Review CLEAN — audit doc + 6 Godog stubs; 1 HIGH DEVIATION (unsigned.age missing from timeline events), 3 PASS; security_review not-needed): 2026-05-05
@@ -717,6 +717,8 @@ development_status:
   9-10b-matrix-event-correctness-godog-scenarios-and-fixes: done
   9-11-arc42-docs-generation-from-bmad-artifacts: review  # originally drafted as 9.1 pre-restructuring; moved to end of Epic 9; standard pipeline gate from Epic 10 onward
   9-12-arc42-pipeline-gate-doc-maintenance-agent: backlog  # hardens CI gate + bmad-maintain-arc42 delta skill; prerequisite before Epic 10 start
+  9-13-admin-ui-ux-bug-fixes-visual-polish: ready-for-dev  # story 9-13 created: 9-13 → ready-for-dev: 2026-05-05 (Admin UI UX Bug Fixes — 17 bugs from Sally's audit: logo color, login nav, SSE status guard, btn-error, border-l-4, empty state, badge colors, timestamp format, etc.)
+  9-14-admin-ui-oidc-token-refresh: ready-for-dev  # story 9-14 created: 9-14 → ready-for-dev: 2026-05-05 (OIDC Token Refresh — store encrypted refresh_token in admin_sessions, offline_access scope, silent renewal in SessionGuardWithStore; security_review: required)
   epic-9-retrospective: optional
 
   # ─────────────────────────────────────────────────────────────────────────
