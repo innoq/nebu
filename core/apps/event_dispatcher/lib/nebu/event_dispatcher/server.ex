@@ -2237,7 +2237,15 @@ defmodule Nebu.EventDispatcher.Server do
           message: "room not found: #{old_room_id}"
 
       {:ok, _pid} ->
-        old_state = room_registry_module().get_state(old_room_id)
+        old_state =
+          try do
+            room_registry_module().get_state(old_room_id)
+          catch
+            :exit, {:noproc, _} ->
+              raise GRPC.RPCError,
+                status: GRPC.Status.not_found(),
+                message: "room not found: #{old_room_id}"
+          end
 
         requester_level =
           get_in(old_state.power_levels, ["users", requester_id]) || 0
@@ -2263,8 +2271,14 @@ defmodule Nebu.EventDispatcher.Server do
               "replacement_room" => new_room_id
             }
 
-            {:ok, tombstone_event_id} =
-              emit_state_event(old_room_id, requester_id, "m.room.tombstone", "", tombstone_content)
+            tombstone_event_id =
+              case emit_state_event(old_room_id, requester_id, "m.room.tombstone", "", tombstone_content) do
+                {:ok, event_id} -> event_id
+                {:error, reason} ->
+                  raise GRPC.RPCError,
+                    status: GRPC.Status.internal(),
+                    message: "Failed to emit tombstone event: #{inspect(reason)}"
+              end
 
             # 4. Emit m.room.create in new room WITH predecessor FIRST (before join).
             # MAJOR-3 fix: create event must be the first event written to the new room.
