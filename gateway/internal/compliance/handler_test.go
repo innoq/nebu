@@ -215,6 +215,9 @@ func (m *mockCoreClient) GetServerConfig(_ context.Context, _ *pb.GetServerConfi
 func (m *mockCoreClient) UpdateServerConfig(_ context.Context, _ *pb.UpdateServerConfigRequest, _ ...grpc.CallOption) (*pb.UpdateServerConfigResponse, error) {
 	return &pb.UpdateServerConfigResponse{Ok: true}, nil
 }
+func (m *mockCoreClient) UpgradeRoom(_ context.Context, _ *pb.UpgradeRoomRequest, _ ...grpc.CallOption) (*pb.UpgradeRoomResponse, error) {
+	panic("unexpected call: UpgradeRoom")
+}
 
 // ─── fakeDB driver ────────────────────────────────────────────────────────────
 //

@@ -482,9 +482,10 @@ func main() {
 
 	// capabilities: Matrix clients check server feature flags before making API calls.
 	// looseRL: unauthenticated capabilities endpoint (300 req/min, burst 100).
+	// Story 9.8 (AC6): updated default room version to "10" and added "10" to available map.
 	mux.Handle("GET /_matrix/client/v3/capabilities", looseRL(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"capabilities":{"m.change_password":{"enabled":false},"m.room_versions":{"default":"6","available":{"6":"stable"}}}}`))
+		w.Write([]byte(`{"capabilities":{"m.change_password":{"enabled":false},"m.room_versions":{"default":"10","available":{"6":"stable","10":"stable"}}}}`))
 	})))
 
 	// MSC2965 OIDC-native auth metadata — not supported; return explicit 404 so
@@ -794,10 +795,11 @@ func main() {
 	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/invite",
 		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(inviteHandler.PostInviteUser))))
 
-	// Story 5-29e Bug 1: upgrade endpoint was missing, returning 404 from default mux fallback.
-	// This 501 stub prevents the 404 and signals the client that the server understands the
-	// endpoint but does not yet implement full room upgrade (tombstone + new room + state copy).
+	// Story 9.8: Full room upgrade implementation — calls Core.UpgradeRoom which atomically
+	// tombstones the old room, creates a new room with predecessor info, copies state events,
+	// and invites all former members.
 	upgradeRoomHandler := matrix.NewUpgradeRoomHandler(matrix.UpgradeRoomConfig{
+		CoreClient: coreClient,
 		ServerName: serverName,
 	})
 	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/upgrade",

@@ -336,6 +336,14 @@ func (c *Client) UpdateServerConfig(ctx context.Context, req *pb.UpdateServerCon
 	return c.core.UpdateServerConfig(ctx, req)
 }
 
+// UpgradeRoom calls the Elixir core to atomically upgrade a room version.
+// Creates tombstone in old room, creates new room with predecessor,
+// copies state, and invites all old members.
+// Story 9.8: returns the new room ID on success.
+func (c *Client) UpgradeRoom(ctx context.Context, req *pb.UpgradeRoomRequest) (*pb.UpgradeRoomResponse, error) {
+	return c.core.UpgradeRoom(ctx, req)
+}
+
 // CoreServiceClient returns the underlying generated gRPC client stub.
 // Used by EventBusStream (Story 4-16) which requires the raw pb.CoreServiceClient.
 func (c *Client) CoreServiceClient() pb.CoreServiceClient {

@@ -167,6 +167,9 @@ func (m *mockCoreClient) GetServerConfig(_ context.Context, _ *pb.GetServerConfi
 func (m *mockCoreClient) UpdateServerConfig(_ context.Context, _ *pb.UpdateServerConfigRequest, _ ...grpc.CallOption) (*pb.UpdateServerConfigResponse, error) {
 	panic("unexpected call: UpdateServerConfig")
 }
+func (m *mockCoreClient) UpgradeRoom(_ context.Context, _ *pb.UpgradeRoomRequest, _ ...grpc.CallOption) (*pb.UpgradeRoomResponse, error) {
+	panic("unexpected call: UpgradeRoom")
+}
 
 // ─── AC11 Test 5: LogEvent_Success ───────────────────────────────────────────
 //

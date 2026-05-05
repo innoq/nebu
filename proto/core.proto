@@ -132,6 +132,11 @@ service CoreService {
 
   // UpdateServerConfig — upsert server configuration fields.
   rpc UpdateServerConfig(UpdateServerConfigRequest) returns (UpdateServerConfigResponse);
+
+  // UpgradeRoom — Story 9.8: atomic room version upgrade.
+  // Creates tombstone in old room, creates new room with predecessor,
+  // copies state, and invites all old members.
+  rpc UpgradeRoom(UpgradeRoomRequest) returns (UpgradeRoomResponse);
 }
 
 // Shared event type used across multiple RPCs
@@ -617,3 +622,14 @@ message UpdateServerConfigRequest {
   int32  audit_log_retention_days = 6;
 }
 message UpdateServerConfigResponse { bool ok = 1; }
+
+// UpgradeRoom — Story 9.8: atomic room version upgrade
+message UpgradeRoomRequest {
+  string old_room_id  = 1;
+  string requester_id = 2;  // must be room owner (power_level >= 100)
+  string new_version  = 3;  // e.g. "10"
+}
+
+message UpgradeRoomResponse {
+  string new_room_id = 1;
+}

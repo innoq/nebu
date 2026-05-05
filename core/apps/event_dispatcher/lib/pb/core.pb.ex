@@ -1092,3 +1092,27 @@ defmodule Core.UpdateServerConfigResponse do
 
   field :ok, 1, type: :bool
 end
+
+defmodule Core.UpgradeRoomRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.UpgradeRoomRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :old_room_id, 1, type: :string, json_name: "oldRoomId"
+  field :requester_id, 2, type: :string, json_name: "requesterId"
+  field :new_version, 3, type: :string, json_name: "newVersion"
+end
+
+defmodule Core.UpgradeRoomResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.UpgradeRoomResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :new_room_id, 1, type: :string, json_name: "newRoomId"
+end

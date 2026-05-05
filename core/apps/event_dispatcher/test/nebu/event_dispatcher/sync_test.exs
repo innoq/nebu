@@ -204,6 +204,8 @@ defmodule Nebu.EventDispatcher.SyncTest do
     def get_room_creator(_room_id), do: {:error, :not_found}
     # Story 9-7: returns empty list (no generic state events in unit tests).
     def get_generic_state_events(_room_id), do: {:ok, []}
+    # MAJOR-2 fix: no persisted create event in sync unit tests; synthesized fallback used.
+    def get_room_create_event(_room_id), do: {:error, :not_found}
   end
 
   # ─── SyncTestFakeInviteDB ────────────────────────────────────────────────────
@@ -761,6 +763,8 @@ defmodule Nebu.EventDispatcher.SyncTest do
     defdelegate get_room_creator(room_id), to: SyncTestFakeDB
     # Story 9-7: delegate get_generic_state_events/1 to SyncTestFakeDB (returns {:ok, []}).
     defdelegate get_generic_state_events(room_id), to: SyncTestFakeDB
+    # MAJOR-2 fix: delegate get_room_create_event/1 to SyncTestFakeDB (returns {:error, :not_found}).
+    defdelegate get_room_create_event(room_id), to: SyncTestFakeDB
 
     # ── New: fetch_events_since/3 (Story 4-15) ────────────────────────────────
     #

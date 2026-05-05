@@ -181,4 +181,20 @@ defmodule Nebu.Room.DBBehaviour do
   """
   @callback get_generic_state_events(room_id :: String.t()) ::
               {:ok, list(map())} | {:error, term()}
+
+  @doc """
+  Returns the content of the m.room.create event for `room_id` (the first such event
+  by origin_server_ts ASC, i.e. the authoritative create event).
+
+  Used by build_state_events/2 so that upgraded rooms return their persisted
+  m.room.create content (which includes the `predecessor` field) rather than a
+  synthesized fallback that would omit predecessor.
+
+  Returns `{:ok, content_map}` on success.
+  Returns `{:error, :not_found}` if no m.room.create event exists (new room not yet
+  persisted, or pre-create-persist legacy room).
+  Returns `{:error, reason}` on DB error.
+  """
+  @callback get_room_create_event(room_id :: String.t()) ::
+              {:ok, map()} | {:error, :not_found | term()}
 end

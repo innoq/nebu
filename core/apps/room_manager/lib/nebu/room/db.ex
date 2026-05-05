@@ -493,6 +493,44 @@ defmodule Nebu.Room.DB do
     end
   end
 
+  @doc """
+  Returns the content map of the authoritative m.room.create event for `room_id`.
+
+  Queries the events table for the first m.room.create event (ASC origin_server_ts)
+  and decodes its JSONB content. Handles both Postgrex JSONB forms:
+    - JSONB object  {"creator":"…","room_version":"10","predecessor":{…}}
+    - JSONB string  "{\"creator\":\"…\"}"  — doubly-encoded JSON string
+
+  Returns `{:ok, content_map}` on success.
+  Returns `{:error, :not_found}` when no m.room.create event exists.
+  Returns `{:error, reason}` on DB / decode error.
+  """
+  @spec get_room_create_event(String.t()) :: {:ok, map()} | {:error, :not_found | term()}
+  def get_room_create_event(room_id) do
+    sql = """
+    SELECT CASE
+      WHEN jsonb_typeof(content) = 'object' THEN content::text
+      ELSE (content#>>'{}')
+    END
+    FROM events
+    WHERE room_id = $1 AND event_type = 'm.room.create'
+    ORDER BY origin_server_ts ASC LIMIT 1
+    """
+    case Ecto.Adapters.SQL.query(Nebu.Repo, sql, [room_id]) do
+      {:ok, %{rows: [[content_text]]}} when not is_nil(content_text) ->
+        case Jason.decode(content_text) do
+          {:ok, map} when is_map(map) -> {:ok, map}
+          _                           -> {:error, :not_found}
+        end
+
+      {:ok, _} ->
+        {:error, :not_found}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
   @spec get_room_name(String.t()) :: {:ok, String.t()} | {:error, :not_found | term()}
   def get_room_name(room_id) do
     sql = """

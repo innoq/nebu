@@ -89,6 +89,8 @@ defmodule Nebu.EventDispatcher.ServerGetRoomStateSystemTest do
     def get_room_creator(_room_id), do: {:error, :not_found}
     # Story 9-7: returns empty list (no generic state events in unit tests).
     def get_generic_state_events(_room_id), do: {:ok, []}
+    # MAJOR-2 fix: no persisted create event in these unit tests; synthesized fallback used.
+    def get_room_create_event(_room_id), do: {:error, :not_found}
 
     # Story 6.8: load_room_settings/1 returns {:ok, 0} (no limit) for unit tests.
     def load_room_settings(_room_id), do: {:ok, 0}

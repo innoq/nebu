@@ -1,5 +1,7 @@
 # generated: 2026-03-20
 # last_updated: 2026-05-05
+# story 9-8 done (pipeline: ATDD+Dev+Test-Review (5 MAJOR fixed: AC4+ExUnit+crash/restart+ordering+audit)+Code-Review (3 MAJOR fixed: m.room.name lost+predecessor missing+create-before-member order)+Kassandra HIGH-1 fixed (requester_id from gRPC metadata); 3 MEDIUM follow-up stories): 2026-05-05
+# story 9-8 created: 9-8 → ready-for-dev: 2026-05-05 (Room Version Upgrade — new UpgradeRoom gRPC RPC, tombstone+new room+state copy+invitations, capabilities version 10)
 # story 9-7 done (pipeline: ATDD+Dev+Test-Review (3 MAJOR fixed: AC3 sync+AC5 GET/state+Elixir state_key test)+Code-Review (2 MAJOR fixed: txn_id dedup+state_key NULL)+Kassandra CRITICAL fixed (state events `:change_state` power level)): 2026-05-05
 # story 9-7 created: 9-7 → ready-for-dev: 2026-05-05 (Room State Event Types Full Implementation — replace 501 fallback with SendEvent gRPC, add state_key to proto, extend build_state_events)
 # story 9-6 done (pipeline: ATDD+Dev+Test-Review CLEAN+Code-Review (1 MINOR gofmt)+Kassandra CLEAN): 2026-05-04
@@ -703,7 +705,7 @@ development_status:
   9-5-admin-ui-compliance-api-integration: done
   9-6-state-event-type-whitelist-gateway-middleware: done
   9-7-room-state-event-types-full-implementation: done
-  9-8-room-version-upgrade-full-implementation: backlog
+  9-8-room-version-upgrade-full-implementation: done
   9-9-archive-toctou-fix: backlog
   9-10a-matrix-event-correctness-spike-dm-loop-root-cause: backlog
   9-10b-matrix-event-correctness-godog-scenarios-and-fixes: backlog

@@ -1254,10 +1254,22 @@ defmodule Nebu.EventDispatcher.Server do
           |> elem(0)
       end
 
+    # MAJOR-2 fix: use the persisted m.room.create content when available so that
+    # upgraded rooms return the `predecessor` field rather than a synthesized fallback.
+    # Fall back to synthesized content for rooms created before create-event persistence,
+    # or when the DB query fails (e.g. in unit tests without a real DB).
+    create_content =
+      case messages_db_module().get_room_create_event(room_id) do
+        {:ok, persisted_content} when is_map(persisted_content) ->
+          persisted_content
+        _ ->
+          %{"creator" => creator_id, "room_version" => "10"}
+      end
+
     create_event = %Core.SyncRoomStateEvent{
       type: "m.room.create",
       state_key: "",
-      content: Jason.encode!(%{"creator" => creator_id, "room_version" => "10"}),
+      content: Jason.encode!(create_content),
       sender: creator_id
     }
 
@@ -2186,5 +2198,229 @@ defmodule Nebu.EventDispatcher.Server do
         require Logger
         Logger.warning("emit_decline_event: failed for #{user_id} in #{room_id}: #{inspect(reason)}")
     end
+  end
+
+  # ─── UpgradeRoom — Story 9.8: atomic room version upgrade ─────────────────────
+  #
+  # Sequence (all in one call, no extra GenServer abstraction needed):
+  #   1. Verify old room exists and requester has power_level >= 100 (owner).
+  #   2. Emit m.room.tombstone in the old room.
+  #   3. Create new room, join requester as creator, set creator power levels.
+  #   4. Emit m.room.create in new room WITH predecessor (old_room_id + tombstone_event_id).
+  #   5. Copy state events from old room (excluding create, tombstone, aliases, member).
+  #      Emit m.room.join_rules LAST per Matrix spec.
+  #   6. Invite all old members (except requester, who is already joined).
+  #   7. Write audit log: room_upgraded.
+  #
+  # Security: power level check (step 1) is performed BEFORE any state mutation.
+  # All events are emitted via the private emit_state_event/5 helper (same signing
+  # pattern as create_room/2) to avoid triggering the Room.Server power check a
+  # second time after we've already verified power level >= 100.
+
+  def upgrade_room(request, stream) do
+    {requester_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
+    old_room_id  = request.old_room_id
+    new_version  = if request.new_version == "" or is_nil(request.new_version),
+                     do: "10",
+                     else: request.new_version
+
+    # 1. Verify old room exists and requester is owner (power_level >= 100).
+    case Nebu.Room.RoomSupervisor.lookup_room(old_room_id) do
+      {:error, :not_found} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "room not found: #{old_room_id}"
+
+      {:ok, _pid} ->
+        old_state = room_registry_module().get_state(old_room_id)
+
+        requester_level =
+          get_in(old_state.power_levels, ["users", requester_id]) || 0
+
+        if requester_level < 100 do
+          raise GRPC.RPCError,
+            status: GRPC.Status.permission_denied(),
+            message: "insufficient power level for room upgrade"
+        end
+
+        # 2. Create new room and set up creator membership + power levels.
+        # MAJOR-3 fix: m.room.create MUST be the first event in any room per Matrix spec.
+        # We therefore emit m.room.create BEFORE joining the creator so that the
+        # m.room.create event has a lower origin_server_ts than the m.room.member event.
+        new_room_id = generate_room_id()
+
+        case Nebu.Room.RoomSupervisor.start_room(new_room_id) do
+          {:ok, _new_pid} ->
+            # 3. Emit m.room.tombstone in the OLD room (via private helper, bypasses Room.Server
+            #    power check — we already confirmed power_level >= 100 above).
+            tombstone_content = %{
+              "body"             => "This room has been replaced",
+              "replacement_room" => new_room_id
+            }
+
+            {:ok, tombstone_event_id} =
+              emit_state_event(old_room_id, requester_id, "m.room.tombstone", "", tombstone_content)
+
+            # 4. Emit m.room.create in new room WITH predecessor FIRST (before join).
+            # MAJOR-3 fix: create event must be the first event written to the new room.
+            create_content = %{
+              "creator"      => requester_id,
+              "room_version" => new_version,
+              "predecessor"  => %{
+                "room_id"  => old_room_id,
+                "event_id" => tombstone_event_id
+              }
+            }
+            emit_state_event(new_room_id, requester_id, "m.room.create", "", create_content)
+
+            # Now join the creator and set power levels (m.room.member comes AFTER m.room.create).
+            :ok = Nebu.Room.Server.join(new_room_id, requester_id)
+
+            default_pl  = Nebu.Room.Server.default_power_levels()
+            creator_pl  = put_in(default_pl, ["users", requester_id], 100)
+            :ok = Nebu.Room.Server.set_power_levels(new_room_id, requester_id, creator_pl)
+
+            # 5. Copy state events from old room (spec-mandated order).
+            copy_state_events(old_room_id, new_room_id, requester_id)
+
+            # 6. Invite all old members (except requester — already joined).
+            old_members = MapSet.delete(old_state.members, requester_id)
+
+            Enum.each(old_members, fn member_id ->
+              case db_module_invite().insert_invitation(new_room_id, requester_id, member_id) do
+                :ok ->
+                  :pg.get_local_members("user:#{member_id}")
+                  |> Enum.each(&send(&1, {:new_invite, new_room_id}))
+
+                {:error, reason} ->
+                  Logger.warning(
+                    "upgrade_room: invite failed for #{member_id} in #{new_room_id}: #{inspect(reason)}"
+                  )
+              end
+            end)
+
+            # 7. Audit log.
+            audit_writer_module().log(
+              requester_id,
+              "room_upgraded",
+              "room",
+              old_room_id,
+              %{"new_room_id" => new_room_id, "new_version" => new_version},
+              "success"
+            )
+
+            %Core.UpgradeRoomResponse{new_room_id: new_room_id}
+
+          {:error, reason} ->
+            raise GRPC.RPCError,
+              status: GRPC.Status.internal(),
+              message: "Failed to start new room: #{inspect(reason)}"
+        end
+    end
+  end
+
+  # Emits a signed state event into the events table and broadcasts to :pg subscribers.
+  # Used by upgrade_room/2 and any other path that needs to write state events directly
+  # without going through Room.Server (which would re-check power levels).
+  # Returns {:ok, event_id} on success, {:error, reason} on DB failure.
+  defp emit_state_event(room_id, sender_id, event_type, state_key, content) do
+    event_map = %{
+      "room_id"          => room_id,
+      "type"             => event_type,
+      "state_key"        => state_key,
+      "sender"           => sender_id,
+      "content"          => content,
+      "origin_server_ts" => Nebu.DB.Helpers.now_ms()
+    }
+
+    event_id      = Nebu.EventId.generate(event_map)
+    event_with_id = Map.put(event_map, "event_id", event_id)
+    {_pub, priv}  = :persistent_term.get(:nebu_signing_key)
+    event_json    = Nebu.CanonicalJson.encode!(event_map)
+    signature     = :crypto.sign(:eddsa, :none, event_json, [priv, :ed25519])
+    sig_b64       = Base.encode64(signature)
+    signed        = Map.put(event_with_id, "signatures", %{"nebu" => sig_b64})
+
+    case messages_db_module().insert_event(signed) do
+      :ok ->
+        Enum.each(:pg.get_local_members("room:#{room_id}"), &send(&1, {:new_event, signed}))
+        {:ok, event_id}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  # Copies state events from old_room to new_room per Matrix spec Section 11.35.1.
+  #
+  # Filter rules:
+  #   - Exclude m.room.create (new room gets its own with predecessor).
+  #   - Exclude m.room.tombstone (the old room is dead; we don't copy its tombstone).
+  #   - Exclude m.room.aliases (room-alias events are scoped to the old room's alias).
+  #   - Exclude m.space.child / m.space.parent (space relationships are not migrated).
+  #   - Exclude m.room.member (membership is re-established via invite/join).
+  #
+  # Required state events to copy per Matrix spec: m.room.name, m.room.topic,
+  # m.room.join_rules, m.room.power_levels, m.room.history_visibility,
+  # m.room.guest_access, m.room.avatar, m.room.canonical_alias, m.room.encryption.
+  #
+  # MAJOR-1 fix: m.room.name is excluded by get_generic_state_events/1 (it has a
+  # dedicated DB helper in Story 9-7). We fetch it here explicitly and include it in
+  # the "other" batch so the upgraded room preserves its name.
+  #
+  # Order: emit all state events first, then m.room.join_rules last (per spec).
+  # Uses get_generic_state_events/1 from Story 9-7 which excludes member,
+  # power_levels, create, and name.
+  defp copy_state_events(old_room_id, new_room_id, requester_id) do
+    # Fetch generic state events (excludes member, power_levels, create, name per 9-7).
+    state_events =
+      case messages_db_module().get_generic_state_events(old_room_id) do
+        {:ok, events} -> events
+        {:error, _}   -> []
+      end
+
+    # Exclude tombstone, aliases, and space events (get_generic_state_events already
+    # excludes member/power_levels/create/name, but tombstone/aliases are included).
+    excluded_types = [
+      "m.room.tombstone",
+      "m.room.aliases",
+      "m.space.child",
+      "m.space.parent"
+    ]
+
+    # MAJOR-1 fix: get_generic_state_events excludes m.room.name, so fetch it
+    # separately and prepend it as a synthetic event entry for the copy.
+    name_state_events =
+      case messages_db_module().get_room_name(old_room_id) do
+        {:ok, name} ->
+          [%{type: "m.room.name", state_key: "", content_json: Jason.encode!(%{"name" => name})}]
+        {:error, _} ->
+          []
+      end
+
+    {join_rules_events, other_events} =
+      (name_state_events ++ state_events)
+      |> Enum.reject(fn e -> e.type in excluded_types end)
+      |> Enum.split_with(fn e -> e.type == "m.room.join_rules" end)
+
+    # Emit non-join_rules state events first.
+    Enum.each(other_events, fn e ->
+      content =
+        case Jason.decode(e.content_json) do
+          {:ok, map} -> map
+          _          -> %{}
+        end
+      emit_state_event(new_room_id, requester_id, e.type, e.state_key || "", content)
+    end)
+
+    # Emit join_rules last (Matrix spec requirement).
+    Enum.each(join_rules_events, fn e ->
+      content =
+        case Jason.decode(e.content_json) do
+          {:ok, map} -> map
+          _          -> %{}
+        end
+      emit_state_event(new_room_id, requester_id, e.type, e.state_key || "", content)
+    end)
   end
 end

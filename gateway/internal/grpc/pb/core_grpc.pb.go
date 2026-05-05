@@ -60,6 +60,7 @@ const (
 	CoreService_GetAdminRoom_FullMethodName               = "/core.CoreService/GetAdminRoom"
 	CoreService_GetServerConfig_FullMethodName            = "/core.CoreService/GetServerConfig"
 	CoreService_UpdateServerConfig_FullMethodName         = "/core.CoreService/UpdateServerConfig"
+	CoreService_UpgradeRoom_FullMethodName                = "/core.CoreService/UpgradeRoom"
 )
 
 // CoreServiceClient is the client API for CoreService service.
@@ -162,6 +163,10 @@ type CoreServiceClient interface {
 	GetServerConfig(ctx context.Context, in *GetServerConfigRequest, opts ...grpc.CallOption) (*GetServerConfigResponse, error)
 	// UpdateServerConfig — upsert server configuration fields.
 	UpdateServerConfig(ctx context.Context, in *UpdateServerConfigRequest, opts ...grpc.CallOption) (*UpdateServerConfigResponse, error)
+	// UpgradeRoom — Story 9.8: atomic room version upgrade.
+	// Creates tombstone in old room, creates new room with predecessor,
+	// copies state, and invites all old members.
+	UpgradeRoom(ctx context.Context, in *UpgradeRoomRequest, opts ...grpc.CallOption) (*UpgradeRoomResponse, error)
 }
 
 type coreServiceClient struct {
@@ -591,6 +596,16 @@ func (c *coreServiceClient) UpdateServerConfig(ctx context.Context, in *UpdateSe
 	return out, nil
 }
 
+func (c *coreServiceClient) UpgradeRoom(ctx context.Context, in *UpgradeRoomRequest, opts ...grpc.CallOption) (*UpgradeRoomResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpgradeRoomResponse)
+	err := c.cc.Invoke(ctx, CoreService_UpgradeRoom_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CoreServiceServer is the server API for CoreService service.
 // All implementations must embed UnimplementedCoreServiceServer
 // for forward compatibility.
@@ -691,6 +706,10 @@ type CoreServiceServer interface {
 	GetServerConfig(context.Context, *GetServerConfigRequest) (*GetServerConfigResponse, error)
 	// UpdateServerConfig — upsert server configuration fields.
 	UpdateServerConfig(context.Context, *UpdateServerConfigRequest) (*UpdateServerConfigResponse, error)
+	// UpgradeRoom — Story 9.8: atomic room version upgrade.
+	// Creates tombstone in old room, creates new room with predecessor,
+	// copies state, and invites all old members.
+	UpgradeRoom(context.Context, *UpgradeRoomRequest) (*UpgradeRoomResponse, error)
 	mustEmbedUnimplementedCoreServiceServer()
 }
 
@@ -823,6 +842,9 @@ func (UnimplementedCoreServiceServer) GetServerConfig(context.Context, *GetServe
 }
 func (UnimplementedCoreServiceServer) UpdateServerConfig(context.Context, *UpdateServerConfigRequest) (*UpdateServerConfigResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method UpdateServerConfig not implemented")
+}
+func (UnimplementedCoreServiceServer) UpgradeRoom(context.Context, *UpgradeRoomRequest) (*UpgradeRoomResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpgradeRoom not implemented")
 }
 func (UnimplementedCoreServiceServer) mustEmbedUnimplementedCoreServiceServer() {}
 func (UnimplementedCoreServiceServer) testEmbeddedByValue()                     {}
@@ -1576,6 +1598,24 @@ func _CoreService_UpdateServerConfig_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_UpgradeRoom_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpgradeRoomRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).UpgradeRoom(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_UpgradeRoom_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).UpgradeRoom(ctx, req.(*UpgradeRoomRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CoreService_ServiceDesc is the grpc.ServiceDesc for CoreService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1742,6 +1782,10 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateServerConfig",
 			Handler:    _CoreService_UpdateServerConfig_Handler,
+		},
+		{
+			MethodName: "UpgradeRoom",
+			Handler:    _CoreService_UpgradeRoom_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

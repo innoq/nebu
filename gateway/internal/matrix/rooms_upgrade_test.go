@@ -35,6 +35,7 @@ import (
 	"time"
 
 	"github.com/nebu/nebu/internal/auth"
+	pb "github.com/nebu/nebu/internal/grpc/pb"
 	"github.com/nebu/nebu/internal/middleware"
 )
 
@@ -46,9 +47,20 @@ import (
 // Once implemented, UpgradeRoomHandler must live in gateway/internal/matrix/rooms.go
 // (or rooms_upgrade.go) and be registered in cmd/gateway/main.go.
 
-// mockUpgradeRoomCoreClient is a placeholder. The 501-stub handler needs no gRPC
-// calls, but the interface satisfies the NewUpgradeRoomHandler config pattern.
+// mockUpgradeRoomCoreClient satisfies UpgradeRoomCoreClient.
+// Story 9.8: returns (nil, nil) — a no-op success — so the happy-path test
+// asserts a 200 response. The pre-existing 400/401 tests never reach the
+// gRPC call (they return at the validation/auth layer), so the mock return
+// value is irrelevant for those tests.
 type mockUpgradeRoomCoreClient struct{}
+
+// UpgradeRoom satisfies UpgradeRoomCoreClient. Returns a (nil, nil) no-op
+// success: the handler emits 200 with an empty replacement_room field, which
+// is sufficient for the happy-path smoke test in this file. The richer
+// tests with concrete responses live in upgrade_room_test.go.
+func (m *mockUpgradeRoomCoreClient) UpgradeRoom(_ context.Context, _ *pb.UpgradeRoomRequest) (*pb.UpgradeRoomResponse, error) {
+	return nil, nil
+}
 
 // buildAuthedUpgradeRoomHandler wires UpgradeRoomHandler in JWTMiddleware on a
 // ServeMux so r.PathValue("roomId") is populated by the Go 1.22+ router.
@@ -62,11 +74,11 @@ func buildAuthedUpgradeRoomHandler(t *testing.T) (http.Handler, func() string) {
 
 	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
 
-	// ── RED PHASE compile-error beacon ────────────────────────────────────────
-	// NewUpgradeRoomHandler does not exist yet — this line will not compile.
-	// Implement UpgradeRoomHandler in rooms.go / rooms_upgrade.go, then this
-	// helper (and all tests below) will move from RED to GREEN once the spec is met.
+	// Story 9.8: UpgradeRoomConfig now requires CoreClient.
+	// Use mockUpgradeRoomCoreClient (no gRPC calls; 400/401 tests return before
+	// reaching the gRPC layer, so the mock return value is irrelevant).
 	handler := NewUpgradeRoomHandler(UpgradeRoomConfig{
+		CoreClient: &mockUpgradeRoomCoreClient{},
 		ServerName: "test.local",
 	})
 
@@ -84,11 +96,12 @@ func buildAuthedUpgradeRoomHandler(t *testing.T) (http.Handler, func() string) {
 	return mux, makeToken
 }
 
-// ─── Test 1: Happy-path stub — valid JWT + new_version → 501 M_UNRECOGNIZED ─────
+// ─── Test 1: Happy-path — valid JWT + new_version → 200 {"replacement_room":"..."} ─
 //
-// AC1 (5-29e scope): endpoint registered → HTTP 501 with spec-conformant JSON body.
-// Not 404 (current state = route missing). Not empty body or HTML.
-func TestUpgradeRoom_StubReturns501_NotImplemented(t *testing.T) {
+// Story 9.8: replaces the 501 stub test with a 200 test.
+// The mock UpgradeRoom returns nil, nil (success with empty new_room_id "").
+// Handler must return 200 with replacement_room field (may be empty string from mock).
+func TestUpgradeRoom_HappyPath_Returns200(t *testing.T) {
 	mux, makeToken := buildAuthedUpgradeRoomHandler(t)
 
 	body := `{"new_version":"10"}`
@@ -103,12 +116,17 @@ func TestUpgradeRoom_StubReturns501_NotImplemented(t *testing.T) {
 
 	// Must NOT be 404 — the route must be registered.
 	if w.Code == http.StatusNotFound {
-		t.Fatalf("upgrade endpoint must be registered (not return 404); "+
-			"currently 404 because route is missing from main.go — RED PHASE CONFIRMED")
+		t.Fatalf("upgrade endpoint must be registered (not return 404)")
 	}
 
-	if w.Code != http.StatusNotImplemented {
-		t.Errorf("expected 501 for upgrade stub, got %d; body: %s", w.Code, w.Body.String())
+	// Story 9.8: must NOT be 501 any more — handler calls Core.UpgradeRoom now.
+	if w.Code == http.StatusNotImplemented {
+		t.Fatalf("handler still returns 501 — replace the M_UNRECOGNIZED stub with Core.UpgradeRoom call; body: %s", w.Body.String())
+	}
+
+	// Mock returns nil error → 200 response.
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 for valid upgrade request (mock success), got %d; body: %s", w.Code, w.Body.String())
 	}
 
 	ct := w.Header().Get("Content-Type")
@@ -116,15 +134,9 @@ func TestUpgradeRoom_StubReturns501_NotImplemented(t *testing.T) {
 		t.Errorf("expected Content-Type application/json, got %q", ct)
 	}
 
-	var errResp matrixError
-	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
-		t.Fatalf("501 body must be valid JSON Matrix error: %v; body: %s", err, w.Body.String())
-	}
-	if errResp.ErrCode != "M_UNRECOGNIZED" {
-		t.Errorf("expected errcode M_UNRECOGNIZED, got %q", errResp.ErrCode)
-	}
-	if errResp.Err == "" {
-		t.Error("501 response must include a non-empty human-readable error message")
+	var resp upgradeRoomResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("200 body must be valid JSON: %v; body: %s", err, w.Body.String())
 	}
 }
 
