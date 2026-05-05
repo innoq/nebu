@@ -1,5 +1,7 @@
 # generated: 2026-03-20
 # last_updated: 2026-05-05
+# story 9-10a done (pipeline: ATDD+Dev+Code-Review CLEAN — audit doc + 6 Godog stubs; 1 HIGH DEVIATION (unsigned.age missing from timeline events), 3 PASS; security_review not-needed): 2026-05-05
+# story 9-10a created: 9-10a → ready-for-dev: 2026-05-05 (Matrix Event Correctness Spike — DM-loop root cause investigation: /agent-oracle audit of keys/query format, m.room.encryption, unsigned.age, device_lists/OTK count; audit doc + failing Godog stubs for 9-10b)
 # story 9-9 done (pipeline: ATDD+Dev+Test-Review (2 MAJOR fixed: FAILED_PRECONDITION ExUnit+double-archive AC5)+Code-Review CLEAN (6 INFO only)+Kassandra CLEAN (0 HIGH, 1 MEDIUM non-blocking)): 2026-05-05
 # story 9-9 created: 9-9 → ready-for-dev: 2026-05-05 (Archive TOCTOU Fix — SELECT FOR UPDATE in send_event, FAILED_PRECONDITION propagation, gateway FailedPrecondition→403 M_ROOM_ARCHIVED; SEC Gate 2 HIGH-2 follow-up from epic-6)
 # story 9-8 done (pipeline: ATDD+Dev+Test-Review (5 MAJOR fixed: AC4+ExUnit+crash/restart+ordering+audit)+Code-Review (3 MAJOR fixed: m.room.name lost+predecessor missing+create-before-member order)+Kassandra HIGH-1 fixed (requester_id from gRPC metadata); 3 MEDIUM follow-up stories): 2026-05-05
@@ -709,7 +711,7 @@ development_status:
   9-7-room-state-event-types-full-implementation: done
   9-8-room-version-upgrade-full-implementation: done
   9-9-archive-toctou-fix: done
-  9-10a-matrix-event-correctness-spike-dm-loop-root-cause: backlog
+  9-10a-matrix-event-correctness-spike-dm-loop-root-cause: done
   9-10b-matrix-event-correctness-godog-scenarios-and-fixes: backlog
   9-11-arc42-docs-generation-from-bmad-artifacts: review  # originally drafted as 9.1 pre-restructuring; moved to end of Epic 9; standard pipeline gate from Epic 10 onward
   9-12-arc42-pipeline-gate-doc-maintenance-agent: backlog  # hardens CI gate + bmad-maintain-arc42 delta skill; prerequisite before Epic 10 start
