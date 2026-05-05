@@ -4,11 +4,11 @@
 
   <!-- Outer hexagon -->
   <polygon points="256,42 442,149 442,363 256,470 70,363 70,149"
-           fill="#0f1923" stroke="#2a6fff" stroke-width="18"/>
+           fill="#0f1923" stroke="#f97316" stroke-width="18"/>
 
   <!-- Inner hexagon ring (subtle) -->
   <polygon points="256,88 406,175 406,337 256,424 106,337 106,175"
-           fill="none" stroke="#2a6fff" stroke-width="6" opacity="0.25"/>
+           fill="none" stroke="#f97316" stroke-width="6" opacity="0.25"/>
 
   <!-- N letterform -->
   <text x="256" y="330"
@@ -19,5 +19,5 @@
         letter-spacing="-8">N</text>
 
   <!-- Accent dot top-right vertex -->
-  <circle cx="442" cy="149" r="22" fill="#2a6fff"/>
+  <circle cx="442" cy="149" r="22" fill="#f97316"/>
 </svg>

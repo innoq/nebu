@@ -2,12 +2,16 @@ package admin
 
 // PageData holds template data passed to all Admin UI page renders.
 // BootstrapMode controls sidebar Bootstrap nav item visibility.
+// LoginMode suppresses authenticated navigation on the login page (Story 9.13 AC2).
 // ActiveNav identifies the current page for nav highlight (keys: "bootstrap", "dashboard", "logout").
 // TopbarStatus and TopbarLabel are set by the dashboard handler to show real system status;
-// zero values (empty string) cause base.html to render the default "Connecting..." placeholder.
+// zero values (empty string) cause base.html to render nothing (guarded by {{ if .TopbarStatus }}).
 type PageData struct {
 	BootstrapMode bool
-	ActiveNav     string
+	// LoginMode suppresses the authenticated sidebar nav and topbar status on the login page.
+	// Set to true only by LoginPageHandler. All other handlers leave it false (zero value).
+	LoginMode bool
+	ActiveNav string
 	// TopbarStatus is a DaisyUI semantic color name ("success", "warning", "error").
 	// Empty string → base.html renders the default "Connecting..." placeholder.
 	TopbarStatus string

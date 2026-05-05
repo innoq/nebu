@@ -17,7 +17,7 @@
   <header class="h-12 bg-base-300 flex items-center justify-between px-4 shrink-0">
     <span class="font-semibold text-base-content">Nebu Admin</span>
     <!-- C3: TopbarStatusIndicator — hidden during bootstrap, server-side status on dashboard, "Connecting..." elsewhere -->
-    {{ if not .BootstrapMode }}
+    {{ if not .BootstrapMode }}{{ if not .LoginMode }}
     {{ if .TopbarStatus }}
     <span id="topbar-status" aria-live="polite" aria-label="System status: {{ .TopbarLabel }}"
           class="flex items-center gap-1 text-sm
@@ -31,14 +31,8 @@
             aria-hidden="true"></span>
       <span id="topbar-label">{{ .TopbarLabel }}</span>
     </span>
-    {{ else }}
-    <span id="topbar-status" aria-live="polite" aria-label="System status: connecting"
-          class="flex items-center gap-1 text-sm text-warning">
-      <span class="w-2 h-2 rounded-full bg-warning inline-block" aria-hidden="true"></span>
-      Connecting&hellip;
-    </span>
     {{ end }}
-    {{ end }}
+    {{ end }}{{ end }}
   </header>
 
   <!-- Shell: sidebar + content -->
@@ -60,7 +54,7 @@
           </a>
         </li>
         {{ end }}
-        {{ if not .BootstrapMode }}
+        {{ if not .BootstrapMode }}{{ if not .LoginMode }}
         <li>
           <a href="/admin/dashboard"
              data-navkey="dashboard"
@@ -137,7 +131,7 @@
             </button>
           </form>
         </li>
-        {{ end }}
+        {{ end }}{{ end }}
       </ul>
     </nav>
 

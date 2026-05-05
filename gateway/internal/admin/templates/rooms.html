@@ -27,7 +27,11 @@
                   {{ if eq .ID $.ActiveItemID }}active bg-primary text-primary-content border-l-[3px] border-primary{{ else }}text-base-content hover:bg-base-300{{ end }}
                   focus:outline-none focus:ring-2 focus:ring-primary">
           <span class="font-medium flex-1 truncate">{{ .Name }}</span>
+          {{ if eq .ID $.ActiveItemID }}
+          <span class="badge badge-outline badge-ghost badge-sm"></span>
+          {{ else }}
           {{ template "status_badge" .Badge }}
+          {{ end }}
         </a>
       </li>
       {{ end }}
@@ -112,7 +116,7 @@
 {{ define "detail_footer" }}
   {{ if .ActiveRoom }}
     {{ if eq .ActiveRoom.Status "active" }}
-    <button type="button" onclick="confirm_dialog.showModal()" class="btn btn-sm btn-warning">Archive room</button>
+    <button type="button" onclick="confirm_dialog.showModal()" class="btn btn-sm btn-error">Archive room</button>
     {{ else }}
     <span class="badge badge-ghost">Archived</span>
     {{ end }}

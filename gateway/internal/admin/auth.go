@@ -346,7 +346,7 @@ func (a *AdminAuth) buildOAuth2Config(r *http.Request) *oauth2.Config {
 func (a *AdminAuth) LoginPageHandler(w http.ResponseWriter, r *http.Request) {
 	errorMsg := r.URL.Query().Get("error")
 	data := LoginPageData{
-		PageData: PageData{ActiveNav: "login"},
+		PageData: PageData{ActiveNav: "login", LoginMode: true},
 		Error:    errorMsg,
 	}
 	a.tmpl.render(w, "login", data)

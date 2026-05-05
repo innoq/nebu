@@ -11,7 +11,7 @@
 
       <!-- Gateway Card -->
       <div role="status" aria-live="polite"
-           class="card bg-base-200 shadow-sm border-t-4 status-card status-card--{{ .GatewayStatus }}
+           class="card bg-base-200 shadow-sm border-l-4 status-card status-card--{{ .GatewayStatus }}
                   {{ if eq .GatewayStatus "green" }}border-success
                   {{ else if eq .GatewayStatus "amber" }}border-warning
                   {{ else }}border-error{{ end }}">
@@ -24,13 +24,13 @@
                   aria-hidden="true"></span>
             <h3 class="card-title text-base">Gateway</h3>
           </div>
-          <p class="text-sm text-base-content/70">{{ .GatewayStatusLabel }}</p>
+          <p class="text-sm text-base-content">{{ .GatewayStatusLabel }}</p>
         </div>
       </div>
 
       <!-- Core (gRPC) Card -->
       <div role="status" aria-live="polite"
-           class="card bg-base-200 shadow-sm border-t-4 status-card status-card--{{ .CoreStatus }}
+           class="card bg-base-200 shadow-sm border-l-4 status-card status-card--{{ .CoreStatus }}
                   {{ if eq .CoreStatus "green" }}border-success
                   {{ else if eq .CoreStatus "amber" }}border-warning
                   {{ else }}border-error{{ end }}">
@@ -43,13 +43,13 @@
                   aria-hidden="true"></span>
             <h3 class="card-title text-base">Core (gRPC)</h3>
           </div>
-          <p class="text-sm text-base-content/70">{{ .CoreStatusLabel }}</p>
+          <p class="text-sm text-base-content">{{ .CoreStatusLabel }}</p>
         </div>
       </div>
 
       <!-- Database Card -->
       <div role="status" aria-live="polite"
-           class="card bg-base-200 shadow-sm border-t-4 status-card status-card--{{ .DBStatus }}
+           class="card bg-base-200 shadow-sm border-l-4 status-card status-card--{{ .DBStatus }}
                   {{ if eq .DBStatus "green" }}border-success
                   {{ else if eq .DBStatus "amber" }}border-warning
                   {{ else }}border-error{{ end }}">
@@ -62,7 +62,7 @@
                   aria-hidden="true"></span>
             <h3 class="card-title text-base">Database</h3>
           </div>
-          <p class="text-sm text-base-content/70">{{ .DBStatusLabel }}</p>
+          <p class="text-sm text-base-content">{{ .DBStatusLabel }}</p>
         </div>
       </div>
 

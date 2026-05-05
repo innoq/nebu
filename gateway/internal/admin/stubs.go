@@ -81,13 +81,17 @@ func findStubComplianceRequest(id string) *StubComplianceRequest {
 // StubAuditEntry is a fake audit log entry for the Audit Log page (Story 7.12).
 // Used until a real audit log API is available. Timestamps are ISO-8601-like strings
 // so that date-range filtering can use simple string-prefix comparison.
+// FormattedTime holds the pre-formatted timestamp ("2006-01-02 15:04") populated by the handler (AC13).
+// BadgeClass is the DaisyUI badge color class pre-computed by auditActionBadgeClass (AC14).
 type StubAuditEntry struct {
-	ID         string
-	Timestamp  string // ISO-8601-like, e.g. "2026-04-29T14:30:00Z"
-	Actor      string // email, e.g. "kai@example.com"
-	Action     string // dot-notation verb, e.g. "user.deactivate"
-	TargetID   string // e.g. "usr-003"
-	TargetName string // human-readable, e.g. "Carla Reiter"
+	ID            string
+	Timestamp     string // ISO-8601-like, e.g. "2026-04-29T14:30:00Z"
+	FormattedTime string // pre-formatted: "YYYY-MM-DD HH:mm", e.g. "2026-04-29 14:30" (AC13)
+	Actor         string // email, e.g. "kai@example.com"
+	Action        string // dot-notation verb, e.g. "user.deactivate"
+	BadgeClass    string // DaisyUI badge color class, e.g. "badge-error" (AC14)
+	TargetID      string // e.g. "usr-003"
+	TargetName    string // human-readable, e.g. "Carla Reiter"
 }
 
 // stubAuditLog holds fake audit log entries for the Audit Log page (Story 7.12).

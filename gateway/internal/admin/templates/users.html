@@ -27,7 +27,11 @@
                   {{ if eq .ID $.ActiveItemID }}active bg-primary text-primary-content border-l-[3px] border-primary{{ else }}text-base-content hover:bg-base-300{{ end }}
                   focus:outline-none focus:ring-2 focus:ring-primary">
           <span class="font-medium flex-1 truncate">{{ .DisplayName }}</span>
+          {{ if eq .ID $.ActiveItemID }}
+          <span class="badge badge-outline badge-ghost badge-sm"></span>
+          {{ else }}
           {{ template "status_badge" .Badge }}
+          {{ end }}
         </a>
       </li>
       {{ end }}
@@ -66,7 +70,7 @@
 
     <dl class="divide-y divide-base-300">
       <div class="py-3">
-        <dt class="text-base-content/60 text-xs uppercase tracking-wide mb-1">Display Name</dt>
+        <dt class="text-base-content/60 text-sm">Display Name</dt>
         <dd>
           {{ template "inline_edit" .ActiveUserInlineEdit }}
         </dd>
@@ -103,7 +107,7 @@
 {{ define "detail_footer" }}
   {{ if .ActiveUser }}
     {{ if eq .ActiveUser.Status "active" }}
-    <button type="button" class="btn btn-sm btn-warning"
+    <button type="button" class="btn btn-sm btn-error"
             onclick="confirm_dialog.showModal()">Deactivate</button>
     {{ else }}
     <button type="button" class="btn btn-sm btn-success">Reactivate</button>

@@ -41,12 +41,16 @@
         {{ range .Entries }}
         <tr>
           <td class="font-medium">{{ .Actor }}</td>
-          <td><code class="text-sm bg-base-200 px-1 rounded">{{ .Action }}</code></td>
+          <td>
+            <span class="badge {{ .BadgeClass }} badge-sm">{{ .Action }}</span>
+          </td>
           <td class="text-sm">
             {{ if .TargetName }}{{ .TargetName }}{{ end }}
             {{ if .TargetID }}<span class="text-base-content/50 text-xs ml-1">({{ .TargetID }})</span>{{ end }}
           </td>
-          <td class="text-sm text-base-content/70 tabular-nums">{{ .Timestamp }}</td>
+          <td class="text-sm tabular-nums">
+            <time datetime="{{ .FormattedTime }}">{{ .FormattedTime }}</time>
+          </td>
         </tr>
         {{ end }}
       </tbody>
