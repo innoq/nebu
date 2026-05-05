@@ -1,5 +1,6 @@
 # generated: 2026-03-20
 # last_updated: 2026-05-05
+# story 9-16 done (pipeline: ATDD+Dev+Test-Review CLEAN+Code-Review (1 MAJOR fixed: join_rules seed step added) security_review not-needed): 2026-05-05
 # story 9-15 done (pipeline: ATDD+Dev+Test-Review CLEAN (0 MAJOR)+Code-Review (1 MAJOR inline: test-regression, 3 MINOR inline: confirm-dialog fallback, avatar initial, story File List); security_review not-needed): 2026-05-05
 # story 9-15 created: 9-15 → ready-for-dev: 2026-05-05 (Admin UI Bug-Fixes — Select-Dropdown-Sichtbarkeit bg-base-200, Compliance-Button-Kontrast btn-outline, Room-Fallback-Name (Direct Chat · N members); security_review not-needed)
 # story 9-14 done (pipeline: ATDD+Dev+Test-Review (4 MAJOR fixed: AC3 encrypt test, AC5 pre-expiry, AC8 no-session, AC9 audit)+Code-Review CLEAN+Kassandra CLEAN (0 HIGH, 2 MEDIUM non-blocking); OIDC silent refresh, AES-GCM RT storage; security_review required): 2026-05-05
@@ -726,6 +727,7 @@ development_status:
   9-13-admin-ui-ux-bug-fixes-visual-polish: done  # story 9-13 created: 9-13 → ready-for-dev: 2026-05-05 (Admin UI UX Bug Fixes — 17 bugs from Sally's audit: logo color, login nav, SSE status guard, btn-error, border-l-4, empty state, badge colors, timestamp format, etc.)
   9-14-admin-ui-oidc-token-refresh: done  # story 9-14 created: 9-14 → ready-for-dev: 2026-05-05 (OIDC Token Refresh — store encrypted refresh_token in admin_sessions, offline_access scope, silent renewal in SessionGuardWithStore; security_review: required)
   9-15-admin-ui-bug-fixes-select-dropdown-compliance-buttons-room-names: done  # story 9-15 done: 2026-05-05 (Admin UI Bug-Fixes — Select-Dropdown bg-base-200, Compliance btn-outline, Room-Fallback-Name; security_review: not-needed)
+  9-16-upgrade-room-state-event-order-test: done  # story 9-16 created: 2026-05-05 (GAP-9-001 — Room Upgrade State Event Copy Order Test; security_review: not-needed)
   epic-9-retrospective: optional
 
   # ─────────────────────────────────────────────────────────────────────────

@@ -225,6 +225,106 @@ func alexCallsGetSyncAndSeesNewRoomInInvite() error {
 	return nil
 }
 
+// ─── Story 9.16: GAP-9-001 — State event copy order step definitions ──────────
+
+// kaiCallsGetAllStateOnNewRoom sends
+// GET /_matrix/client/v3/rooms/{lastNewRoomID}/state
+// authenticated as kai, returning ALL state events as a JSON array.
+//
+// RED PHASE: returns all state events present in the new room after upgrade.
+// The assertions that follow verify that m.room.join_rules is the last copied event.
+func kaiCallsGetAllStateOnNewRoom() error {
+	if lastNewRoomID == "" {
+		return fmt.Errorf("lastNewRoomID is empty — upgrade did not return a replacement_room")
+	}
+	url := fmt.Sprintf("%s/_matrix/client/v3/rooms/%s/state", matrixURL, lastNewRoomID)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return fmt.Errorf("building GET /state (all) request on new room: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+kaiAccessToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("GET /state (all) on new room failed: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	lastStatusCode = resp.StatusCode
+	lastBody = string(body)
+	return nil
+}
+
+// theNewRoomStateContainsTypeBeforeType asserts that the state event with type
+// `first` appears at a lower index than the state event with type `second` in
+// the JSON array returned by GET /rooms/{newRoomId}/state.
+//
+// RED PHASE: will fail if Core emits join_rules before power_levels during upgrade.
+func theNewRoomStateContainsTypeBeforeType(first, second string) error {
+	var stateEvents []struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal([]byte(lastBody), &stateEvents); err != nil {
+		return fmt.Errorf("parsing state events for order check: %w (body: %s)", err, lastBody)
+	}
+	firstIdx := -1
+	secondIdx := -1
+	for i, e := range stateEvents {
+		if firstIdx == -1 && e.Type == first {
+			firstIdx = i
+		}
+		if secondIdx == -1 && e.Type == second {
+			secondIdx = i
+		}
+	}
+	if firstIdx == -1 {
+		return fmt.Errorf("state event type %q not found in new room state (body: %s)", first, lastBody)
+	}
+	if secondIdx == -1 {
+		return fmt.Errorf("state event type %q not found in new room state (body: %s)", second, lastBody)
+	}
+	if firstIdx >= secondIdx {
+		return fmt.Errorf(
+			"expected %q (index %d) to appear before %q (index %d) in state array, but it did not.\nState: %s",
+			first, firstIdx, second, secondIdx, lastBody,
+		)
+	}
+	return nil
+}
+
+// theLastCopiedStateEventTypeIs asserts that the last state event in the array
+// whose type is neither "m.room.create" nor "m.room.member" equals expectedType.
+//
+// "Copied state events" are defined as any event that Core's copy_state_events/3
+// function emits: i.e., all state events except m.room.create (written during new
+// room creation) and m.room.member (written during kai's join of the new room).
+//
+// RED PHASE: will fail if any event type other than m.room.join_rules trails after
+// join_rules in the state array, or if join_rules is absent entirely.
+func theLastCopiedStateEventTypeIs(expectedType string) error {
+	var stateEvents []struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal([]byte(lastBody), &stateEvents); err != nil {
+		return fmt.Errorf("parsing state events for last-copied check: %w (body: %s)", err, lastBody)
+	}
+	lastCopied := ""
+	for _, e := range stateEvents {
+		if e.Type != "m.room.create" && e.Type != "m.room.member" {
+			lastCopied = e.Type
+		}
+	}
+	if lastCopied == "" {
+		return fmt.Errorf("no copied state events found in new room state (only m.room.create / m.room.member present).\nState: %s", lastBody)
+	}
+	if lastCopied != expectedType {
+		return fmt.Errorf(
+			"expected last copied state event type to be %q, got %q.\nState: %s",
+			expectedType, lastCopied, lastBody,
+		)
+	}
+	return nil
+}
+
 // ─── Step registration ────────────────────────────────────────────────────────
 
 // initializeUpgradeRoomSteps registers all step definitions for upgrade_room.feature.
@@ -261,5 +361,24 @@ func initializeUpgradeRoomSteps(sc *godog.ScenarioContext) {
 	sc.Step(
 		`^alex calls GET /sync and sees the new room in rooms\.invite$`,
 		alexCallsGetSyncAndSeesNewRoomInInvite,
+	)
+
+	// Story 9.16 — GAP-9-001: State event copy order assertions
+	// Gherkin pattern: kai calls GET /rooms/{newRoomId}/state
+	// NOTE: This step has NO event-type suffix — distinct from kaiCallsGetRoomStateForNewRoom
+	// which matches `^kai calls GET /rooms/\{newRoomId\}/state/([^\s]+)$` (with type).
+	sc.Step(
+		`^kai calls GET /rooms/\{newRoomId\}/state$`,
+		kaiCallsGetAllStateOnNewRoom,
+	)
+	// Gherkin pattern: the new room state contains "m.room.power_levels" before "m.room.join_rules"
+	sc.Step(
+		`^the new room state contains "([^"]*)" before "([^"]*)"$`,
+		theNewRoomStateContainsTypeBeforeType,
+	)
+	// Gherkin pattern: the last copied state event type is "m.room.join_rules"
+	sc.Step(
+		`^the last copied state event type is "([^"]*)"$`,
+		theLastCopiedStateEventTypeIs,
 	)
 }

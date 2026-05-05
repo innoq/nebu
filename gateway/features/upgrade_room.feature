@@ -63,3 +63,24 @@ Feature: Room Version Upgrade — POST /rooms/{roomId}/upgrade
     Then the response status is 200
     And the response body contains "\"default\":\"10\""
     And the response body contains "\"10\":"
+
+  # AC-9.8-3 (GAP-9-001) — State event copy order: m.room.join_rules is always last
+  #
+  # Story 9.16: This scenario was surfaced by the traceability matrix as a test gap.
+  # It verifies the spec-mandated copy order (Matrix spec § 11.35.1):
+  #   1. m.room.create + m.room.member (already present from room creation / join)
+  #   2. Other state events incl. m.room.power_levels
+  #   3. m.room.join_rules — ALWAYS LAST among copied events
+  #
+  # RED PHASE: Will fail if Core.copy_state_events/3 does NOT emit join_rules last,
+  # or if GET /rooms/{newRoomId}/state does not return the events in emission order.
+  # No production code must be modified — this test exercises existing behaviour.
+  Scenario: StateEventCopyOrder_JoinRulesIsLast
+    When kai sends PUT /rooms/{roomId}/state/m.room.join_rules with body {"join_rule":"invite"}
+    And the response status is 200
+    And kai posts upgrade for room "upgrade-test-room" with new_version "10"
+    Then the response status is 200
+    And kai calls GET /rooms/{newRoomId}/state
+    And the response status is 200
+    And the new room state contains "m.room.power_levels" before "m.room.join_rules"
+    And the last copied state event type is "m.room.join_rules"
