@@ -1,5 +1,6 @@
 # generated: 2026-03-20
 # last_updated: 2026-05-05
+# story 9-17 done (pipeline: ATDD+Dev+Test-Review CLEAN (0 MAJOR)+Code-Review CLEAN (2 MINOR fixed: t.Parallel+maxMembersLimit const); security_review not-needed): 2026-05-05
 # story 9-16 done (pipeline: ATDD+Dev+Test-Review CLEAN+Code-Review (1 MAJOR fixed: join_rules seed step added) security_review not-needed): 2026-05-05
 # story 9-15 done (pipeline: ATDD+Dev+Test-Review CLEAN (0 MAJOR)+Code-Review (1 MAJOR inline: test-regression, 3 MINOR inline: confirm-dialog fallback, avatar initial, story File List); security_review not-needed): 2026-05-05
 # story 9-15 created: 9-15 → ready-for-dev: 2026-05-05 (Admin UI Bug-Fixes — Select-Dropdown-Sichtbarkeit bg-base-200, Compliance-Button-Kontrast btn-outline, Room-Fallback-Name (Direct Chat · N members); security_review not-needed)
@@ -728,6 +729,7 @@ development_status:
   9-14-admin-ui-oidc-token-refresh: done  # story 9-14 created: 9-14 → ready-for-dev: 2026-05-05 (OIDC Token Refresh — store encrypted refresh_token in admin_sessions, offline_access scope, silent renewal in SessionGuardWithStore; security_review: required)
   9-15-admin-ui-bug-fixes-select-dropdown-compliance-buttons-room-names: done  # story 9-15 done: 2026-05-05 (Admin UI Bug-Fixes — Select-Dropdown bg-base-200, Compliance btn-outline, Room-Fallback-Name; security_review: not-needed)
   9-16-upgrade-room-state-event-order-test: done  # story 9-16 created: 2026-05-05 (GAP-9-001 — Room Upgrade State Event Copy Order Test; security_review: not-needed)
+  9-17-admin-rooms-patch-max-members-visibility-test: done  # story 9-17 done: 2026-05-05 (GAP-9-002 — 8 unit tests for UpdateRoomSettingsHandler; code-review CLEAN with 2 MINOR auto-fixed: t.Parallel() + maxMembersLimit constant; security_review: not-needed)
   epic-9-retrospective: optional
 
   # ─────────────────────────────────────────────────────────────────────────
