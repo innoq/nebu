@@ -67,7 +67,7 @@ func (f *fakeAdminSessionStore) seed(sess AdminSession) {
 	f.sessions[sess.SID] = &cp
 }
 
-func (f *fakeAdminSessionStore) Create(ctx context.Context, userID string, expiresAt time.Time) (string, error) {
+func (f *fakeAdminSessionStore) Create(ctx context.Context, userID string, expiresAt time.Time, refreshToken string) (string, error) {
 	if f.createErr != nil {
 		return "", f.createErr
 	}
@@ -76,11 +76,24 @@ func (f *fakeAdminSessionStore) Create(ctx context.Context, userID string, expir
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.sessions[sid] = &AdminSession{
-		SID:       sid,
-		UserID:    userID,
-		ExpiresAt: expiresAt,
+		SID:                   sid,
+		UserID:                userID,
+		ExpiresAt:             expiresAt,
+		EncryptedRefreshToken: refreshToken,
 	}
 	return sid, nil
+}
+
+func (f *fakeAdminSessionStore) UpdateExpiry(ctx context.Context, sid string, expiresAt time.Time, encryptedRefreshToken string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	sess, ok := f.sessions[sid]
+	if !ok {
+		return nil
+	}
+	sess.ExpiresAt = expiresAt
+	sess.EncryptedRefreshToken = encryptedRefreshToken
+	return nil
 }
 
 func (f *fakeAdminSessionStore) Get(ctx context.Context, sid string) (*AdminSession, error) {

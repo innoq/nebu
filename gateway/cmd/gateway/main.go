@@ -255,7 +255,14 @@ func main() {
 	sessionStore := db.NewPostgresAdminSessionStore(bootstrapDB)
 	adminAuth.SetSessionStore(sessionStore)
 	adminAuth.SetCoreClient(coreClient.CoreServiceClient())
-	sessionGuard := admin.SessionGuardWithStore([]byte(internalSecret), sessionStore)
+	// Story 9.14: Use SessionGuardWithRefresh so expiring sessions are silently renewed
+	// via the OIDC token endpoint before the user is redirected to /admin/login.
+	sessionGuard := admin.SessionGuardWithRefresh(admin.SessionRefreshConfig{
+		Secret:       []byte(internalSecret),
+		Store:        sessionStore,
+		ConfigReader: adminAuth.ConfigReader(),
+		CoreClient:   coreClient.CoreServiceClient(),
+	})
 
 	// AC5: Periodically clean up expired admin sessions (once per hour).
 	go func() {

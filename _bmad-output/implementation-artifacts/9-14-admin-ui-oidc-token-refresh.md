@@ -4,7 +4,7 @@ security_review: required
 
 # Story 9.14: Admin UI — OIDC Token Refresh (Silent Session Renewal)
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -81,43 +81,44 @@ A `"admin_session_refreshed"` audit event is written via `coreClient` when a ses
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — DB migration (AC1)**
-  - [ ] Create `gateway/migrations/000039_admin_sessions_refresh_token.up.sql`: `ALTER TABLE admin_sessions ADD COLUMN refresh_token TEXT;`
-  - [ ] Create `gateway/migrations/000039_admin_sessions_refresh_token.down.sql`: `ALTER TABLE admin_sessions DROP COLUMN IF EXISTS refresh_token;`
-  - [ ] Run migration test to verify up/down cycle
+- [x] **T1 — DB migration (AC1)**
+  - [x] Create `gateway/migrations/000039_admin_sessions_refresh_token.up.sql`: `ALTER TABLE admin_sessions ADD COLUMN refresh_token TEXT;`
+  - [x] Create `gateway/migrations/000039_admin_sessions_refresh_token.down.sql`: `ALTER TABLE admin_sessions DROP COLUMN IF EXISTS refresh_token;`
+  - [x] Run migration test to verify up/down cycle
 
-- [ ] **T2 — Scope update (AC2)**
-  - [ ] `auth.go LoginStartHandler`: add `"offline_access"` to scopes
-  - [ ] `auth.go CallbackHandler`: add `"offline_access"` to scopes (both `oauth2.Config` instances)
-  - [ ] Verify Dex `staticClient` config includes `offline_access` in `allowedGrants` — check `docker/dex/config.yaml` or equivalent
+- [x] **T2 — Scope update (AC2)**
+  - [x] `auth.go LoginStartHandler`: add `"offline_access"` to scopes
+  - [x] `auth.go CallbackHandler`: add `"offline_access"` to scopes (both `oauth2.Config` instances)
+  - [x] Verified Dex config — added `refresh_token` to `grantTypes` in `dev/dex/config.yaml`
 
-- [ ] **T3 — Store interface extension (AC3, AC4, AC6)**
-  - [ ] `session_store.go`: add `EncryptedRefreshToken string` to `AdminSession`
-  - [ ] `session_store.go`: update `Create` signature to `Create(ctx, userID string, expiresAt time.Time, encryptedRefreshToken string) (sid string, err error)`
-  - [ ] `session_store.go`: add `UpdateExpiry(ctx, sid string, expiresAt time.Time, encryptedRefreshToken string) error` to `AdminSessionStore` interface
-  - [ ] `db/admin_session_store.go`: update `Create` INSERT to include `refresh_token` column
-  - [ ] `db/admin_session_store.go`: update `Get` SELECT to include `refresh_token` column
-  - [ ] `db/admin_session_store.go`: implement `UpdateExpiry`
+- [x] **T3 — Store interface extension (AC3, AC4, AC6)**
+  - [x] `session_store.go`: add `EncryptedRefreshToken string` to `AdminSession`
+  - [x] `session_store.go`: update `Create` signature to `Create(ctx, userID string, expiresAt time.Time, encryptedRefreshToken string) (sid string, err error)`
+  - [x] `session_store.go`: add `UpdateExpiry(ctx, sid string, expiresAt time.Time, encryptedRefreshToken string) error` to `AdminSessionStore` interface
+  - [x] `db/admin_session_store.go`: update `Create` INSERT to include `refresh_token` column
+  - [x] `db/admin_session_store.go`: update `Get` SELECT to include `refresh_token` column
+  - [x] `db/admin_session_store.go`: implement `UpdateExpiry`
 
-- [ ] **T4 — Auth callback stores refresh token (AC3)**
-  - [ ] `auth.go CallbackHandler`: encrypt `token.RefreshToken` using `encryptAES256GCM(a.secret, refreshToken)` before passing to `sessionStore.Create`
-  - [ ] `auth.go ClaimSelectionHandler`: same
-  - [ ] Update all `sessionStore.Create` call sites to pass the encrypted refresh token (or empty string if no refresh token received)
+- [x] **T4 — Auth callback stores refresh token (AC3)**
+  - [x] `auth.go CallbackHandler`: encrypt `token.RefreshToken` using `encryptAES256GCM(a.secret, refreshToken)` before passing to `sessionStore.Create`
+  - [x] `auth.go ClaimSelectionHandler`: pass `""` (no refresh token at bootstrap claim selection)
+  - [x] Updated all `sessionStore.Create` call sites to pass the encrypted refresh token
 
-- [ ] **T5 — Middleware refresh logic (AC5, AC7, AC9)**
-  - [ ] Introduce `SessionGuardWithRefresh` constructor (or extend `SessionGuardWithStore`) that accepts `configReader`, `secret`, `coreClient` in addition to existing params
-  - [ ] Implement pre-expiry window check: `sess.ExpiresAt.Before(time.Now().Add(5 * time.Minute))`
-  - [ ] Decrypt `EncryptedRefreshToken`, build `oauth2.Config` from DB-loaded OIDC config
-  - [ ] Call `oauth2.TokenSource` or `config.TokenSource(ctx, &oauth2.Token{RefreshToken: rt}).Token(ctx)` to obtain new tokens
-  - [ ] On success: call `store.UpdateExpiry`, slide cookie MaxAge, call audit log, `next.ServeHTTP`
-  - [ ] On failure: `store.Revoke`, clear cookie, redirect to `/admin/login`
-  - [ ] Wire new constructor in `main.go`
+- [x] **T5 — Middleware refresh logic (AC5, AC7, AC9)**
+  - [x] Introduced `SessionGuardWithRefresh` constructor with `SessionRefreshConfig` struct
+  - [x] Implemented pre-expiry window check (5 min constant)
+  - [x] Decrypt `EncryptedRefreshToken`, build `oauth2.Config` from DB-loaded OIDC config
+  - [x] Call `oauth2.TokenSource(...).Token()` to obtain new tokens
+  - [x] On success: call `store.UpdateExpiry`, slide cookie MaxAge, call audit log, `next.ServeHTTP`
+  - [x] On failure: `store.Revoke`, clear cookie, redirect to `/admin/login`
+  - [x] Wired `SessionGuardWithRefresh` in `main.go`
 
-- [ ] **T6 — Fake session store update (AC10)**
-  - [ ] All fake/test `AdminSessionStore` implementations: add `UpdateExpiry` method, update `Create` signature
+- [x] **T6 — Fake session store update (AC10)**
+  - [x] `fakeAdminSessionStore` in `session_revocation_test.go`: added `UpdateExpiry`, updated `Create` signature
+  - [x] `fakeAdminSessionStoreWithRefresh` in `token_refresh_9_14_test.go`: updated `Create` signature (already had `UpdateExpiry`)
 
-- [ ] **T7 — Dex config (AC2, prerequisite)**
-  - [ ] Check Dex static client config allows `offline_access` / `refresh_token` grant — add if missing
+- [x] **T7 — Dex config (AC2, prerequisite)**
+  - [x] Added `refresh_token` to `grantTypes` in `dev/dex/config.yaml`
 
 ---
 
@@ -268,6 +269,25 @@ claude-sonnet-4-6
 
 ### Debug Log References
 
+N/A — all 5 acceptance tests passed in first full-build run after compile fix.
+
 ### Completion Notes List
 
+- `oidc.ClientContext(ctx, nil)` passes `http.DefaultClient` for OIDC provider discovery inside the refresh middleware — same pattern used in `LoginStartHandler`.
+- Token rotation: if Dex returns an empty `RefreshToken` on the refresh call (single-use disabled), the old plaintext token is re-encrypted and stored so the next refresh can still proceed.
+- `ts.Token()` takes no arguments (the context is bound via `oauth2Cfg.TokenSource(ctx, ...)`).
+- `ClaimSelectionHandler` passes `""` for the refresh token since the OIDC token is not in scope at bootstrap claim selection time.
+- Added `ConfigReader()` accessor to `AdminAuth` so `main.go` can pass the DB-backed config reader to `SessionGuardWithRefresh` without exposing internal type `postgresServerConfigReader`.
+
 ### File List
+
+- `gateway/migrations/000039_admin_sessions_refresh_token.up.sql` — new
+- `gateway/migrations/000039_admin_sessions_refresh_token.down.sql` — new
+- `gateway/internal/admin/session_store.go` — `EncryptedRefreshToken` field + `UpdateExpiry` on interface + `Create` signature update
+- `gateway/internal/db/admin_session_store.go` — `Create` writes `refresh_token` column; `Get` reads it; `UpdateExpiry` implemented
+- `gateway/internal/admin/auth.go` — `offline_access` scope in `LoginStartHandler` + `CallbackHandler`; encrypts refresh token before `Create`; `ConfigReader()` accessor added
+- `gateway/internal/admin/middleware.go` — `SessionRefreshConfig`, `SessionGuardWithRefresh`, `attemptTokenRefresh` added; new imports
+- `gateway/cmd/gateway/main.go` — `SessionGuardWithRefresh` replaces `SessionGuardWithStore`
+- `dev/dex/config.yaml` — `refresh_token` added to `grantTypes`
+- `gateway/internal/admin/session_revocation_test.go` — `fakeAdminSessionStore.Create` signature updated; `UpdateExpiry` added
+- `gateway/internal/admin/token_refresh_9_14_test.go` — `t.Fatal` guards removed; `EncryptedRefreshToken` set; compile-time interface check enabled; `SessionGuardWithRefresh` wired

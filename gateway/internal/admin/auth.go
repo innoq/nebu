@@ -260,6 +260,12 @@ func (a *AdminAuth) SetSessionStore(store AdminSessionStore) {
 	a.sessionStore = store
 }
 
+// ConfigReader returns the ServerConfigReader used by AdminAuth for DB-backed OIDC config.
+// Returns nil when AdminAuth was created without a DB (test environments).
+func (a *AdminAuth) ConfigReader() ServerConfigReader {
+	return a.configReader
+}
+
 // SetCoreClient injects the gRPC core client for audit log calls.
 // Call this after NewAdminAuth before the HTTP server starts.
 func (a *AdminAuth) SetCoreClient(c pb.CoreServiceClient) {
@@ -416,7 +422,7 @@ func (a *AdminAuth) LoginStartHandler(w http.ResponseWriter, r *http.Request) {
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
 		RedirectURL:  scheme + "://" + r.Host + "/admin/callback",
-		Scopes:       []string{oidc.ScopeOpenID, "profile", "email", "groups"},
+		Scopes:       []string{oidc.ScopeOpenID, "profile", "email", "groups", "offline_access"},
 		Endpoint:     provider.Endpoint(),
 	}
 
@@ -616,11 +622,12 @@ func (a *AdminAuth) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 	// Scopes must match the original auth request so that Dex includes the groups claim
 	// in the token exchange response. The Go oauth2 library sends the scope parameter
 	// on exchange; omitting "groups" here causes Dex to strip it from the returned tokens.
+	// offline_access is required to receive a refresh token (AC2, Story 9.14).
 	oauth2Config := &oauth2.Config{
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
 		RedirectURL:  scheme + "://" + r.Host + "/admin/callback",
-		Scopes:       []string{oidc.ScopeOpenID, "profile", "email", "groups"},
+		Scopes:       []string{oidc.ScopeOpenID, "profile", "email", "groups", "offline_access"},
 		Endpoint:     provider.Endpoint(),
 	}
 
@@ -755,7 +762,18 @@ func (a *AdminAuth) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 	// only the SID in the cookie. Fall back to the legacy stateless cookie when no
 	// store is configured (backward-compat for environments without the DB migration).
 	if a.sessionStore != nil {
-		sid, err := a.sessionStore.Create(r.Context(), sub, expiresAt)
+		// Encrypt the refresh token before storage (AC3, Story 9.14).
+		// Empty string stored as NULL when Dex does not return a refresh token.
+		encryptedRT := ""
+		if token.RefreshToken != "" {
+			encryptedRT, err = encryptAES256GCM(a.secret, token.RefreshToken)
+			if err != nil {
+				slog.Error("callback: failed to encrypt refresh token", "err", err)
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+		}
+		sid, err := a.sessionStore.Create(r.Context(), sub, expiresAt, encryptedRT)
 		if err != nil {
 			slog.Error("callback: failed to create admin session", "err", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -915,9 +933,10 @@ func (a *AdminAuth) ClaimSelectionHandler(w http.ResponseWriter, r *http.Request
 
 	// Create admin session cookie — operator is now authenticated.
 	// If a server-side session store is wired, create an SID-based session row (Story 5.12).
+	// No refresh token at bootstrap claim selection — OIDC token is not in scope here.
 	expiresAt := time.Now().Add(8 * time.Hour)
 	if a.sessionStore != nil {
-		sid, err := a.sessionStore.Create(r.Context(), sub, expiresAt)
+		sid, err := a.sessionStore.Create(r.Context(), sub, expiresAt, "")
 		if err != nil {
 			slog.Error("claim selection: failed to create admin session", "err", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
