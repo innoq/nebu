@@ -17,7 +17,7 @@
   <form method="GET" action="/admin/compliance" class="flex items-center gap-3">
     <label for="status-filter" class="label-text text-sm font-medium">Filter by status:</label>
     <select id="status-filter" name="status"
-            class="select select-bordered select-sm"
+            class="select select-bordered select-sm bg-base-200 text-base-content"
             onchange="this.form.submit()">
       <option value="all"      {{ if eq .StatusFilter "all"      }}selected{{ end }}>All</option>
       <option value="pending"  {{ if eq .StatusFilter "pending"  }}selected{{ end }}>Pending</option>
@@ -63,11 +63,11 @@
             <div class="flex gap-2">
               <form method="POST" action="/admin/compliance/{{ .ID }}/approve" class="inline">
                 <input type="hidden" name="_csrf" value="{{ $.CSRFToken }}">
-                <button type="submit" class="btn btn-xs btn-success">Approve</button>
+                <button type="submit" class="btn btn-xs btn-outline btn-success">Approve</button>
               </form>
               <form method="POST" action="/admin/compliance/{{ .ID }}/reject" class="inline">
                 <input type="hidden" name="_csrf" value="{{ $.CSRFToken }}">
-                <button type="submit" class="btn btn-xs btn-error">Reject</button>
+                <button type="submit" class="btn btn-xs btn-outline btn-error">Reject</button>
               </form>
             </div>
             {{ else }}

@@ -16,12 +16,15 @@ var stubUsers = []StubUser{
 
 // stubRooms holds fake room records for the Rooms master-detail page (Story 7.2).
 // These are used until Epic 6 (Admin API) provides real room management endpoints.
+// room-006 has an intentionally empty Name to exercise the AC3 fallback template
+// "(Direct Chat · N members)" added in Story 9.15.
 var stubRooms = []StubRoom{
 	{ID: "room-001", Name: "General", Visibility: "public", MemberCount: 47, Status: "active"},
 	{ID: "room-002", Name: "Engineering", Visibility: "private", MemberCount: 12, Status: "active"},
 	{ID: "room-003", Name: "Compliance-Team", Visibility: "private", MemberCount: 5, Status: "active"},
 	{ID: "room-004", Name: "Old Project X", Visibility: "private", MemberCount: 8, Status: "archived"},
 	{ID: "room-005", Name: "Announcements", Visibility: "public", MemberCount: 47, Status: "active"},
+	{ID: "room-006", Name: "", Visibility: "private", MemberCount: 2, Status: "active"},
 }
 
 // findStubUser returns a pointer to the StubUser with the given ID,

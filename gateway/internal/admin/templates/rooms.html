@@ -26,7 +26,7 @@
            class="flex items-center gap-3 px-3 py-3 rounded text-sm
                   {{ if eq .ID $.ActiveItemID }}active bg-primary text-primary-content border-l-[3px] border-primary{{ else }}text-base-content hover:bg-base-300{{ end }}
                   focus:outline-none focus:ring-2 focus:ring-primary">
-          <span class="font-medium flex-1 truncate">{{ .Name }}</span>
+          <span class="font-medium flex-1 truncate">{{ if .Name }}{{ .Name }}{{ else }}(Direct Chat &middot; {{ .MemberCount }} members){{ end }}</span>
           {{ if eq .ID $.ActiveItemID }}
           <span class="badge badge-outline badge-ghost badge-sm"></span>
           {{ else }}
@@ -51,7 +51,7 @@
 {{ end }}
 
 {{ define "detail_title" }}
-  {{ if .ActiveRoom }}{{ .ActiveRoom.Name }}{{ else }}Room not found{{ end }}
+  {{ if .ActiveRoom }}{{ if .ActiveRoom.Name }}{{ .ActiveRoom.Name }}{{ else }}(Direct Chat &middot; {{ .ActiveRoom.MemberCount }} members){{ end }}{{ else }}Room not found{{ end }}
 {{ end }}
 
 {{ define "detail_content" }}

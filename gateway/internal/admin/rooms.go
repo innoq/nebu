@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -263,9 +264,14 @@ func (h *RoomsHandler) DetailHandler(w http.ResponseWriter, r *http.Request) {
 	statusBadge := StatusBadgeData{Status: badgeStatus}
 
 	// Pre-compute ConfirmDialogData for the archive confirm_dialog (Story 7.9 AC1).
+	// Story 9.15 AC3: rooms with empty Name (Direct Chats) use the same fallback as the list/detail title.
+	roomDisplayName := room.Name
+	if roomDisplayName == "" {
+		roomDisplayName = fmt.Sprintf("(Direct Chat · %d members)", room.MemberCount)
+	}
 	confirmDialog := ConfirmDialogData{
 		Title:        "Archive room",
-		Message:      "This will archive " + room.Name + ". Are you sure?",
+		Message:      "This will archive " + roomDisplayName + ". Are you sure?",
 		ConfirmLabel: "Archive",
 		ConfirmClass: "btn-error",
 		FormAction:   "/admin/rooms/" + roomID + "/archive",
@@ -273,8 +279,10 @@ func (h *RoomsHandler) DetailHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Pre-compute room initial using rune-safe slice (Story 7.9 Dev Notes).
+	// Story 9.15: rooms with empty Name (Direct Chats) fall back to "·" (middle dot)
+	// so the avatar circle is never visually empty.
 	// TODO: use rune-aware initials helper in production when multi-char initials are needed.
-	initial := ""
+	initial := "·"
 	if runes := []rune(room.Name); len(runes) > 0 {
 		initial = string(runes[0:1])
 	}
