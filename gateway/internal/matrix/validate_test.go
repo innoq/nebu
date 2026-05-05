@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/nebu/nebu/internal/auth"
+	pb "github.com/nebu/nebu/internal/grpc/pb"
 	"github.com/nebu/nebu/internal/middleware"
 )
 
@@ -318,22 +319,24 @@ func TestContentType_RejectsFormEncoded(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AC4: DisallowUnknownFields — 400 on extra JSON field
+// AC4: Unknown fields — tolerated per Matrix spec §10.1.1
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestDisallowUnknownFields_Rejects covers AC4 (Story AT5).
-// POST /createRoom with extra field "sneaky":"..." → 400.
-//
-// FAILING: PostCreateRoom does not call DisallowUnknownFields yet — extra fields
-// are silently ignored, so the handler returns 201 instead of 400.
-func TestDisallowUnknownFields_Rejects(t *testing.T) {
+// TestUnknownFields_AreIgnored covers the Matrix spec requirement that servers
+// MUST tolerate unknown optional fields in createRoom requests (§10.1.1).
+// Element Web sends fields like "initial_state", "creation_content", etc. that
+// are not in the minimal CreateRoomRequest struct — rejecting them with 400
+// violates the spec and breaks Element.
+func TestUnknownFields_AreIgnored(t *testing.T) {
 	oidcSrv, privateKey := setupOIDCServer(t)
 	t.Cleanup(oidcSrv.Close)
 
 	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
 
 	handler := NewCreateRoomHandler(CreateRoomConfig{
-		CoreClient: &mockCreateRoomCoreClient{},
+		CoreClient: &mockCreateRoomCoreClient{
+			resp: &pb.CreateRoomResponse{RoomId: "!test:test.local"},
+		},
 		ServerName: "test.local",
 	})
 
@@ -347,7 +350,8 @@ func TestDisallowUnknownFields_Rejects(t *testing.T) {
 		return signJWT(t, oidcSrv.URL, privateKey, time.Now().Add(time.Hour), nil)
 	}
 
-	body := `{"name":"TestRoom","sneaky":"injection-attempt"}`
+	// Element Web sends these extra fields — all must be silently ignored, not rejected.
+	body := `{"name":"TestRoom","initial_state":[],"creation_content":{},"preset":"private_chat","is_direct":false}`
 	req := httptest.NewRequest(http.MethodPost, "/createRoom", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+makeToken())
@@ -355,19 +359,8 @@ func TestDisallowUnknownFields_Rejects(t *testing.T) {
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 for unknown JSON field, got %d; body: %s", w.Code, w.Body.String())
-	}
-
-	var errResp matrixError
-	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
-		t.Fatalf("failed to decode error response: %v", err)
-	}
-	// AC4 mandates M_BAD_JSON on decode error — assert the concrete errcode
-	// rather than any non-empty value, so a regression that widens the error
-	// code is caught.
-	if errResp.ErrCode != "M_BAD_JSON" {
-		t.Errorf("expected errcode M_BAD_JSON, got %s", errResp.ErrCode)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for createRoom with unknown fields, got %d; body: %s", w.Code, w.Body.String())
 	}
 }
 

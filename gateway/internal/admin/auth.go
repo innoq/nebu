@@ -478,7 +478,7 @@ func (a *AdminAuth) LoginStartHandler(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 	})
 
-	authURL := oauth2Config.AuthCodeURL(state, oauth2.S256ChallengeOption(verifier), oidc.Nonce(nonce))
+	authURL := oauth2Config.AuthCodeURL(state, oauth2.S256ChallengeOption(verifier), oidc.Nonce(nonce), oauth2.SetAuthURLParam("prompt", "login"))
 	http.Redirect(w, r, authURL, http.StatusFound)
 }
 
@@ -530,7 +530,7 @@ func (a *AdminAuth) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	})
 
 	oauth2Config := a.buildOAuth2Config(r)
-	authURL := oauth2Config.AuthCodeURL(state, oauth2.S256ChallengeOption(verifier), oidc.Nonce(nonce))
+	authURL := oauth2Config.AuthCodeURL(state, oauth2.S256ChallengeOption(verifier), oidc.Nonce(nonce), oauth2.SetAuthURLParam("prompt", "login"))
 	http.Redirect(w, r, authURL, http.StatusFound)
 }
 

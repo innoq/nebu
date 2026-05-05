@@ -304,6 +304,7 @@ type syncUnsigned struct {
 type syncTimelineEvent struct {
 	EventID  string          `json:"event_id"`
 	Type     string          `json:"type"`
+	StateKey string          `json:"state_key,omitempty"`
 	Sender   string          `json:"sender"`
 	RoomID   string          `json:"room_id"`
 	Content  json.RawMessage `json:"content"`
@@ -532,6 +533,7 @@ func (h *GetSyncHandler) buildResponseFromBufferedEvents(events []*pb.Event, sin
 		room.Timeline.Events = append(room.Timeline.Events, syncTimelineEvent{
 			EventID:  ev.EventId,
 			Type:     ev.EventType,
+			StateKey: ev.StateKey,
 			Sender:   ev.SenderId,
 			RoomID:   ev.RoomId,
 			Content:  json.RawMessage(ev.Content),
@@ -576,6 +578,7 @@ func buildJoinedRooms(rooms []*pb.SyncRoom) map[string]syncJoinedRoom {
 			timelineEvents = append(timelineEvents, syncTimelineEvent{
 				EventID:  te.GetEventId(),
 				Type:     te.GetEventType(),
+				StateKey: te.GetStateKey(),
 				Sender:   te.GetSenderId(),
 				RoomID:   te.GetRoomId(),
 				Content:  json.RawMessage(te.GetContent()),

@@ -231,7 +231,7 @@ defmodule Nebu.Room.DB do
   defp encode_nullable(value), do: Jason.encode(value)
 
   @sql_fetch_events_since """
-  SELECT event_id, room_id, sender, event_type, content, origin_server_ts
+  SELECT event_id, room_id, sender, event_type, content, origin_server_ts, state_key
   FROM events
   WHERE room_id = $1 AND origin_server_ts > $2
   ORDER BY origin_server_ts ASC
@@ -341,7 +341,7 @@ defmodule Nebu.Room.DB do
     limit_param = "$#{param_offset + 1}"
 
     sql = """
-    SELECT event_id, room_id, sender, event_type, content, origin_server_ts
+    SELECT event_id, room_id, sender, event_type, content, origin_server_ts, state_key
     FROM events
     WHERE room_id = $1 AND #{where_clause}
     ORDER BY origin_server_ts #{order}, event_id #{order}

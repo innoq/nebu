@@ -469,7 +469,7 @@ defmodule Nebu.EventDispatcher.Server do
       content: content_json,
       origin_ts: Map.get(event, "origin_server_ts", 0),
       server_ts: System.system_time(:millisecond),
-      state_key: Map.get(event, "state_key", "")
+      state_key: Map.get(event, "state_key") || ""
     }
   end
 

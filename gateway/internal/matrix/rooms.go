@@ -80,9 +80,7 @@ func (h *CreateRoomHandler) PostCreateRoom(w http.ResponseWriter, r *http.Reques
 	}
 
 	var req CreateRoomRequest
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeMatrixError(w, http.StatusBadRequest, "M_BAD_JSON", "Request body is not valid JSON")
 		return
 	}
