@@ -1589,3 +1589,93 @@ func TestBuildLeaveRooms_RejectedInvite_IncludesLeaveEventIfPresent(t *testing.T
 		t.Fatal("buildLeaveRooms (rejected invite): state.events is nil — must be a slice")
 	}
 }
+
+// ─── Test: unsigned.age in timeline events (spec §8.4.3) ─────────────────────
+//
+// Story 9-10b AC3: every syncTimelineEvent in the sync response MUST carry
+// unsigned.age > 0.  matrix-js-sdk uses this field for event deduplication and
+// lag detection; missing or zero unsigned.age causes sporadic re-polling of
+// already-seen events during DM creation.
+//
+// Given: Core returns one room with two timeline events (OriginTs in the past)
+// When:  GET /_matrix/client/v3/sync (initial sync, no ?since param)
+// Then:  200; every timeline event in rooms.join has unsigned.age > 0
+
+func TestGetSync_TimelineEvents_HavePositiveUnsignedAge(t *testing.T) {
+	// Use a timestamp clearly in the past so age is guaranteed > 0.
+	pastTs := time.Now().Add(-5 * time.Second).UnixMilli()
+
+	mock := &mockGetSyncCoreClient{
+		resp: &pb.GetInitialSyncResponse{
+			SinceToken: "age_test_token",
+			Rooms: []*pb.SyncRoom{
+				{
+					RoomId: "!ageroom:test.local",
+					StateEvents: []*pb.SyncRoomStateEvent{},
+					TimelineEvents: []*pb.Event{
+						{
+							EventId:   "$age1:test.local",
+							RoomId:    "!ageroom:test.local",
+							SenderId:  "@alice:test.local",
+							EventType: "m.room.message",
+							Content:   []byte(`{"msgtype":"m.text","body":"hello"}`),
+							OriginTs:  pastTs,
+						},
+						{
+							EventId:   "$age2:test.local",
+							RoomId:    "!ageroom:test.local",
+							SenderId:  "@alice:test.local",
+							EventType: "m.room.message",
+							Content:   []byte(`{"msgtype":"m.text","body":"world"}`),
+							OriginTs:  pastTs + 1000,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	handler, _, makeToken := buildAuthedSyncHandler(t, mock)
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync", nil)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	// Parse response to inspect unsigned.age on timeline events.
+	var resp struct {
+		Rooms struct {
+			Join map[string]struct {
+				Timeline struct {
+					Events []struct {
+						EventID  string `json:"event_id"`
+						Unsigned struct {
+							Age int64 `json:"age"`
+						} `json:"unsigned"`
+					} `json:"events"`
+				} `json:"timeline"`
+			} `json:"join"`
+		} `json:"rooms"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode sync response: %v", err)
+	}
+
+	room, ok := resp.Rooms.Join["!ageroom:test.local"]
+	if !ok {
+		t.Fatal("expected !ageroom:test.local in rooms.join")
+	}
+	if len(room.Timeline.Events) != 2 {
+		t.Fatalf("expected 2 timeline events, got %d", len(room.Timeline.Events))
+	}
+	for _, ev := range room.Timeline.Events {
+		if ev.Unsigned.Age <= 0 {
+			t.Errorf("expected unsigned.age > 0 for event %q, got %d", ev.EventID, ev.Unsigned.Age)
+		}
+	}
+}

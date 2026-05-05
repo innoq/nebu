@@ -292,6 +292,15 @@ type syncTimelineSection struct {
 	PrevBatch string              `json:"prev_batch,omitempty"`
 }
 
+// syncUnsigned holds the unsigned section of a timeline event (spec §8.4.3).
+// age is the time in milliseconds since the event was sent, computed as
+// time.Now().UnixMilli() - event.OriginTS. matrix-js-sdk uses this field for
+// event deduplication and lag detection; missing unsigned.age causes sporadic
+// re-polling of already-seen events during DM creation.
+type syncUnsigned struct {
+	Age int64 `json:"age"`
+}
+
 type syncTimelineEvent struct {
 	EventID  string          `json:"event_id"`
 	Type     string          `json:"type"`
@@ -299,6 +308,7 @@ type syncTimelineEvent struct {
 	RoomID   string          `json:"room_id"`
 	Content  json.RawMessage `json:"content"`
 	OriginTS int64           `json:"origin_server_ts"`
+	Unsigned syncUnsigned    `json:"unsigned"`
 }
 
 type syncPresence struct {
@@ -526,6 +536,7 @@ func (h *GetSyncHandler) buildResponseFromBufferedEvents(events []*pb.Event, sin
 			RoomID:   ev.RoomId,
 			Content:  json.RawMessage(ev.Content),
 			OriginTS: ev.OriginTs,
+			Unsigned: syncUnsigned{Age: max(1, time.Now().UnixMilli()-ev.OriginTs)},
 		})
 		joinedRooms[ev.RoomId] = room
 	}
@@ -569,6 +580,7 @@ func buildJoinedRooms(rooms []*pb.SyncRoom) map[string]syncJoinedRoom {
 				RoomID:   te.GetRoomId(),
 				Content:  json.RawMessage(te.GetContent()),
 				OriginTS: te.GetOriginTs(),
+				Unsigned: syncUnsigned{Age: max(1, time.Now().UnixMilli()-te.GetOriginTs())},
 			})
 		}
 
