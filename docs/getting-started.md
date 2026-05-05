@@ -22,12 +22,12 @@ cd nebu
 make setup
 ```
 
-`make setup` does three things:
-- Copies `.env.example` to `.env`
-- Generates `.secrets/internal_secret` (32-byte random hex, the PSK for node registration)
-- Runs `mix test.setup` to generate Ed25519 test keys
+`make setup` does two things:
+- Generates `.secrets/internal_secret` (32-byte random hex, the PSK for node registration) if absent
+- Prints the dev OIDC credentials (Dex local users, see step 4 below)
 
-The `.secrets/` directory is in `.gitignore` — never commit it.
+The `.secrets/` directory is in `.gitignore` — never commit it. If you need a custom
+`POSTGRES_PASSWORD`, copy `.env.example` to `.env` manually before `make dev`.
 
 ---
 

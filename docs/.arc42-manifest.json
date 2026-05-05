@@ -1,6 +1,6 @@
 {
   "generated_at": "2026-05-01T00:00:00Z",
-  "generator": "bmad-generate-arc42 skill (Story 9-1)",
+  "generator": "bmad-generate-arc42 skill (Story 9-11)",
   "source_artifacts": [
     "_bmad-output/planning-artifacts/architecture.md",
     "_bmad-output/planning-artifacts/prd.md",
@@ -140,13 +140,13 @@
     "docs/architecture/adr/ADR-010-fts-strategy.md": {
       "editable": true,
       "generated_at": "2026-05-01T00:00:00Z",
-      "source": "Story 9-1 Dev Notes",
+      "source": "Story 9-11 Dev Notes",
       "arc42_section": "ADR-010 (Proposed)"
     },
     "docs/architecture/adr/ADR-011-managed-e2ee-key-escrow.md": {
       "editable": true,
       "generated_at": "2026-05-01T00:00:00Z",
-      "source": "Story 9-1 Dev Notes",
+      "source": "Story 9-11 Dev Notes",
       "arc42_section": "ADR-011 (Proposed)"
     },
     "docs/getting-started.md": {

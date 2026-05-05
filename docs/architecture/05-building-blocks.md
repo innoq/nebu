@@ -73,11 +73,16 @@ core/apps/
 │       ├── signature.ex         ← :crypto.sign/4 with eddsa
 │       ├── event_id.ex          ← Nebu.EventId.generate/1 (SHA-256 content hash)
 │       └── canonical_json.ex    ← RFC 8785 canonical JSON
-└── permissions/      ← System roles + room power levels
-    └── lib/nebu/permissions/
-        ├── system_role.ex       ← instance_admin | compliance_officer | user
-        └── room_policy.ex       ← Power-level checks for room operations
+├── permissions/      ← System roles + room power levels
+│   └── lib/nebu/permissions/
+│       ├── system_role.ex       ← instance_admin | compliance_officer | user
+│       └── room_policy.ex       ← Power-level checks for room operations
+└── compliance/       ← FR30–35: Four-eyes access, audit-log writers, signed export
 ```
+
+> **Note:** `gateway/internal/` additionally contains support packages not visualized
+> above (`api/`, `audit/`, `db/`, `ui/`, `validate/`). They wrap shared infrastructure
+> rather than represent distinct architectural blocks.
 
 ## Level 2 — Proto / gRPC Contract
 

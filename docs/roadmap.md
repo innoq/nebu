@@ -131,7 +131,7 @@ readiness. Not production-ready — see [Current Limitations](../README.md#curre
 
 | Story | Description | Status |
 |---|---|---|
-| 9-1 | arc42 architecture docs from BMAD artifacts + bmad-generate-arc42 skill | In progress |
+| 9-11 | arc42 architecture docs from BMAD artifacts + bmad-generate-arc42 skill | In review |
 | 9-2 | ADR-010: Full-Text Search (PostgreSQL tsvector vs. pgvector) | Planned |
 | 9-3 | ADR-011: Managed E2EE Key Escrow design | Planned |
 

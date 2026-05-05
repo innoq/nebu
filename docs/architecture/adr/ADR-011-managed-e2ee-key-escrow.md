@@ -38,4 +38,4 @@ in place to prevent client error dialogs.
 
 When accepted, consequences will be documented here based on the chosen approach.
 
-_Source: `README.md`, §Current Limitations (No End-to-End Encryption); `memory/project_e2ee_direction.md` (Server-side decryption model — Managed E2EE); Story 9-1 Dev Notes_
+_Source: `README.md`, §Current Limitations (No End-to-End Encryption); `memory/project_e2ee_direction.md` (Server-side decryption model — Managed E2EE); Story 9-11 Dev Notes_

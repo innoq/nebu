@@ -183,7 +183,7 @@ identity services.
 
 | Namespace | Reason |
 |---|---|
-| `/_matrix/federation/*` | No federation — see ADR-002 and README §No Federation |
+| `/_matrix/federation/*` | No federation — see [README §No Federation](../README.md#no-federation) (closed-network data-sovereignty model; Phase 3 vision) |
 | `/_matrix/identity/*` | No identity server — email/phone binding not supported |
 | `/_matrix/key/v2/server` | Server key exchange only needed for federation |
 | `POST /_matrix/client/v3/search` | Requires ADR-010 (FTS strategy) decision first — see [ADR-010](architecture/adr/ADR-010-fts-strategy.md) |

@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 # =============================================================================
 # verify-docs.sh
-# CI check for Story 9.1 — arc42 docs presence, size, and manifest freshness.
+# CI check for Story 9-11 — arc42 docs presence, size, and manifest freshness.
+#
+# NOTE on DRY: the manifest JSON validation block is intentionally duplicated
+# with scripts/test-docs-acceptance.sh — both scripts are zero-dependency,
+# self-contained Bash + python3 entry points (CI vs. acceptance harness).
+# A shared helper would couple them; the duplication is ~30 LOC and stable.
 #
 # Usage: bash scripts/verify-docs.sh
 #

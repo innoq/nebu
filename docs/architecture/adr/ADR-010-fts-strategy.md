@@ -33,4 +33,4 @@ Decision pending — no implementation until this ADR reaches Accepted status.
 
 When accepted, consequences will be documented here based on the chosen approach.
 
-_Source: `README.md`, §Current Limitations (No Full-Text Search); Story 9-1 Dev Notes_
+_Source: `README.md`, §Current Limitations (No Full-Text Search); Story 9-11 Dev Notes_
