@@ -50,6 +50,19 @@ func findStubRoom(id string) *StubRoom {
 	return nil
 }
 
+// stubRoomMembers holds fake member lists for the Room Detail panel (Story 9.18).
+// Only rooms with active members are listed here; rooms absent from this map render
+// with an empty member list (no crash, no heading rendered — {{ if .ActiveRoomMembers }} guard).
+var stubRoomMembers = map[string][]RoomMemberData{
+	"room-001": {
+		{UserID: "usr-001", DisplayName: "Alice Müller", JoinedAt: 1714560000000},
+		{UserID: "usr-003", DisplayName: "Carla Reiter", JoinedAt: 1714646400000},
+	},
+	"room-002": {
+		{UserID: "usr-002", DisplayName: "Bob Wagner", JoinedAt: 1714560000000},
+	},
+}
+
 // StubComplianceRequest is a fake compliance access request record for the Compliance page (Story 7.11).
 // Used until a real compliance API is available. Status is "pending", "approved", or "rejected".
 type StubComplianceRequest struct {

@@ -219,6 +219,11 @@ func (m *mockCoreClient) UpgradeRoom(_ context.Context, _ *pb.UpgradeRoomRequest
 	panic("unexpected call: UpgradeRoom")
 }
 
+// Story 9.18: no-op stub for AdminRoomsClient interface extension.
+func (m *mockCoreClient) ListAdminRoomMembers(_ context.Context, _ *pb.ListAdminRoomMembersRequest, _ ...grpc.CallOption) (*pb.ListAdminRoomMembersResponse, error) {
+	return &pb.ListAdminRoomMembersResponse{}, nil
+}
+
 // ─── fakeDB driver ────────────────────────────────────────────────────────────
 //
 // A minimal database/sql/driver implementation that returns scripted rows for

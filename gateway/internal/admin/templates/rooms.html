@@ -91,6 +91,22 @@
       </div>
     </dl>
 
+    {{/* Member list — Story 9.18 AC7: only rendered when ActiveRoomMembers is non-empty */}}
+    {{ if .ActiveRoomMembers }}
+    <div class="mt-4">
+      <h3 class="text-sm font-semibold text-base-content/60 uppercase tracking-wide mb-2">Members ({{ len .ActiveRoomMembers }})</h3>
+      <ul class="divide-y divide-base-300">
+        {{ range .ActiveRoomMembers }}
+        <li class="py-2 flex items-center gap-2 text-sm">
+          <a href="/admin/users/{{ .UserID }}" class="font-medium hover:underline truncate">
+            {{ if .DisplayName }}{{ .DisplayName }}{{ else }}{{ .UserID }}{{ end }}
+          </a>
+        </li>
+        {{ end }}
+      </ul>
+    </div>
+    {{ end }}
+
     {{/* Room settings form — max_members (Story 9.3 AC3) */}}
     <form method="POST" action="/admin/rooms/{{ .ActiveItemID }}/settings" class="mt-4">
       <input type="hidden" name="_csrf" value="{{ .PageData.CSRFToken }}">

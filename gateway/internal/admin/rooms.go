@@ -24,6 +24,8 @@ type AdminRoomsClient interface {
 	ArchiveRoom(ctx context.Context, req *pb.ArchiveRoomRequest) (*pb.ArchiveRoomResponse, error)
 	UnarchiveRoom(ctx context.Context, req *pb.UnarchiveRoomRequest) (*pb.UnarchiveRoomResponse, error)
 	UpdateRoomSettings(ctx context.Context, req *pb.UpdateRoomSettingsRequest) (*pb.UpdateRoomSettingsResponse, error)
+	// ListAdminRoomMembers fetches current members of a room for the Admin UI detail panel (Story 9.18).
+	ListAdminRoomMembers(ctx context.Context, req *pb.ListAdminRoomMembersRequest) (*pb.ListAdminRoomMembersResponse, error)
 }
 
 // RoomsHandler serves the /admin/rooms master-detail page (Story 7.2, extended Story 7.8).
@@ -199,6 +201,7 @@ func (h *RoomsHandler) DetailHandler(w http.ResponseWriter, r *http.Request) {
 
 	var room *StubRoom
 	var sidebarRooms []StubRoom
+	var members []RoomMemberData
 
 	if h.core != nil {
 		// --- gRPC path: fetch the single room ---
@@ -213,6 +216,21 @@ func (h *RoomsHandler) DetailHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		room = protoToStubRoom(resp.GetRoom())
+
+		// Fetch member list (Story 9.18) — non-fatal on error
+		membResp, membErr := h.core.ListAdminRoomMembers(r.Context(), &pb.ListAdminRoomMembersRequest{RoomId: roomID})
+		if membErr != nil {
+			slog.Warn("admin: ListAdminRoomMembers gRPC error", "room_id", roomID, "err", membErr)
+			// Continue with empty list; detail panel still renders.
+		} else {
+			for _, m := range membResp.GetMembers() {
+				members = append(members, RoomMemberData{
+					UserID:      m.GetUserId(),
+					DisplayName: m.GetDisplayName(),
+					JoinedAt:    m.GetJoinedAt(),
+				})
+			}
+		}
 
 		// Fetch sidebar list (limit=100, no search/filter)
 		listResp, listErr := h.core.ListAdminRooms(r.Context(), &pb.ListAdminRoomsRequest{Limit: 100})
@@ -232,6 +250,9 @@ func (h *RoomsHandler) DetailHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		sidebarRooms = stubRooms
+		// Populate member list from stub data (Story 9.18 AC8).
+		// stubRoomMembers[roomID] returns nil for rooms not in the map — template guard handles it.
+		members = stubRoomMembers[roomID]
 	}
 
 	if room == nil {
@@ -298,6 +319,7 @@ func (h *RoomsHandler) DetailHandler(w http.ResponseWriter, r *http.Request) {
 		ActiveRoomStatusBadge:   statusBadge,
 		ActiveRoomConfirmDialog: confirmDialog,
 		ActiveRoomInitial:       initial,
+		ActiveRoomMembers:       members,
 	}
 	h.tmpl.render(w, "rooms", data)
 }

@@ -10,6 +10,7 @@ defmodule Core.Event do
   field :content, 5, type: :bytes
   field :origin_ts, 6, type: :int64, json_name: "originTs"
   field :server_ts, 7, type: :int64, json_name: "serverTs"
+  field :state_key, 8, type: :string, json_name: "stateKey"
 end
 
 defmodule Core.SendEventRequest do
@@ -1115,4 +1116,39 @@ defmodule Core.UpgradeRoomResponse do
     syntax: :proto3
 
   field :new_room_id, 1, type: :string, json_name: "newRoomId"
+end
+
+defmodule Core.AdminRoomMemberProto do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.AdminRoomMemberProto",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :user_id, 1, type: :string, json_name: "userId"
+  field :display_name, 2, type: :string, json_name: "displayName"
+  field :joined_at, 3, type: :int64, json_name: "joinedAt"
+end
+
+defmodule Core.ListAdminRoomMembersRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.ListAdminRoomMembersRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :room_id, 1, type: :string, json_name: "roomId"
+end
+
+defmodule Core.ListAdminRoomMembersResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.ListAdminRoomMembersResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :members, 1, repeated: true, type: Core.AdminRoomMemberProto
 end

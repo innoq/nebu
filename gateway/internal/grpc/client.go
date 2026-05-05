@@ -344,6 +344,13 @@ func (c *Client) UpgradeRoom(ctx context.Context, req *pb.UpgradeRoomRequest) (*
 	return c.core.UpgradeRoom(ctx, req)
 }
 
+// ListAdminRoomMembers calls the Elixir core to fetch current members of a room for Admin UI.
+// Returns empty list (not an error) when the room has no current members.
+// Story 9.18: Admin UI Room Detail — Member List.
+func (c *Client) ListAdminRoomMembers(ctx context.Context, req *pb.ListAdminRoomMembersRequest) (*pb.ListAdminRoomMembersResponse, error) {
+	return c.core.ListAdminRoomMembers(ctx, req)
+}
+
 // CoreServiceClient returns the underlying generated gRPC client stub.
 // Used by EventBusStream (Story 4-16) which requires the raw pb.CoreServiceClient.
 func (c *Client) CoreServiceClient() pb.CoreServiceClient {

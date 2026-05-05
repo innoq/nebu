@@ -336,6 +336,51 @@ defmodule Nebu.Admin.DB do
     :ok
   end
 
+  # ─── Room member operations (Story 9.18) ─────────────────────────────────────
+
+  @doc """
+  Returns {:ok, member_rows} for the given room_id.
+
+  Queries the room_members JOIN users tables to fetch all current (left_at IS NULL)
+  members for the room, ordered by joined_at ASC.
+
+  Each row is a map with keys:
+    :user_id, :display_name_encrypted, :display_name_nonce, :joined_at
+
+  Returns {:ok, []} when the room has no current members — not an error.
+
+  PII note: display_name_encrypted is Tier 1 PII. Decryption is performed in the
+  gRPC handler (server.ex), not here. This module returns raw encrypted bytes.
+  """
+  @spec list_room_members(String.t()) :: {:ok, list(map())} | {:error, term()}
+  def list_room_members(room_id) do
+    result =
+      Ecto.Adapters.SQL.query!(
+        Nebu.Repo,
+        """
+        SELECT rm.user_id, u.display_name_encrypted, u.display_name_nonce,
+               rm.joined_at
+        FROM room_members rm
+        JOIN users u ON u.user_id = rm.user_id
+        WHERE rm.room_id = $1 AND rm.left_at IS NULL
+        ORDER BY rm.joined_at ASC
+        """,
+        [room_id]
+      )
+
+    rows =
+      Enum.map(result.rows, fn [user_id, dn_enc, dn_nonce, joined_at] ->
+        %{
+          user_id: user_id,
+          display_name_encrypted: dn_enc,
+          display_name_nonce: dn_nonce,
+          joined_at: joined_at
+        }
+      end)
+
+    {:ok, rows}
+  end
+
   # ─── Private helpers ──────────────────────────────────────────────────────────
 
   defp row_to_user_map([user_id, display_name_encrypted, display_name_nonce, email_encrypted, email_nonce, email_ephemeral_pub, is_active, system_role, created_at]) do

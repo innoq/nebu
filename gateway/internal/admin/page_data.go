@@ -217,6 +217,16 @@ type RoomsPageData struct {
 	// Pre-computed by DetailHandler to avoid UTF-8 byte-slice edge cases in templates.
 	// TODO: use rune-aware initials helper in production when multi-char initials are needed.
 	ActiveRoomInitial string
+	// ActiveRoomMembers is the list of current members for the selected room (Story 9.18).
+	// Nil/empty in list mode or when the gRPC call fails (detail panel still renders).
+	ActiveRoomMembers []RoomMemberData
+}
+
+// RoomMemberData holds one member row for the Room Detail member list (Story 9.18).
+type RoomMemberData struct {
+	UserID      string
+	DisplayName string // empty string if unavailable
+	JoinedAt    int64  // Unix milliseconds
 }
 
 // ConfigPageData holds data for the Server Configuration page (Story 7.10).

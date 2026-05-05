@@ -139,13 +139,10 @@ defmodule Nebu.EventDispatcher.Server do
 
     case Nebu.Room.RoomSupervisor.start_room(room_id) do
       {:ok, _pid} ->
-        :ok = Nebu.Room.Server.join(room_id, creator_id)
-
-        default_pl = Nebu.Room.Server.default_power_levels()
-        creator_pl = put_in(default_pl, ["users", creator_id], 100)
-        :ok = Nebu.Room.Server.set_power_levels(room_id, creator_id, creator_pl)
-
-        # Emit m.room.create — persists the authoritative creator and room version.
+        # Persist m.room.create FIRST — Matrix spec §8.5.1 requires it to be the
+        # first event in the room timeline (before m.room.member and m.room.power_levels).
+        # Emitting after Server.join would put m.room.member before m.room.create in
+        # the events table, causing Element to log "No membership changes detected".
         create_event_map = %{
           "room_id"          => room_id,
           "type"             => "m.room.create",
@@ -166,6 +163,14 @@ defmodule Nebu.EventDispatcher.Server do
           {:error, reason} ->
             Logger.warning("create_room: failed to write m.room.create for #{room_id}: #{inspect(reason)}")
         end
+
+        # Join creator AFTER m.room.create — emit_membership_event writes m.room.member
+        # as the second event in the timeline (spec §8.5.1 order: create → member → pl).
+        :ok = Nebu.Room.Server.join(room_id, creator_id)
+
+        default_pl = Nebu.Room.Server.default_power_levels()
+        creator_pl = put_in(default_pl, ["users", creator_id], 100)
+        :ok = Nebu.Room.Server.set_power_levels(room_id, creator_id, creator_pl)
 
         # Emit m.room.name state event if a name was provided
         name = request.name
@@ -463,7 +468,8 @@ defmodule Nebu.EventDispatcher.Server do
       event_type: Map.get(event, "event_type", ""),
       content: content_json,
       origin_ts: Map.get(event, "origin_server_ts", 0),
-      server_ts: System.system_time(:millisecond)
+      server_ts: System.system_time(:millisecond),
+      state_key: Map.get(event, "state_key", "")
     }
   end
 
@@ -973,7 +979,7 @@ defmodule Nebu.EventDispatcher.Server do
           [
             %Core.SyncRoom{
               room_id: room_id,
-              state_events: state_events,
+              state_events: dedup_member_state_events(state_events, timeline_events),
               timeline_events: timeline_events,
               limited: limited,
               prev_batch: prev_batch
@@ -992,7 +998,7 @@ defmodule Nebu.EventDispatcher.Server do
               tl_evs = evs |> Enum.reverse() |> Enum.map(&event_map_to_proto/1)
               [%Core.SyncRoom{
                 room_id:        room_id,
-                state_events:   state_evs,
+                state_events:   dedup_member_state_events(state_evs, tl_evs),
                 timeline_events: tl_evs,
                 limited:        length(evs) >= 20,
                 prev_batch:     prev_b
@@ -1198,7 +1204,7 @@ defmodule Nebu.EventDispatcher.Server do
             [
               %Core.SyncRoom{
                 room_id: room_id,
-                state_events: state_events,
+                state_events: dedup_member_state_events(state_events, timeline_events),
                 timeline_events: timeline_events,
                 limited: length(events) >= 20,
                 prev_batch: ""
@@ -1212,6 +1218,30 @@ defmodule Nebu.EventDispatcher.Server do
           []
       end
     end)
+  end
+
+  # Removes m.room.member entries from state_events when the same user already has
+  # a m.room.member event in timeline_events. This prevents Element Web from logging
+  # "No membership changes detected" — without deduplication, matrix-js-sdk sees the
+  # join in state (prev=join) and again in the timeline (new=join), computes no change,
+  # and silently skips processing the membership event. With deduplication, the member
+  # event is ONLY in the timeline, so the sdk correctly detects: none→join.
+  #
+  # State events for members NOT in the timeline are kept intact (e.g. for rooms with
+  # limited=true where historic joins are outside the timeline window).
+  defp dedup_member_state_events(state_events, timeline_events) do
+    member_state_keys =
+      timeline_events
+      |> Enum.filter(fn ev -> ev.event_type == "m.room.member" end)
+      |> MapSet.new(fn ev -> ev.state_key end)
+
+    if MapSet.size(member_state_keys) == 0 do
+      state_events
+    else
+      Enum.reject(state_events, fn ev ->
+        ev.type == "m.room.member" && MapSet.member?(member_state_keys, ev.state_key)
+      end)
+    end
   end
 
   # Flush any stale :sync_long_poll_timeout message left in the mailbox
@@ -1382,7 +1412,8 @@ defmodule Nebu.EventDispatcher.Server do
       event_type: Map.get(event_map, "type", ""),
       content: content_json,
       origin_ts: Map.get(event_map, "origin_server_ts", 0),
-      server_ts: System.system_time(:millisecond)
+      server_ts: System.system_time(:millisecond),
+      state_key: Map.get(event_map, "state_key", "")
     }
   end
 
@@ -2018,6 +2049,34 @@ defmodule Nebu.EventDispatcher.Server do
         raise GRPC.RPCError,
           status: GRPC.Status.internal(),
           message: "get_admin_room failed: #{inspect(reason)}"
+    end
+  end
+
+  # ─── ListAdminRoomMembers (Story 9.18) ───────────────────────────────────────
+  #
+  # Returns all current members (left_at IS NULL) for a room, ordered by joined_at ASC.
+  # display_name is decrypted via the same decrypt_display_name/1 helper used by
+  # list_admin_users/get_admin_user. On decryption failure, display_name = "" (non-fatal).
+  # Empty room returns empty members list (not an error).
+
+  def list_admin_room_members(%Core.ListAdminRoomMembersRequest{} = req, _stream) do
+    case admin_db_module().list_room_members(req.room_id) do
+      {:ok, members} ->
+        proto_members =
+          Enum.map(members, fn member ->
+            %Core.AdminRoomMemberProto{
+              user_id: member.user_id,
+              display_name: decrypt_display_name(member),
+              joined_at: member.joined_at || 0
+            }
+          end)
+
+        %Core.ListAdminRoomMembersResponse{members: proto_members}
+
+      {:error, reason} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.internal(),
+          message: "list_admin_room_members failed: #{inspect(reason)}"
     end
   end
 

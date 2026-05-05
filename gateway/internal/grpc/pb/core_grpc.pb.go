@@ -61,6 +61,7 @@ const (
 	CoreService_GetServerConfig_FullMethodName            = "/core.CoreService/GetServerConfig"
 	CoreService_UpdateServerConfig_FullMethodName         = "/core.CoreService/UpdateServerConfig"
 	CoreService_UpgradeRoom_FullMethodName                = "/core.CoreService/UpgradeRoom"
+	CoreService_ListAdminRoomMembers_FullMethodName       = "/core.CoreService/ListAdminRoomMembers"
 )
 
 // CoreServiceClient is the client API for CoreService service.
@@ -167,6 +168,10 @@ type CoreServiceClient interface {
 	// Creates tombstone in old room, creates new room with predecessor,
 	// copies state, and invites all old members.
 	UpgradeRoom(ctx context.Context, in *UpgradeRoomRequest, opts ...grpc.CallOption) (*UpgradeRoomResponse, error)
+	// ListAdminRoomMembers — Story 9.18: fetch current members of a room for Admin UI.
+	// Returns all members where left_at IS NULL, ordered by joined_at ASC.
+	// Returns empty list (not an error) when the room has no current members.
+	ListAdminRoomMembers(ctx context.Context, in *ListAdminRoomMembersRequest, opts ...grpc.CallOption) (*ListAdminRoomMembersResponse, error)
 }
 
 type coreServiceClient struct {
@@ -606,6 +611,16 @@ func (c *coreServiceClient) UpgradeRoom(ctx context.Context, in *UpgradeRoomRequ
 	return out, nil
 }
 
+func (c *coreServiceClient) ListAdminRoomMembers(ctx context.Context, in *ListAdminRoomMembersRequest, opts ...grpc.CallOption) (*ListAdminRoomMembersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListAdminRoomMembersResponse)
+	err := c.cc.Invoke(ctx, CoreService_ListAdminRoomMembers_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CoreServiceServer is the server API for CoreService service.
 // All implementations must embed UnimplementedCoreServiceServer
 // for forward compatibility.
@@ -710,6 +725,10 @@ type CoreServiceServer interface {
 	// Creates tombstone in old room, creates new room with predecessor,
 	// copies state, and invites all old members.
 	UpgradeRoom(context.Context, *UpgradeRoomRequest) (*UpgradeRoomResponse, error)
+	// ListAdminRoomMembers — Story 9.18: fetch current members of a room for Admin UI.
+	// Returns all members where left_at IS NULL, ordered by joined_at ASC.
+	// Returns empty list (not an error) when the room has no current members.
+	ListAdminRoomMembers(context.Context, *ListAdminRoomMembersRequest) (*ListAdminRoomMembersResponse, error)
 	mustEmbedUnimplementedCoreServiceServer()
 }
 
@@ -845,6 +864,9 @@ func (UnimplementedCoreServiceServer) UpdateServerConfig(context.Context, *Updat
 }
 func (UnimplementedCoreServiceServer) UpgradeRoom(context.Context, *UpgradeRoomRequest) (*UpgradeRoomResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method UpgradeRoom not implemented")
+}
+func (UnimplementedCoreServiceServer) ListAdminRoomMembers(context.Context, *ListAdminRoomMembersRequest) (*ListAdminRoomMembersResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListAdminRoomMembers not implemented")
 }
 func (UnimplementedCoreServiceServer) mustEmbedUnimplementedCoreServiceServer() {}
 func (UnimplementedCoreServiceServer) testEmbeddedByValue()                     {}
@@ -1616,6 +1638,24 @@ func _CoreService_UpgradeRoom_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_ListAdminRoomMembers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListAdminRoomMembersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).ListAdminRoomMembers(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_ListAdminRoomMembers_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).ListAdminRoomMembers(ctx, req.(*ListAdminRoomMembersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CoreService_ServiceDesc is the grpc.ServiceDesc for CoreService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1786,6 +1826,10 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpgradeRoom",
 			Handler:    _CoreService_UpgradeRoom_Handler,
+		},
+		{
+			MethodName: "ListAdminRoomMembers",
+			Handler:    _CoreService_ListAdminRoomMembers_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

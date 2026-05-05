@@ -80,6 +80,14 @@ func (c *captureContextClient) UpdateRoomSettings(ctx context.Context, _ *pb.Upd
 	return &pb.UpdateRoomSettingsResponse{Ok: true}, nil
 }
 
+// Story 9.18: no-op stub — ListAdminRoomMembers added to AdminRoomsClient interface.
+// RED: pb.ListAdminRoomMembersRequest / pb.ListAdminRoomMembersResponse do not exist
+// yet (generated after `make proto`). This stub will fail to compile until the proto
+// types are generated and the interface method is added to rooms.go.
+func (c *captureContextClient) ListAdminRoomMembers(_ context.Context, _ *pb.ListAdminRoomMembersRequest) (*pb.ListAdminRoomMembersResponse, error) {
+	return &pb.ListAdminRoomMembersResponse{}, nil
+}
+
 // ---------------------------------------------------------------------------
 // Helper: build a request context that simulates SessionGuard having validated
 // the admin session and stored the admin user's sub/ID in the context.

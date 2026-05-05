@@ -137,6 +137,11 @@ service CoreService {
   // Creates tombstone in old room, creates new room with predecessor,
   // copies state, and invites all old members.
   rpc UpgradeRoom(UpgradeRoomRequest) returns (UpgradeRoomResponse);
+
+  // ListAdminRoomMembers — Story 9.18: fetch current members of a room for Admin UI.
+  // Returns all members where left_at IS NULL, ordered by joined_at ASC.
+  // Returns empty list (not an error) when the room has no current members.
+  rpc ListAdminRoomMembers(ListAdminRoomMembersRequest) returns (ListAdminRoomMembersResponse);
 }
 
 // Shared event type used across multiple RPCs
@@ -148,6 +153,7 @@ message Event {
   bytes  content    = 5;  // JSON-encoded event content
   int64  origin_ts  = 6;  // Unix milliseconds
   int64  server_ts  = 7;  // Unix milliseconds
+  string state_key  = 8;  // Matrix state_key (subject of state event, e.g. user_id for m.room.member)
 }
 
 // SendEvent
@@ -633,3 +639,15 @@ message UpgradeRoomRequest {
 message UpgradeRoomResponse {
   string new_room_id = 1;
 }
+
+// AdminRoomMemberProto — Story 9.18: one member row in ListAdminRoomMembersResponse.
+// display_name is decrypted by the Elixir Core before sending; empty string on failure.
+message AdminRoomMemberProto {
+  string user_id      = 1;
+  string display_name = 2;  // decrypted; empty string if decryption fails
+  int64  joined_at    = 3;  // Unix milliseconds
+}
+
+// ListAdminRoomMembers — Story 9.18
+message ListAdminRoomMembersRequest  { string room_id = 1; }
+message ListAdminRoomMembersResponse { repeated AdminRoomMemberProto members = 1; }

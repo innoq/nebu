@@ -1,12 +1,16 @@
 package admin
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strconv"
 	"strings"
 	"testing"
+
+	pb "github.com/nebu/nebu/internal/grpc/pb"
 )
 
 // maxMembersLimit mirrors the upper bound enforced by UpdateRoomSettingsHandler
@@ -475,6 +479,133 @@ func TestUpdateRoomSettingsWithVisibility(t *testing.T) {
 	location := w.Header().Get("Location")
 	if !strings.Contains(location, "flash=Settings+updated") {
 		t.Errorf("expected Location to contain 'flash=Settings+updated', got: %s", location)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Story 9.18 — Room Detail: Member List
+// RED PHASE: tests FAIL until implementation exists because:
+//   - RoomMemberData struct does not exist in page_data.go (AC6)
+//   - ActiveRoomMembers field does not exist on RoomsPageData (AC6)
+//   - stubRoomMembers map does not exist in stubs.go (AC8)
+//   - DetailHandler does not populate ActiveRoomMembers (AC5, AC8)
+//   - rooms.html does not contain the Members section (AC7)
+// ---------------------------------------------------------------------------
+
+// TestRoomDetailMemberListRenders verifies that GET /admin/rooms/room-001 (stub path)
+// returns HTTP 200 and renders the member list with display names and user links.
+// AC9 (Story 9.18): room-001 has two entries in stubRoomMembers (Alice Müller, Carla Reiter).
+func TestRoomDetailMemberListRenders(t *testing.T) {
+	tmpl, err := NewTemplateHandler()
+	if err != nil {
+		t.Fatalf("NewTemplateHandler: %v", err)
+	}
+	h := NewRoomsHandler(tmpl)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /admin/rooms/{roomId}", h.DetailHandler)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/admin/rooms/room-001", nil)
+	mux.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200 got %d\nbody: %s", w.Code, w.Body.String()[:min(500, w.Body.Len())])
+	}
+	body := w.Body.String()
+
+	// AC9: body must contain "Alice Müller"
+	if !strings.Contains(body, "Alice Müller") {
+		t.Error("expected body to contain 'Alice Müller' (first stub member of room-001)")
+	}
+	// AC9: body must contain a link to /admin/users/usr-001
+	if !strings.Contains(body, "/admin/users/usr-001") {
+		t.Error("expected body to contain '/admin/users/usr-001' (member link for usr-001)")
+	}
+	// AC9: body must contain "Carla Reiter"
+	if !strings.Contains(body, "Carla Reiter") {
+		t.Error("expected body to contain 'Carla Reiter' (second stub member of room-001)")
+	}
+}
+
+// TestRoomDetailNoMembers verifies that GET /admin/rooms/room-003 (stub path, room with
+// no entry in stubRoomMembers) returns HTTP 200 and does NOT render the Members section.
+// AC10 (Story 9.18): the {{ if .ActiveRoomMembers }} guard must suppress the section heading.
+func TestRoomDetailNoMembers(t *testing.T) {
+	tmpl, err := NewTemplateHandler()
+	if err != nil {
+		t.Fatalf("NewTemplateHandler: %v", err)
+	}
+	h := NewRoomsHandler(tmpl)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /admin/rooms/{roomId}", h.DetailHandler)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/admin/rooms/room-003", nil)
+	mux.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200 for room-003 (no members) got %d\nbody: %s", w.Code, w.Body.String()[:min(500, w.Body.Len())])
+	}
+	body := w.Body.String()
+
+	// AC10: the Members section heading must NOT appear when there are no members
+	if strings.Contains(body, "Members (") {
+		t.Error("expected body NOT to contain 'Members (' for room with no stub members — {{ if .ActiveRoomMembers }} guard missing")
+	}
+}
+
+// memberListGrpcErrorClient is a minimal AdminRoomsClient whose ListAdminRoomMembers
+// always returns an error. GetAdminRoom returns a valid room; all other methods are no-ops.
+// Used exclusively in TestRoomDetailMemberListGrpcError (AC5, Story 9.18).
+type memberListGrpcErrorClient struct{}
+
+func (memberListGrpcErrorClient) ListAdminRooms(_ context.Context, _ *pb.ListAdminRoomsRequest) (*pb.ListAdminRoomsResponse, error) {
+	return &pb.ListAdminRoomsResponse{}, nil
+}
+func (memberListGrpcErrorClient) GetAdminRoom(_ context.Context, req *pb.GetAdminRoomRequest) (*pb.GetAdminRoomResponse, error) {
+	return &pb.GetAdminRoomResponse{
+		Room: &pb.AdminRoomDetailProto{RoomId: req.GetRoomId(), Name: "Test Room", Status: "active"},
+	}, nil
+}
+func (memberListGrpcErrorClient) ArchiveRoom(_ context.Context, _ *pb.ArchiveRoomRequest) (*pb.ArchiveRoomResponse, error) {
+	return &pb.ArchiveRoomResponse{}, nil
+}
+func (memberListGrpcErrorClient) UnarchiveRoom(_ context.Context, _ *pb.UnarchiveRoomRequest) (*pb.UnarchiveRoomResponse, error) {
+	return &pb.UnarchiveRoomResponse{}, nil
+}
+func (memberListGrpcErrorClient) UpdateRoomSettings(_ context.Context, _ *pb.UpdateRoomSettingsRequest) (*pb.UpdateRoomSettingsResponse, error) {
+	return &pb.UpdateRoomSettingsResponse{}, nil
+}
+func (memberListGrpcErrorClient) ListAdminRoomMembers(_ context.Context, _ *pb.ListAdminRoomMembersRequest) (*pb.ListAdminRoomMembersResponse, error) {
+	return nil, fmt.Errorf("simulated gRPC error: transport: connection refused")
+}
+
+// TestRoomDetailMemberListGrpcError verifies AC5 (Story 9.18): when ListAdminRoomMembers
+// returns a gRPC error, DetailHandler logs a warning and continues — returning HTTP 200
+// without a Members section (non-fatal degradation).
+func TestRoomDetailMemberListGrpcError(t *testing.T) {
+	tmpl, err := NewTemplateHandler()
+	if err != nil {
+		t.Fatalf("NewTemplateHandler: %v", err)
+	}
+	h := NewRoomsHandler(tmpl, memberListGrpcErrorClient{})
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /admin/rooms/{roomId}", h.DetailHandler)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/admin/rooms/room-001", nil)
+	mux.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200 on gRPC member-list error (non-fatal), got %d\nbody: %s",
+			w.Code, w.Body.String()[:min(500, w.Body.Len())])
+	}
+	// Template guard {{ if .ActiveRoomMembers }} must suppress the section when list is empty.
+	if strings.Contains(w.Body.String(), "Members (") {
+		t.Error("expected 'Members (' to be absent when ListAdminRoomMembers returns an error")
 	}
 }
 

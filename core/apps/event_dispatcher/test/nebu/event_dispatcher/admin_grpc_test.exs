@@ -231,6 +231,21 @@ defmodule Nebu.EventDispatcher.AdminGrpcTest do
       end)
       :ok
     end
+
+    @doc """
+    Returns {:ok, member_rows} for the given room_id from ETS key {:members, room_id}.
+    Returns {:ok, []} if no entry found (empty room — not an error).
+    Row shape: %{user_id:, display_name_encrypted:, display_name_nonce:, email_ephemeral_pub:, joined_at:}
+
+    Story 9.18: added to satisfy the Nebu.Admin.DB callback.
+    RED: list_room_members/1 does not exist in Nebu.Admin.DB yet.
+    """
+    def list_room_members(room_id) do
+      case :ets.lookup(:admin_grpc_test_db, {:members, room_id}) do
+        [] -> {:ok, []}
+        [{_, rows}] -> {:ok, rows}
+      end
+    end
   end
 
   # ─── FakeAdminDBNotFound ──────────────────────────────────────────────────────
@@ -249,6 +264,9 @@ defmodule Nebu.EventDispatcher.AdminGrpcTest do
     def archive_room_atomic(_room_id), do: {:error, :not_found}
     def get_server_config, do: {:ok, %{}}
     def upsert_server_config(_changes), do: :ok
+    # Story 9.18: list_room_members/1 added to satisfy the Nebu.Admin.DB callback.
+    # RED: this function does not exist in Nebu.Admin.DB yet.
+    def list_room_members(_room_id), do: {:ok, []}
   end
 
   # ─── FakeSessionSupervisor ────────────────────────────────────────────────────
@@ -1032,6 +1050,259 @@ defmodule Nebu.EventDispatcher.AdminGrpcTest do
 
       assert is_integer(response.room_count) && response.room_count >= 0,
              "expected non-negative integer room_count, got #{inspect(response.room_count)}"
+    end
+  end
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Story 9.18 — ListAdminRoomMembers gRPC handler
+  # ─────────────────────────────────────────────────────────────────────────────
+  #
+  # RED PHASE — ALL tests below FAIL until Story 9.18 is implemented.
+  #
+  # Failing reasons:
+  #   1. Core.ListAdminRoomMembersRequest does not exist yet — compile error after `make proto`.
+  #   2. Core.ListAdminRoomMembersResponse does not exist yet — compile error.
+  #   3. Core.AdminRoomMemberProto does not exist yet — compile error.
+  #   4. Server.list_admin_room_members/2 does not exist yet → UndefinedFunctionError.
+  #   5. Nebu.Admin.DB.list_room_members/1 does not exist yet → UndefinedFunctionError.
+  #   6. FakeAdminDB has no list_room_members/1 callback yet → compile error when called.
+  #
+  # async: false — shared Application env + named ETS table :admin_grpc_test_db.
+  #
+  # Test strategy:
+  #   - FakeAdminDB.list_room_members/1 is added below and returns pre-seeded rows.
+  #   - Rows mirror the shape returned by the real SQL JOIN (Story 9.18 AC2):
+  #       %{user_id:, display_name_encrypted:, display_name_nonce:,
+  #         email_ephemeral_pub:, joined_at:}
+  #   - For simplicity in RED phase, display_name_encrypted is set to a literal
+  #     that the crypto helper should decrypt to the expected display_name.
+  #     The real implementation must call the same X25519/AES-256-GCM helper used
+  #     by get_admin_user/list_admin_users — see Dev Notes in Story 9.18.
+  #   - A second FakeAdminDB variant (FakeAdminDBEmptyRoom) returns [] for
+  #     list_room_members to exercise the empty-list (no-error) path.
+  #
+  # Covered Acceptance Criteria:
+  #   AC2 — Elixir Core implements list_admin_room_members (AT#12, AT#13).
+  #   AC2 — Empty room returns empty list, not an error (AT#13).
+  #
+  # Crash/Restart test: NOT NEEDED.
+  # `list_admin_room_members/2` is a stateless unary gRPC handler — it holds no
+  # GenServer state, no ETS, no in-memory caches. Each call hits the DB through
+  # the configured admin_db_module. A handler crash is automatically recovered
+  # by the GRPC.Server worker pool; there is no state to migrate or restore.
+  # Per CLAUDE.md "Persistenz-Strategie": Option C — Stateless.
+
+  # ── FakeAdminDB extension — add list_room_members/1 ─────────────────────────
+  #
+  # NOTE: The FakeAdminDB defined above does NOT have list_room_members/1.
+  # Adding it here as a separate in-test module to avoid redefining FakeAdminDB
+  # (Elixir does not allow re-opening a defmodule in the same file in a way that
+  # retroactively adds functions).  Tests in this describe block inject
+  # FakeAdminDBWithMembers or FakeAdminDBEmptyRoom via Application.put_env.
+
+  defmodule FakeAdminDBWithMembers do
+    @moduledoc """
+    Fake DB for Story 9.18 member list tests.
+    Extends FakeAdminDB behaviour with list_room_members/1.
+    RED: list_room_members/1 does not exist in Nebu.Admin.DB yet.
+    """
+
+    # Delegate all existing operations to FakeAdminDB so tests that also need
+    # user/room/config operations continue to work.
+    def list_users(limit, cursor, search), do: FakeAdminDB.list_users(limit, cursor, search)
+    def get_user(user_id), do: FakeAdminDB.get_user(user_id)
+    def set_is_active(user_id, is_active), do: FakeAdminDB.set_is_active(user_id, is_active)
+    def set_system_role(user_id, role), do: FakeAdminDB.set_system_role(user_id, role)
+    def list_rooms(limit, cursor, status_filter, search), do: FakeAdminDB.list_rooms(limit, cursor, status_filter, search)
+    def get_room(room_id), do: FakeAdminDB.get_room(room_id)
+    def archive_room_atomic(room_id), do: FakeAdminDB.archive_room_atomic(room_id)
+    def get_server_config, do: FakeAdminDB.get_server_config()
+    def upsert_server_config(changes), do: FakeAdminDB.upsert_server_config(changes)
+
+    @doc """
+    Returns member rows for the given room_id from ETS key {:members, room_id}.
+    Returns [] if no entry found (empty room — not an error).
+
+    Row shape (mirrors DB JOIN result documented in Story 9.18 AC2):
+      %{user_id:, display_name_encrypted:, display_name_nonce:,
+        email_ephemeral_pub:, joined_at:}
+
+    In the RED phase, display_name_encrypted is set to a raw binary that the
+    real Nebu.Crypto helper must decrypt. Tests assert on the decoded display_name
+    returned in the proto, not on the encrypted bytes.
+    """
+    def list_room_members(room_id) do
+      case :ets.lookup(:admin_grpc_test_db, {:members, room_id}) do
+        [] -> {:ok, []}
+        [{_, rows}] -> {:ok, rows}
+      end
+    end
+  end
+
+  defmodule FakeAdminDBEmptyRoom do
+    @moduledoc """
+    Fake DB that returns an empty member list for any room.
+    Used to test the empty-room / no-error path (AC2 Story 9.18).
+    """
+
+    def list_users(limit, cursor, search), do: FakeAdminDB.list_users(limit, cursor, search)
+    def get_user(user_id), do: FakeAdminDB.get_user(user_id)
+    def set_is_active(user_id, is_active), do: FakeAdminDB.set_is_active(user_id, is_active)
+    def set_system_role(user_id, role), do: FakeAdminDB.set_system_role(user_id, role)
+    def list_rooms(limit, cursor, status_filter, search), do: FakeAdminDB.list_rooms(limit, cursor, status_filter, search)
+    def get_room(room_id), do: FakeAdminDB.get_room(room_id)
+    def archive_room_atomic(room_id), do: FakeAdminDB.archive_room_atomic(room_id)
+    def get_server_config, do: FakeAdminDB.get_server_config()
+    def upsert_server_config(changes), do: FakeAdminDB.upsert_server_config(changes)
+
+    @doc "Always returns an empty list — no members for any room."
+    def list_room_members(_room_id), do: {:ok, []}
+  end
+
+  # ── Helper — insert member rows into ETS ─────────────────────────────────────
+
+  defp insert_member_rows(room_id, rows) do
+    :ets.insert(:admin_grpc_test_db, {{:members, room_id}, rows})
+  end
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # AT#12 — ListAdminRoomMembers returns members for a populated room (AC2)
+  # ─────────────────────────────────────────────────────────────────────────────
+  #
+  # Given: room "!room-xyz:nebu.local" has 2 joined members in the DB
+  # When:  ListAdminRoomMembers gRPC is called with that room_id
+  # Then:  response.members contains 2 AdminRoomMemberProto entries
+  # And:   each entry has correct user_id and joined_at
+  # And:   display_name is a non-empty string (decrypted from encrypted storage)
+  #
+  # RED: Core.ListAdminRoomMembersRequest does not exist yet → compile error.
+  #      Server.list_admin_room_members/2 does not exist yet → UndefinedFunctionError.
+  #      FakeAdminDB.list_room_members/1 does not exist yet → callback missing.
+
+  describe "ListAdminRoomMembers — AC2 (Story 9.18)" do
+    test "returns 2 members with correct user_id and joined_at for a populated room" do
+      Application.put_env(:event_dispatcher, :admin_db_module, FakeAdminDBWithMembers)
+
+      room_id = "!room-xyz:nebu.local"
+
+      # Seed 2 member rows — display_name_encrypted is intentionally a placeholder
+      # binary. The real Nebu.Crypto helper decrypts it; in the RED phase the handler
+      # doesn't exist yet so decryption is never called. Tests assert on proto fields.
+      insert_member_rows(room_id, [
+        %{
+          user_id: "@alice:nebu.local",
+          # Placeholder — real impl will encrypt/decrypt via X25519/AES-256-GCM
+          display_name_encrypted: <<0::256>>,
+          display_name_nonce: <<0::96>>,
+          email_ephemeral_pub: <<0::256>>,
+          joined_at: 1_714_560_000_000
+        },
+        %{
+          user_id: "@bob:nebu.local",
+          display_name_encrypted: <<0::256>>,
+          display_name_nonce: <<0::96>>,
+          email_ephemeral_pub: <<0::256>>,
+          joined_at: 1_714_646_400_000
+        }
+      ])
+
+      # RED: Core.ListAdminRoomMembersRequest does not exist yet → compile error
+      request = %Core.ListAdminRoomMembersRequest{room_id: room_id}
+
+      # RED: Server.list_admin_room_members/2 does not exist yet → UndefinedFunctionError
+      response = Server.list_admin_room_members(request, build_stream())
+
+      assert %Core.ListAdminRoomMembersResponse{} = response,
+             "expected ListAdminRoomMembersResponse struct, got #{inspect(response)}"
+
+      assert length(response.members) == 2,
+             "expected 2 members, got #{length(response.members)}"
+
+      user_ids = Enum.map(response.members, & &1.user_id)
+
+      assert "@alice:nebu.local" in user_ids,
+             "expected '@alice:nebu.local' in member user_ids, got #{inspect(user_ids)}"
+
+      assert "@bob:nebu.local" in user_ids,
+             "expected '@bob:nebu.local' in member user_ids, got #{inspect(user_ids)}"
+
+      # joined_at must be forwarded correctly (Unix milliseconds)
+      alice = Enum.find(response.members, fn m -> m.user_id == "@alice:nebu.local" end)
+
+      assert alice.joined_at == 1_714_560_000_000,
+             "expected alice.joined_at=1_714_560_000_000, got #{inspect(alice.joined_at)}"
+    end
+
+    test "display_name is a string (decrypted or empty on failure) — not raw binary" do
+      Application.put_env(:event_dispatcher, :admin_db_module, FakeAdminDBWithMembers)
+
+      room_id = "!room-abc:nebu.local"
+
+      insert_member_rows(room_id, [
+        %{
+          user_id: "@carol:nebu.local",
+          display_name_encrypted: <<0::256>>,
+          display_name_nonce: <<0::96>>,
+          email_ephemeral_pub: <<0::256>>,
+          joined_at: 1_714_560_000_001
+        }
+      ])
+
+      # RED: compile error (struct missing)
+      request = %Core.ListAdminRoomMembersRequest{room_id: room_id}
+      response = Server.list_admin_room_members(request, build_stream())
+
+      assert length(response.members) == 1,
+             "expected 1 member, got #{length(response.members)}"
+
+      [member] = response.members
+
+      # display_name MUST be a string — either the decrypted value or "" on failure.
+      # It must NEVER be a raw binary (bytes) or nil.
+      #
+      # Decryption-failure semantics (documented contract):
+      #   - On AES-GCM decrypt failure (bad key, tampered ciphertext, unknown nonce
+      #     length), `decrypt_display_name/1` falls back to "" — see server.ex L2172.
+      #   - The proto field is always present; "" is the explicit signal that the
+      #     server could not decrypt the encrypted blob.
+      #   - The Admin UI template falls back to user_id when display_name is "".
+      #
+      # In this RED-phase test the encrypted blob is a fixed 32-byte zero binary
+      # which AES-GCM cannot decrypt with any real key — the handler is therefore
+      # expected to return "" here. Once the implementation lands we keep
+      # `is_binary` rather than `assert ==""` so the test is robust to future
+      # fixture changes (e.g. a real encrypt/decrypt round-trip in GREEN phase).
+      assert is_binary(member.display_name),
+             "expected display_name to be a string (\"\" on decrypt failure), got #{inspect(member.display_name)}"
+    end
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # AT#13 — ListAdminRoomMembers returns empty list for a room with no members (AC2)
+    # ─────────────────────────────────────────────────────────────────────────
+    #
+    # Given: room "!empty-room:nebu.local" has 0 joined members
+    # When:  ListAdminRoomMembers gRPC is called
+    # Then:  response.members is [] (empty list)
+    # And:   no error is raised (empty list is not an error condition)
+    #
+    # RED: compile error (struct missing) + UndefinedFunctionError.
+
+    test "returns empty members list for a room with no joined members — no error" do
+      Application.put_env(:event_dispatcher, :admin_db_module, FakeAdminDBEmptyRoom)
+
+      room_id = "!empty-room:nebu.local"
+
+      # RED: Core.ListAdminRoomMembersRequest does not exist yet → compile error
+      request = %Core.ListAdminRoomMembersRequest{room_id: room_id}
+
+      # RED: Server.list_admin_room_members/2 does not exist yet → UndefinedFunctionError
+      response = Server.list_admin_room_members(request, build_stream())
+
+      assert %Core.ListAdminRoomMembersResponse{} = response,
+             "expected ListAdminRoomMembersResponse struct, got #{inspect(response)}"
+
+      assert response.members == [],
+             "expected empty members list for a room with no members, got #{inspect(response.members)}"
     end
   end
 end

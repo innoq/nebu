@@ -206,6 +206,14 @@ func (m *mockCoreClient) UpgradeRoom(_ context.Context, _ *pb.UpgradeRoomRequest
 	panic("unexpected call: UpgradeRoom")
 }
 
+// Story 9.18: no-op stub — ListAdminRoomMembers added to AdminRoomsClient interface.
+// RED: pb.ListAdminRoomMembersRequest / pb.ListAdminRoomMembersResponse do not exist
+// yet (generated after `make proto`). This stub will fail to compile until the proto
+// types are generated and the AdminRoomsClient interface method is added to rooms.go.
+func (m *mockCoreClient) ListAdminRoomMembers(_ context.Context, _ *pb.ListAdminRoomMembersRequest, _ ...grpc.CallOption) (*pb.ListAdminRoomMembersResponse, error) {
+	return &pb.ListAdminRoomMembersResponse{}, nil
+}
+
 // lastReceived returns the most recently recorded request (nil if none).
 func (m *mockCoreClient) lastReceived() *pb.WriteAuditLogRequest {
 	m.mu.Lock()
