@@ -1,5 +1,5 @@
 ---
-status: ready-for-dev
+status: review
 epic: 9
 story: 25
 security_review: not-needed
@@ -267,6 +267,28 @@ matrix-js-sdk deduplicates by event_id.  The fix is purely in Go, small in scope
 
 ---
 
+## Dev Agent Record
+
+### Implementation Notes
+
+- Added `"fmt"` and `"sync/atomic"` to imports in sync.go
+- Added package-level `var syntheticBatchSeq atomic.Int64` for sub-millisecond uniqueness
+- Added `syntheticNextBatch()` function: `fmt.Sprintf("buf_%d_%d", time.Now().UnixMilli(), seq)` where seq is atomically incremented
+- Replaced `NextBatch: sinceToken` with `NextBatch: syntheticNextBatch()` in `buildResponseFromBufferedEvents`
+- Removed unused `sinceToken` parameter from `buildResponseFromBufferedEvents`; updated both call sites in `handleIncrementalSync` (cycle 1 fix)
+- All 5 ATDD tests pass: AC1 (buf_ prefix + no echo), AC2 (monotonic + sub-ms burst), AC3 (HTTP-level buf_ on buffer path), AC4 (Core path unchanged)
+- No regressions: `make test-unit-go` all green (18 packages, including matrix package at 31s)
+
+### Files Modified
+
+- `gateway/internal/matrix/sync.go`
+
+### Change Log
+
+- 2026-05-06: Story 9-25 GAP-BUFFER-NEXT-BATCH — replaced echoed sinceToken with syntheticNextBatch() in buffer fast-path; added syntheticBatchSeq + syntheticNextBatch() helper
+
+---
+
 ## Status
 
-Status: ready-for-dev
+Status: review

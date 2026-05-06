@@ -30,7 +30,10 @@ gateway/
     │   │                          forgotten_rooms exclusion (GAP-FORGET); queryForgottenRoomIDs +
     │   │                          querySinceTsMs helpers; top-level AccountData field in syncResponse
     │   │                          populated via injectGlobalAccountData on all 4 sync paths
-    │   │                          (initial, incremental, FallbackToInitial, buffer fast-path — Story 9-24)
+    │   │                          (initial, incremental, FallbackToInitial, buffer fast-path — Story 9-24);
+    │   │                          syntheticNextBatch() + syntheticBatchSeq atomic counter generate
+    │   │                          buf_<ms>_<seq> next_batch on buffer fast-path (GAP-BUFFER-NEXT-BATCH,
+    │   │                          Story 9-25) — replaces echoed sinceToken to prevent stuck-token loops
     │   ├── account_data.go     ← AccountDataDB + GlobalAccountDataDB interfaces; GlobalAccountDataRow
     │   │                          struct; AccountDataHandler (GET/PUT global + room-scoped endpoints)
     │   ├── send.go             ← PUT /rooms/{id}/send/...
@@ -124,6 +127,15 @@ core/apps/
 > RLS policy (GUC `app.user_id`). The buffer fast-path returns an empty `account_data.events` slice
 > (no DB call) — global account data changes are rare and are picked up on the next full sync cycle.
 
+> **Synthetic next_batch token on buffer fast-path (Story 9-25, GAP-BUFFER-NEXT-BATCH):**
+> `syntheticNextBatch()` in `gateway/internal/matrix/sync.go` generates a `buf_<unix_ms>_<seq>`
+> token for every response served from the local ring buffer. A package-level `syntheticBatchSeq`
+> (`sync/atomic.Int64`) increments on each call, ensuring uniqueness within a process even for
+> sub-millisecond bursts. The `sinceToken` parameter was removed from `buildResponseFromBufferedEvents`
+> (it is no longer used). The synthetic token is never persisted to `sync_tokens`; if the client
+> sends it on the next request, Elixir's `GetSyncDelta` triggers `FallbackToInitial = true`, which
+> issues a safe full re-sync. No schema change and no new interfaces were introduced.
+
 ## Level 2 — Proto / gRPC Contract
 
 ```
@@ -155,4 +167,4 @@ Key gRPC services: `SendEvent`, `CreateRoom`, `JoinRoom`, `GetMessages`, `GetRoo
 | `user_id` | string | Matrix user ID |
 | `device_id` | string | When set, only invalidates this device; when empty, invalidates all user sessions |
 
-_Source: `_bmad-output/planning-artifacts/architecture.md`, §Project Structure & Boundaries, §Complete Project Directory Structure; Story 9-19 (room_moderation.go, sync.go, event_dispatcher/server.ex, forgotten_rooms migration); Story 9-22 (per-device sync tokens, device_id in proto); Story 9-24 (GlobalAccountDataDB interface, ListGlobalAccountData, top-level account_data in syncResponse)_
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Project Structure & Boundaries, §Complete Project Directory Structure; Story 9-19 (room_moderation.go, sync.go, event_dispatcher/server.ex, forgotten_rooms migration); Story 9-22 (per-device sync tokens, device_id in proto); Story 9-24 (GlobalAccountDataDB interface, ListGlobalAccountData, top-level account_data in syncResponse); Story 9-25 (syntheticNextBatch helper, syntheticBatchSeq atomic counter, sinceToken param removed from buildResponseFromBufferedEvents)_

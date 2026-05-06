@@ -3362,3 +3362,282 @@ func (m *mockSyncAccountDataDB) GetAccountData(_ context.Context, _, roomID, eve
 func (m *mockSyncAccountDataDB) PutAccountData(_ context.Context, _, _, _ string, _ json.RawMessage) error {
 	return nil
 }
+
+// ─── Story 9-25: GAP-BUFFER-NEXT-BATCH — synthetic next_batch for buffer path ──
+//
+// These tests are written FIRST (ATDD gate), before implementation exists.
+// ALL tests in this section MUST FAIL (compilation or assertion error) until
+// Story 9-25 is implemented:
+//   - syntheticNextBatch() helper does not exist yet → compile error
+//   - buildResponseFromBufferedEvents still echoes sinceToken as NextBatch → assertion failure
+//
+// Test strategy:
+//   - AC1/AT1: unit-level: buildResponseFromBufferedEvents returns NextBatch != sinceToken
+//     and NextBatch has prefix "buf_"
+//   - AC2/AT2: unit-level: two sequential calls return distinct tokens (monotonic)
+//   - Sub-millisecond burst variant: same as AC2 but explicitly documented as
+//     the same-millisecond edge case — relies on the seq counter suffix.
+//   - AC3/AT3: HTTP-level (httptest): GET /sync?since=s42_1 with buffer events →
+//     JSON next_batch starts with "buf_", is not "s42_1"
+//   - AC4/AT4: non-regression (httptest): Core path returns SinceToken="s99_2" →
+//     next_batch == "s99_2" (unchanged — no synthetic token on Core path)
+//
+// AC coverage:
+//   AC1 → TestBuildResponseFromBufferedEvents_NextBatchAdvances
+//   AC2 → TestBuildResponseFromBufferedEvents_NextBatchIsMonotonic
+//   AC2 → TestBuildResponseFromBufferedEvents_NextBatchMonotonic_SubMillisecondBurst
+//   AC3 → TestHandleIncrementalSync_BufferPath_NextBatchAdvances
+//   AC4 → TestHandleIncrementalSync_CorePath_NextBatchUnchanged
+
+// TestBuildResponseFromBufferedEvents_NextBatchAdvances — AC1/AT1
+//
+// Given: a GetSyncHandler with a mock buffer returning one event, sinceToken = "s42_1"
+// When:  buildResponseFromBufferedEvents(events) is called directly (sinceToken no longer a parameter)
+// Then:  resp.NextBatch != "s42_1" AND strings.HasPrefix(resp.NextBatch, "buf_") is true
+//
+// RED PHASE: buildResponseFromBufferedEvents currently returns NextBatch: sinceToken.
+// This test MUST FAIL until syntheticNextBatch() replaces the echoed sinceToken.
+func TestBuildResponseFromBufferedEvents_NextBatchAdvances(t *testing.T) {
+	const sinceToken = "s42_1"
+
+	h := &GetSyncHandler{
+		serverName: "test.local",
+	}
+
+	events := []*pb.Event{
+		{
+			EventId:   "$ev_buf_9_25_1",
+			RoomId:    "!room1:test.local",
+			SenderId:  "@alice:test.local",
+			EventType: "m.room.message",
+			Content:   []byte(`{"msgtype":"m.text","body":"hello from buffer"}`),
+			OriginTs:  1700000001000,
+		},
+	}
+
+	resp := h.buildResponseFromBufferedEvents(events)
+
+	// AC1a: NextBatch MUST NOT echo back the sinceToken
+	if resp.NextBatch == sinceToken {
+		t.Errorf("AC1 FAIL: NextBatch must not equal sinceToken %q, but got %q (stuck-token loop)", sinceToken, resp.NextBatch)
+	}
+
+	// AC1b: NextBatch MUST start with "buf_" (synthetic token format)
+	if !strings.HasPrefix(resp.NextBatch, "buf_") {
+		t.Errorf("AC1 FAIL: NextBatch must start with %q, got %q", "buf_", resp.NextBatch)
+	}
+
+	// AC1c: The numeric part after "buf_" must be a positive integer (unix_ms)
+	// Format is "buf_<ms>_<seq>" — verify both the timestamp and sequence parts are present
+	parts := strings.SplitN(resp.NextBatch[len("buf_"):], "_", 2)
+	if len(parts) < 2 || parts[0] == "" {
+		t.Errorf("AC1 FAIL: synthetic token %q has no numeric suffix after 'buf_'", resp.NextBatch)
+	} else {
+		var ts int64
+		n, err := fmt.Sscanf(parts[0], "%d", &ts)
+		if err != nil || n != 1 || ts <= 0 {
+			t.Errorf("AC1 FAIL: synthetic token %q — timestamp part %q is not a valid positive integer", resp.NextBatch, parts[0])
+		}
+	}
+}
+
+// TestBuildResponseFromBufferedEvents_NextBatchIsMonotonic — AC2/AT2
+//
+// Given: two sequential calls to buildResponseFromBufferedEvents on the same handler
+// When:  both calls complete within the same test (potentially sub-millisecond apart)
+// Then:  the two returned NextBatch values are distinct
+//
+// RED PHASE: Current implementation returns the same sinceToken for both calls →
+// both tokens are identical → test FAILS.
+func TestBuildResponseFromBufferedEvents_NextBatchIsMonotonic(t *testing.T) {
+	h := &GetSyncHandler{
+		serverName: "test.local",
+	}
+
+	events := []*pb.Event{
+		{
+			EventId:   "$ev_mono_1",
+			RoomId:    "!room1:test.local",
+			SenderId:  "@alice:test.local",
+			EventType: "m.room.message",
+			Content:   []byte(`{"msgtype":"m.text","body":"first"}`),
+			OriginTs:  1700000002000,
+		},
+	}
+
+	resp1 := h.buildResponseFromBufferedEvents(events)
+	resp2 := h.buildResponseFromBufferedEvents(events)
+
+	// AC2: the two tokens must be distinct
+	if resp1.NextBatch == resp2.NextBatch {
+		t.Errorf("AC2 FAIL: two sequential buffer-path calls returned identical NextBatch %q — tokens must be distinct (monotonic)", resp1.NextBatch)
+	}
+
+	// Both must start with "buf_" prefix
+	if !strings.HasPrefix(resp1.NextBatch, "buf_") {
+		t.Errorf("AC2 FAIL: first token %q does not start with 'buf_'", resp1.NextBatch)
+	}
+	if !strings.HasPrefix(resp2.NextBatch, "buf_") {
+		t.Errorf("AC2 FAIL: second token %q does not start with 'buf_'", resp2.NextBatch)
+	}
+}
+
+// TestBuildResponseFromBufferedEvents_NextBatchMonotonic_SubMillisecondBurst — AC2 edge case
+//
+// Sub-millisecond burst variant: two calls that arrive so close in time they share
+// the same time.Now().UnixMilli() value MUST still produce distinct tokens via the
+// atomic sequence counter suffix.
+//
+// Given: two calls to syntheticNextBatch() directly (calls syntheticNextBatch() directly
+//        to keep timing tight), within the same goroutine, well under 1 ms apart
+// When:  both calls complete
+// Then:  the two NextBatch values are distinct (sequence counter differentiates them)
+//
+// RED PHASE: syntheticNextBatch() does not exist yet → compile error.
+func TestBuildResponseFromBufferedEvents_NextBatchMonotonic_SubMillisecondBurst(t *testing.T) {
+	// Call syntheticNextBatch() directly to exercise the sub-millisecond path.
+	// This function does not exist yet — compile error is the expected red-phase failure.
+	tok1 := syntheticNextBatch()
+	tok2 := syntheticNextBatch()
+
+	if tok1 == tok2 {
+		t.Errorf("sub-millisecond burst FAIL: syntheticNextBatch() returned identical tokens %q — sequence counter must differentiate", tok1)
+	}
+	if !strings.HasPrefix(tok1, "buf_") {
+		t.Errorf("sub-millisecond burst FAIL: token1 %q does not start with 'buf_'", tok1)
+	}
+	if !strings.HasPrefix(tok2, "buf_") {
+		t.Errorf("sub-millisecond burst FAIL: token2 %q does not start with 'buf_'", tok2)
+	}
+}
+
+// TestHandleIncrementalSync_BufferPath_NextBatchAdvances — AC3/AT3
+//
+// HTTP-level test: GET /_matrix/client/v3/sync?since=s42_1 with a buffer that
+// holds one event → JSON response next_batch starts with "buf_" and is not "s42_1".
+//
+// Given: GetSyncHandler wired with a buffer pre-populated with one event for
+//        @test-sub-123:test.local; mock Core's GetSyncDelta is never called
+// When:  GET /_matrix/client/v3/sync?since=s42_1 with a valid JWT
+// Then:  HTTP 200; resp.next_batch starts with "buf_" and != "s42_1"
+//
+// RED PHASE: current buildResponseFromBufferedEvents echoes sinceToken as
+// NextBatch → next_batch == "s42_1" → second assertion fails.
+func TestHandleIncrementalSync_BufferPath_NextBatchAdvances(t *testing.T) {
+	const sinceToken = "s42_1"
+	const userID = "@test-sub-123:test.local"
+	const roomID = "!room1:test.local"
+
+	buf := buffer.NewMessageBuffer(10, prometheus.NewRegistry())
+	buf.Put(userID, &pb.Event{
+		EventId:   "$ev_9_25_buf",
+		RoomId:    roomID,
+		SenderId:  userID,
+		EventType: "m.room.message",
+		Content:   []byte(`{"msgtype":"m.text","body":"story 9-25 buffer event"}`),
+		OriginTs:  1700000003000,
+	})
+
+	mock := &mockGetSyncDeltaCoreClient{
+		// GetSyncDelta must NOT be called — buffer hit short-circuits
+	}
+
+	handler, makeToken := buildAuthedSyncBufferHandler(t, mock, buf)
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync?since="+sinceToken, nil)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("AC3 FAIL: expected HTTP 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		NextBatch string `json:"next_batch"`
+		Rooms     struct {
+			Join map[string]json.RawMessage `json:"join"`
+		} `json:"rooms"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("AC3 FAIL: failed to decode response body: %v", err)
+	}
+
+	// AC3a: next_batch MUST NOT be the sinceToken (no stuck-token loop)
+	if resp.NextBatch == sinceToken {
+		t.Errorf("AC3 FAIL: next_batch must not echo sinceToken %q back to client (stuck-token loop), got %q", sinceToken, resp.NextBatch)
+	}
+
+	// AC3b: next_batch MUST start with "buf_" (synthetic token, buffer fast-path)
+	if !strings.HasPrefix(resp.NextBatch, "buf_") {
+		t.Errorf("AC3 FAIL: next_batch must start with 'buf_' on buffer path, got %q", resp.NextBatch)
+	}
+
+	// Sanity: rooms.join must contain the buffered room (buffer hit)
+	if _, ok := resp.Rooms.Join[roomID]; !ok {
+		t.Errorf("AC3 sanity: rooms.join must contain %q from buffer, got: %v", roomID, resp.Rooms.Join)
+	}
+
+	// Sanity: Core's GetSyncDelta must NOT have been called (buffer hit short-circuits)
+	if mock.capturedDeltaReq != nil {
+		t.Error("AC3 sanity: GetSyncDelta must NOT be called on buffer hit, but capturedDeltaReq is set")
+	}
+}
+
+// TestHandleIncrementalSync_CorePath_NextBatchUnchanged — AC4/AT4 (non-regression)
+//
+// Core path must continue to use deltaResp.GetSinceToken() unchanged.
+// Synthetic tokens must ONLY appear on the buffer fast-path.
+//
+// Given: empty buffer (buffer miss); mock Core returns GetSyncDeltaResponse
+//        with SinceToken = "s99_2"
+// When:  GET /_matrix/client/v3/sync?since=s42_1 with a valid JWT
+// Then:  HTTP 200; next_batch == "s99_2" (Core token, no synthetic substitution)
+//
+// RED PHASE: this test should pass even before Story 9-25, confirming non-regression.
+// It is included here to make the non-regression guarantee explicit and machine-checked.
+func TestHandleIncrementalSync_CorePath_NextBatchUnchanged(t *testing.T) {
+	const sinceToken = "s42_1"
+	const coreToken = "s99_2"
+
+	// nil buffer exercises the canonical no-buffer code path directly,
+	// avoiding the 100ms buffer wait timeout.
+	var buf *buffer.MessageBuffer
+
+	mock := &mockGetSyncDeltaCoreClient{
+		deltaResp: &pb.GetSyncDeltaResponse{
+			SinceToken: coreToken,
+			Rooms:      []*pb.SyncRoom{},
+		},
+	}
+
+	handler, makeToken := buildAuthedSyncBufferHandler(t, mock, buf, 5*time.Second)
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync?since="+sinceToken, nil)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("AC4 FAIL: expected HTTP 200 on Core path, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		NextBatch string `json:"next_batch"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("AC4 FAIL: failed to decode response body: %v", err)
+	}
+
+	// AC4: Core path must return the unmodified SinceToken from Elixir — no synthetic substitution
+	if resp.NextBatch != coreToken {
+		t.Errorf("AC4 FAIL: Core path next_batch must equal Core's SinceToken %q, got %q (unexpected synthetic token injection)", coreToken, resp.NextBatch)
+	}
+
+	// Sanity: next_batch must NOT start with "buf_" on Core path
+	if strings.HasPrefix(resp.NextBatch, "buf_") {
+		t.Errorf("AC4 FAIL: Core path next_batch must not start with 'buf_', got %q", resp.NextBatch)
+	}
+}

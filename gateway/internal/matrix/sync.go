@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/nebu/nebu/internal/buffer"
@@ -536,7 +538,7 @@ func (h *GetSyncHandler) handleIncrementalSync(w http.ResponseWriter, r *http.Re
 	// If events are already available locally, return them immediately (skip Core long-poll).
 	if h.buffer != nil {
 		if events := h.buffer.DrainFor(userID, 50); len(events) > 0 {
-			resp := h.buildResponseFromBufferedEvents(events, sinceToken)
+			resp := h.buildResponseFromBufferedEvents(events)
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(resp)
 			return
@@ -550,7 +552,7 @@ func (h *GetSyncHandler) handleIncrementalSync(w http.ResponseWriter, r *http.Re
 		case <-waitCh:
 			if events := h.buffer.DrainFor(userID, 50); len(events) > 0 {
 				bufCancel()
-				resp := h.buildResponseFromBufferedEvents(events, sinceToken)
+				resp := h.buildResponseFromBufferedEvents(events)
 				w.Header().Set("Content-Type", "application/json")
 				_ = json.NewEncoder(w).Encode(resp)
 				return
@@ -671,10 +673,32 @@ func (h *GetSyncHandler) handleIncrementalSync(w http.ResponseWriter, r *http.Re
 	_ = json.NewEncoder(w).Encode(syncResp)
 }
 
+// syntheticBatchSeq is an atomic counter used by syntheticNextBatch to guarantee
+// token uniqueness even when two goroutines call the function within the same millisecond.
+// Package-level var; zero-initialized (Story 9-25, GAP-BUFFER-NEXT-BATCH).
+var syntheticBatchSeq atomic.Int64
+
+// syntheticNextBatch generates a monotonically advancing, opaque next_batch token
+// for responses served from the local ring buffer (Story 9-25, GAP-BUFFER-NEXT-BATCH).
+//
+// Format: "buf_<unix_ms>_<seq>" — clearly synthetic, not a real Elixir since-token.
+// If the client sends this token on the next request, Elixir's GetSyncDelta will
+// not find a matching sync_tokens row → FallbackToInitial → safe full re-sync.
+//
+// Monotonicity guarantee: time.Now().UnixMilli() is monotonically increasing within
+// a process under normal NTP conditions. For sub-millisecond bursts the counter suffix
+// ensures uniqueness (see syntheticBatchSeq above).
+func syntheticNextBatch() string {
+	seq := syntheticBatchSeq.Add(1)
+	return fmt.Sprintf("buf_%d_%d", time.Now().UnixMilli(), seq)
+}
+
 // buildResponseFromBufferedEvents constructs a minimal syncResponse from locally-buffered
 // *pb.Event values (Story 4-16). Events are placed in the timeline of their respective rooms.
-// sinceToken is used as the next_batch value (events are fresh, not a new server token).
-func (h *GetSyncHandler) buildResponseFromBufferedEvents(events []*pb.Event, sinceToken string) syncResponse {
+// syntheticNextBatch() generates a buf_<ms>_<seq> token. The Elixir delta handler will
+// not recognise it, triggering FallbackToInitial on the next request — which is the
+// correct behaviour for a client that resumes from a synthetic token.
+func (h *GetSyncHandler) buildResponseFromBufferedEvents(events []*pb.Event) syncResponse {
 	joinedRooms := make(map[string]syncJoinedRoom)
 	for _, ev := range events {
 		room := joinedRooms[ev.RoomId]
@@ -696,7 +720,7 @@ func (h *GetSyncHandler) buildResponseFromBufferedEvents(events []*pb.Event, sin
 	// pick them up. This keeps the buffer fast-path O(0) DB queries.
 	otkCount, fallbackKeys, deviceLists := emptySyncDeviceFields()
 	return syncResponse{
-		NextBatch: sinceToken,
+		NextBatch: syntheticNextBatch(),
 		Rooms: syncRooms{
 			Join:   joinedRooms,
 			Invite: map[string]interface{}{},

@@ -315,6 +315,49 @@ by `current_setting('app.user_id', true)`. Without this GUC the policy silently 
 response always contains `"account_data": {"events": []}` — a JSON-null or missing key would
 break `matrix-js-sdk`.
 
+## Scenario 3h: Buffer Fast-Path — Synthetic next_batch Token (GAP-BUFFER-NEXT-BATCH, Story 9-25)
+
+When events are already present in the local ring buffer, `handleIncrementalSync` drains
+the buffer and returns immediately without a gRPC round-trip to Elixir Core. Prior to this
+fix, `buildResponseFromBufferedEvents` echoed the client's `since=` token back as
+`next_batch`, causing a stuck-token loop: the client re-sent the same token, the buffer
+re-delivered the same delta, and `sync_tokens.updated_at` was never advanced.
+
+**Fix:** `syntheticNextBatch()` (added in Story 9-25) generates a `buf_<unix_ms>_<seq>`
+token on every buffer-path response. The token is:
+
+- **Monotonically advancing** — Unix-ms timestamp plus an `atomic.Int64` sequence counter
+  ensures uniqueness even for sub-millisecond bursts across goroutines.
+- **Opaque to the client** — the `buf_` prefix makes it clearly synthetic; it does not
+  collide with Elixir's `v1_<base64url>` since-tokens.
+- **Never persisted** — `sync_tokens` is not written from the buffer path. When the client
+  sends `?since=buf_<ts>_<seq>` on the next poll, Elixir's `GetSyncDelta` finds no matching
+  `sync_tokens` row → `fallback_to_initial = true` → the existing `FallbackToInitial` branch
+  issues a safe full re-sync with a fresh real token.
+
+```
+Matrix Client      Go Gateway (buffer fast-path)
+     │                   │
+     │  GET /sync?since=s42_1
+     │──────────────────►│
+     │                   │  buffer.DrainFor(userID) → [events]
+     │                   │  syntheticNextBatch() → "buf_1746518400000_7"
+     │  200 {next_batch: "buf_1746518400000_7", rooms: {...}}
+     │◄──────────────────│
+     │                   │
+     │  GET /sync?since=buf_1746518400000_7
+     │──────────────────►│
+     │                   │  buffer empty → gRPC GetSyncDelta(user_id, "buf_...", device_id)
+     │                   │  Elixir: no sync_tokens row for "buf_..." → FallbackToInitial=true
+     │                   │  GetInitialSync → fresh real token
+     │  200 {next_batch: "s99_3", rooms: {...}}   ← real token resumes normal cycle
+     │◄──────────────────│
+```
+
+**No stuck-token loops:** Each buffer-path response carries a distinct `next_batch`, so
+`matrix-js-sdk` always issues a fresh `since=` on the next poll. The fallback-to-initial
+safety net was already production-tested before this story.
+
 ## Scenario 4: Compliance Four-Eyes Export Flow
 
 ```
@@ -332,4 +375,4 @@ On restart, Horde re-discovers Room GenServers across the cluster via CRDT regis
 Session Manager GenServer reads since-token checkpoints from PostgreSQL (no cold-sync forced on clients).
 EventBus stream re-connects to Go Gateway after exponential backoff (max 30s + jitter).
 
-_Source: `_bmad-output/planning-artifacts/architecture.md`, §Implementation Patterns, §API & Kommunikation, §Resilienz & Selbst-Heilung; Story 9-19 (GAP-JOIN-PUBLIC, GAP-LEAVE-ONCE, GAP-FORGET); Story 9-22 (GAP-SINCE-IGNORED — per-device sync tokens, per-device logout cleanup); Story 9-23 (GAP-INVITE-STATE — invite_state stripped state enrichment: join_rules, avatar, create); Story 9-24 (GAP-GLOBAL-ACCOUNT-DATA — top-level account_data delivery in all 4 sync paths, RLS-aware ListGlobalAccountData)_
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Implementation Patterns, §API & Kommunikation, §Resilienz & Selbst-Heilung; Story 9-19 (GAP-JOIN-PUBLIC, GAP-LEAVE-ONCE, GAP-FORGET); Story 9-22 (GAP-SINCE-IGNORED — per-device sync tokens, per-device logout cleanup); Story 9-23 (GAP-INVITE-STATE — invite_state stripped state enrichment: join_rules, avatar, create); Story 9-24 (GAP-GLOBAL-ACCOUNT-DATA — top-level account_data delivery in all 4 sync paths, RLS-aware ListGlobalAccountData); Story 9-25 (GAP-BUFFER-NEXT-BATCH — synthetic buf_<ms>_<seq> next_batch token on buffer fast-path, replaces echoed since= token)_
