@@ -46,6 +46,7 @@ defmodule Nebu.Room.DBBehaviourTest do
         {:insert_event, 1},
         {:set_power_levels, 2},
         {:get_rooms_for_user, 1},
+        {:get_recently_left_rooms_for_user, 1},
         {:fetch_events, 4},
         {:fetch_events_since, 3},
         {:get_event_timestamp, 1},

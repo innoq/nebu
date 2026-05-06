@@ -62,6 +62,44 @@ func NewGetSyncHandler(cfg GetSyncConfig) *GetSyncHandler {
 	}
 }
 
+// queryForgottenRoomIDs returns the set of room IDs the user has forgotten (GAP-FORGET).
+// Used to exclude forgotten rooms from rooms.join so they don't resurface after POST /forget.
+func (h *GetSyncHandler) queryForgottenRoomIDs(ctx context.Context, userID string) map[string]struct{} {
+	forgotten := map[string]struct{}{}
+	if h.db == nil {
+		return forgotten
+	}
+	rows, err := h.db.QueryContext(ctx,
+		`SELECT room_id FROM forgotten_rooms WHERE user_id = $1`, userID)
+	if err != nil {
+		return forgotten
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var roomID string
+		if err := rows.Scan(&roomID); err == nil {
+			forgotten[roomID] = struct{}{}
+		}
+	}
+	return forgotten
+}
+
+// querySinceTsMs looks up the wall-clock timestamp (Unix ms) of the user's
+// last persisted sync token. Used to filter buildLeaveRooms so left rooms
+// only appear in the first sync after the leave event, not repeatedly (GAP-LEAVE-ONCE).
+func (h *GetSyncHandler) querySinceTsMs(ctx context.Context, userID string) int64 {
+	if h.db == nil {
+		return 0
+	}
+	var updatedAt int64
+	if err := h.db.QueryRowContext(ctx,
+		`SELECT updated_at FROM sync_tokens WHERE user_id = $1`, userID,
+	).Scan(&updatedAt); err != nil {
+		return 0
+	}
+	return updatedAt
+}
+
 // buildLeaveRooms queries rooms the user has left or declined and builds the
 // rooms.leave section of the Matrix sync response.
 // Includes: rooms where left_at IS NOT NULL (user left after joining) and
@@ -69,14 +107,22 @@ func NewGetSyncHandler(cfg GetSyncConfig) *GetSyncHandler {
 // Element Web uses rooms.leave to remove rooms from its local state — without
 // it, declined invitations and left rooms remain visible in the UI indefinitely.
 //
+// sinceMs filters results to only rooms left/rejected after the given Unix-ms
+// timestamp. Pass 0 for initial sync (no filter). This prevents left rooms from
+// appearing in every subsequent incremental sync (GAP-LEAVE-ONCE).
+//
 // Fix-1: For each left/rejected room, the most recent m.room.member leave event
 // is fetched from the events table and included in state.events. If no event is
 // found (e.g. rooms created before this fix), state.events degrades to empty.
-func (h *GetSyncHandler) buildLeaveRooms(ctx context.Context, userID string) map[string]interface{} {
+//
+// Fix-2 (GAP-FORGET): rooms the user has forgotten are excluded via the
+// forgotten_rooms subquery.
+func (h *GetSyncHandler) buildLeaveRooms(ctx context.Context, userID string, sinceMs int64) map[string]interface{} {
 	leaves := map[string]interface{}{}
 	if h.db == nil {
 		return leaves
 	}
+	slog.Debug("buildLeaveRooms called", "userID", userID, "sinceMs", sinceMs)
 
 	// leaveEventQuery fetches the most recent m.room.member leave event for a given
 	// room and user. Content may be stored as a JSONB object or a double-encoded
@@ -125,15 +171,22 @@ func (h *GetSyncHandler) buildLeaveRooms(ctx context.Context, userID string) map
 		return stateEvents
 	}
 
-	// Rooms the user has left (was a member, now has left_at set)
+	// Rooms the user has left (was a member, now has left_at set).
+	// GAP-LEAVE-ONCE: only return rooms left after sinceMs (0 = no filter for initial sync).
+	// GAP-FORGET: exclude rooms the user has forgotten.
 	leftRows, err := h.db.QueryContext(ctx,
-		`SELECT room_id FROM room_members WHERE user_id = $1 AND left_at IS NOT NULL`,
-		userID)
+		`SELECT room_id FROM room_members
+		 WHERE user_id = $1
+		   AND left_at IS NOT NULL
+		   AND left_at >= $2
+		   AND room_id NOT IN (SELECT room_id FROM forgotten_rooms WHERE user_id = $1)`,
+		userID, sinceMs)
 	if err == nil {
 		defer leftRows.Close()
 		for leftRows.Next() {
 			var roomID string
 			if err := leftRows.Scan(&roomID); err == nil {
+				slog.Debug("buildLeaveRooms: found left room", "roomID", roomID, "userID", userID)
 				stateEvents := buildStateEvents(roomID)
 				leaves[roomID] = map[string]interface{}{
 					"timeline":     map[string]interface{}{"events": []interface{}{}, "limited": false},
@@ -142,11 +195,19 @@ func (h *GetSyncHandler) buildLeaveRooms(ctx context.Context, userID string) map
 				}
 			}
 		}
+	} else {
+		slog.Warn("buildLeaveRooms: query error", "err", err, "userID", userID, "sinceMs", sinceMs)
 	}
-	// Invitations the user has declined (rejected_at IS NOT NULL)
+	// Invitations the user has declined (rejected_at IS NOT NULL).
+	// GAP-LEAVE-ONCE: only return rejections after sinceMs (0 = no filter for initial sync).
+	// GAP-FORGET: exclude rooms the user has forgotten.
 	rejRows, err := h.db.QueryContext(ctx,
-		`SELECT room_id FROM room_invitations WHERE invitee_id = $1 AND rejected_at IS NOT NULL`,
-		userID)
+		`SELECT room_id FROM room_invitations
+		 WHERE invitee_id = $1
+		   AND rejected_at IS NOT NULL
+		   AND rejected_at >= $2
+		   AND room_id NOT IN (SELECT room_id FROM forgotten_rooms WHERE user_id = $1)`,
+		userID, sinceMs)
 	if err == nil {
 		defer rejRows.Close()
 		for rejRows.Next() {
@@ -175,7 +236,10 @@ func (h *GetSyncHandler) buildInviteRooms(ctx context.Context, userID string) ma
 	}
 	rows, err := h.db.QueryContext(ctx,
 		`SELECT room_id, inviter_id FROM room_invitations
-		 WHERE invitee_id = $1 AND accepted_at IS NULL AND rejected_at IS NULL`,
+		 WHERE invitee_id = $1
+		   AND accepted_at IS NULL
+		   AND rejected_at IS NULL
+		   AND room_id NOT IN (SELECT room_id FROM forgotten_rooms WHERE user_id = $1)`,
 		userID)
 	if err != nil {
 		slog.Warn("buildInviteRooms: query failed", "err", err)
@@ -367,7 +431,8 @@ func (h *GetSyncHandler) GetSync(w http.ResponseWriter, r *http.Request) {
 		Rooms: syncRooms{
 			Join:   joinedRooms,
 			Invite: h.buildInviteRooms(r.Context(), userID),
-			Leave:  h.buildLeaveRooms(r.Context(), userID),
+			// Initial sync: sinceMs=0 → no time filter (return all left/rejected rooms).
+			Leave: h.buildLeaveRooms(r.Context(), userID, 0),
 		},
 		Presence:                 syncPresence{Events: []interface{}{}},
 		DeviceOneTimeKeysCount:   otkCount,
@@ -436,6 +501,16 @@ func (h *GetSyncHandler) handleIncrementalSync(w http.ResponseWriter, r *http.Re
 		bufCancel()
 	}
 
+	// GAP-LEAVE-ONCE fix: read the previous sync token's timestamp BEFORE calling
+	// GetSyncDelta. Elixir calls persist_since_token (which updates sync_tokens.updated_at)
+	// at the END of GetSyncDelta. If we called querySinceTsMs after GetSyncDelta, we would
+	// read the timestamp set by THIS sync cycle, which is always >= left_at, causing
+	// buildLeaveRooms to filter out the newly-left room. By reading before, we capture
+	// the timestamp from the PREVIOUS sync cycle (before the leave happened), so newly-left
+	// rooms (left_at > prev_updated_at) correctly appear in rooms.leave.
+	sinceMs := h.querySinceTsMs(r.Context(), userID)
+	slog.Debug("handleIncrementalSync: sinceMs read before GetSyncDelta", "userID", userID, "sinceMs", sinceMs)
+
 	// AC #11: handler timeout = timeout_ms + 5000 ms grace period
 	handlerTimeout := h.timeout + time.Duration(timeoutMs)*time.Millisecond
 	ctx, cancel := context.WithTimeout(r.Context(), handlerTimeout)
@@ -480,7 +555,8 @@ func (h *GetSyncHandler) handleIncrementalSync(w http.ResponseWriter, r *http.Re
 			Rooms: syncRooms{
 				Join:   joinedRooms,
 				Invite: h.buildInviteRooms(r.Context(), userID),
-				Leave:  h.buildLeaveRooms(r.Context(), userID),
+				// FallbackToInitial: sinceMs=0 → no time filter (full re-sync).
+				Leave: h.buildLeaveRooms(r.Context(), userID, 0),
 			},
 			Presence:                 syncPresence{Events: []interface{}{}},
 			DeviceOneTimeKeysCount:   otkCount,
@@ -498,9 +574,17 @@ func (h *GetSyncHandler) handleIncrementalSync(w http.ResponseWriter, r *http.Re
 	// Element Web behaviour is undefined for such conflicts and it may fail to navigate
 	// away. Rooms.leave takes precedence: a room the user just left must not be returned
 	// as joined even if fetch_delta_rooms found its leave event in the timeline.
-	leaveRooms := h.buildLeaveRooms(r.Context(), userID)
+	// GAP-LEAVE-ONCE: sinceMs was captured above BEFORE GetSyncDelta updated sync_tokens.
+	leaveRooms := h.buildLeaveRooms(r.Context(), userID, sinceMs)
+	slog.Debug("handleIncrementalSync: leaveRooms count", "userID", userID, "count", len(leaveRooms))
 	joinedRooms := buildJoinedRooms(deltaResp.GetRooms())
 	for roomID := range leaveRooms {
+		delete(joinedRooms, roomID)
+	}
+	// GAP-FORGET: remove forgotten rooms from rooms.join so they don't resurface after
+	// POST /forget. The Elixir delta may still include the room (left_room_ids pattern),
+	// but a forgotten room must be absent from ALL sync sections.
+	for roomID := range h.queryForgottenRoomIDs(r.Context(), userID) {
 		delete(joinedRooms, roomID)
 	}
 	// Story 7-24 AC4: inject per-room account data into joined rooms.

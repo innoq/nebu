@@ -84,6 +84,19 @@ defmodule Nebu.Room.DBBehaviour do
               {:ok, [String.t()]} | {:error, term()}
 
   @doc """
+  Returns all room IDs where user_id has left (left_at IS NOT NULL).
+
+  Used by do_incremental_sync to include recently-left rooms in the initial
+  fetch_delta_rooms check. Closes the race window where the {new_leave} broadcast
+  fires before the sync task subscribes, causing a 30 s long-poll delay.
+
+  Returns `{:ok, [room_id]}` — empty list if user has no left rooms.
+  Returns `{:error, reason}` on DB error.
+  """
+  @callback get_recently_left_rooms_for_user(user_id :: String.t()) ::
+              {:ok, [String.t()]} | {:error, term()}
+
+  @doc """
   Returns paginated events from the events table for the given room.
 
   Returns `{:ok, [event_map], next_batch, prev_batch}`.

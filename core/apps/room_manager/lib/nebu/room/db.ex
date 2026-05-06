@@ -159,6 +159,29 @@ defmodule Nebu.Room.DB do
     end
   end
 
+  @sql_get_recently_left_rooms_for_user """
+  SELECT room_id FROM room_members
+  WHERE user_id = $1 AND left_at IS NOT NULL
+  """
+
+  @doc """
+  Returns all room IDs where `user_id` has left (left_at IS NOT NULL).
+
+  Used by do_incremental_sync to include recently-left rooms in the initial
+  fetch_delta_rooms check. Closes the race window where {new_leave} fires before
+  the sync task subscribes to :pg groups, causing a 30 s long-poll delay.
+
+  Returns `{:ok, [room_id]}` — empty list if user has no left rooms.
+  Returns `{:error, reason}` on DB error.
+  """
+  @spec get_recently_left_rooms_for_user(String.t()) :: {:ok, [String.t()]} | {:error, term()}
+  def get_recently_left_rooms_for_user(user_id) do
+    case Ecto.Adapters.SQL.query(Nebu.Repo, @sql_get_recently_left_rooms_for_user, [user_id]) do
+      {:ok, %{rows: rows}} -> {:ok, Enum.map(rows, fn [rid] -> rid end)}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   @sql_set_power_levels """
   UPDATE rooms SET power_levels_json = $2 WHERE room_id = $1
   """

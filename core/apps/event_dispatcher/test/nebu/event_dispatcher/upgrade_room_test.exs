@@ -131,6 +131,7 @@ defmodule Nebu.EventDispatcher.UpgradeRoomTest do
 
     # DBBehaviour stubs not used by upgrade_room but required to satisfy @behaviour.
     def get_rooms_for_user(_user_id), do: {:ok, []}
+    def get_recently_left_rooms_for_user(_user_id), do: {:ok, []}
     def fetch_events(_room_id, _dir, _limit, _from), do: {:ok, [], "", ""}
     def fetch_events_since(_room_id, _last_event_id, _limit), do: {:ok, []}
     def get_event_timestamp(_event_id), do: {:error, :not_found}
@@ -752,6 +753,7 @@ defmodule Nebu.EventDispatcher.UpgradeRoomTest do
         end
 
         def get_rooms_for_user(_user_id), do: {:ok, []}
+        def get_recently_left_rooms_for_user(_user_id), do: {:ok, []}
         def fetch_events(_room_id, _dir, _limit, _from), do: {:ok, [], "", ""}
         def fetch_events_since(_room_id, _last_event_id, _limit), do: {:ok, []}
         def get_event_timestamp(_event_id), do: {:error, :not_found}

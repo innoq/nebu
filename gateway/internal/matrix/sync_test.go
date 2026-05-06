@@ -1236,6 +1236,17 @@ func openTestDB(t *testing.T) *sql.DB {
 			rejected_at  BIGINT,
 			PRIMARY KEY (room_id, invitee_id)
 		);
+		CREATE TABLE IF NOT EXISTS forgotten_rooms (
+			user_id         TEXT    NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+			room_id         TEXT    NOT NULL,
+			forgotten_at_ms BIGINT  NOT NULL DEFAULT (EXTRACT(EPOCH FROM now()) * 1000)::BIGINT,
+			PRIMARY KEY (user_id, room_id)
+		);
+		CREATE TABLE IF NOT EXISTS sync_tokens (
+			user_id    TEXT    PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+			token      TEXT    NOT NULL,
+			updated_at BIGINT  NOT NULL
+		);
 	`
 	if _, err := db.Exec(schema); err != nil {
 		t.Fatalf("openTestDB: schema creation failed: %v", err)
@@ -1323,7 +1334,7 @@ func TestBuildLeaveRooms_ReturnsLeaveEventInStateEvents(t *testing.T) {
 
 	h := &GetSyncHandler{db: db}
 
-	leaves := h.buildLeaveRooms(context.Background(), userID)
+	leaves := h.buildLeaveRooms(context.Background(), userID, 0)
 
 	// AC #1: rooms.leave must contain an entry for the left room
 	roomEntry, ok := leaves[roomID]
@@ -1436,7 +1447,7 @@ func TestBuildLeaveRooms_GracefulDegradation_NoLeaveEvent(t *testing.T) {
 	h := &GetSyncHandler{db: db}
 
 	// Must not panic
-	leaves := h.buildLeaveRooms(context.Background(), userID)
+	leaves := h.buildLeaveRooms(context.Background(), userID, 0)
 
 	// The room entry must be present
 	roomEntry, ok := leaves[roomID]
@@ -1552,7 +1563,7 @@ func TestBuildLeaveRooms_RejectedInvite_IncludesLeaveEventIfPresent(t *testing.T
 
 	h := &GetSyncHandler{db: db}
 
-	leaves := h.buildLeaveRooms(context.Background(), userID)
+	leaves := h.buildLeaveRooms(context.Background(), userID, 0)
 
 	// Room must appear in rooms.leave
 	roomEntry, ok := leaves[roomID]
@@ -1677,5 +1688,237 @@ func TestGetSync_TimelineEvents_HavePositiveUnsignedAge(t *testing.T) {
 		if ev.Unsigned.Age <= 0 {
 			t.Errorf("expected unsigned.age > 0 for event %q, got %d", ev.EventID, ev.Unsigned.Age)
 		}
+	}
+}
+
+// ─── Story 9-19 Fix 2 (GAP-LEAVE-ONCE): buildLeaveRooms sinceMs filter ────────
+//
+// AC: buildLeaveRooms with sinceMs set to a time AFTER the leave event should NOT
+// return the room (i.e. the room already left before this sync cycle).
+//
+// Given: a room_members row with left_at = T (Unix-ms)
+// When:  buildLeaveRooms(ctx, userID, sinceMs = T+1) is called
+// Then:  the room is NOT in the result (left_at ≤ sinceMs → filtered out)
+
+func TestGetSyncHandler_BuildLeaveRooms_SinceFilter(t *testing.T) {
+	db := openTestDB(t)
+
+	userID := "@sincefilter-user:test.local"
+	roomID := "!sincefilter-room:test.local"
+	leftAt := int64(1700000005000)
+
+	now := int64(1700000000000)
+
+	// Insert user
+	_, err := db.Exec(`INSERT INTO users (user_id, system_role, is_active, created_at) VALUES ($1, 'user', true, $2) ON CONFLICT DO NOTHING`, userID, now)
+	if err != nil {
+		t.Fatalf("sinceFilter: insert user: %v", err)
+	}
+
+	// Insert room
+	_, err = db.Exec(`INSERT INTO rooms (room_id, visibility, created_at) VALUES ($1, 'private', $2) ON CONFLICT DO NOTHING`, roomID, now)
+	if err != nil {
+		t.Fatalf("sinceFilter: insert room: %v", err)
+	}
+
+	// Insert room_members with left_at = leftAt
+	_, err = db.Exec(
+		`INSERT INTO room_members (room_id, user_id, joined_at, left_at) VALUES ($1, $2, $3, $4) ON CONFLICT (room_id, user_id) DO UPDATE SET left_at = EXCLUDED.left_at`,
+		roomID, userID, now, leftAt,
+	)
+	if err != nil {
+		t.Fatalf("sinceFilter: insert room_members: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = db.Exec(`DELETE FROM room_members WHERE room_id = $1 AND user_id = $2`, roomID, userID)
+		_, _ = db.Exec(`DELETE FROM rooms WHERE room_id = $1`, roomID)
+		_, _ = db.Exec(`DELETE FROM users WHERE user_id = $1`, userID)
+	})
+
+	h := &GetSyncHandler{db: db}
+
+	// sinceMs = leftAt + 1: the leave event happened BEFORE this sync window.
+	leaves := h.buildLeaveRooms(context.Background(), userID, leftAt+1)
+
+	if _, found := leaves[roomID]; found {
+		t.Errorf("GAP-LEAVE-ONCE: room %q must NOT appear in rooms.leave when left_at (%d) <= sinceMs (%d)", roomID, leftAt, leftAt+1)
+	}
+}
+
+// ─── Story 9-19 Fix 2 (GAP-LEAVE-ONCE): sinceMs=0 → backward-compat ──────────
+//
+// AC: buildLeaveRooms with sinceMs=0 must return ALL left rooms (no filter).
+// This is the initial sync case.
+//
+// Given: a room_members row with left_at = T
+// When:  buildLeaveRooms(ctx, userID, 0) is called
+// Then:  the room IS in the result
+
+func TestGetSyncHandler_BuildLeaveRooms_ZeroSinceMs(t *testing.T) {
+	db := openTestDB(t)
+
+	userID := "@zerosince-user:test.local"
+	roomID := "!zerosince-room:test.local"
+
+	now := int64(1700000010000)
+
+	// Insert user
+	_, err := db.Exec(`INSERT INTO users (user_id, system_role, is_active, created_at) VALUES ($1, 'user', true, $2) ON CONFLICT DO NOTHING`, userID, now)
+	if err != nil {
+		t.Fatalf("zeroSinceMs: insert user: %v", err)
+	}
+
+	// Insert room
+	_, err = db.Exec(`INSERT INTO rooms (room_id, visibility, created_at) VALUES ($1, 'private', $2) ON CONFLICT DO NOTHING`, roomID, now)
+	if err != nil {
+		t.Fatalf("zeroSinceMs: insert room: %v", err)
+	}
+
+	// Insert room_members with left_at set
+	_, err = db.Exec(
+		`INSERT INTO room_members (room_id, user_id, joined_at, left_at) VALUES ($1, $2, $3, $4) ON CONFLICT (room_id, user_id) DO UPDATE SET left_at = EXCLUDED.left_at`,
+		roomID, userID, now-1000, now,
+	)
+	if err != nil {
+		t.Fatalf("zeroSinceMs: insert room_members: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = db.Exec(`DELETE FROM room_members WHERE room_id = $1 AND user_id = $2`, roomID, userID)
+		_, _ = db.Exec(`DELETE FROM rooms WHERE room_id = $1`, roomID)
+		_, _ = db.Exec(`DELETE FROM users WHERE user_id = $1`, userID)
+	})
+
+	h := &GetSyncHandler{db: db}
+
+	// sinceMs = 0 → no filter → room must appear
+	leaves := h.buildLeaveRooms(context.Background(), userID, 0)
+
+	if _, found := leaves[roomID]; !found {
+		t.Errorf("GAP-LEAVE-ONCE backward-compat: room %q MUST appear in rooms.leave when sinceMs=0", roomID)
+	}
+}
+
+// ─── Story 9-19 Fix 3 (GAP-FORGET): forgotten rooms excluded from rooms.leave ──
+//
+// AC: buildLeaveRooms must exclude rooms that the user has forgotten (present in
+// forgotten_rooms table), even when sinceMs=0.
+//
+// Given: a room_members row with left_at set AND a forgotten_rooms row for the same room
+// When:  buildLeaveRooms(ctx, userID, 0) is called
+// Then:  the room is NOT in the result
+
+// TestBuildInviteRooms_ForgottenExcluded verifies that a pending invitation for a
+// forgotten room is excluded from rooms.invite (GAP-FORGET AC3: no join/leave/invite).
+func TestBuildInviteRooms_ForgottenExcluded(t *testing.T) {
+	db := openTestDB(t)
+
+	userID := "@invite-forgotten-user:test.local"
+	inviterID := "@invite-forgotten-inviter:test.local"
+	roomID := "!invite-forgotten-room:test.local"
+
+	now := int64(1700000030000)
+
+	// Insert users
+	for _, uid := range []string{userID, inviterID} {
+		_, err := db.Exec(`INSERT INTO users (user_id, system_role, is_active, created_at) VALUES ($1, 'user', true, $2) ON CONFLICT DO NOTHING`, uid, now)
+		if err != nil {
+			t.Fatalf("inviteForgotten: insert user %s: %v", uid, err)
+		}
+	}
+
+	// Insert room
+	_, err := db.Exec(`INSERT INTO rooms (room_id, visibility, created_at) VALUES ($1, 'private', $2) ON CONFLICT DO NOTHING`, roomID, now)
+	if err != nil {
+		t.Fatalf("inviteForgotten: insert room: %v", err)
+	}
+
+	// Insert a pending invitation (accepted_at and rejected_at both NULL)
+	_, err = db.Exec(
+		`INSERT INTO room_invitations (room_id, inviter_id, invitee_id, created_at)
+		 VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
+		roomID, inviterID, userID, now,
+	)
+	if err != nil {
+		t.Fatalf("inviteForgotten: insert invitation: %v", err)
+	}
+
+	// Insert forgotten_rooms entry — the invite must be excluded
+	_, err = db.Exec(
+		`INSERT INTO forgotten_rooms (user_id, room_id, forgotten_at_ms) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+		userID, roomID, now,
+	)
+	if err != nil {
+		t.Fatalf("inviteForgotten: insert forgotten_rooms: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = db.Exec(`DELETE FROM forgotten_rooms WHERE user_id = $1 AND room_id = $2`, userID, roomID)
+		_, _ = db.Exec(`DELETE FROM room_invitations WHERE room_id = $1 AND invitee_id = $2`, roomID, userID)
+		_, _ = db.Exec(`DELETE FROM rooms WHERE room_id = $1`, roomID)
+		_, _ = db.Exec(`DELETE FROM users WHERE user_id = $1 OR user_id = $2`, userID, inviterID)
+	})
+
+	h := &GetSyncHandler{db: db}
+	invites := h.buildInviteRooms(context.Background(), userID)
+
+	if _, found := invites[roomID]; found {
+		t.Errorf("GAP-FORGET: room %q MUST NOT appear in rooms.invite after user has forgotten it", roomID)
+	}
+}
+
+func TestGetSyncHandler_BuildLeaveRooms_ForgottenExcluded(t *testing.T) {
+	db := openTestDB(t)
+
+	userID := "@forgotten-user:test.local"
+	roomID := "!forgotten-room:test.local"
+
+	now := int64(1700000020000)
+
+	// Insert user
+	_, err := db.Exec(`INSERT INTO users (user_id, system_role, is_active, created_at) VALUES ($1, 'user', true, $2) ON CONFLICT DO NOTHING`, userID, now)
+	if err != nil {
+		t.Fatalf("forgottenExcluded: insert user: %v", err)
+	}
+
+	// Insert room
+	_, err = db.Exec(`INSERT INTO rooms (room_id, visibility, created_at) VALUES ($1, 'private', $2) ON CONFLICT DO NOTHING`, roomID, now)
+	if err != nil {
+		t.Fatalf("forgottenExcluded: insert room: %v", err)
+	}
+
+	// Insert room_members with left_at set
+	_, err = db.Exec(
+		`INSERT INTO room_members (room_id, user_id, joined_at, left_at) VALUES ($1, $2, $3, $4) ON CONFLICT (room_id, user_id) DO UPDATE SET left_at = EXCLUDED.left_at`,
+		roomID, userID, now-2000, now-1000,
+	)
+	if err != nil {
+		t.Fatalf("forgottenExcluded: insert room_members: %v", err)
+	}
+
+	// Insert forgotten_rooms entry — this is what should suppress the leave room from sync
+	_, err = db.Exec(
+		`INSERT INTO forgotten_rooms (user_id, room_id, forgotten_at_ms) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+		userID, roomID, now,
+	)
+	if err != nil {
+		t.Fatalf("forgottenExcluded: insert forgotten_rooms: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = db.Exec(`DELETE FROM forgotten_rooms WHERE user_id = $1 AND room_id = $2`, userID, roomID)
+		_, _ = db.Exec(`DELETE FROM room_members WHERE room_id = $1 AND user_id = $2`, roomID, userID)
+		_, _ = db.Exec(`DELETE FROM rooms WHERE room_id = $1`, roomID)
+		_, _ = db.Exec(`DELETE FROM users WHERE user_id = $1`, userID)
+	})
+
+	h := &GetSyncHandler{db: db}
+
+	// sinceMs = 0 → no time filter, but forgotten_rooms should still exclude it
+	leaves := h.buildLeaveRooms(context.Background(), userID, 0)
+
+	if _, found := leaves[roomID]; found {
+		t.Errorf("GAP-FORGET: room %q MUST NOT appear in rooms.leave after user has forgotten it", roomID)
 	}
 }

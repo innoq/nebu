@@ -1,5 +1,6 @@
 # generated: 2026-03-20
-# last_updated: 2026-05-05
+# last_updated: 2026-05-06
+# story 9-19 done (pipeline: ATDD+Dev+Test-Review (1 MAJOR fixed: buildInviteRooms forgotten exclusion)+Code-Review (3 MINOR auto-fixed: DEBUG logs, forgotten_rooms error log, polling loop replaced)+security_review not-needed): 2026-05-06
 # story 9-18 done (pipeline: ATDD+Dev+Test-Review (1 MAJOR fixed: AC5 gRPC-error test)+Code-Review (2 MAJOR fixed: dedup state_key bug+ExUnit coverage; 2 MINOR fixed)+Kassandra CLEAN (0 HIGH, 4 INFO)): 2026-05-05
 # story 9-17 done (pipeline: ATDD+Dev+Test-Review CLEAN (0 MAJOR)+Code-Review CLEAN (2 MINOR fixed: t.Parallel+maxMembersLimit const); security_review not-needed): 2026-05-05
 # story 9-16 done (pipeline: ATDD+Dev+Test-Review CLEAN+Code-Review (1 MAJOR fixed: join_rules seed step added) security_review not-needed): 2026-05-05
@@ -174,7 +175,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-20
-last_updated: 2026-05-05
+last_updated: 2026-05-06
 # story 6-10 created: 6-10 → ready-for-dev: 2026-05-01 (Server Config API + Metrics API — GET/PATCH /admin/config, GET /admin/metrics, proto InvalidateAllAdminSessions, ServerConfigRepository, MetricsRepository, oidc_client_secret encryption, session invalidation on OIDC change)
 # story 6-1 created: epic-6 → in-progress, 6-1 → ready-for-dev: 2026-05-01
 # story 5-1 review: 2026-04-23 (audit-log schema + RLS + retention cleanup)
@@ -732,6 +733,7 @@ development_status:
   9-16-upgrade-room-state-event-order-test: done  # story 9-16 created: 2026-05-05 (GAP-9-001 — Room Upgrade State Event Copy Order Test; security_review: not-needed)
   9-17-admin-rooms-patch-max-members-visibility-test: done  # story 9-17 done: 2026-05-05 (GAP-9-002 — 8 unit tests for UpdateRoomSettingsHandler; code-review CLEAN with 2 MINOR auto-fixed: t.Parallel() + maxMembersLimit constant; security_review: not-needed)
   9-18-admin-room-detail-member-list: done  # story 9-18 done: 2026-05-05 (Admin UI — Room Detail: Member-Liste anzeigen; new ListAdminRoomMembers gRPC RPC, Elixir DB query, Go client, page_data.go, template; security_review: required)
+  9-19-sync-gap-fixes-join-public-leave-once-forget: done  # story 9-19 done: 2026-05-06 (Sync Gap Fixes: GAP-JOIN-PUBLIC {:new_join} :pg broadcast, GAP-LEAVE-ONCE sinceMs filter, GAP-FORGET forgotten_rooms table; security_review: not-needed)
   epic-9-retrospective: optional
 
   # ─────────────────────────────────────────────────────────────────────────

@@ -22,12 +22,15 @@ gateway/
     │   └── bootstrap.go        ← First-admin bootstrap mode
     ├── matrix/                 ← Matrix Client-Server API handlers
     │   ├── login.go            ← POST /_matrix/client/v3/login (SSO + OIDC)
-    │   ├── sync.go             ← GET /_matrix/client/v3/sync (long-poll)
+    │   ├── sync.go             ← GET /_matrix/client/v3/sync (long-poll); buildLeaveRooms uses
+    │   │                          sinceMs filter (GAP-LEAVE-ONCE) + forgotten_rooms exclusion
+    │   │                          (GAP-FORGET); queryForgottenRoomIDs + querySinceTsMs helpers
     │   ├── send.go             ← PUT /rooms/{id}/send/...
     │   ├── rooms.go            ← POST /createRoom, POST /join/{id}
+    │   ├── room_moderation.go  ← POST /forget inserts into forgotten_rooms (GAP-FORGET, Story 9-19)
     │   ├── profile.go          ← GET/PUT /profile/{userId}
     │   ├── presence.go         ← GET/PUT /presence/{userId}/status
-    │   └── ...                 ← typing, receipts, messages, moderation, keys
+    │   └── ...                 ← typing, receipts, messages, keys
     ├── admin/                  ← Admin UI (Go Templates + SSR) + Admin API
     │   ├── api.go              ← /api/v1/* Router (oapi-codegen StrictHandler)
     │   ├── users.go            ← User CRUD UI + API
@@ -58,6 +61,8 @@ core/apps/
 │   └── lib/nebu/room/
 │       ├── manager.ex      ← Horde.DynamicSupervisor
 │       ├── server.ex       ← Room GenServer (state, history, power levels)
+│       ├── db.ex           ← PostgreSQL queries; get_recently_left_rooms_for_user/1 added (Story 9-19)
+│       ├── db_behaviour.ex ← @callback contract for db.ex (mockable in tests)
 │       └── power_level.ex  ← Room policy enforcement
 ├── session_manager/  ← ETS + PostgreSQL Hybrid since-Token
 │   └── lib/nebu/session/
@@ -65,7 +70,10 @@ core/apps/
 │       └── token.ex        ← v1_<base64url(ts+cursor_map)> format
 ├── presence/         ← FR15: Presence status (online/offline/unavailable)
 ├── event_dispatcher/ ← EventBus gRPC streaming + pg Process Groups fanout
-│   └── lib/nebu/event/
+│   └── lib/nebu/event_dispatcher/
+│       ├── server.ex       ← gRPC handlers: join_room/2 broadcasts {:new_join} to user :pg group;
+│       │                      leave_room/2 broadcasts {:new_leave}; do_incremental_sync handles
+│       │                      {:new_join}/{:new_leave} to wake long-poll sync Tasks (GAP-JOIN-PUBLIC)
 │       ├── dispatcher.ex   ← Routes events to rooms + subscribers
 │       └── bus.ex          ← gRPC ServerStream to Go Gateway
 ├── signature/        ← FR25–29: Ed25519 signing + Canonical JSON + Event-ID
@@ -84,6 +92,11 @@ core/apps/
 > above (`api/`, `audit/`, `db/`, `ui/`, `validate/`). They wrap shared infrastructure
 > rather than represent distinct architectural blocks.
 
+> **PostgreSQL tables added in Story 9-19:** `forgotten_rooms (user_id, room_id, forgotten_at_ms BIGINT)`
+> — migration 000040. Tracks rooms the user has permanently dismissed via `POST /forget`.
+> Excluded from all `/sync` sections (join, leave, invite). Primary key `(user_id, room_id)`;
+> cascade delete on `users` removal.
+
 ## Level 2 — Proto / gRPC Contract
 
 ```
@@ -97,4 +110,4 @@ proto/
 Key gRPC services: `SendEvent`, `CreateRoom`, `JoinRoom`, `GetMessages`, `GetRoomState`, `SetPresence`,
 `SetTyping`, `ValidateToken`, `GetPendingEvents` (fallback), `EventBus` (streaming).
 
-_Source: `_bmad-output/planning-artifacts/architecture.md`, §Project Structure & Boundaries, §Complete Project Directory Structure_
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Project Structure & Boundaries, §Complete Project Directory Structure; Story 9-19 (room_moderation.go, sync.go, event_dispatcher/server.ex, forgotten_rooms migration)_

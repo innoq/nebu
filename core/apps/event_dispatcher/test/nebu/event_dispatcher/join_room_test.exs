@@ -91,6 +91,9 @@ defmodule Nebu.EventDispatcher.JoinRoomTest do
 
     # Story 9-9: TOCTOU fix — returns {:ok, "active"} for normal rooms.
     def check_room_status_for_update(_room_id), do: {:ok, "active"}
+
+    # GAP-LEAVE-UI: required by @behaviour Nebu.Room.DBBehaviour.
+    def get_recently_left_rooms_for_user(_user_id), do: {:ok, []}
   end
 
   # ─── FakeInviteDB ─────────────────────────────────────────────────────────────
@@ -543,6 +546,69 @@ defmodule Nebu.EventDispatcher.JoinRoomTest do
       # Admin (power 100) can invite even when threshold is 50.
       response = Server.invite_user(request, build_stream())
       assert %Core.InviteUserResponse{} = response
+    end
+  end
+
+  # ─── Story 9-19 Fix 1 (GAP-JOIN-PUBLIC): join_room broadcasts {:new_join} ─────
+  #
+  # AC: When a user joins a public room, join_room/2 must broadcast {:new_join, room_id}
+  # to the "user:#{user_id}" :pg group so the long-polling sync task wakes immediately.
+  #
+  # Given: test process subscribed to "user:@newjoin-user:test.local" :pg group
+  # When:  Server.join_room/2 called for @newjoin-user
+  # Then:  {:new_join, room_id} received within 200 ms
+  #
+  # Note: only the actual new join triggers the broadcast — the :already_member branch does NOT.
+
+  describe "Server.join_room/2 — :pg broadcast to joining user (GAP-JOIN-PUBLIC)" do
+    test "broadcasts {:new_join, room_id} to user :pg group on successful join" do
+      room_id = "!pgbroadcast-#{System.unique_integer([:positive])}:test.local"
+      user_id = "@newjoin-user:test.local"
+
+      # Start room.
+      {:ok, _pid} = Nebu.Room.RoomSupervisor.start_room(room_id)
+      :ok = wait_for_registry(room_id)
+      start_and_track_room(room_id)
+
+      # Subscribe to user's :pg group (simulates sync task entering long-poll).
+      :ok = :pg.join("user:#{user_id}", self())
+      on_exit(fn -> :pg.leave("user:#{user_id}", self()) end)
+
+      request = %Core.JoinRoomRequest{
+        user_id: user_id,
+        room_id_or_alias: room_id
+      }
+
+      Server.join_room(request, build_stream())
+
+      assert_receive {:new_join, ^room_id}, 200,
+        "Expected {:new_join, #{room_id}} broadcast from join_room within 200 ms (GAP-JOIN-PUBLIC fix)."
+    end
+
+    test "does NOT broadcast {:new_join} when user is already a member (:already_member path)" do
+      room_id = "!pgbroadcast-already-#{System.unique_integer([:positive])}:test.local"
+      user_id = "@already-joined-user:test.local"
+
+      # Start room and add user as member first.
+      {:ok, _pid} = Nebu.Room.RoomSupervisor.start_room(room_id)
+      :ok = wait_for_registry(room_id)
+      start_and_track_room(room_id)
+      :ok = Nebu.Room.Server.join(room_id, user_id)
+
+      # Subscribe to user's :pg group.
+      :ok = :pg.join("user:#{user_id}", self())
+      on_exit(fn -> :pg.leave("user:#{user_id}", self()) end)
+
+      request = %Core.JoinRoomRequest{
+        user_id: user_id,
+        room_id_or_alias: room_id
+      }
+
+      # Second join — idempotent, must return success but NOT broadcast.
+      assert %Core.JoinRoomResponse{} = Server.join_room(request, build_stream())
+
+      refute_receive {:new_join, _}, 100,
+        "Must NOT broadcast {:new_join, _} when user is already a member (idempotent path)"
     end
   end
 end

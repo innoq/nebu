@@ -124,6 +124,8 @@ defmodule Nebu.EventDispatcher.SyncTest do
       {:ok, Enum.map(rooms, fn [room_id] -> room_id end)}
     end
 
+    def get_recently_left_rooms_for_user(_user_id), do: {:ok, []}
+
     # ── fetch_events/4 (existing signature — used by get_messages handler too) ─
     #
     # Simplified implementation: returns all events for the room in descending
@@ -756,6 +758,7 @@ defmodule Nebu.EventDispatcher.SyncTest do
     defdelegate insert_event(event), to: SyncTestFakeDB
     defdelegate set_power_levels(room_id, power_levels_json), to: SyncTestFakeDB
     defdelegate get_rooms_for_user(user_id), to: SyncTestFakeDB
+    defdelegate get_recently_left_rooms_for_user(user_id), to: SyncTestFakeDB
     defdelegate fetch_events(room_id, direction, limit, from_token), to: SyncTestFakeDB
     defdelegate get_room_name(room_id), to: SyncTestFakeDB
     # Story 6.8: delegate load_room_settings/1 to SyncTestFakeDB (returns {:ok, 0}).

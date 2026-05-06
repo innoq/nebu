@@ -94,6 +94,7 @@ defmodule Nebu.Room.SendEventArchivedRoomTest do
 
     # Required @behaviour stubs
     def get_rooms_for_user(_user_id), do: {:ok, []}
+    def get_recently_left_rooms_for_user(_user_id), do: {:ok, []}
     def fetch_events(_room_id, _direction, _limit, _from_token), do: {:ok, [], "", ""}
     def fetch_events_since(_room_id, _last_event_id, _limit), do: {:ok, []}
     def get_event_timestamp(_event_id), do: {:error, :not_found}
@@ -182,6 +183,7 @@ defmodule Nebu.Room.SendEventArchivedRoomTest do
 
     # Required @behaviour stubs
     def get_rooms_for_user(_user_id), do: {:ok, []}
+    def get_recently_left_rooms_for_user(_user_id), do: {:ok, []}
     def fetch_events(_room_id, _direction, _limit, _from_token), do: {:ok, [], "", ""}
     def fetch_events_since(_room_id, _last_event_id, _limit), do: {:ok, []}
     def get_event_timestamp(_event_id), do: {:error, :not_found}

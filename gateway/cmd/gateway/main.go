@@ -925,6 +925,7 @@ func main() {
 	moderationHandler := matrix.NewModerationHandler(matrix.ModerationConfig{
 		CoreClient: coreClient,
 		ServerName: serverName,
+		DB:         bootstrapDB,
 	})
 	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/kick",
 		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(moderationHandler.PostKickUser))))

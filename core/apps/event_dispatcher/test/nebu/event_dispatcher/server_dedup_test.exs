@@ -89,6 +89,8 @@ defmodule Nebu.EventDispatcher.ServerDedupTest do
       {:ok, Enum.map(rooms, fn [room_id] -> room_id end)}
     end
 
+    def get_recently_left_rooms_for_user(_user_id), do: {:ok, []}
+
     # ── Messages DB (fetch_events/4) ──────────────────────────────────────────
 
     def fetch_events(room_id, _direction, limit, _from_token) do

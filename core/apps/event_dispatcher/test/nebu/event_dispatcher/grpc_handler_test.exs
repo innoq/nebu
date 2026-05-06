@@ -362,6 +362,7 @@ defmodule Nebu.EventDispatcher.GrpcHandlerTest do
       def check_room_status_for_update(_room_id), do: {:ok, "active"}
       # Remaining callbacks required by @behaviour Nebu.Room.DBBehaviour:
       def get_rooms_for_user(_user_id), do: {:ok, []}
+      def get_recently_left_rooms_for_user(_user_id), do: {:ok, []}
       def fetch_events(_room_id, _dir, _limit, _from), do: {:ok, [], "", ""}
       def fetch_events_since(_room_id, _last_event_id, _limit), do: {:ok, []}
       def get_event_timestamp(_event_id), do: {:error, :not_found}

@@ -168,6 +168,13 @@ defmodule Nebu.EventDispatcher.Server do
         # as the second event in the timeline (spec §8.5.1 order: create → member → pl).
         :ok = Nebu.Room.Server.join(room_id, creator_id)
 
+        # Wake the creator's long-polling sync task immediately (mirrors join_room/2 pattern).
+        # Without this broadcast, a sync task that started BEFORE createRoom returns will not
+        # be subscribed to room:#{room_id}. Any leave/send event before the sync timeout
+        # (30 s) would be missed, causing GAP-FORGET and similar issues.
+        :pg.get_local_members("user:#{creator_id}")
+        |> Enum.each(&send(&1, {:new_join, room_id}))
+
         default_pl = Nebu.Room.Server.default_power_levels()
         creator_pl = put_in(default_pl, ["users", creator_id], 100)
         :ok = Nebu.Room.Server.set_power_levels(room_id, creator_id, creator_pl)
@@ -269,6 +276,10 @@ defmodule Nebu.EventDispatcher.Server do
             # Mark any pending invitation as accepted so it disappears from
             # rooms.invite in subsequent sync responses (no-op for public joins).
             db_module_invite().accept_invitation(room_id, user_id)
+            # Wake user's long-polling sync task immediately (mirrors invite_user/2 pattern).
+            # Without this, the sync task sleeps 30 s after a public-room join (GAP-JOIN-PUBLIC).
+            :pg.get_local_members("user:#{user_id}")
+            |> Enum.each(&send(&1, {:new_join, room_id}))
             audit_writer_module().log(user_id, "room_joined", "room", room_id, %{}, "success")
             %Core.JoinRoomResponse{room_id: room_id}
 
@@ -336,6 +347,17 @@ defmodule Nebu.EventDispatcher.Server do
       {:ok, _pid} ->
         case Nebu.Room.Server.leave(room_id, user_id) do
           :ok ->
+            # Wake the user's long-polling sync task immediately so rooms.leave
+            # arrives within the long-poll window instead of waiting up to 30 s.
+            # The sync task may not be subscribed to room:#{room_id} if it started
+            # before the user was in this room (e.g. a room the user created and
+            # immediately left). Broadcasting to user:#{user_id} guarantees wakeup
+            # regardless of room subscriptions. The Go side's buildLeaveRooms does
+            # the actual DB query — the sync task just needs to wake up and return [].
+            members = :pg.get_local_members("user:#{user_id}")
+            require Logger
+            Logger.debug("[leave_room] broadcasting {:new_leave, #{room_id}} to #{length(members)} sync tasks for #{user_id}")
+            Enum.each(members, &send(&1, {:new_leave, room_id}))
             %Core.LeaveRoomResponse{room_id: room_id}
 
           {:error, :not_member} ->
@@ -1116,7 +1138,16 @@ defmodule Nebu.EventDispatcher.Server do
         {:error, _} -> []
       end
 
-    room_ids = room_ids ++ invited_room_ids ++ declined_room_ids
+    # GAP-LEAVE-UI: include recently-left rooms so fetch_delta_rooms finds the leave event
+    # in the initial DB check. Closes the race window where {new_leave} fires before the
+    # sync task subscribes to :pg groups, causing a 30 s long-poll delay.
+    left_room_ids =
+      case rooms_db_module().get_recently_left_rooms_for_user(user_id) do
+        {:ok, ids} -> ids
+        {:error, _} -> []
+      end
+
+    room_ids = room_ids ++ invited_room_ids ++ declined_room_ids ++ left_room_ids
 
     # Step 5a: Subscribe to user-level :pg group BEFORE DB check.
     # Receives {:new_invite, room_id} when invite_user/2 sends an invitation — this
@@ -1159,6 +1190,25 @@ defmodule Nebu.EventDispatcher.Server do
                 # New invitation for this user — cancel timer and return empty delta.
                 # The Go gateway's buildInviteRooms queries the DB for invite data,
                 # so returning [] here is sufficient to unblock the client.
+                Process.cancel_timer(timer_ref)
+                flush_long_poll_timeout()
+                []
+
+              {:new_join, new_room_id} ->
+                # User joined a public room — subscribe to it and re-query (mirrors {:new_invite} pattern).
+                # GAP-JOIN-PUBLIC: without this, join_room broadcasts are missed and the long-poll sleeps 30 s.
+                Process.cancel_timer(timer_ref)
+                flush_long_poll_timeout()
+                :pg.join("room:#{new_room_id}", self())
+                fetch_delta_rooms(Enum.uniq([new_room_id | room_ids]), last_event_id)
+
+              {:new_leave, recv_room_id} ->
+                # User left a room — wake up immediately so Go's buildLeaveRooms can find it via DB query.
+                # GAP-LEAVE-UI / GAP-FORGET: without this, leave_room broadcasts to room:#{room_id} only;
+                # if the sync task missed that subscription (race), the leave is never delivered within
+                # the long-poll window. Returning [] is sufficient — Go queries DB for rooms.leave.
+                require Logger
+                Logger.debug("[do_incremental_sync] {:new_leave} received for room #{recv_room_id}, waking sync task for #{user_id}")
                 Process.cancel_timer(timer_ref)
                 flush_long_poll_timeout()
                 []
