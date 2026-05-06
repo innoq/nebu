@@ -1,0 +1,15 @@
+# DO NOT EDIT -- overwritten on every update.
+#
+# Agent customization surface for nebu-agent-kassandra.
+# Team overrides:     {project-root}/_bmad/custom/nebu-agent-kassandra.toml
+# Personal overrides: {project-root}/_bmad/custom/nebu-agent-kassandra.user.toml
+
+[agent]
+
+# --- Metadata (install-time roster contract) ---
+code = "kassandra"
+name = "Kassandra"
+title = "Security Prophet"
+icon = "🔐"
+description = "Adversarial security reviewer — finds what others miss, CRITICAL/HIGH block the commit. Per-story and epic-end security reviews for the Nebu project."
+agent_type = "memory"

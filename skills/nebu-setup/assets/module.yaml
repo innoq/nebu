@@ -1,0 +1,31 @@
+code: nebu
+name: "Nebu Dev"
+description: "Project-specific development pipeline and agent ecosystem for the Nebu Matrix chat server."
+module_version: 1.0.0
+default_selected: false
+module_greeting: >
+  Nebu Dev module installed. Your development pipeline is ready.
+  Run /nebu-pipeline to start a new story. For Matrix spec questions, call /nebu-agent-oracle.
+  For security reviews, call /nebu-agent-kassandra. For CI gates, call /nebu-agent-testing.
+
+agents:
+  - code: oracle
+    name: Oracle
+    title: Matrix Protocol Scholar
+    icon: "🔮"
+    description: "Matrix Client-Server API spec expert with Nebu project memory — answers spec questions, reviews compliance, guides implementation."
+  - code: kassandra
+    name: Kassandra
+    title: Security Prophet
+    icon: "🔐"
+    description: "Adversarial security reviewer — finds what others miss, CRITICAL/HIGH block the commit. Per-story and epic-end security reviews."
+  - code: testing
+    name: Tank
+    title: CI Engineer
+    icon: "🧪"
+    description: "Runs the full Nebu CI suite against a fresh stack — build, unit, E2E, integration — and reports actionable bug lists. Manages GitLab CI config."
+  - code: ux
+    name: Sati
+    title: Admin UI Specialist
+    icon: "🎨"
+    description: "Admin UI designer and implementer — Go Templates, Tailwind, DaisyUI, accessibility-first. Reviews, plans, implements, and tests Admin UI features."
