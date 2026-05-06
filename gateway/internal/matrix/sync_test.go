@@ -2722,3 +2722,643 @@ func TestBuildInviteRooms_RegressionNameStillPresent(t *testing.T) {
 		t.Errorf("AC4 regression: expected content.name=%q, got %q", "ATDD Room 9-23", content["name"])
 	}
 }
+
+// ─── Story 9-24: GAP-GLOBAL-ACCOUNT-DATA — Top-level account_data in sync ────
+//
+// These tests are written FIRST (ATDD gate), before any Story 9-24 implementation
+// exists. ALL tests in this section MUST FAIL to compile until:
+//   - GlobalAccountDataDB interface is added to account_data.go
+//   - GetSyncConfig.GlobalAccountDataDB field is added to sync.go
+//   - syncResponse.AccountData field (type syncAccountDataSection) is added to sync.go
+//   - injectGlobalAccountData helper is implemented in sync.go
+//
+// Test strategy:
+//   - mockGlobalAccountDataDB implements the GlobalAccountDataDB interface
+//     (consumer-defined, defined here alongside the tests per Go convention).
+//   - buildAuthedSyncGlobalAccountDataHandler wires JWTMiddleware → GetSyncHandler
+//     with both a mockGetSyncCoreClient and a mockGlobalAccountDataDB injected.
+//   - Tests cover: initial sync, incremental sync, empty case, DB error degradation,
+//     and per-room regression (global rows must NOT appear in rooms.join).
+//
+// AC coverage:
+//   AC1 → TestGetSync_GlobalAccountData_InitialSync
+//   AC2 → TestGetSync_GlobalAccountData_IncrementalSync
+//   AC1+AC2 empty branch → TestGetSync_GlobalAccountData_Empty
+//   AC6 → TestGetSync_GlobalAccountData_DBError_Degrades
+//   AC4 regression → TestGetSync_PerRoomAccountData_NotAffectedByGlobal
+//   AC5 (struct shape) → tested implicitly by all tests above (json:"account_data" key)
+
+// mockGlobalAccountDataDB implements GlobalAccountDataDB for Story 9-24 tests.
+// Defined here (consumer-defined interface, Go convention per ADR-009).
+// This type references GlobalAccountDataDB and GlobalAccountDataRow which do NOT
+// exist yet — every test in this section MUST fail with a compilation error until
+// Story 9-24 adds those types to account_data.go.
+type mockGlobalAccountDataDB struct {
+	rows []GlobalAccountDataRow
+	err  error
+}
+
+func (m *mockGlobalAccountDataDB) ListGlobalAccountData(_ context.Context, _ string) ([]GlobalAccountDataRow, error) {
+	if m.err != nil {
+		return []GlobalAccountDataRow{}, m.err
+	}
+	if m.rows == nil {
+		return []GlobalAccountDataRow{}, nil
+	}
+	return m.rows, nil
+}
+
+// buildAuthedSyncGlobalAccountDataHandler wires JWTMiddleware → GetSyncHandler with
+// a mockGetSyncCoreClient (initial sync) and an optional mockGlobalAccountDataDB.
+// Used by all Story 9-24 unit tests.
+// This function references GetSyncConfig.GlobalAccountDataDB which does NOT exist
+// yet — compilation MUST fail until sync.go is updated in Story 9-24.
+func buildAuthedSyncGlobalAccountDataHandler(
+	t *testing.T,
+	coreMock *mockGetSyncCoreClient,
+	globalDB *mockGlobalAccountDataDB,
+) (http.Handler, func() string) {
+	t.Helper()
+
+	oidcSrv, privateKey := setupOIDCServer(t)
+	t.Cleanup(oidcSrv.Close)
+
+	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
+
+	cfg := GetSyncConfig{
+		CoreClient:          coreMock,
+		ServerName:          "test.local",
+		GlobalAccountDataDB: globalDB, // Story 9-24: GlobalAccountDataDB field DOES NOT EXIST YET
+	}
+	handler := NewGetSyncHandler(cfg)
+
+	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+		http.HandlerFunc(handler.GetSync),
+	)
+
+	makeToken := func() string {
+		return signJWT(t, oidcSrv.URL, privateKey, time.Now().Add(time.Hour), nil)
+	}
+
+	return authed, makeToken
+}
+
+// buildAuthedSyncGlobalAccountDataDeltaHandler is the incremental-sync counterpart.
+// Uses mockGetSyncDeltaCoreClient so both initial (FallbackToInitial) and delta paths
+// are exercised together with GlobalAccountDataDB injection.
+func buildAuthedSyncGlobalAccountDataDeltaHandler(
+	t *testing.T,
+	coreMock *mockGetSyncDeltaCoreClient,
+	globalDB *mockGlobalAccountDataDB,
+) (http.Handler, func() string) {
+	t.Helper()
+
+	oidcSrv, privateKey := setupOIDCServer(t)
+	t.Cleanup(oidcSrv.Close)
+
+	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
+
+	cfg := GetSyncConfig{
+		CoreClient:          coreMock,
+		ServerName:          "test.local",
+		GlobalAccountDataDB: globalDB, // Story 9-24: GlobalAccountDataDB field DOES NOT EXIST YET
+	}
+	handler := NewGetSyncHandler(cfg)
+
+	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+		http.HandlerFunc(handler.GetSync),
+	)
+
+	makeToken := func() string {
+		return signJWT(t, oidcSrv.URL, privateKey, time.Now().Add(time.Hour), nil)
+	}
+
+	return authed, makeToken
+}
+
+// ─── Story 9-24 Test 1 [P0]: Initial sync — top-level account_data.events ────
+//
+// AC1 — GET /sync (no ?since) must return top-level account_data.events containing
+// all global account data rows for the authenticated user.
+//
+// Given: mockGlobalAccountDataDB returns [{type:"m.direct", content:{...}}]
+// When:  GET /_matrix/client/v3/sync (no ?since)
+// Then:  200; top-level "account_data".events contains 1 entry with type="m.direct"
+//        and the expected content; the "account_data" key is present (never absent)
+//
+// RED: MUST FAIL until syncResponse.AccountData field exists and injectGlobalAccountData
+// is called in GetSync (initial sync path).
+func TestGetSync_GlobalAccountData_InitialSync(t *testing.T) {
+	directContent := json.RawMessage(`{"@bob:nebu.test":["!room1:nebu.test"]}`)
+
+	coreMock := &mockGetSyncCoreClient{
+		resp: &pb.GetInitialSyncResponse{
+			SinceToken: "next_batch_global_ac1",
+			Rooms:      []*pb.SyncRoom{},
+		},
+	}
+
+	globalDB := &mockGlobalAccountDataDB{
+		rows: []GlobalAccountDataRow{
+			{EventType: "m.direct", Content: directContent},
+		},
+	}
+
+	handler, makeToken := buildAuthedSyncGlobalAccountDataHandler(t, coreMock, globalDB)
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync", nil)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("AC1: expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	// Capture raw body before decoding — json.NewDecoder consumes the buffer.
+	rawBody := w.Body.String()
+
+	var resp struct {
+		NextBatch   string `json:"next_batch"`
+		AccountData struct {
+			Events []struct {
+				Type    string          `json:"type"`
+				Content json.RawMessage `json:"content"`
+			} `json:"events"`
+		} `json:"account_data"`
+	}
+	if err := json.NewDecoder(strings.NewReader(rawBody)).Decode(&resp); err != nil {
+		t.Fatalf("AC1: failed to decode response: %v", err)
+	}
+
+	// AC1: top-level account_data must be present (never absent) and contain 1 entry
+	if resp.AccountData.Events == nil {
+		t.Fatal("AC1: top-level account_data.events must not be nil (absent) — Story 9-24: syncResponse.AccountData field missing")
+	}
+	if len(resp.AccountData.Events) != 1 {
+		t.Fatalf("AC1: expected 1 entry in account_data.events, got %d (body: %s)", len(resp.AccountData.Events), rawBody)
+	}
+	if resp.AccountData.Events[0].Type != "m.direct" {
+		t.Errorf("AC1: expected account_data.events[0].type=%q, got %q", "m.direct", resp.AccountData.Events[0].Type)
+	}
+	// Verify content round-trips correctly
+	var gotContent map[string]interface{}
+	if err := json.Unmarshal(resp.AccountData.Events[0].Content, &gotContent); err != nil {
+		t.Fatalf("AC1: failed to unmarshal content: %v", err)
+	}
+	if _, ok := gotContent["@bob:nebu.test"]; !ok {
+		t.Errorf("AC1: expected content to contain @bob:nebu.test key, got: %v", gotContent)
+	}
+
+	// AC5: verify the JSON key is "account_data" (not omitted) via raw body check
+	if !strings.Contains(rawBody, `"account_data"`) {
+		t.Errorf("AC5: response must contain JSON key \"account_data\" (top-level), raw body: %s", rawBody)
+	}
+}
+
+// ─── Story 9-24 Test 2 [P0]: Incremental sync — account_data.events ──────────
+//
+// AC2 — GET /sync?since=<token> must return top-level account_data.events
+// containing all global account data rows. Same always-present guarantee as AC1.
+//
+// Given: mockGlobalAccountDataDB returns [{type:"m.push_rules", content:{...}}]
+// When:  GET /_matrix/client/v3/sync?since=s_token_9_24
+// Then:  200; top-level "account_data".events contains type="m.push_rules"
+//
+// RED: MUST FAIL until GetSyncConfig.GlobalAccountDataDB is wired into
+// handleIncrementalSync and the delta sync path.
+func TestGetSync_GlobalAccountData_IncrementalSync(t *testing.T) {
+	pushRulesContent := json.RawMessage(`{"global":{"content":[],"override":[]}}`)
+
+	coreMock := &mockGetSyncDeltaCoreClient{
+		deltaResp: &pb.GetSyncDeltaResponse{
+			SinceToken:        "next_batch_incr_global_ac2",
+			FallbackToInitial: false,
+			Rooms:             []*pb.SyncRoom{},
+		},
+	}
+
+	globalDB := &mockGlobalAccountDataDB{
+		rows: []GlobalAccountDataRow{
+			{EventType: "m.push_rules", Content: pushRulesContent},
+		},
+	}
+
+	handler, makeToken := buildAuthedSyncGlobalAccountDataDeltaHandler(t, coreMock, globalDB)
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync?since=s_token_9_24", nil)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("AC2: expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	// Capture raw body before decoding — json.NewDecoder consumes the buffer.
+	rawBody := w.Body.String()
+
+	var resp struct {
+		AccountData struct {
+			Events []struct {
+				Type string `json:"type"`
+			} `json:"events"`
+		} `json:"account_data"`
+	}
+	if err := json.NewDecoder(strings.NewReader(rawBody)).Decode(&resp); err != nil {
+		t.Fatalf("AC2: failed to decode response: %v", err)
+	}
+
+	// AC2: account_data must be present and contain the m.push_rules entry
+	if resp.AccountData.Events == nil {
+		t.Fatal("AC2: top-level account_data.events must not be nil — incremental sync path missing GlobalAccountDataDB injection")
+	}
+	if len(resp.AccountData.Events) != 1 {
+		t.Fatalf("AC2: expected 1 entry in account_data.events, got %d", len(resp.AccountData.Events))
+	}
+	if resp.AccountData.Events[0].Type != "m.push_rules" {
+		t.Errorf("AC2: expected account_data.events[0].type=%q, got %q", "m.push_rules", resp.AccountData.Events[0].Type)
+	}
+
+	// AC5: verify "account_data" key present in incremental sync response
+	if !strings.Contains(rawBody, `"account_data"`) {
+		t.Errorf("AC5: incremental sync response must contain JSON key \"account_data\" (top-level), raw body: %s", rawBody)
+	}
+}
+
+// ─── Story 9-24 Test 2b [P0]: Incremental sync FallbackToInitial path ────────
+//
+// AC2 FallbackToInitial — GET /sync?since=<token> when Core returns
+// FallbackToInitial=true MUST also inject top-level account_data.events from
+// GlobalAccountDataDB. This covers the case where the developer wires injection
+// in the normal delta path but forgets the FallbackToInitial branch.
+//
+// Given: mockGetSyncDeltaCoreClient with FallbackToInitial=true and empty rooms;
+//        mockGlobalAccountDataDB returns [{type:"m.ignored_user_list", content:{...}}]
+// When:  GET /_matrix/client/v3/sync?since=s_stale_token_9_24_fallback
+// Then:  200; top-level "account_data".events contains type="m.ignored_user_list"
+//
+// RED: MUST FAIL until the FallbackToInitial branch in GetSync also calls
+// injectGlobalAccountData (not just the normal incremental-sync branch).
+func TestGetSync_GlobalAccountData_IncrementalSync_FallbackToInitial(t *testing.T) {
+	ignoredUserContent := json.RawMessage(`{"ignored_users":{"@spam:nebu.test":{}}}`)
+
+	coreMock := &mockGetSyncDeltaCoreClient{
+		deltaResp: &pb.GetSyncDeltaResponse{
+			SinceToken:        "next_batch_fallback_ac2b",
+			FallbackToInitial: true,
+			Rooms:             []*pb.SyncRoom{},
+		},
+		// initialResp is returned when FallbackToInitial triggers a GetInitialSync call
+		initialResp: &pb.GetInitialSyncResponse{
+			SinceToken: "next_batch_fallback_initial_ac2b",
+			Rooms:      []*pb.SyncRoom{},
+		},
+	}
+
+	globalDB := &mockGlobalAccountDataDB{
+		rows: []GlobalAccountDataRow{
+			{EventType: "m.ignored_user_list", Content: ignoredUserContent},
+		},
+	}
+
+	handler, makeToken := buildAuthedSyncGlobalAccountDataDeltaHandler(t, coreMock, globalDB)
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync?since=s_stale_token_9_24_fallback", nil)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("AC2 FallbackToInitial: expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	// Capture raw body before decoding — json.NewDecoder consumes the buffer.
+	rawBodyFallback := w.Body.String()
+
+	var resp struct {
+		AccountData struct {
+			Events []struct {
+				Type string `json:"type"`
+			} `json:"events"`
+		} `json:"account_data"`
+	}
+	if err := json.NewDecoder(strings.NewReader(rawBodyFallback)).Decode(&resp); err != nil {
+		t.Fatalf("AC2 FallbackToInitial: failed to decode response: %v", err)
+	}
+
+	// AC2 FallbackToInitial: account_data must be present and contain the m.ignored_user_list entry
+	if resp.AccountData.Events == nil {
+		t.Fatal("AC2 FallbackToInitial: top-level account_data.events must not be nil — FallbackToInitial path missing GlobalAccountDataDB injection")
+	}
+	if len(resp.AccountData.Events) != 1 {
+		t.Fatalf("AC2 FallbackToInitial: expected 1 entry in account_data.events, got %d", len(resp.AccountData.Events))
+	}
+	if resp.AccountData.Events[0].Type != "m.ignored_user_list" {
+		t.Errorf("AC2 FallbackToInitial: expected account_data.events[0].type=%q, got %q", "m.ignored_user_list", resp.AccountData.Events[0].Type)
+	}
+
+	// AC5: verify "account_data" key present in FallbackToInitial response
+	if !strings.Contains(rawBodyFallback, `"account_data"`) {
+		t.Errorf("AC5 FallbackToInitial: response must contain JSON key \"account_data\" (top-level), raw body: %s", rawBodyFallback)
+	}
+}
+
+// ─── Story 9-24 Test 3 [P0]: Empty case — account_data.events is [] ──────────
+//
+// Spec: when no global account data exists, account_data.events MUST be [] —
+// never absent, never null. This is a MUST per Matrix spec §6.3.
+//
+// Given: mockGlobalAccountDataDB returns [] (no global account data)
+// When:  GET /_matrix/client/v3/sync (initial sync)
+// Then:  200; response body contains "account_data":{"events":[]} (not absent, not null)
+//
+// RED: MUST FAIL until syncResponse.AccountData is always populated (empty slice,
+// not omitempty).
+func TestGetSync_GlobalAccountData_Empty(t *testing.T) {
+	coreMock := &mockGetSyncCoreClient{
+		resp: &pb.GetInitialSyncResponse{
+			SinceToken: "next_batch_empty_global",
+			Rooms:      []*pb.SyncRoom{},
+		},
+	}
+
+	globalDB := &mockGlobalAccountDataDB{
+		rows: []GlobalAccountDataRow{}, // empty — no global account data
+	}
+
+	handler, makeToken := buildAuthedSyncGlobalAccountDataHandler(t, coreMock, globalDB)
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync", nil)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("empty case: expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	rawBody := w.Body.String()
+
+	// Spec MUST: "account_data" key must be present in the JSON response
+	if !strings.Contains(rawBody, `"account_data"`) {
+		t.Errorf("empty case: response MUST contain top-level \"account_data\" key even when empty; raw body: %s", rawBody)
+	}
+
+	// Spec MUST: account_data.events must be [] — not null, not absent
+	var resp struct {
+		AccountData *struct {
+			Events []json.RawMessage `json:"events"`
+		} `json:"account_data"`
+	}
+	if err := json.NewDecoder(strings.NewReader(rawBody)).Decode(&resp); err != nil {
+		t.Fatalf("empty case: failed to decode response: %v", err)
+	}
+	if resp.AccountData == nil {
+		t.Fatal("empty case: top-level \"account_data\" key must not be absent (omitempty not allowed for this field)")
+	}
+	if resp.AccountData.Events == nil {
+		t.Fatal("empty case: account_data.events must be [] (not null) when no global account data exists")
+	}
+	if len(resp.AccountData.Events) != 0 {
+		t.Errorf("empty case: expected account_data.events to be empty [], got %d entries", len(resp.AccountData.Events))
+	}
+}
+
+// ─── Story 9-24 Test 4 [P0]: DB error → HTTP 200 + account_data.events:[] ────
+//
+// AC6 — when ListGlobalAccountData returns an error, the sync response MUST still
+// be returned with HTTP 200. account_data.events MUST be [] (graceful degradation).
+// The DB error is logged as WARN but not surfaced to the client.
+//
+// Given: mockGlobalAccountDataDB.ListGlobalAccountData returns an error
+// When:  GET /_matrix/client/v3/sync
+// Then:  HTTP 200; "account_data":{"events":[]}; no 500/503 returned
+//
+// RED: MUST FAIL until injectGlobalAccountData degrades gracefully on error.
+func TestGetSync_GlobalAccountData_DBError_Degrades(t *testing.T) {
+	coreMock := &mockGetSyncCoreClient{
+		resp: &pb.GetInitialSyncResponse{
+			SinceToken: "next_batch_dberr_global",
+			Rooms:      []*pb.SyncRoom{},
+		},
+	}
+
+	globalDB := &mockGlobalAccountDataDB{
+		err: fmt.Errorf("simulated DB connection error for Story 9-24 AC6"),
+	}
+
+	handler, makeToken := buildAuthedSyncGlobalAccountDataHandler(t, coreMock, globalDB)
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync", nil)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	// AC6: MUST return 200 even when DB fails — error must not be surfaced to client
+	if w.Code != http.StatusOK {
+		t.Fatalf("AC6 DB error degradation: expected HTTP 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	rawBody := w.Body.String()
+
+	// AC6: account_data must still be present with empty events []
+	var resp struct {
+		AccountData *struct {
+			Events []json.RawMessage `json:"events"`
+		} `json:"account_data"`
+	}
+	if err := json.NewDecoder(strings.NewReader(rawBody)).Decode(&resp); err != nil {
+		t.Fatalf("AC6: failed to decode response: %v", err)
+	}
+	if resp.AccountData == nil {
+		t.Fatal("AC6: \"account_data\" must be present in response even on DB error (graceful degradation)")
+	}
+	if resp.AccountData.Events == nil {
+		t.Fatal("AC6: account_data.events must be [] (not null) on DB error")
+	}
+	if len(resp.AccountData.Events) != 0 {
+		t.Errorf("AC6: expected account_data.events to be [] on DB error, got %d entries", len(resp.AccountData.Events))
+	}
+}
+
+// ─── Story 9-24 Test 5 [P1]: Per-room account_data unaffected by global data ─
+//
+// AC4 regression — global account data (room_id = '') MUST NOT appear in per-room
+// sections (rooms.join.{roomId}.account_data.events). Per-room account data MUST
+// remain unaffected.
+//
+// Given: globalDB returns [{type:"m.direct"}]; per-room account data for !room1
+//        is provided via AccountDataDB (m.fully_read)
+// When:  GET /_matrix/client/v3/sync
+// Then:
+//   - top-level account_data.events contains ONLY m.direct
+//   - rooms.join.!room1.account_data.events contains ONLY m.fully_read
+//   - m.direct does NOT appear in rooms.join.!room1.account_data.events
+//   - m.fully_read does NOT appear in top-level account_data.events
+//
+// RED: MUST FAIL until both GlobalAccountDataDB and AccountDataDB are wired
+// independently and their results are placed in the correct sections.
+func TestGetSync_PerRoomAccountData_NotAffectedByGlobal(t *testing.T) {
+	roomID := "!room1:test.local"
+	stateContentBytes := []byte(`{"membership":"join"}`)
+	directContent := json.RawMessage(`{"@bob:nebu.test":["!room1:nebu.test"]}`)
+	fullyReadContent := json.RawMessage(`{"event_id":"$some-event-id"}`)
+
+	coreMock := &mockGetSyncCoreClient{
+		resp: &pb.GetInitialSyncResponse{
+			SinceToken: "next_batch_regression_ac4",
+			Rooms: []*pb.SyncRoom{
+				{
+					RoomId: roomID,
+					StateEvents: []*pb.SyncRoomStateEvent{
+						{
+							Type:     "m.room.member",
+							StateKey: "@test-sub-123:test.local",
+							Content:  stateContentBytes,
+							Sender:   "@test-sub-123:test.local",
+						},
+					},
+					TimelineEvents: []*pb.Event{},
+					Limited:        false,
+				},
+			},
+		},
+	}
+
+	// Global DB returns m.direct (must go to top-level account_data only)
+	globalDB := &mockGlobalAccountDataDB{
+		rows: []GlobalAccountDataRow{
+			{EventType: "m.direct", Content: directContent},
+		},
+	}
+
+	// Per-room DB returns m.fully_read for !room1 (must go to rooms.join only)
+	perRoomDB := &mockSyncAccountDataDB{
+		dataByRoomAndType: map[string]map[string]json.RawMessage{
+			roomID: {
+				"m.fully_read": fullyReadContent,
+			},
+		},
+	}
+
+	oidcSrv, privateKey := setupOIDCServer(t)
+	t.Cleanup(oidcSrv.Close)
+	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
+
+	cfg := GetSyncConfig{
+		CoreClient:          coreMock,
+		ServerName:          "test.local",
+		AccountDataDB:       perRoomDB,       // per-room account data
+		GlobalAccountDataDB: globalDB,        // Story 9-24: global account data
+	}
+	handler := NewGetSyncHandler(cfg)
+
+	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+		http.HandlerFunc(handler.GetSync),
+	)
+	makeToken := func() string {
+		return signJWT(t, oidcSrv.URL, privateKey, time.Now().Add(time.Hour), nil)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync", nil)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	authed.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("AC4 regression: expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		AccountData struct {
+			Events []struct {
+				Type string `json:"type"`
+			} `json:"events"`
+		} `json:"account_data"`
+		Rooms struct {
+			Join map[string]struct {
+				AccountData struct {
+					Events []struct {
+						Type string `json:"type"`
+					} `json:"events"`
+				} `json:"account_data"`
+			} `json:"join"`
+		} `json:"rooms"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("AC4 regression: failed to decode response: %v", err)
+	}
+
+	// AC4: top-level account_data.events must contain m.direct and NOT m.fully_read
+	var topLevelTypes []string
+	for _, ev := range resp.AccountData.Events {
+		topLevelTypes = append(topLevelTypes, ev.Type)
+	}
+	foundMDirect := false
+	for _, evType := range topLevelTypes {
+		if evType == "m.direct" {
+			foundMDirect = true
+		}
+		if evType == "m.fully_read" {
+			t.Errorf("AC4 regression: m.fully_read (per-room) must NOT appear in top-level account_data.events, got: %v", topLevelTypes)
+		}
+	}
+	if !foundMDirect {
+		t.Errorf("AC4 regression: m.direct (global) must appear in top-level account_data.events, got: %v", topLevelTypes)
+	}
+
+	// AC4: per-room account_data must contain m.fully_read and NOT m.direct
+	roomData, ok := resp.Rooms.Join[roomID]
+	if !ok {
+		t.Fatalf("AC4 regression: room %q must appear in rooms.join", roomID)
+	}
+	var perRoomTypes []string
+	for _, ev := range roomData.AccountData.Events {
+		perRoomTypes = append(perRoomTypes, ev.Type)
+	}
+	foundFullyRead := false
+	for _, evType := range perRoomTypes {
+		if evType == "m.fully_read" {
+			foundFullyRead = true
+		}
+		if evType == "m.direct" {
+			t.Errorf("AC4 regression: m.direct (global) must NOT appear in rooms.join.%s.account_data.events, got: %v", roomID, perRoomTypes)
+		}
+	}
+	if !foundFullyRead {
+		t.Errorf("AC4 regression: m.fully_read (per-room) must appear in rooms.join.%s.account_data.events, got: %v", roomID, perRoomTypes)
+	}
+}
+
+// mockSyncAccountDataDB is a minimal AccountDataDB mock for Story 9-24 regression tests.
+// It supports per-room lookups by (roomID, eventType).
+// Returns ErrAccountDataNotFound when the key does not exist.
+type mockSyncAccountDataDB struct {
+	dataByRoomAndType map[string]map[string]json.RawMessage
+}
+
+func (m *mockSyncAccountDataDB) GetAccountData(_ context.Context, _, roomID, eventType string) (json.RawMessage, error) {
+	if m.dataByRoomAndType == nil {
+		return nil, ErrAccountDataNotFound
+	}
+	byType, ok := m.dataByRoomAndType[roomID]
+	if !ok {
+		return nil, ErrAccountDataNotFound
+	}
+	content, ok := byType[eventType]
+	if !ok {
+		return nil, ErrAccountDataNotFound
+	}
+	return content, nil
+}
+
+func (m *mockSyncAccountDataDB) PutAccountData(_ context.Context, _, _, _ string, _ json.RawMessage) error {
+	return nil
+}

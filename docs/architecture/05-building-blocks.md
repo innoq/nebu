@@ -28,7 +28,11 @@ gateway/
     │   │                          JWT session to GetSyncDeltaRequest (GAP-SINCE-IGNORED, Story 9-22);
     │   │                          buildLeaveRooms uses sinceMs filter (GAP-LEAVE-ONCE) +
     │   │                          forgotten_rooms exclusion (GAP-FORGET); queryForgottenRoomIDs +
-    │   │                          querySinceTsMs helpers
+    │   │                          querySinceTsMs helpers; top-level AccountData field in syncResponse
+    │   │                          populated via injectGlobalAccountData on all 4 sync paths
+    │   │                          (initial, incremental, FallbackToInitial, buffer fast-path — Story 9-24)
+    │   ├── account_data.go     ← AccountDataDB + GlobalAccountDataDB interfaces; GlobalAccountDataRow
+    │   │                          struct; AccountDataHandler (GET/PUT global + room-scoped endpoints)
     │   ├── send.go             ← PUT /rooms/{id}/send/...
     │   ├── rooms.go            ← POST /createRoom, POST /join/{id}
     │   ├── room_moderation.go  ← POST /forget inserts into forgotten_rooms (GAP-FORGET, Story 9-19)
@@ -110,6 +114,16 @@ core/apps/
 > sync checkpoint, preventing parallel sessions on different devices from overwriting each other's
 > `since` token.
 
+> **Global account data in sync responses (Story 9-24):** `syncResponse` gains a top-level
+> `AccountData syncAccountDataSection` field (JSON key `account_data`, never omitted) that carries
+> global `m.*` account data events per Matrix spec §6.3. The `GlobalAccountDataDB` interface
+> (defined in `gateway/internal/matrix/account_data.go`) exposes a single method
+> `ListGlobalAccountData(ctx, userID) ([]GlobalAccountDataRow, error)`. The implementation
+> `PostgresAccountDataDB.ListGlobalAccountData` (in `gateway/internal/db/account_data_store.go`)
+> queries `room_account_data WHERE room_id = ''` inside a `withUserDB` transaction to satisfy the
+> RLS policy (GUC `app.user_id`). The buffer fast-path returns an empty `account_data.events` slice
+> (no DB call) — global account data changes are rare and are picked up on the next full sync cycle.
+
 ## Level 2 — Proto / gRPC Contract
 
 ```
@@ -141,4 +155,4 @@ Key gRPC services: `SendEvent`, `CreateRoom`, `JoinRoom`, `GetMessages`, `GetRoo
 | `user_id` | string | Matrix user ID |
 | `device_id` | string | When set, only invalidates this device; when empty, invalidates all user sessions |
 
-_Source: `_bmad-output/planning-artifacts/architecture.md`, §Project Structure & Boundaries, §Complete Project Directory Structure; Story 9-19 (room_moderation.go, sync.go, event_dispatcher/server.ex, forgotten_rooms migration); Story 9-22 (per-device sync tokens, device_id in proto)_
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Project Structure & Boundaries, §Complete Project Directory Structure; Story 9-19 (room_moderation.go, sync.go, event_dispatcher/server.ex, forgotten_rooms migration); Story 9-22 (per-device sync tokens, device_id in proto); Story 9-24 (GlobalAccountDataDB interface, ListGlobalAccountData, top-level account_data in syncResponse)_

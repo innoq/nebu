@@ -1,16 +1,21 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-06
-# [9-22] 2026-05-06T18:00Z committed ✓ (4 MAJOR fixed 3 cycles+Code CLEAN)
-# [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
-# [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
-# [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
+# [9-24] 2026-05-06T20:30Z code-review → CLEAN (0 MAJOR, 5 MINOR, 7 INFO)
+# [9-24] 2026-05-06T20:10Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration (RLS fix applied)
+# [9-24] 2026-05-06T19:45Z dev-story → DONE (6/6 unit tests green, no regressions)
+# [9-23] 2026-05-06T19:10Z committed ✓ (ATDD+Code CLEAN)
 # [9-23] 2026-05-06T19:00Z code-review → CLEAN (0 MAJOR, 0 MINOR, 6 INFO)
 # [9-23] 2026-05-06T18:50Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-23] 2026-05-06T18:20Z test-review → CLEAN (0 MAJOR, 3 MINOR)
 # [9-23] 2026-05-06T18:10Z atdd → 7 failing tests
 # [9-23] 2026-05-06T18:05Z pipeline started
-story: "9-23"
+# [9-22] 2026-05-06T18:00Z committed ✓ (4 MAJOR fixed 3 cycles+Code CLEAN)
+# [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
+# [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
+# [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
+# [9-24] 2026-05-06T19:15Z pipeline started
+story: "9-24"
 current_step: "arc42-update"
 completed:
   - create-story
@@ -21,4 +26,4 @@ completed:
   - code-review
 cycle_count: 0
 blocked_reason: null
-last_updated: "2026-05-06T18:05Z"
+last_updated: "2026-05-06T19:45Z"

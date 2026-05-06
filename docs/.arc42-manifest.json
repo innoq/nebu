@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-05-06T17:22:31Z",
-  "generator": "bmad-maintain-arc42 skill (Story 9-23)",
+  "generated_at": "2026-05-06T18:05:00Z",
+  "generator": "bmad-maintain-arc42 skill (Story 9-24)",
   "source_artifacts": [
     "_bmad-output/planning-artifacts/architecture.md",
     "_bmad-output/planning-artifacts/prd.md",
@@ -37,13 +37,13 @@
     },
     "docs/architecture/05-building-blocks.md": {
       "editable": false,
-      "generated_at": "2026-05-06T12:30:00Z",
+      "generated_at": "2026-05-06T18:05:00Z",
       "source": "_bmad-output/planning-artifacts/architecture.md",
       "arc42_section": "05 Building Block View"
     },
     "docs/architecture/06-runtime.md": {
       "editable": false,
-      "generated_at": "2026-05-06T17:22:31Z",
+      "generated_at": "2026-05-06T18:05:00Z",
       "source": "_bmad-output/planning-artifacts/architecture.md",
       "arc42_section": "06 Runtime View"
     },

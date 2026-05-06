@@ -264,6 +264,57 @@ Matrix Client      Go Gateway                                  PostgreSQL
 **Performance note:** The five queries run sequentially per invite room. For typical instances
 with few pending invites (< 10) this is negligible. Batching is deferred to Phase 2.
 
+## Scenario 3g: Top-Level Global Account Data Injection (GAP-GLOBAL-ACCOUNT-DATA, Story 9-24)
+
+Matrix spec §6.3 requires a top-level `account_data` key in every sync response carrying global
+`m.*` events (e.g. `m.push_rules`, `m.ignored_user_list`). Without this field, Element Web
+cannot apply push rule customisations or ignored-user lists set by the client.
+
+All four sync paths now call `injectGlobalAccountData` before serialising the response:
+
+| Sync path | Call site in `sync.go` |
+|---|---|
+| Initial sync (`GetInitialSync`) | `GetSync` handler |
+| Incremental delta sync (`GetSyncDelta`) | `handleIncrementalSync` — normal delta path |
+| Fallback-to-initial (`FallbackToInitial = true`) | `handleIncrementalSync` — fallback branch |
+| Buffer fast-path (local ring buffer drain) | `buildResponseFromBufferedEvents` — returns empty section (no DB call) |
+
+The buffer fast-path intentionally skips the DB query: global account data changes are rare, and
+the next non-buffered sync cycle will deliver them. This keeps the buffer hot path at zero extra
+DB queries.
+
+```
+Matrix Client      Go Gateway                                  PostgreSQL
+     │                   │                                          │
+     │  GET /sync        │                                          │
+     │──────────────────►│                                          │
+     │                   │  injectGlobalAccountData(userID)         │
+     │                   │  withUserDB → SET app.user_id = $1       │
+     │                   │  SELECT event_type, content              │
+     │                   │    FROM room_account_data                │
+     │                   │    WHERE user_id=$1 AND room_id=''       │
+     │                   │─────────────────────────────────────────►│
+     │                   │  ◄── [(m.push_rules, {...}), ...]        │
+     │                   │                                          │
+     │  200 {                                                        │
+     │    "account_data": {                                          │
+     │      "events": [                                              │
+     │        {"type": "m.push_rules", "content": {...}},           │
+     │        ...                                                    │
+     │      ]},                                                      │
+     │    "rooms": {...}, ...}                                       │
+     │◄──────────────────│                                          │
+```
+
+**RLS invariant:** `ListGlobalAccountData` uses `withUserDB` to set the `app.user_id` GUC inside
+a transaction before querying. The RLS policy on `room_account_data` (migration 000033) filters
+by `current_setting('app.user_id', true)`. Without this GUC the policy silently returns zero rows.
+
+**Empty-section guarantee:** `syncResponse.AccountData` is typed `syncAccountDataSection`
+(not a pointer) and never carries `omitempty`. Even when no global account data exists, the
+response always contains `"account_data": {"events": []}` — a JSON-null or missing key would
+break `matrix-js-sdk`.
+
 ## Scenario 4: Compliance Four-Eyes Export Flow
 
 ```
@@ -281,4 +332,4 @@ On restart, Horde re-discovers Room GenServers across the cluster via CRDT regis
 Session Manager GenServer reads since-token checkpoints from PostgreSQL (no cold-sync forced on clients).
 EventBus stream re-connects to Go Gateway after exponential backoff (max 30s + jitter).
 
-_Source: `_bmad-output/planning-artifacts/architecture.md`, §Implementation Patterns, §API & Kommunikation, §Resilienz & Selbst-Heilung; Story 9-19 (GAP-JOIN-PUBLIC, GAP-LEAVE-ONCE, GAP-FORGET); Story 9-22 (GAP-SINCE-IGNORED — per-device sync tokens, per-device logout cleanup); Story 9-23 (GAP-INVITE-STATE — invite_state stripped state enrichment: join_rules, avatar, create)_
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Implementation Patterns, §API & Kommunikation, §Resilienz & Selbst-Heilung; Story 9-19 (GAP-JOIN-PUBLIC, GAP-LEAVE-ONCE, GAP-FORGET); Story 9-22 (GAP-SINCE-IGNORED — per-device sync tokens, per-device logout cleanup); Story 9-23 (GAP-INVITE-STATE — invite_state stripped state enrichment: join_rules, avatar, create); Story 9-24 (GAP-GLOBAL-ACCOUNT-DATA — top-level account_data delivery in all 4 sync paths, RLS-aware ListGlobalAccountData)_

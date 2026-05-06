@@ -28,22 +28,24 @@ type GetSyncCoreClient interface {
 
 // GetSyncHandler handles GET /_matrix/client/v3/sync.
 type GetSyncHandler struct {
-	coreClient    GetSyncCoreClient
-	serverName    string
-	timeout       time.Duration
-	buffer        *buffer.MessageBuffer // Story 4-16: local event buffer (nil = disabled)
-	db            *sql.DB               // for pending invite queries
-	accountDataDB AccountDataDB         // Story 7-24: per-room account data (nil = disabled)
+	coreClient          GetSyncCoreClient
+	serverName          string
+	timeout             time.Duration
+	buffer              *buffer.MessageBuffer  // Story 4-16: local event buffer (nil = disabled)
+	db                  *sql.DB                // for pending invite queries
+	accountDataDB       AccountDataDB          // Story 7-24: per-room account data (nil = disabled)
+	globalAccountDataDB GlobalAccountDataDB    // Story 9-24: top-level global account data (nil = disabled)
 }
 
 // GetSyncConfig holds dependencies for NewGetSyncHandler.
 type GetSyncConfig struct {
-	CoreClient    GetSyncCoreClient
-	ServerName    string
-	Timeout       time.Duration         // gRPC call timeout; defaults to 5s if zero
-	Buffer        *buffer.MessageBuffer // Story 4-16: optional local event buffer
-	DB            *sql.DB               // optional: enables rooms.invite in sync response
-	AccountDataDB AccountDataDB         // Story 7-24: optional, enables account_data in sync response
+	CoreClient          GetSyncCoreClient
+	ServerName          string
+	Timeout             time.Duration         // gRPC call timeout; defaults to 5s if zero
+	Buffer              *buffer.MessageBuffer // Story 4-16: optional local event buffer
+	DB                  *sql.DB               // optional: enables rooms.invite in sync response
+	AccountDataDB       AccountDataDB         // Story 7-24: optional, enables account_data in sync response
+	GlobalAccountDataDB GlobalAccountDataDB   // Story 9-24: optional, enables top-level account_data in sync response
 }
 
 // NewGetSyncHandler constructs a GetSyncHandler from the provided config.
@@ -53,12 +55,13 @@ func NewGetSyncHandler(cfg GetSyncConfig) *GetSyncHandler {
 		timeout = 5 * time.Second
 	}
 	return &GetSyncHandler{
-		coreClient:    cfg.CoreClient,
-		serverName:    cfg.ServerName,
-		timeout:       timeout,
-		buffer:        cfg.Buffer,
-		db:            cfg.DB,
-		accountDataDB: cfg.AccountDataDB,
+		coreClient:          cfg.CoreClient,
+		serverName:          cfg.ServerName,
+		timeout:             timeout,
+		buffer:              cfg.Buffer,
+		db:                  cfg.DB,
+		accountDataDB:       cfg.AccountDataDB,
+		globalAccountDataDB: cfg.GlobalAccountDataDB,
 	}
 }
 
@@ -346,9 +349,10 @@ func (h *GetSyncHandler) buildInviteRooms(ctx context.Context, userID string) ma
 // ─── JSON response structs ─────────────────────────────────────────────────────
 
 type syncResponse struct {
-	NextBatch string       `json:"next_batch"`
-	Rooms     syncRooms    `json:"rooms"`
-	Presence  syncPresence `json:"presence"`
+	NextBatch   string                 `json:"next_batch"`
+	Rooms       syncRooms              `json:"rooms"`
+	Presence    syncPresence           `json:"presence"`
+	AccountData syncAccountDataSection `json:"account_data"` // Story 9-24: §6.3 top-level global account data — MUST NOT use omitempty
 	// Story 5-29e Bug 4: Element Web's matrix-js-sdk treats these three fields as
 	// mandatory. Missing device_one_time_keys_count is interpreted as 0, triggering
 	// an OTK-upload + keys/query polling loop. Always emit empty values (never nil
@@ -490,6 +494,7 @@ func (h *GetSyncHandler) GetSync(w http.ResponseWriter, r *http.Request) {
 			Leave: h.buildLeaveRooms(r.Context(), userID, 0),
 		},
 		Presence:                 syncPresence{Events: []interface{}{}},
+		AccountData:              h.injectGlobalAccountData(r.Context(), userID), // Story 9-24: §6.3 top-level global account data
 		DeviceOneTimeKeysCount:   otkCount,
 		DeviceUnusedFallbackKeys: fallbackKeys,
 		DeviceLists:              deviceLists,
@@ -616,6 +621,7 @@ func (h *GetSyncHandler) handleIncrementalSync(w http.ResponseWriter, r *http.Re
 				Leave: h.buildLeaveRooms(r.Context(), userID, 0),
 			},
 			Presence:                 syncPresence{Events: []interface{}{}},
+			AccountData:              h.injectGlobalAccountData(r.Context(), userID), // Story 9-24: §6.3 global account data in FallbackToInitial path
 			DeviceOneTimeKeysCount:   otkCount,
 			DeviceUnusedFallbackKeys: fallbackKeys,
 			DeviceLists:              deviceLists,
@@ -655,6 +661,7 @@ func (h *GetSyncHandler) handleIncrementalSync(w http.ResponseWriter, r *http.Re
 			Leave:  leaveRooms,
 		},
 		Presence:                 syncPresence{Events: []interface{}{}},
+		AccountData:              h.injectGlobalAccountData(r.Context(), userID), // Story 9-24: §6.3 global account data in delta sync path
 		DeviceOneTimeKeysCount:   otkCount,
 		DeviceUnusedFallbackKeys: fallbackKeys,
 		DeviceLists:              deviceLists,
@@ -684,6 +691,9 @@ func (h *GetSyncHandler) buildResponseFromBufferedEvents(events []*pb.Event, sin
 		joinedRooms[ev.RoomId] = room
 	}
 	// Buffer-based fast path: skip invite/leave queries (caller handles full sync).
+	// Story 9-24: AccountData is set to empty section here — no DB call in the buffer
+	// hot path. Global account data changes are rare; the next full sync cycle will
+	// pick them up. This keeps the buffer fast-path O(0) DB queries.
 	otkCount, fallbackKeys, deviceLists := emptySyncDeviceFields()
 	return syncResponse{
 		NextBatch: sinceToken,
@@ -693,6 +703,7 @@ func (h *GetSyncHandler) buildResponseFromBufferedEvents(events []*pb.Event, sin
 			Leave:  map[string]interface{}{},
 		},
 		Presence:                 syncPresence{Events: []interface{}{}},
+		AccountData:              syncAccountDataSection{Events: []syncAccountDataEvent{}}, // Story 9-24: empty section — buffer fast-path skips DB call
 		DeviceOneTimeKeysCount:   otkCount,
 		DeviceUnusedFallbackKeys: fallbackKeys,
 		DeviceLists:              deviceLists,
@@ -764,6 +775,28 @@ func (h *GetSyncHandler) injectAccountData(ctx context.Context, userID string, j
 		room.AccountData = syncAccountDataSection{Events: events}
 		joinedRooms[roomID] = room
 	}
+}
+
+// injectGlobalAccountData queries global account data (room_id = '') for userID
+// and returns a syncAccountDataSection for the top-level account_data field.
+// Degrades gracefully to an empty events slice on DB error (AC6).
+// The section is always returned with Events initialized to a non-nil slice
+// so that "account_data":{"events":[]} is always present in the JSON response
+// (never absent, never null — Matrix spec §6.3).
+func (h *GetSyncHandler) injectGlobalAccountData(ctx context.Context, userID string) syncAccountDataSection {
+	if h.globalAccountDataDB == nil {
+		return syncAccountDataSection{Events: []syncAccountDataEvent{}}
+	}
+	rows, err := h.globalAccountDataDB.ListGlobalAccountData(ctx, userID)
+	if err != nil {
+		slog.Warn("injectGlobalAccountData: DB error", "user_id", userID, "err", err)
+		return syncAccountDataSection{Events: []syncAccountDataEvent{}}
+	}
+	events := make([]syncAccountDataEvent, 0, len(rows))
+	for _, r := range rows {
+		events = append(events, syncAccountDataEvent{Type: r.EventType, Content: r.Content})
+	}
+	return syncAccountDataSection{Events: events}
 }
 
 // fetchRoomAccountDataEvents queries all account data rows for (userID, roomID) and

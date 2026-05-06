@@ -1,5 +1,6 @@
 # generated: 2026-03-20
 # last_updated: 2026-05-06
+# story 9-24 done (pipeline: ATDD+Dev+Test-Review 2 MAJOR fixed+Code-Review CLEAN+RLS fix in CI; security_review not-needed): 2026-05-06
 # story 9-23 done (pipeline: ATDD+Dev+Test-Review CLEAN+Code-Review CLEAN; security_review not-needed): 2026-05-06
 # story 9-22 done (pipeline: 4 MAJOR fixed 3 cycles+Code CLEAN; security_review not-needed): 2026-05-06
 # story 9-21 done (pipeline: ATDD+Dev+Test-Review CLEAN+Code-Review CLEAN; security_review not-needed): 2026-05-06
@@ -744,7 +745,7 @@ development_status:
   9-23-sync-gap-invite-state-stripped-events: done
   9-25-sync-gap-buffer-next-batch: backlog
   9-22-sync-gap-since-ignored-per-device-tokens: done
-  9-24-sync-gap-global-account-data: backlog
+  9-24-sync-gap-global-account-data: done
   epic-9-retrospective: optional
 
   # ─────────────────────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 ---
-status: ready-for-dev
+status: review
 epic: 9
 story: 24
 security_review: not-needed
@@ -7,7 +7,7 @@ security_review: not-needed
 
 # Story 9.24: GAP-GLOBAL-ACCOUNT-DATA — Top-Level account_data Missing from Sync Response
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -291,3 +291,53 @@ Add corresponding step definition in `gateway/test/integration/account_data_step
 - `buildLeaveRooms` (direct QueryContext without withUserDB): `gateway/internal/matrix/sync.go` line ~120
 - Existing Godog step for global PUT: `kaiPutsGlobalAccountData` in `gateway/test/integration/account_data_steps_test.go`
 - `syncAccountDataSection` struct: `gateway/internal/matrix/sync.go` line ~330
+
+---
+
+## Dev Agent Record
+
+### Implementation Notes
+
+Story 9-24 implemented in a single cycle (2026-05-06). All 6 acceptance tests (5 unit + 1 FallbackToInitial) pass. No regressions in `make test-unit-go` or `make test-unit-elixir`.
+
+**Changes made:**
+
+1. **`gateway/internal/matrix/account_data.go`** — Added `GlobalAccountDataRow` struct and `GlobalAccountDataDB` interface with `ListGlobalAccountData(ctx, userID)` method.
+
+2. **`gateway/internal/matrix/sync.go`** — Extended `GetSyncHandler` and `GetSyncConfig` with `globalAccountDataDB GlobalAccountDataDB` field. Added `AccountData syncAccountDataSection \`json:"account_data"\`` to `syncResponse` (no omitempty — must always be present). Added `injectGlobalAccountData` helper that degrades gracefully on DB error (returns empty slice, logs WARN). Called `injectGlobalAccountData` in: initial sync path, delta sync path, FallbackToInitial path. Buffer fast-path returns empty `syncAccountDataSection{Events: []syncAccountDataEvent{}}` without DB call (O(0) hot path preserved).
+
+3. **`gateway/internal/db/account_data_store.go`** — Added `ListGlobalAccountData` method to `PostgresAccountDataDB` using direct `QueryContext` pattern (mirrors `buildLeaveRooms`). Includes `rows.Err()` check. Added compile-time interface check: `var _ matrix.GlobalAccountDataDB = (*PostgresAccountDataDB)(nil)`.
+
+4. **`gateway/cmd/gateway/main.go`** — Extracted `postgresAccountDataDB` variable and wired it as both `AccountDataDB` and `GlobalAccountDataDB` in `GetSyncConfig` (same instance, two interfaces).
+
+5. **`gateway/internal/matrix/sync_test.go`** — Fixed ATDD test bug: tests used `json.NewDecoder(w.Body).Decode(...)` then `w.Body.String()` for AC5 check — but `bytes.Buffer` is consumed by Decode. Fixed to capture `rawBody := w.Body.String()` before decode, then use `strings.NewReader(rawBody)` for decode (pattern consistent with rest of test file). Affected tests: `TestGetSync_GlobalAccountData_InitialSync`, `TestGetSync_GlobalAccountData_IncrementalSync`, `TestGetSync_GlobalAccountData_IncrementalSync_FallbackToInitial`.
+
+**No new migrations needed** — global account data already stored with `room_id = ''` in migration 000029.
+
+**Godog scenario and step definitions** for AC3 (`Sync_GlobalAccountData_AfterPut`) were already committed by ATDD gate.
+
+### Completion Notes
+
+- AC1: initial sync includes top-level `account_data.events` — ✅
+- AC2: incremental sync includes top-level `account_data.events` — ✅
+- AC2 (FallbackToInitial): FallbackToInitial path also injects global account data — ✅
+- AC3: Godog scenario `Sync_GlobalAccountData_AfterPut` covers end-to-end PUT→sync flow — ✅ (step defs already present)
+- AC4: per-room account_data unaffected — ✅ (`TestGetSync_PerRoomAccountData_NotAffectedByGlobal`)
+- AC5: `syncResponse.AccountData` field with `json:"account_data"` (no omitempty) — ✅
+- AC6: DB error degrades to empty `account_data.events`, HTTP 200 — ✅ (`TestGetSync_GlobalAccountData_DBError_Degrades`)
+
+---
+
+## File List
+
+- `gateway/internal/matrix/account_data.go` — added `GlobalAccountDataRow` struct and `GlobalAccountDataDB` interface
+- `gateway/internal/matrix/sync.go` — extended handler/config, added `AccountData` to `syncResponse`, added `injectGlobalAccountData`, called in all 3 sync paths, buffer fast-path empty section
+- `gateway/internal/db/account_data_store.go` — added `ListGlobalAccountData`, compile-time interface check
+- `gateway/cmd/gateway/main.go` — wired `GlobalAccountDataDB` in `GetSyncConfig`
+- `gateway/internal/matrix/sync_test.go` — fixed rawBody-before-decode bug in 3 ATDD tests (tests were already staged)
+
+---
+
+## Change Log
+
+- 2026-05-06: Story 9-24 implemented — top-level `account_data` field added to sync response. All 6 unit tests green, no Elixir regressions.
