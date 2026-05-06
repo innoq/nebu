@@ -1324,4 +1324,204 @@ defmodule Nebu.EventDispatcher.SyncTest do
       assert %Core.GetSyncDeltaResponse{} = response
     end
   end
+
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # Story 9-20: GAP-PREV-BATCH — prev_batch correctness in fetch_delta_rooms
+  # ═══════════════════════════════════════════════════════════════════════════════
+  #
+  # These tests FAIL before the story 9-20 fix because fetch_delta_rooms always
+  # sets prev_batch: "" even when limited: true.
+  #
+  # AC1: limited:true (≥20 events) → prev_batch == event_id of oldest event in batch
+  # AC2: limited:false (<20 events) → prev_batch == ""  (regression guard)
+  # AC3: no new events → room NOT included in response (existing behaviour guard)
+
+  describe "Server.get_sync_delta/2 — prev_batch correctness (Story 9-20)" do
+    test "AC1: sets prev_batch to oldest event_id when limited: true (20 events)" do
+      alice = "@alice:test.local"
+      room_id = "!prevbatch1:test.local"
+
+      :ets.new(:sync_delta_pg_store_config, [:named_table, :public, :set])
+
+      on_exit(fn ->
+        if :ets.info(:sync_delta_pg_store_config) != :undefined do
+          :ets.delete(:sync_delta_pg_store_config)
+        end
+      end)
+
+      Application.put_env(:event_dispatcher, :pg_store_module, SyncDeltaFakePgStore)
+      Application.put_env(:event_dispatcher, :messages_db_module, SyncDeltaFakeDB)
+      Application.put_env(:event_dispatcher, :rooms_db_module, SyncDeltaFakeDB)
+
+      on_exit(fn ->
+        Application.delete_env(:event_dispatcher, :pg_store_module)
+        Application.delete_env(:event_dispatcher, :messages_db_module)
+        Application.delete_env(:event_dispatcher, :rooms_db_module)
+      end)
+
+      :ok = setup_room_with_member(room_id, alice)
+
+      SyncDeltaFakeDB.insert_event(%{
+        "event_id" => "$pb_anchor",
+        "room_id" => room_id,
+        "sender" => alice,
+        "event_type" => "m.room.message",
+        "content" => %{"msgtype" => "m.text", "body" => "anchor"},
+        "origin_server_ts" => 1_700_000_000_000
+      })
+
+      # Seed exactly 20 new events — triggers limited: true
+      for idx <- 1..20 do
+        SyncDeltaFakeDB.insert_event(%{
+          "event_id" => "$pb_new#{idx}",
+          "room_id" => room_id,
+          "sender" => alice,
+          "event_type" => "m.room.message",
+          "content" => %{"msgtype" => "m.text", "body" => "msg #{idx}"},
+          "origin_server_ts" => 1_700_000_001_000 + idx * 1000
+        })
+      end
+
+      :ets.insert(:sync_delta_pg_store_config,
+        {:get_since_token_response,
+         {:ok, %{since_token: "s_pb_anchor", last_event_id: "$pb_anchor"}}})
+
+      request = %Core.GetSyncDeltaRequest{
+        user_id: alice,
+        since_token: "s_pb_anchor",
+        timeout_ms: 5000
+      }
+
+      response = Server.get_sync_delta(request, build_stream())
+      room = Enum.find(response.rooms, fn r -> r.room_id == room_id end)
+
+      assert room != nil, "expected room #{room_id} in response"
+
+      assert room.limited == true,
+             "expected limited=true when 20 events returned, got: #{inspect(room.limited)}"
+
+      # $pb_new1 has the lowest origin_server_ts among the 20 new events —
+      # it is the correct backward-pagination anchor (Spec §6.3.3).
+      assert room.prev_batch == "$pb_new1",
+             "expected prev_batch=$pb_new1 (oldest event in batch), got: #{inspect(room.prev_batch)}"
+    end
+
+    test "AC2: sets prev_batch to empty string when limited: false (fewer than 20 events)" do
+      alice = "@alice:test.local"
+      room_id = "!prevbatch2:test.local"
+
+      :ets.new(:sync_delta_pg_store_config, [:named_table, :public, :set])
+
+      on_exit(fn ->
+        if :ets.info(:sync_delta_pg_store_config) != :undefined do
+          :ets.delete(:sync_delta_pg_store_config)
+        end
+      end)
+
+      Application.put_env(:event_dispatcher, :pg_store_module, SyncDeltaFakePgStore)
+      Application.put_env(:event_dispatcher, :messages_db_module, SyncDeltaFakeDB)
+      Application.put_env(:event_dispatcher, :rooms_db_module, SyncDeltaFakeDB)
+
+      on_exit(fn ->
+        Application.delete_env(:event_dispatcher, :pg_store_module)
+        Application.delete_env(:event_dispatcher, :messages_db_module)
+        Application.delete_env(:event_dispatcher, :rooms_db_module)
+      end)
+
+      :ok = setup_room_with_member(room_id, alice)
+
+      SyncDeltaFakeDB.insert_event(%{
+        "event_id" => "$pb2_anchor",
+        "room_id" => room_id,
+        "sender" => alice,
+        "event_type" => "m.room.message",
+        "content" => %{"msgtype" => "m.text", "body" => "anchor"},
+        "origin_server_ts" => 1_700_000_000_000
+      })
+
+      # Seed 5 new events — not enough to trigger limited: true
+      for idx <- 1..5 do
+        SyncDeltaFakeDB.insert_event(%{
+          "event_id" => "$pb2_ev#{idx}",
+          "room_id" => room_id,
+          "sender" => alice,
+          "event_type" => "m.room.message",
+          "content" => %{"msgtype" => "m.text", "body" => "msg #{idx}"},
+          "origin_server_ts" => 1_700_000_001_000 + idx * 1000
+        })
+      end
+
+      :ets.insert(:sync_delta_pg_store_config,
+        {:get_since_token_response,
+         {:ok, %{since_token: "s_pb2_anchor", last_event_id: "$pb2_anchor"}}})
+
+      request = %Core.GetSyncDeltaRequest{
+        user_id: alice,
+        since_token: "s_pb2_anchor",
+        timeout_ms: 5000
+      }
+
+      response = Server.get_sync_delta(request, build_stream())
+      room = Enum.find(response.rooms, fn r -> r.room_id == room_id end)
+
+      assert room != nil, "expected room #{room_id} in response"
+
+      assert room.limited == false,
+             "expected limited=false when 5 events returned, got: #{inspect(room.limited)}"
+
+      assert room.prev_batch == "",
+             "expected prev_batch=\"\" when not limited, got: #{inspect(room.prev_batch)}"
+    end
+
+    test "AC3: room not included in response when no new events (empty list guard)" do
+      alice = "@alice:test.local"
+      room_id = "!prevbatch3:test.local"
+
+      :ets.new(:sync_delta_pg_store_config, [:named_table, :public, :set])
+
+      on_exit(fn ->
+        if :ets.info(:sync_delta_pg_store_config) != :undefined do
+          :ets.delete(:sync_delta_pg_store_config)
+        end
+      end)
+
+      Application.put_env(:event_dispatcher, :pg_store_module, SyncDeltaFakePgStore)
+      Application.put_env(:event_dispatcher, :messages_db_module, SyncDeltaFakeDB)
+      Application.put_env(:event_dispatcher, :rooms_db_module, SyncDeltaFakeDB)
+
+      on_exit(fn ->
+        Application.delete_env(:event_dispatcher, :pg_store_module)
+        Application.delete_env(:event_dispatcher, :messages_db_module)
+        Application.delete_env(:event_dispatcher, :rooms_db_module)
+      end)
+
+      :ok = setup_room_with_member(room_id, alice)
+
+      # Only the anchor event — no newer events exist
+      SyncDeltaFakeDB.insert_event(%{
+        "event_id" => "$pb3_anchor",
+        "room_id" => room_id,
+        "sender" => alice,
+        "event_type" => "m.room.message",
+        "content" => %{"msgtype" => "m.text", "body" => "anchor"},
+        "origin_server_ts" => 1_700_000_000_000
+      })
+
+      :ets.insert(:sync_delta_pg_store_config,
+        {:get_since_token_response,
+         {:ok, %{since_token: "s_pb3_anchor", last_event_id: "$pb3_anchor"}}})
+
+      request = %Core.GetSyncDeltaRequest{
+        user_id: alice,
+        since_token: "s_pb3_anchor",
+        timeout_ms: 100
+      }
+
+      response = Server.get_sync_delta(request, build_stream())
+      room_ids = Enum.map(response.rooms, & &1.room_id)
+
+      refute room_id in room_ids,
+             "expected room #{room_id} NOT in response when no new events"
+    end
+  end
 end

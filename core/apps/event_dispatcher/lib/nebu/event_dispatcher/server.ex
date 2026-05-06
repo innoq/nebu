@@ -1250,14 +1250,18 @@ defmodule Nebu.EventDispatcher.Server do
             state = room_registry_module().get_state(room_id)
             state_events = build_state_events(state, room_id)
             timeline_events = Enum.map(events, &event_map_to_proto/1)
+            limited = length(events) >= 20
+            # When limited, the oldest event's event_id is the backward-pagination
+            # cursor (Spec §6.3.3). Client passes this to GET /messages?from=<token>&dir=b.
+            prev_batch = if limited, do: List.first(events)["event_id"] || "", else: ""
 
             [
               %Core.SyncRoom{
                 room_id: room_id,
                 state_events: dedup_member_state_events(state_events, timeline_events),
                 timeline_events: timeline_events,
-                limited: length(events) >= 20,
-                prev_batch: ""
+                limited: limited,
+                prev_batch: prev_batch
               }
             ]
           catch
