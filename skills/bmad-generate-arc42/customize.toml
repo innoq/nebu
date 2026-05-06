@@ -1,0 +1,57 @@
+# bmad-generate-arc42 Skill Configuration
+# arc42 Section Map — BMAD planning artifact sections → arc42 output files
+
+[workflow]
+skill_name = "bmad-generate-arc42"
+output_language = "English"
+manifest_path = "docs/.arc42-manifest.json"
+
+[workflow.arc42_section_map]
+"01-intro"             = { source = "prd.md",           section = "Goals|User-Personas|FRs overview",                output = "docs/architecture/README.md",                editable = false }
+"02-constraints"       = { source = "architecture.md",  section = "Constraints|Technical Constraints",              output = "docs/architecture/02-constraints.md",         editable = false }
+"03-context"           = { source = "architecture.md",  section = "Context|Three-tier|Architektur-Grenzen",         output = "docs/architecture/03-context.md",             editable = false }
+"04-solution-strategy" = { source = "architecture.md",  section = "Core Architectural Decisions|Key Decisions",     output = "docs/architecture/04-solution-strategy.md",   editable = false }
+"05-building-blocks"   = { source = "architecture.md",  section = "Project Structure|Boundaries",                   output = "docs/architecture/05-building-blocks.md",     editable = false }
+"06-runtime"           = { source = "architecture.md",  section = "Implementation Patterns|gRPC flow",              output = "docs/architecture/06-runtime.md",             editable = false }
+"07-deployment"        = { source = "architecture.md",  section = "Docker Compose|Build-Container-Strategie",       output = "docs/architecture/07-deployment.md",          editable = false }
+"08-concepts"          = { source = "architecture.md",  section = "Cross-cutting|Auth|Crypto|Audit",                output = "docs/architecture/08-concepts.md",            editable = false }
+"09-decisions"         = { source = "CLAUDE.md",        section = "Resolved Architecture Decisions",                output = "docs/architecture/09-decisions.md",           editable = false }
+"10-quality"           = { source = "prd.md",           section = "Non-Functional Requirements",                    output = "docs/architecture/10-quality.md",             editable = false }
+"11-risks"             = { source = "sprint-status.yaml", section = "open items|deferred work|retro",               output = "docs/architecture/11-risks.md",               editable = false }
+"12-glossary"          = { source = "CLAUDE.md",        section = "Tech Stack|key terms",                           output = "docs/architecture/12-glossary.md",            editable = false }
+
+[workflow.adr_map]
+"ADR-001" = { source = "architecture.md", section = "Elixir/OTP|libcluster",              output = "docs/architecture/adr/ADR-001-elixir-otp.md",                  editable = false }
+"ADR-002" = { source = "architecture.md", section = "No Redis|ETS|pg Process Groups",     output = "docs/architecture/adr/ADR-002-no-redis-nats.md",               editable = false }
+"ADR-003" = { source = "architecture.md", section = "Content-Hash Event-ID",              output = "docs/architecture/adr/ADR-003-content-hash-event-id.md",       editable = false }
+"ADR-004" = { source = "architecture.md", section = "Horde Registry|DynamicSupervisor",  output = "docs/architecture/adr/ADR-004-horde-registry.md",              editable = false }
+"ADR-005" = { source = "architecture.md", section = "gRPC Server-Streaming|EventBus",    output = "docs/architecture/adr/ADR-005-grpc-eventbus.md",               editable = false }
+"ADR-006" = { source = "architecture.md", section = "message_buffer|drain strategy",     output = "docs/architecture/adr/ADR-006-message-buffer-drain.md",        editable = false }
+"ADR-007" = { source = "architecture.md", section = "Ed25519|X25519|two key pairs",      output = "docs/architecture/adr/ADR-007-ed25519-x25519-keypairs.md",     editable = false }
+"ADR-008" = { source = "architecture.md", section = "node registration|PSK|mTLS",        output = "docs/architecture/adr/ADR-008-node-registration-psk.md",       editable = false }
+"ADR-009" = { source = "architecture.md", section = "OpenAPI Spec-First|oapi-codegen",   output = "docs/architecture/adr/ADR-009-openapi-spec-first.md",          editable = false }
+"ADR-010" = { source = "placeholder",     section = "FTS strategy",                      output = "docs/architecture/adr/ADR-010-fts-strategy.md",                editable = true,  status = "Proposed" }
+"ADR-011" = { source = "placeholder",     section = "Managed E2EE Key Escrow",           output = "docs/architecture/adr/ADR-011-managed-e2ee-key-escrow.md",     editable = true,  status = "Proposed" }
+
+[workflow.extra_files]
+"getting-started"    = { source = "README.md",                   section = "Quick Start",       output = "docs/getting-started.md",    editable = true  }
+"matrix-api-scope"   = { source = "gateway/cmd/gateway/main.go", section = "mux.Handle routes", output = "docs/matrix-api-scope.md",   editable = false }
+"roadmap"            = { source = "epics.md",                    section = "Epic status",        output = "docs/roadmap.md",            editable = false }
+
+[workflow.manifest]
+# editable: false files are safe to overwrite on every skill run
+# editable: true files are seeded once; subsequent runs skip unless --force is passed
+skip_editable_on_update = true
+force_flag = "--force"
+
+[workflow.trigger_conditions]
+# Conditions that should trigger re-running this skill:
+# - PR modifies _bmad-output/planning-artifacts/architecture.md
+# - PR modifies _bmad-output/planning-artifacts/prd.md
+# - End of each epic (alongside /bmad-testarch-trace)
+# - Manual invocation: /bmad-generate-arc42
+paths_watch = [
+    "_bmad-output/planning-artifacts/architecture.md",
+    "_bmad-output/planning-artifacts/prd.md",
+    "_bmad-output/planning-artifacts/epics.md"
+]
