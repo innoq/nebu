@@ -1,0 +1,8 @@
+# Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
+# Do not edit manually during a pipeline run.
+story: null
+current_step: null
+completed: []
+cycle_count: 0
+blocked_reason: null
+last_updated: null

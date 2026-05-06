@@ -1,0 +1,17 @@
+module,skill,display-name,menu-code,description,action,args,phase,after,before,required,output-location,outputs
+nebu,nebu-setup,Module Setup,SU,Install and configure the Nebu Dev module — checks dependencies and scaffolds agent sanctums,configure,,anytime,,,true,_bmad/config.yaml,config.yaml + config.user.yaml + pipeline-state.yaml
+nebu,nebu-pipeline,Pipeline — New Story,PL,Run the full TDD-first development lifecycle for a new story,run,,anytime,nebu-setup:configure,,false,_bmad/nebu,committed story + updated arc42
+nebu,nebu-pipeline,Pipeline — Resume,PR,Continue a pipeline interrupted by context limit or user break,resume,--resume,anytime,,,false,_bmad/nebu,resumed from checkpoint
+nebu,nebu-pipeline,Pipeline — Bug Fix,PB,Write failing regression test first then fix — for bugs found in review,bug,--bug <description>,anytime,nebu-setup:configure,,false,_bmad/nebu,committed bugfix
+nebu,nebu-agent-oracle,Oracle — Spec Lookup,OS,Fetch and interpret Matrix CS API spec for a specific endpoint or event type,spec-lookup,,anytime,,,false,,spec findings with section citations
+nebu,nebu-agent-oracle,Oracle — Compliance Review,OC,Review a Matrix feature implementation against spec MUST requirements,compliance-review,,anytime,,,false,,compliance report with pass/fail per requirement
+nebu,nebu-agent-oracle,Oracle — Dev Consultation,OD,Get spec guidance before implementing a Matrix API feature,dev-support,,anytime,,,false,,go/no-go with spec reasoning
+nebu,nebu-agent-kassandra,Kassandra — Story Review,KS,Security review of staged diff — CRITICAL/HIGH block the commit,security-review,,anytime,nebu-pipeline:run,,false,output_folder,security-review.md
+nebu,nebu-agent-kassandra,Kassandra — Epic Review,KE,Full epic security audit — mandatory at epic end before retrospective,epic-review,,anytime,,,false,output_folder,epic-N-security-review-DATE.md
+nebu,nebu-agent-kassandra,Kassandra — Consultation,KX,Quick ad-hoc security check on a specific piece of code,consultation,,anytime,,,false,,inline findings with severity
+nebu,nebu-agent-testing,Tank — CI Gate,TG,Run full CI suite (build + unit + E2E + integration) against a fresh stack,ci-gate,,anytime,,,false,,pass/fail per suite + actionable bug list
+nebu,nebu-agent-testing,Tank — Selective Run,TR,Run a single test suite by name,selective-run,[suite-name],anytime,,,false,,suite results
+nebu,nebu-agent-testing,Tank — CI Config,TC,Review or update .gitlab-ci.yml to match current project structure,ci-config,,anytime,,,false,,.gitlab-ci.yml
+nebu,nebu-agent-ux,Sati — Design Review,UD,Assess Admin UI components for accessibility, consistency, and DaisyUI best practices,design-review,,anytime,,,false,,findings: violations (blocking) + advisories
+nebu,nebu-agent-ux,Sati — Accessibility Audit,UA,Audit Admin UI pages against PRD accessibility requirements and WCAG 2.1 AA,accessibility-audit,,anytime,,,false,,audit report with blocking violations flagged
+nebu,nebu-agent-ux,Sati — Playwright Support,UP,Write or review Playwright specs for Admin UI flows,playwright-support,,anytime,,,false,,playwright test file or review findings
