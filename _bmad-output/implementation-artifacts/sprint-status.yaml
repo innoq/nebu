@@ -1,5 +1,6 @@
 # generated: 2026-03-20
 # last_updated: 2026-05-06
+# epic-9 SEC Gate 2 final (stories 9-19..9-25) — CLEAN (0 HIGH, 2 MEDIUM non-blocking: forgotten_rooms RLS + querySinceTsMs device-unaware; follow-ups needed in epic-10): 2026-05-06
 # story 9-25 done (pipeline: ATDD+Dev+Code-Review CLEAN 1 cycle (3 MINOR doc fixes); security_review not-needed): 2026-05-06
 # story 9-24 done (pipeline: ATDD+Dev+Test-Review 2 MAJOR fixed+Code-Review CLEAN+RLS fix in CI; security_review not-needed): 2026-05-06
 # story 9-23 done (pipeline: ATDD+Dev+Test-Review CLEAN+Code-Review CLEAN; security_review not-needed): 2026-05-06
@@ -720,7 +721,7 @@ development_status:
   # Epic 9: Post-MVP API & Admin Completeness
   # Pre-Epic-TODO: — (keine ADR-Vorarbeit nötig)
   # ─────────────────────────────────────────────────────────────────────────
-  epic-9: in-progress
+  epic-9: done
   9-1-admin-grpc-rpcs-core-user-room-management: done
   9-2-admin-ui-users-api-integration: done
   9-3-admin-ui-rooms-api-integration: done

@@ -1,6 +1,11 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-06
+# [9-25] 2026-05-06T21:45Z committed ✓ (ATDD+Code CLEAN 1 cycle)
+# [9-25] 2026-05-06T21:35Z code-review → CLEAN cycle 1 (3 MINOR doc fixes)
+# [9-25] 2026-05-06T21:20Z code-review → 5 MINOR → cycle 1
+# [9-25] 2026-05-06T21:00Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
+# [9-25] 2026-05-06T20:50Z pipeline started
 # [9-24] 2026-05-06T20:45Z committed ✓ (ATDD 2 MAJOR fixed+Code CLEAN+RLS fix)
 # [9-24] 2026-05-06T20:30Z code-review → CLEAN (0 MAJOR, 5 MINOR, 7 INFO)
 # [9-24] 2026-05-06T20:10Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration (RLS fix applied)
@@ -16,20 +21,9 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-# [9-25] 2026-05-06T21:35Z code-review → CLEAN cycle 1 (3 MINOR doc fixes)
-# [9-25] 2026-05-06T21:20Z code-review → 5 MINOR → cycle 1
-# [9-25] 2026-05-06T21:00Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
-# [9-25] 2026-05-06T20:50Z pipeline started
-story: "9-25"
-current_step: "commit"
-completed:
-  - create-story
-  - atdd
-  - test-review
-  - dev-story
-  - ci-gate
-  - code-review
-  - arc42-update
-cycle_count: 1
+story: null
+current_step: null
+completed: []
+cycle_count: 0
 blocked_reason: null
-last_updated: "2026-05-06T21:40Z"
+last_updated: "2026-05-06T21:45Z"
