@@ -42,13 +42,16 @@ blocked_reason: null
 last_updated: "2026-05-06T14:23Z"
 ```
 
-**State update procedure (run before and after every step):**
+**State updates use `pipeline_state.py` — never manually read or rewrite the file:**
 
-1. **Read** the current `pipeline-state.yaml` — never write from scratch, always update in place.
-2. **Prepend** the new log line directly below the `# last_updated:` comment line (newest entry at the top).
-3. **Update** the `# last_updated:` comment to `# last_updated: [TODAY]`.
-4. **Keep every existing `#` comment line unchanged** — they are the permanent pipeline journal and must never be removed.
-5. **Update** the YAML fields (`story`, `current_step`, `completed`, `cycle_count`, `blocked_reason`, `last_updated`).
+```bash
+python3 skills/nebu-pipeline/scripts/pipeline_state.py \
+  --file _bmad-output/nebu/pipeline-state.yaml \
+  --step NEXT_STEP --done COMPLETED_STEP \
+  --log "[STORY_ID] TIMESTAMP step → outcome"
+```
+
+Flags: `--story ID` · `--step STEP` · `--done STEP` (repeatable) · `--cycles N` · `--blocked REASON|null` · `--timestamp ISO` · `--commit` (zero YAML fields, keep all log lines). Combine in one call.
 
 ## Pipeline Log
 
@@ -64,7 +67,13 @@ Each step prepends exactly one log line on completion (or skip). The commit step
 
 ## Activation
 
-**`nebu-pipeline`** (no args) — New story. Ask the user for the story description or story file. Read the existing `pipeline-state.yaml` (keep all existing log lines), then prepend `# [STORY_ID] TIMESTAMP pipeline started` and reset the YAML fields for the new story run.
+**`nebu-pipeline`** (no args) — New story. Ask the user for the story description or story file. Then:
+```bash
+python3 skills/nebu-pipeline/scripts/pipeline_state.py \
+  --file _bmad-output/nebu/pipeline-state.yaml \
+  --story STORY_ID --step create-story \
+  --log "[STORY_ID] TIMESTAMP pipeline started"
+```
 
 **`nebu-pipeline --resume`** — Read `pipeline-state.yaml`. Print current state (story, step, cycle count). Ask user to confirm. Skip all completed steps and continue from `current_step`.
 
@@ -95,10 +104,24 @@ rtk git status
 
 Note the created story file as `STORY_FILE`.
 
-**State:** Set `current_step: atdd`, append `create-story` to completed.
-**Log:** `# [STORY_ID] TIMESTAMP create-story → [STORY_FILE basename]`
+```bash
+python3 skills/nebu-pipeline/scripts/pipeline_state.py \
+  --file _bmad-output/nebu/pipeline-state.yaml \
+  --step atdd --done create-story \
+  --log "[STORY_ID] TIMESTAMP create-story → [STORY_FILE basename]"
+```
 
 Show: `✓ Step 1: Story created → [STORY_FILE]`
+
+---
+
+### Step 1c: Classify Story
+
+```bash
+STORY_FLAGS=$(python3 skills/nebu-pipeline/scripts/classify_story.py --story [STORY_FILE])
+```
+
+Parse and store: `MATRIX=[.matrix]`, `UI=[.ui]`, `SEC_REVIEW=[.security_review]`.
 
 ---
 
@@ -106,14 +129,9 @@ Show: `✓ Step 1: Story created → [STORY_FILE]`
 
 **Agent:** `nebu-agent-oracle` | **Model:** sonnet | **Fresh context**
 
-**Detection:**
-```bash
-rtk grep -i "_matrix/\|m\.room\.\|m\.login\|event_type\|txnId\|sync.*since\|matrix.*spec" [STORY_FILE]
-```
+**If `MATRIX=false`:** `⏭ Step 1b: Oracle Gate skipped — not a Matrix feature.` Set `ORACLE_CONTEXT = null`.
 
-**If no Matrix content:** `⏭ Step 1b: Oracle Gate skipped — not a Matrix feature.` Set `ORACLE_CONTEXT = null`.
-
-**If Matrix feature detected:**
+**If `MATRIX=true`:**
 ```
 Read and follow skills/nebu-agent-oracle/SKILL.md.
 Load references/spec-lookup.md and references/test-guidance.md.
@@ -129,7 +147,12 @@ Return compact Markdown (max 40 lines). Lists only, no prose. Then finish.
 
 Save output as `ORACLE_CONTEXT`.
 
-**Log:** `# [STORY_ID] TIMESTAMP oracle-gate → spec context captured` (or `→ skipped (no Matrix feature)`)
+```bash
+python3 skills/nebu-pipeline/scripts/pipeline_state.py \
+  --file _bmad-output/nebu/pipeline-state.yaml \
+  --log "[STORY_ID] TIMESTAMP oracle-gate → spec context captured"
+# or: --log "[STORY_ID] TIMESTAMP oracle-gate → skipped (no Matrix feature)"
+```
 
 Show: `✓ Step 1b: Oracle consulted — Matrix spec context captured.`
 
@@ -156,8 +179,13 @@ as separate failing tests.
 Finish after generating the tests.
 ```
 
-**State:** Set `current_step: test-review`, append `atdd` to completed.
-**Log:** `# [STORY_ID] TIMESTAMP atdd → N failing tests` (or `→ skipped (infra)`)
+```bash
+python3 skills/nebu-pipeline/scripts/pipeline_state.py \
+  --file _bmad-output/nebu/pipeline-state.yaml \
+  --step test-review --done atdd \
+  --log "[STORY_ID] TIMESTAMP atdd → N failing tests"
+# or: --log "[STORY_ID] TIMESTAMP atdd → skipped (infra)"
+```
 
 Show: `✓ Step 2: Failing acceptance tests generated.`
 
@@ -199,8 +227,13 @@ Type "continue" to proceed anyway, or fix the gaps and restart Step 2.
 ```
 Stop and wait.
 
-**State:** Set `current_step: dev-story`, append `test-review` to completed.
-**Log:** `# [STORY_ID] TIMESTAMP test-review → CLEAN (0 MAJOR)` (or `→ N MAJOR [user continued]`)
+```bash
+python3 skills/nebu-pipeline/scripts/pipeline_state.py \
+  --file _bmad-output/nebu/pipeline-state.yaml \
+  --step dev-story --done test-review \
+  --log "[STORY_ID] TIMESTAMP test-review → CLEAN (0 MAJOR)"
+# or: --log "[STORY_ID] TIMESTAMP test-review → N MAJOR [user continued]"
+```
 
 Show: `✓ Step 3: Pre-dev test quality verified.`
 
@@ -238,8 +271,12 @@ rtk git add .
 rtk git status
 ```
 
-**State:** Set `current_step: ci-gate`, append `dev-story` to completed.
-**Log:** `# [STORY_ID] TIMESTAMP dev-story → done (cycle [CYCLE_COUNT])`
+```bash
+python3 skills/nebu-pipeline/scripts/pipeline_state.py \
+  --file _bmad-output/nebu/pipeline-state.yaml \
+  --step ci-gate --done dev-story \
+  --log "[STORY_ID] TIMESTAMP dev-story → done (cycle [CYCLE_COUNT])"
+```
 
 Show: `✓ Step 4: Implementation complete. Cycle: [CYCLE_COUNT]`
 
@@ -279,8 +316,13 @@ Type "continue" to skip the CI gate (not recommended).
 ```
 Stop and wait.
 
-**State:** Set `current_step: code-review`, append `ci-gate` to completed.
-**Log:** `# [STORY_ID] TIMESTAMP ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration` (or `→ FAILED: [failing suite]`)
+```bash
+python3 skills/nebu-pipeline/scripts/pipeline_state.py \
+  --file _bmad-output/nebu/pipeline-state.yaml \
+  --step code-review --done ci-gate \
+  --log "[STORY_ID] TIMESTAMP ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration"
+# or: --log "[STORY_ID] TIMESTAMP ci-gate → FAILED: [failing suite]"
+```
 
 Show: `✓ Step 5: CI gate passed.`
 
@@ -290,13 +332,12 @@ Show: `✓ Step 5: CI gate passed.`
 
 **Agent:** `nebu-agent-ux` | **Model:** sonnet | **Fresh context** | **Conditional**
 
-**Condition:**
+**Condition:** Use `UI` flag from Step 1c and check staged files:
 ```bash
-rtk grep "^ui: true" [STORY_FILE] 2>/dev/null
 rtk git diff --staged --name-only | grep "gateway/internal/admin/"
 ```
 
-**If neither matches:** `⏭ Step 5b: UX Gate skipped — not a UI story.`
+**If `UI=false` and no admin/ files staged:** `⏭ Step 5b: UX Gate skipped — not a UI story.`
 
 **If UI story detected:**
 ```
@@ -322,7 +363,13 @@ Fix violations before code-review. Type "continue" to proceed with open violatio
 ```
 Stop and wait.
 
-**Log:** `# [STORY_ID] TIMESTAMP ux-gate → CLEAN` (or `→ skipped (no UI)` / `→ N violations [user continued]`)
+```bash
+python3 skills/nebu-pipeline/scripts/pipeline_state.py \
+  --file _bmad-output/nebu/pipeline-state.yaml \
+  --log "[STORY_ID] TIMESTAMP ux-gate → CLEAN"
+# or: --log "[STORY_ID] TIMESTAMP ux-gate → skipped (no UI)"
+# or: --log "[STORY_ID] TIMESTAMP ux-gate → N violations [user continued]"
+```
 
 Show: `✓ Step 5b: UX audit passed.`
 
@@ -395,12 +442,21 @@ Stop and wait.
 
 **If no findings (or INFO only):** `✓ Step 6: Code-review clean.`
 
-**State:** Set `current_step: security-review`, append `code-review` to completed, update `cycle_count`.
-**Log:** one of:
-- `# [STORY_ID] TIMESTAMP code-review → CLEAN (cycle [CYCLE_COUNT])`
-- `# [STORY_ID] TIMESTAMP code-review → N MINOR → cycle [CYCLE_COUNT+1]`
-- `# [STORY_ID] TIMESTAMP code-review → N MAJOR blocked`
-- `# [STORY_ID] TIMESTAMP code-review → accepted (N MAJOR: [reason])`
+```bash
+# CLEAN path:
+python3 skills/nebu-pipeline/scripts/pipeline_state.py \
+  --file _bmad-output/nebu/pipeline-state.yaml \
+  --step security-review --done code-review \
+  --log "[STORY_ID] TIMESTAMP code-review → CLEAN (cycle [CYCLE_COUNT])"
+
+# MINOR path (cycle back to dev-story, increment cycles):
+python3 skills/nebu-pipeline/scripts/pipeline_state.py \
+  --file _bmad-output/nebu/pipeline-state.yaml \
+  --step dev-story --cycles [CYCLE_COUNT+1] \
+  --log "[STORY_ID] TIMESTAMP code-review → N MINOR → cycle [CYCLE_COUNT+1]"
+
+# MAJOR blocked / accepted: use matching --log text, adjust --step accordingly
+```
 
 ---
 
@@ -408,17 +464,10 @@ Stop and wait.
 
 **Agent:** `nebu-agent-kassandra` | **Model:** opus | **Fresh context** | **Conditional**
 
-**Decision:** Read story frontmatter `security_review` field.
+**Decision:** Use `SEC_REVIEW` flag from Step 1c.
 - `required` → run
 - `optional` → ask: "Story marked optional — run security review now? [Y/n]"
 - `not-needed` → `⏭ Step 7: Security review skipped (flagged not-needed).`
-- **Flag missing** → auto-classify:
-
-```bash
-rtk git diff --staged --name-only
-```
-
-Mark `required` if any staged file is under: `gateway/internal/auth/`, `gateway/internal/middleware/`, `gateway/internal/admin/`, `gateway/internal/db/`, `core/apps/signature/`, `core/apps/permissions/`, new routes in `gateway/cmd/gateway/main.go`, new SQL migrations under `gateway/migrations/`, or Elixir `.ex` files using `:crypto`.
 
 **If required:**
 ```
@@ -454,8 +503,14 @@ rtk git add .
 ```
 Show: `✓ Step 7: Kassandra — clean.`
 
-**State:** Set `current_step: arc42-update`, append `security-review` to completed.
-**Log:** `# [STORY_ID] TIMESTAMP security-review → Kassandra CLEAN` (or `→ skipped (not-needed)` / `→ CRITICAL blocked` / `→ HIGH [blocking_severity=HIGH]`)
+```bash
+python3 skills/nebu-pipeline/scripts/pipeline_state.py \
+  --file _bmad-output/nebu/pipeline-state.yaml \
+  --step arc42-update --done security-review \
+  --log "[STORY_ID] TIMESTAMP security-review → Kassandra CLEAN"
+# or: --log "[STORY_ID] TIMESTAMP security-review → skipped (not-needed)"
+# or: --log "[STORY_ID] TIMESTAMP security-review → CRITICAL blocked"
+```
 
 ---
 
@@ -507,8 +562,13 @@ Stop and wait.
 rtk git add docs/
 ```
 
-**State:** Set `current_step: commit`, append `arc42-update` to completed.
-**Log:** `# [STORY_ID] TIMESTAMP arc42-update → done` (or `→ no arch changes`)
+```bash
+python3 skills/nebu-pipeline/scripts/pipeline_state.py \
+  --file _bmad-output/nebu/pipeline-state.yaml \
+  --step commit --done arc42-update \
+  --log "[STORY_ID] TIMESTAMP arc42-update → done"
+# or: --log "[STORY_ID] TIMESTAMP arc42-update → no arch changes"
+```
 
 Show: `✓ Step 8: Arc42 documentation updated.`
 
@@ -519,18 +579,13 @@ Show: `✓ Step 8: Arc42 documentation updated.`
 **Pre-commit: update sprint-status.yaml**
 
 ```bash
-rtk read _bmad-output/implementation-artifacts/sprint-status.yaml
+python3 skills/nebu-pipeline/scripts/update_sprint_status.py \
+  --file _bmad-output/implementation-artifacts/sprint-status.yaml \
+  --story [STORY_ID] \
+  --summary "[SUMMARY]"
 ```
 
-1. Set story to `done` in the `development_status` block.
-2. Update `last_updated` (both the comment line and the YAML field) to today's date.
-3. Insert a new comment line directly under `last_updated`:
-
-   ```
-   # story {STORY_ID} done (pipeline: {SUMMARY}): {DATE}
-   ```
-
-   Summary examples: `ATDD+Dev+Code CLEAN`, `2 MINOR fixed — 1 cycle`, `HIGH fixed, Kassandra 2 rounds`, `3 cycles — GenServer restart coverage`
+Summary examples: `ATDD+Dev+Code CLEAN`, `2 MINOR fixed — 1 cycle`, `HIGH fixed, Kassandra 2 rounds`
 
 ```bash
 rtk git add _bmad-output/implementation-artifacts/sprint-status.yaml
@@ -548,14 +603,16 @@ No `Co-Authored-By` line.
 
 **Write final log entry and clear YAML fields:**
 
-Read the file. Prepend one new line directly below `# last_updated:`:
-```
-# [STORY_ID] TIMESTAMP committed ✓ ([COMPACT_SUMMARY])
+```bash
+python3 skills/nebu-pipeline/scripts/pipeline_state.py \
+  --file _bmad-output/nebu/pipeline-state.yaml \
+  --commit \
+  --log "[STORY_ID] TIMESTAMP committed ✓ ([COMPACT_SUMMARY])"
 ```
 
 Compact summary examples: `ATDD+Code CLEAN`, `2 MINOR fixed 1 cycle+Kassandra CLEAN`, `MAJOR fixed 2 cycles+Kassandra HIGH resolved`
 
-Then zero **only** the YAML fields — every comment and log line stays intact:
+The script prepends the log line and zeroes only the YAML fields — every comment/log line stays. Result:
 ```yaml
 story: null
 current_step: null
