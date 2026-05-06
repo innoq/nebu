@@ -41,4 +41,19 @@ defmodule Nebu.Session.SessionSupervisor do
   def destroy_session(user_id) do
     Nebu.Session.PgStore.invalidate_session(user_id)
   end
+
+  @doc """
+  Invalidates the `(user_id, device_id)` session by delegating to
+  `Nebu.Session.PgStore.invalidate_session/2`.
+
+  Deletes the `sync_tokens` row and the `sessions` row for this specific device
+  in a single PostgreSQL transaction (AC4, Story 9-22). Does NOT evict from ETS —
+  other devices for the same user may still be active.
+
+  Returns `:ok` on success, `{:error, reason}` if the DB transaction fails.
+  """
+  @spec destroy_session(String.t(), String.t()) :: :ok | {:error, term()}
+  def destroy_session(user_id, device_id) do
+    Nebu.Session.PgStore.invalidate_session(user_id, device_id)
+  end
 end

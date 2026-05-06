@@ -517,10 +517,12 @@ func (h *GetSyncHandler) handleIncrementalSync(w http.ResponseWriter, r *http.Re
 	defer cancel()
 	grpcCtx := coregrpc.WithUserMetadata(ctx, userID, systemRole)
 
+	deviceID, _ := r.Context().Value(middleware.ContextKeyDeviceID).(string)
 	deltaResp, err := h.coreClient.GetSyncDelta(grpcCtx, &pb.GetSyncDeltaRequest{
 		UserId:     userID,
 		SinceToken: sinceToken,
 		TimeoutMs:  timeoutMs,
+		DeviceId:   deviceID,
 	})
 	if err != nil {
 		st, _ := status.FromError(err)

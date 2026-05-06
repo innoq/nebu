@@ -711,10 +711,18 @@ defmodule Nebu.EventDispatcher.SyncTest do
   # The ETS table :sync_test_pg_store_calls is already created in setup/0 above.
 
   defmodule SyncDeltaFakePgStore do
-    # Configurable response for get_since_token/1.
+    # Configurable response for get_since_token/1 and get_since_token/2.
     # Set via: :ets.insert(:sync_delta_pg_store_config, {:get_since_token_response, result})
     # Default: {:error, :not_found}
     def get_since_token(_user_id) do
+      case :ets.lookup(:sync_delta_pg_store_config, :get_since_token_response) do
+        [{_, response}] -> response
+        [] -> {:error, :not_found}
+      end
+    end
+
+    # Per-device variant (Story 9-22): delegates to the same configurable response.
+    def get_since_token(_user_id, _device_id) do
       case :ets.lookup(:sync_delta_pg_store_config, :get_since_token_response) do
         [{_, response}] -> response
         [] -> {:error, :not_found}
@@ -727,7 +735,18 @@ defmodule Nebu.EventDispatcher.SyncTest do
       :ok
     end
 
+    # Per-device variant (Story 9-22): records the 4-arg call form.
+    def persist_since_token(user_id, device_id, since_token, last_event_id) do
+      idx = :ets.info(:sync_test_pg_store_calls, :size)
+      :ets.insert(:sync_test_pg_store_calls, {{:call, idx}, {user_id, device_id, since_token, last_event_id}})
+      :ok
+    end
+
     def invalidate_session(_user_id) do
+      :ok
+    end
+
+    def invalidate_session(_user_id, _device_id) do
       :ok
     end
 
@@ -1096,6 +1115,78 @@ defmodule Nebu.EventDispatcher.SyncTest do
 
       assert is_binary(response.since_token) and response.since_token != "",
              "expected non-empty since_token in fallback response"
+    end
+  end
+
+  # ─── Story 9-22 MAJOR-T: get_sync_delta — token mismatch → fallback ──────────
+  #
+  # AC2 (Story 9-22): when get_since_token returns a stored token that does NOT
+  # match the since_token sent by the client, the server returns a full initial
+  # sync with fallback_to_initial: true (stale/replayed token detected).
+  #
+  # Given: SyncDeltaFakePgStore.get_since_token returns {:ok, %{since_token: "stored_v1", …}};
+  #        @alice:test.local is a member of !delta_mismatch:test.local with 2 events
+  # When:  Server.get_sync_delta/2 called with since_token: "stale_client_token" (different)
+  # Then:  response.fallback_to_initial is true;
+  #        response.rooms is non-empty (full sync);
+  #        response.since_token is a freshly-minted token (not "stored_v1")
+
+  describe "Server.get_sync_delta/2 — client token mismatch falls back to initial sync" do
+    test "returns full initial sync with fallback_to_initial: true when stored token differs from client token" do
+      alice = "@alice:test.local"
+      room_id = "!delta_mismatch:test.local"
+
+      :ets.new(:sync_delta_pg_store_config, [:named_table, :public, :set])
+
+      on_exit(fn ->
+        if :ets.info(:sync_delta_pg_store_config) != :undefined do
+          :ets.delete(:sync_delta_pg_store_config)
+        end
+      end)
+
+      Application.put_env(:event_dispatcher, :pg_store_module, SyncDeltaFakePgStore)
+      Application.put_env(:event_dispatcher, :messages_db_module, SyncDeltaFakeDB)
+      Application.put_env(:event_dispatcher, :rooms_db_module, SyncDeltaFakeDB)
+
+      on_exit(fn ->
+        Application.delete_env(:event_dispatcher, :pg_store_module)
+        Application.delete_env(:event_dispatcher, :messages_db_module)
+        Application.delete_env(:event_dispatcher, :rooms_db_module)
+      end)
+
+      :ok = setup_room_with_member(room_id, alice)
+      seed_events(room_id, alice, 2)
+
+      # The server has stored "stored_v1" for this user; the client sends a different token.
+      :ets.insert(
+        :sync_delta_pg_store_config,
+        {:get_since_token_response, {:ok, %{since_token: "stored_v1", last_event_id: nil}}}
+      )
+
+      request = %Core.GetSyncDeltaRequest{
+        user_id: alice,
+        since_token: "stale_client_token",
+        timeout_ms: 0
+      }
+
+      response = Server.get_sync_delta(request, build_stream())
+
+      assert %Core.GetSyncDeltaResponse{} = response,
+             "expected GetSyncDeltaResponse struct, got: #{inspect(response)}"
+
+      assert response.fallback_to_initial == true,
+             "expected fallback_to_initial=true on token mismatch, got: #{inspect(response.fallback_to_initial)}"
+
+      room_ids = Enum.map(response.rooms, & &1.room_id)
+
+      assert room_id in room_ids,
+             "expected #{room_id} in fallback response rooms (full sync), got: #{inspect(room_ids)}"
+
+      assert is_binary(response.since_token) and response.since_token != "",
+             "expected non-empty since_token in fallback response"
+
+      assert response.since_token != "stored_v1",
+             "expected a freshly-minted since_token, not the stored value"
     end
   end
 
@@ -1841,6 +1932,104 @@ defmodule Nebu.EventDispatcher.SyncTest do
 
       assert alice_in_state,
              "expected alice's m.room.member still in state_events (alice not in timeline)"
+    end
+  end
+
+  # ─── Story 9-22 MINOR-3: incremental sync with device_id calls persist_since_token/4 ──
+  #
+  # AC1 (Story 9-22): when get_sync_delta runs a successful incremental sync with
+  # device_id != "", it must call persist_since_token/4 (user_id, device_id,
+  # new_token, last_event_id), NOT the 3-arity legacy form.
+  #
+  # Given: SyncDeltaFakePgStore returns a matching token for (user_id, device_id);
+  #        @alice:test.local is in !delta_device:test.local with 1 new event;
+  #        request.device_id = "DEVICE_D1"
+  # When:  Server.get_sync_delta/2 is called
+  # Then:  SyncDeltaFakePgStore.recorded_calls() contains a 4-tuple
+  #        {user_id, "DEVICE_D1", new_token, last_event_id} — not a 3-tuple
+
+  describe "Server.get_sync_delta/2 — incremental sync with device_id calls persist_since_token/4 (MINOR-3)" do
+    test "calls persist_since_token/4 with (user_id, device_id, token, event_id) when device_id != \"\"" do
+      alice = "@alice:test.local"
+      room_id = "!delta_device:test.local"
+      device_id = "DEVICE_D1"
+
+      :ets.new(:sync_delta_pg_store_config, [:named_table, :public, :set])
+
+      on_exit(fn ->
+        if :ets.info(:sync_delta_pg_store_config) != :undefined do
+          :ets.delete(:sync_delta_pg_store_config)
+        end
+      end)
+
+      Application.put_env(:event_dispatcher, :pg_store_module, SyncDeltaFakePgStore)
+      Application.put_env(:event_dispatcher, :messages_db_module, SyncDeltaFakeDB)
+      Application.put_env(:event_dispatcher, :rooms_db_module, SyncDeltaFakeDB)
+
+      on_exit(fn ->
+        Application.delete_env(:event_dispatcher, :pg_store_module)
+        Application.delete_env(:event_dispatcher, :messages_db_module)
+        Application.delete_env(:event_dispatcher, :rooms_db_module)
+      end)
+
+      :ok = setup_room_with_member(room_id, alice)
+
+      # Anchor event (= last_event_id)
+      SyncDeltaFakeDB.insert_event(%{
+        "event_id" => "$dev_anchor",
+        "room_id" => room_id,
+        "sender" => alice,
+        "event_type" => "m.room.message",
+        "content" => %{"msgtype" => "m.text", "body" => "anchor"},
+        "origin_server_ts" => 1_700_000_000_000
+      })
+
+      # New event after the anchor
+      SyncDeltaFakeDB.insert_event(%{
+        "event_id" => "$dev_new",
+        "room_id" => room_id,
+        "sender" => alice,
+        "event_type" => "m.room.message",
+        "content" => %{"msgtype" => "m.text", "body" => "new"},
+        "origin_server_ts" => 1_700_000_001_000
+      })
+
+      # Configure stored token to match what the client will send (valid incremental path)
+      :ets.insert(
+        :sync_delta_pg_store_config,
+        {:get_since_token_response, {:ok, %{since_token: "s_dev_anchor", last_event_id: "$dev_anchor"}}}
+      )
+
+      request = %Core.GetSyncDeltaRequest{
+        user_id: alice,
+        since_token: "s_dev_anchor",
+        timeout_ms: 5000,
+        device_id: device_id
+      }
+
+      _response = Server.get_sync_delta(request, build_stream())
+
+      calls = SyncDeltaFakePgStore.recorded_calls()
+
+      # There must be at least one 4-arity call with the correct device_id
+      four_arity_calls =
+        Enum.filter(calls, fn
+          {^alice, ^device_id, _token, _event_id} -> true
+          _ -> false
+        end)
+
+      assert length(four_arity_calls) >= 1,
+             "expected at least one 4-arity persist_since_token call with device_id=#{device_id}, got: #{inspect(calls)}"
+
+      # There must be NO 3-arity call for this user when device_id != ""
+      three_arity_calls =
+        Enum.filter(calls, fn
+          {^alice, _token, _event_id} -> true
+          _ -> false
+        end)
+
+      assert three_arity_calls == [],
+             "expected no 3-arity persist_since_token call when device_id is set, got: #{inspect(three_arity_calls)}"
     end
   end
 end

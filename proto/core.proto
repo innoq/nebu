@@ -332,6 +332,7 @@ message GetSyncDeltaRequest {
   string user_id     = 1;
   string since_token = 2;  // opaque token from previous next_batch
   int64  timeout_ms  = 3;  // long-poll wait time; 0 = return immediately; max 30000
+  string device_id   = 4;  // device-scoped since-token lookup key (Story 9-22)
 }
 
 message GetSyncDeltaResponse {
@@ -482,10 +483,14 @@ message GetEventContextResponse {
 }
 
 // InvalidateUserSessions — Story 6.5: Admin deactivation revokes all active sessions.
-// Calls SessionManager.destroy_session/1 for the target user.
+// Story 9-22: when device_id is set, only the (user_id, device_id) session is invalidated
+// (per-device logout). When device_id is empty, all sessions for the user are invalidated
+// (admin deactivation / full logout).
+// Calls SessionManager.destroy_session/1 or /2 depending on device_id presence.
 // Returns ok=true on success; gRPC error on DB failure.
 message InvalidateUserSessionsRequest {
-  string user_id = 1;  // Matrix user ID (@localpart:server)
+  string user_id   = 1;  // Matrix user ID (@localpart:server)
+  string device_id = 2;  // Optional: if set, only invalidate this device's session (Story 9-22)
 }
 
 message InvalidateUserSessionsResponse {

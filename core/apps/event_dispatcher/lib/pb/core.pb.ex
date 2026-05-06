@@ -411,6 +411,7 @@ defmodule Core.GetSyncDeltaRequest do
   field :user_id, 1, type: :string, json_name: "userId"
   field :since_token, 2, type: :string, json_name: "sinceToken"
   field :timeout_ms, 3, type: :int64, json_name: "timeoutMs"
+  field :device_id, 4, type: :string, json_name: "deviceId"
 end
 
 defmodule Core.GetSyncDeltaResponse do
@@ -719,6 +720,7 @@ defmodule Core.InvalidateUserSessionsRequest do
     syntax: :proto3
 
   field :user_id, 1, type: :string, json_name: "userId"
+  field :device_id, 2, type: :string, json_name: "deviceId"
 end
 
 defmodule Core.InvalidateUserSessionsResponse do

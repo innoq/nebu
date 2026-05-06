@@ -25,11 +25,25 @@ defmodule Nebu.Session.PgStore do
               last_event_id :: String.t() | nil
             ) :: :ok | {:error, term()}
 
+  @callback persist_since_token(
+              user_id :: String.t(),
+              device_id :: String.t(),
+              since_token :: String.t(),
+              last_event_id :: String.t() | nil
+            ) :: :ok | {:error, term()}
+
   @callback get_since_token(user_id :: String.t()) ::
               {:ok, %{since_token: String.t(), last_event_id: String.t() | nil}}
               | {:error, :not_found}
 
+  @callback get_since_token(user_id :: String.t(), device_id :: String.t()) ::
+              {:ok, %{since_token: String.t(), last_event_id: String.t() | nil}}
+              | {:error, :not_found}
+
   @callback invalidate_session(user_id :: String.t()) ::
+              :ok | {:error, term()}
+
+  @callback invalidate_session(user_id :: String.t(), device_id :: String.t()) ::
               :ok | {:error, term()}
 
   @doc """
@@ -46,6 +60,13 @@ defmodule Nebu.Session.PgStore do
     pg_store_module().persist_since_token(user_id, since_token, last_event_id)
   end
 
+  @doc "Per-device variant: upserts a since-token row for `(user_id, device_id)`."
+  @spec persist_since_token(String.t(), String.t(), String.t(), String.t() | nil) ::
+          :ok | {:error, term()}
+  def persist_since_token(user_id, device_id, since_token, last_event_id) do
+    pg_store_module().persist_since_token(user_id, device_id, since_token, last_event_id)
+  end
+
   @doc """
   Returns `{:ok, %{since_token: t, last_event_id: id}}` for `user_id`, or
   `{:error, :not_found}` if no row exists in `sync_tokens`.
@@ -55,6 +76,14 @@ defmodule Nebu.Session.PgStore do
           | {:error, :not_found}
   def get_since_token(user_id) do
     pg_store_module().get_since_token(user_id)
+  end
+
+  @doc "Per-device variant: looks up by `(user_id, device_id)` composite key."
+  @spec get_since_token(String.t(), String.t()) ::
+          {:ok, %{since_token: String.t(), last_event_id: String.t() | nil}}
+          | {:error, :not_found}
+  def get_since_token(user_id, device_id) do
+    pg_store_module().get_since_token(user_id, device_id)
   end
 
   @doc """
@@ -73,6 +102,12 @@ defmodule Nebu.Session.PgStore do
   @spec invalidate_session(String.t()) :: :ok | {:error, term()}
   def invalidate_session(user_id) do
     pg_store_module().invalidate_session(user_id)
+  end
+
+  @doc "Per-device variant: deletes the `(user_id, device_id)` row from `sync_tokens` AND the matching row from `sessions`, both in a single PostgreSQL transaction."
+  @spec invalidate_session(String.t(), String.t()) :: :ok | {:error, term()}
+  def invalidate_session(user_id, device_id) do
+    pg_store_module().invalidate_session(user_id, device_id)
   end
 
   defp pg_store_module do

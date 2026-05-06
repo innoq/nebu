@@ -1,8 +1,18 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
-story: null
-current_step: null
-completed: []
-cycle_count: 0
+# last_updated: 2026-05-06
+# [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
+# [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
+# [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
+story: "9-22"
+current_step: "arc42-update"
+completed:
+  - create-story
+  - atdd
+  - test-review
+  - dev-story
+  - ci-gate
+  - code-review
+cycle_count: 3
 blocked_reason: null
-last_updated: null
+last_updated: "2026-05-06T16:10Z"

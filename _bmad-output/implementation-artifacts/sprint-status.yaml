@@ -1,5 +1,6 @@
 # generated: 2026-03-20
 # last_updated: 2026-05-06
+# story 9-22 done (pipeline: 4 MAJOR fixed 3 cycles+Code CLEAN; security_review not-needed): 2026-05-06
 # story 9-21 done (pipeline: ATDD+Dev+Test-Review CLEAN+Code-Review CLEAN; security_review not-needed): 2026-05-06
 # story 9-20 done (pipeline: ATDD+Dev+Test-Review CLEAN+Code-Review CLEAN; security_review not-needed): 2026-05-06
 # story 9-20 created: 9-20 → ready-for-dev: 2026-05-06 (GAP-PREV-BATCH — delta sync missing prev_batch when limited:true; fix fetch_delta_rooms to derive prev_batch from List.first(events)["event_id"]; security_review not-needed)
@@ -741,7 +742,7 @@ development_status:
   9-20-sync-gap-prev-batch: done
   9-23-sync-gap-invite-state-stripped-events: backlog
   9-25-sync-gap-buffer-next-batch: backlog
-  9-22-sync-gap-since-ignored-per-device-tokens: backlog
+  9-22-sync-gap-since-ignored-per-device-tokens: done
   9-24-sync-gap-global-account-data: backlog
   epic-9-retrospective: optional
 

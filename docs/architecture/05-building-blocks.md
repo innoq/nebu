@@ -22,9 +22,13 @@ gateway/
     │   └── bootstrap.go        ← First-admin bootstrap mode
     ├── matrix/                 ← Matrix Client-Server API handlers
     │   ├── login.go            ← POST /_matrix/client/v3/login (SSO + OIDC)
-    │   ├── sync.go             ← GET /_matrix/client/v3/sync (long-poll); buildLeaveRooms uses
-    │   │                          sinceMs filter (GAP-LEAVE-ONCE) + forgotten_rooms exclusion
-    │   │                          (GAP-FORGET); queryForgottenRoomIDs + querySinceTsMs helpers
+    │   ├── logout.go           ← POST /_matrix/client/v3/logout; NewLogoutHandlerWithCore cleans up
+    │   │                          per-device sync_tokens via gRPC InvalidateUserSessions (Story 9-22)
+    │   ├── sync.go             ← GET /_matrix/client/v3/sync (long-poll); forwards device_id from
+    │   │                          JWT session to GetSyncDeltaRequest (GAP-SINCE-IGNORED, Story 9-22);
+    │   │                          buildLeaveRooms uses sinceMs filter (GAP-LEAVE-ONCE) +
+    │   │                          forgotten_rooms exclusion (GAP-FORGET); queryForgottenRoomIDs +
+    │   │                          querySinceTsMs helpers
     │   ├── send.go             ← PUT /rooms/{id}/send/...
     │   ├── rooms.go            ← POST /createRoom, POST /join/{id}
     │   ├── room_moderation.go  ← POST /forget inserts into forgotten_rooms (GAP-FORGET, Story 9-19)
@@ -64,10 +68,13 @@ core/apps/
 │       ├── db.ex           ← PostgreSQL queries; get_recently_left_rooms_for_user/1 added (Story 9-19)
 │       ├── db_behaviour.ex ← @callback contract for db.ex (mockable in tests)
 │       └── power_level.ex  ← Room policy enforcement
-├── session_manager/  ← ETS + PostgreSQL Hybrid since-Token
+├── session_manager/  ← ETS + PostgreSQL Hybrid since-Token (per-device since Story 9-22)
 │   └── lib/nebu/session/
-│       ├── manager.ex      ← GenServer owning ETS table
-│       └── token.ex        ← v1_<base64url(ts+cursor_map)> format
+│       ├── manager.ex          ← GenServer owning ETS table
+│       ├── token.ex            ← v1_<base64url(ts+cursor_map)> format
+│       ├── pg_store/postgres.ex ← persist_since_token/3 (legacy) + /4 (per-device);
+│       │                           get_since_token/1 + /2; invalidate_session/1 + /2
+│       └── session_supervisor.ex ← destroy_session/1 (all devices) + /2 (per-device)
 ├── presence/         ← FR15: Presence status (online/offline/unavailable)
 ├── event_dispatcher/ ← EventBus gRPC streaming + pg Process Groups fanout
 │   └── lib/nebu/event_dispatcher/
@@ -97,6 +104,12 @@ core/apps/
 > Excluded from all `/sync` sections (join, leave, invite). Primary key `(user_id, room_id)`;
 > cascade delete on `users` removal.
 
+> **`sync_tokens` schema change in Story 9-22:** migration 000041 adds `device_id TEXT NOT NULL DEFAULT ''`
+> and replaces the `user_id`-only primary key with a composite `(user_id, device_id)` PK.
+> Legacy rows are preserved with `device_id = ''`. Each device now maintains an independent
+> sync checkpoint, preventing parallel sessions on different devices from overwriting each other's
+> `since` token.
+
 ## Level 2 — Proto / gRPC Contract
 
 ```
@@ -108,6 +121,24 @@ proto/
 ```
 
 Key gRPC services: `SendEvent`, `CreateRoom`, `JoinRoom`, `GetMessages`, `GetRoomState`, `SetPresence`,
-`SetTyping`, `ValidateToken`, `GetPendingEvents` (fallback), `EventBus` (streaming).
+`SetTyping`, `ValidateToken`, `GetPendingEvents` (fallback), `EventBus` (streaming),
+`GetSyncDelta` (incremental sync with per-device `device_id` field, Story 9-22),
+`InvalidateUserSessions` (per-device or full-user session cleanup, Story 9-22).
 
-_Source: `_bmad-output/planning-artifacts/architecture.md`, §Project Structure & Boundaries, §Complete Project Directory Structure; Story 9-19 (room_moderation.go, sync.go, event_dispatcher/server.ex, forgotten_rooms migration)_
+**`GetSyncDeltaRequest` fields (Story 9-22):**
+
+| Field | Type | Description |
+|---|---|---|
+| `user_id` | string | Matrix user ID |
+| `since_token` | string | Client-supplied sync token |
+| `timeout_ms` | int64 | Long-poll timeout |
+| `device_id` | string | Device-scoped checkpoint key; empty string = legacy fallback |
+
+**`InvalidateUserSessionsRequest` fields (Story 9-22):**
+
+| Field | Type | Description |
+|---|---|---|
+| `user_id` | string | Matrix user ID |
+| `device_id` | string | When set, only invalidates this device; when empty, invalidates all user sessions |
+
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Project Structure & Boundaries, §Complete Project Directory Structure; Story 9-19 (room_moderation.go, sync.go, event_dispatcher/server.ex, forgotten_rooms migration); Story 9-22 (per-device sync tokens, device_id in proto)_

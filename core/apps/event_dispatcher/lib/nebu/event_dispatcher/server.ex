@@ -759,17 +759,28 @@ defmodule Nebu.EventDispatcher.Server do
   end
 
   # ─── InvalidateUserSessions — Story 6.5: Admin deactivation revokes all sessions ─
+  # Story 9-22 (AC4): Per-device logout when device_id is set.
   #
-  # Called by the Go gateway after a successful user deactivation.
-  # Delegates to session_supervisor_module().destroy_session/1 which handles:
-  #   - Nebu.Session.PgStore.invalidate_session/1 → deletes sync_tokens + sessions rows in a DB tx
-  #   - Nebu.Session.EtsStore.delete_session/1 → evicts ETS entry (after DB commit)
+  # Called by the Go gateway:
+  #   - Admin deactivation: device_id="" → destroy_session/1 deletes all sync_tokens +
+  #     sessions rows for the user and evicts from ETS.
+  #   - Matrix POST /logout: device_id="<id>" → destroy_session/2 deletes only the
+  #     (user_id, device_id) sync_tokens + sessions rows in a single DB transaction.
+  #     ETS is NOT evicted (other devices may still be active).
   #
   # Returns %Core.InvalidateUserSessionsResponse{ok: true} on success.
   # Raises GRPC.RPCError with status=internal on failure (Go logs as warning, does not block).
 
   def invalidate_user_sessions(%Core.InvalidateUserSessionsRequest{} = req, _stream) do
-    case session_supervisor_module().destroy_session(req.user_id) do
+    # AC4 (Story 9-22): per-device cleanup when device_id is present.
+    result =
+      if req.device_id != "" do
+        session_supervisor_module().destroy_session(req.user_id, req.device_id)
+      else
+        session_supervisor_module().destroy_session(req.user_id)
+      end
+
+    case result do
       :ok ->
         %Core.InvalidateUserSessionsResponse{ok: true}
 
@@ -1071,15 +1082,36 @@ defmodule Nebu.EventDispatcher.Server do
 
   def get_sync_delta(request, _stream) do
     user_id = request.user_id
-    _since_token = request.since_token
+    # proto3 string fields are never nil — no need for `|| ""`
+    device_id = request.device_id
+    # client_since_token is validated against the stored token after lookup (AC2, Story 9-22).
+    client_since_token = request.since_token
     timeout_ms = request.timeout_ms |> max(0) |> min(30_000)
 
-    # Step 3: Resolve last_event_id from the since_token
-    case pg_store_module().get_since_token(user_id) do
+    # Step 3: Resolve last_event_id from the since_token.
+    # Use per-device lookup when device_id is present (Story 9-22).
+    lookup_result =
+      if device_id != "" do
+        pg_store_module().get_since_token(user_id, device_id)
+      else
+        pg_store_module().get_since_token(user_id)
+      end
+
+    case lookup_result do
       {:error, :not_found} ->
-        # Fallback to full initial sync
+        # AC3: No stored token for this (user_id, device_id) → full initial sync.
+        # This handles first sync after re-login, unknown device_id, or missing row.
         initial_req = %Core.GetInitialSyncRequest{user_id: user_id}
         initial_resp = get_initial_sync(initial_req, %{http_request_headers: %{}})
+
+        # MAJOR-A fix: persist the freshly-minted token to the per-device row so
+        # the next request from this device resolves the correct checkpoint and
+        # does not trigger a perpetual full-sync (AC1/AC2 recovery).
+        if device_id != "" do
+          :ok = pg_store_module().persist_since_token(
+            user_id, device_id, initial_resp.since_token, nil
+          )
+        end
 
         %Core.GetSyncDeltaResponse{
           since_token: initial_resp.since_token,
@@ -1087,29 +1119,51 @@ defmodule Nebu.EventDispatcher.Server do
           fallback_to_initial: true
         }
 
-      {:ok, %{last_event_id: last_event_id}} ->
-        # Run the incremental sync in a short-lived Task so the Task's process
-        # joins and leaves :pg groups. When the Task exits, :pg auto-cleans its
-        # membership. This ensures the handler process itself never appears in any
-        # room :pg group after get_sync_delta/2 returns.
-        #
-        # Capture all module-level injectable deps before spawning (they are looked
-        # up at call time via Application.get_env, so the Task re-evaluates them in
-        # its own context automatically — no capture needed).
-        task_timeout = timeout_ms + 10_000
+      {:ok, %{since_token: stored_token, last_event_id: last_event_id}} ->
+        # AC2: Validate that the client echoes back the token we issued.
+        # A mismatch means a stale or replayed token → fall back to full initial sync.
+        if client_since_token != stored_token do
+          initial_req = %Core.GetInitialSyncRequest{user_id: user_id}
+          initial_resp = get_initial_sync(initial_req, %{http_request_headers: %{}})
 
-        task = Task.async(fn ->
-          do_incremental_sync(user_id, last_event_id, timeout_ms)
-        end)
+          # MAJOR-A fix: persist the freshly-minted token to the per-device row so
+          # the next request from this device resolves the correct checkpoint and
+          # does not trigger a perpetual full-sync (AC2 recovery path).
+          if device_id != "" do
+            :ok = pg_store_module().persist_since_token(
+              user_id, device_id, initial_resp.since_token, nil
+            )
+          end
 
-        Task.await(task, task_timeout)
+          %Core.GetSyncDeltaResponse{
+            since_token: initial_resp.since_token,
+            rooms: initial_resp.rooms,
+            fallback_to_initial: true
+          }
+        else
+          # Run the incremental sync in a short-lived Task so the Task's process
+          # joins and leaves :pg groups. When the Task exits, :pg auto-cleans its
+          # membership. This ensures the handler process itself never appears in any
+          # room :pg group after get_sync_delta/2 returns.
+          #
+          # Capture all module-level injectable deps before spawning (they are looked
+          # up at call time via Application.get_env, so the Task re-evaluates them in
+          # its own context automatically — no capture needed).
+          task_timeout = timeout_ms + 10_000
+
+          task = Task.async(fn ->
+            do_incremental_sync(user_id, device_id, last_event_id, timeout_ms)
+          end)
+
+          Task.await(task, task_timeout)
+        end
     end
   end
 
   # Runs the incremental sync logic in a separate (Task) process so that
   # :pg group subscriptions are owned by a process that exits when done.
   # :pg auto-removes dead processes from groups.
-  defp do_incremental_sync(user_id, last_event_id, timeout_ms) do
+  defp do_incremental_sync(user_id, device_id, last_event_id, timeout_ms) do
     # Step 4: Get user's rooms
     room_ids =
       case rooms_db_module().get_rooms_for_user(user_id) do
@@ -1228,7 +1282,13 @@ defmodule Nebu.EventDispatcher.Server do
       end
 
     {new_since_token, newest_event_id} = generate_delta_token(user_id, result_rooms, last_event_id)
-    :ok = pg_store_module().persist_since_token(user_id, new_since_token, newest_event_id)
+
+    # Persist per-device when device_id is set, fallback to legacy /1 key otherwise (Story 9-22).
+    if device_id != "" do
+      :ok = pg_store_module().persist_since_token(user_id, device_id, new_since_token, newest_event_id)
+    else
+      :ok = pg_store_module().persist_since_token(user_id, new_since_token, newest_event_id)
+    end
 
     %Core.GetSyncDeltaResponse{
       since_token: new_since_token,

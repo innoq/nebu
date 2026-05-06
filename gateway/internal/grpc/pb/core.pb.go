@@ -1883,6 +1883,7 @@ type GetSyncDeltaRequest struct {
 	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	SinceToken    string                 `protobuf:"bytes,2,opt,name=since_token,json=sinceToken,proto3" json:"since_token,omitempty"` // opaque token from previous next_batch
 	TimeoutMs     int64                  `protobuf:"varint,3,opt,name=timeout_ms,json=timeoutMs,proto3" json:"timeout_ms,omitempty"`   // long-poll wait time; 0 = return immediately; max 30000
+	DeviceId      string                 `protobuf:"bytes,4,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`       // device-scoped since-token lookup key (Story 9-22)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1936,6 +1937,13 @@ func (x *GetSyncDeltaRequest) GetTimeoutMs() int64 {
 		return x.TimeoutMs
 	}
 	return 0
+}
+
+func (x *GetSyncDeltaRequest) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
 }
 
 type GetSyncDeltaResponse struct {
@@ -3346,11 +3354,15 @@ func (x *GetEventContextResponse) GetEndToken() string {
 }
 
 // InvalidateUserSessions — Story 6.5: Admin deactivation revokes all active sessions.
-// Calls SessionManager.destroy_session/1 for the target user.
+// Story 9-22: when device_id is set, only the (user_id, device_id) session is invalidated
+// (per-device logout). When device_id is empty, all sessions for the user are invalidated
+// (admin deactivation / full logout).
+// Calls SessionManager.destroy_session/1 or /2 depending on device_id presence.
 // Returns ok=true on success; gRPC error on DB failure.
 type InvalidateUserSessionsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"` // Matrix user ID (@localpart:server)
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`       // Matrix user ID (@localpart:server)
+	DeviceId      string                 `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"` // Optional: if set, only invalidate this device's session (Story 9-22)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3388,6 +3400,13 @@ func (*InvalidateUserSessionsRequest) Descriptor() ([]byte, []int) {
 func (x *InvalidateUserSessionsRequest) GetUserId() string {
 	if x != nil {
 		return x.UserId
+	}
+	return ""
+}
+
+func (x *InvalidateUserSessionsRequest) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
 	}
 	return ""
 }
@@ -5442,13 +5461,14 @@ const file_core_proto_rawDesc = "" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12\x1b\n" +
 	"\tstate_key\x18\x02 \x01(\tR\bstateKey\x12\x18\n" +
 	"\acontent\x18\x03 \x01(\fR\acontent\x12\x16\n" +
-	"\x06sender\x18\x04 \x01(\tR\x06sender\"n\n" +
+	"\x06sender\x18\x04 \x01(\tR\x06sender\"\x8b\x01\n" +
 	"\x13GetSyncDeltaRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x1f\n" +
 	"\vsince_token\x18\x02 \x01(\tR\n" +
 	"sinceToken\x12\x1d\n" +
 	"\n" +
-	"timeout_ms\x18\x03 \x01(\x03R\ttimeoutMs\"\x8d\x01\n" +
+	"timeout_ms\x18\x03 \x01(\x03R\ttimeoutMs\x12\x1b\n" +
+	"\tdevice_id\x18\x04 \x01(\tR\bdeviceId\"\x8d\x01\n" +
 	"\x14GetSyncDeltaResponse\x12\x1f\n" +
 	"\vsince_token\x18\x01 \x01(\tR\n" +
 	"sinceToken\x12$\n" +
@@ -5545,9 +5565,10 @@ const file_core_proto_rawDesc = "" +
 	"\x05state\x18\x04 \x03(\v2\x17.core.ContextStateEventR\x05state\x12\x1f\n" +
 	"\vstart_token\x18\x05 \x01(\tR\n" +
 	"startToken\x12\x1b\n" +
-	"\tend_token\x18\x06 \x01(\tR\bendToken\"8\n" +
+	"\tend_token\x18\x06 \x01(\tR\bendToken\"U\n" +
 	"\x1dInvalidateUserSessionsRequest\x12\x17\n" +
-	"\auser_id\x18\x01 \x01(\tR\x06userId\"0\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x1b\n" +
+	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\"0\n" +
 	"\x1eInvalidateUserSessionsResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\"U\n" +
 	"\x19UpdateRoomSettingsRequest\x12\x17\n" +

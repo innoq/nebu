@@ -68,6 +68,27 @@ Entries are Ed25519-signed for tamper evidence. Retention is configurable (defau
 | Sensitive PII | Email, IdP subject | Encrypted with user's X25519 key | Delete private key → irrecoverable |
 | Message Content | Chat messages | Plain in DB (audit requirement) | Not deleted; sender anonymized |
 
+## Per-Device Sync Token Isolation (Story 9-22)
+
+Matrix clients identify themselves with a `device_id` extracted from the `"did"` claim in the
+JWT access token. The Elixir Core maintains independent sync checkpoints per `(user_id, device_id)`
+in the `sync_tokens` table (composite PK, migration 000041).
+
+**Design invariants:**
+
+- A single user with N active devices has N independent rows in `sync_tokens`.
+- Each device's `since` token is advanced only by that device's sync responses.
+- On logout, only the `(user_id, device_id)` row is removed; other devices are unaffected.
+- Legacy clients (no `device_id` in JWT) fall back to the `device_id = ''` row; a token mismatch
+  triggers a full initial sync (safe degradation).
+- `persist_since_token/4` and `get_since_token/2` are the device-aware arities in
+  `Nebu.Session.PgStore.Postgres`; `/3` and `/1` remain for backward compatibility.
+
+**Token cleanup on logout:**
+`POST /logout` triggers `gRPC InvalidateUserSessions(user_id, device_id)` → Elixir
+`SessionSupervisor.destroy_session/2` → DB transaction deletes `sync_tokens` + `sessions` rows
+for that device. ETS is NOT evicted (other devices may still be active).
+
 ## Error Handling
 
 **Go:** Return-based, no panic in library code. gRPC status codes map to HTTP status codes at the
@@ -106,4 +127,4 @@ middleware on all `/admin/*` routes (CSP, HSTS, X-Frame-Options). Session cookie
 `HttpOnly`, `SameSite=Lax`. Admin UI templates served via `go:embed` — no filesystem access
 at runtime.
 
-_Source: `_bmad-output/planning-artifacts/architecture.md`, §Cross-Cutting Concerns, §Auth-Token-Flow, §Enforcement; `_bmad-output/planning-artifacts/prd.md`, §Cryptographic Identity Architecture_
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Cross-Cutting Concerns, §Auth-Token-Flow, §Enforcement; `_bmad-output/planning-artifacts/prd.md`, §Cryptographic Identity Architecture; Story 9-22 (per-device sync token isolation, logout cleanup)_

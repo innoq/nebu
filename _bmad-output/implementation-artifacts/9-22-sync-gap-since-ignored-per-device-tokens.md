@@ -1,5 +1,5 @@
 ---
-status: ready-for-dev
+status: review
 epic: 9
 story: 22
 security_review: not-needed
@@ -7,7 +7,7 @@ security_review: not-needed
 
 # Story 9.22: GAP-SINCE-IGNORED — Per-Device Sync Token Storage
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -384,6 +384,72 @@ incremental sync request per device. No ETS migration needed.
 
 ---
 
+## Dev Agent Record
+
+### Debug Log
+
+- **Cycle 1** (initial implementation): All 6 ACs implemented, migration + proto + Elixir + Go changes.
+- **Cycle 2** (code review fixes): Fixed 5 MAJOR/MINOR findings from cycle 1 code review.
+- **Cycle 2b** (code review cycle 2 fixes): Fixed MAJOR-A, MAJOR-T, MINOR-1, MINOR-4 from cycle 2 review.
+- **Cycle 3** (code review cycle 3 fixes): Fixed MAJOR-1, MAJOR-2, MINOR-1, MINOR-2, MINOR-3 from cycle 3 review.
+
+### Completion Notes
+
+**Cycle 3 fixes applied (2026-05-06):**
+
+- Resolved MAJOR-1: Added `TestPostLogout_WithCore_CallsInvalidateUserSessions` and `TestPostLogout_WithCore_CoreErrorDoesNotReturn500` to `gateway/internal/matrix/logout_test.go`. Uses a new `mockLogoutCoreClient` stub that records calls. Verifies correct `user_id`/`device_id` forwarding and that a Core gRPC error does not cause a 500 (returns 200, JWT already invalidated).
+- Resolved MAJOR-2: Added three tests to `core/apps/session_manager/test/nebu/session/session_supervisor_test.exs` for `destroy_session/2`: (1) delegates to `PgStore.invalidate_session/2` and deletes the per-device row, (2) does NOT evict the user from ETS (other devices still active), (3) propagates `{:error, reason}` from `PgStore`.
+- Resolved MINOR-1: Added doc comment to `NewLogoutHandler` in `gateway/internal/matrix/logout.go` stating it does not clean up per-device sync tokens and directing production use to `NewLogoutHandlerWithCore`.
+- Resolved MINOR-2: `persist_since_token/4` and `get_since_token/2` in `core/apps/session_manager/lib/nebu/session/pg_store/postgres.ex` now use `Application.get_env(:session_manager, :repo_module, Nebu.Repo)` for testability (consistent with `invalidate_session/2`). Also applied to the arity-3 variants for full consistency.
+- Resolved MINOR-3: Added `"calls persist_since_token/4 with (user_id, device_id, token, event_id) when device_id != \"\""` test in `sync_test.exs`. Verifies the 4-arity call is made and no 3-arity call occurs when `device_id` is set in the `GetSyncDeltaRequest`.
+- All tests pass: `make test-unit-go` (all matrix tests green), `make test-unit-elixir` (45 session_manager + 200 event_dispatcher = 0 failures).
+
+**Cycle 2 fixes applied (2026-05-06):**
+
+- Resolved MAJOR-1: `get_sync_delta/2` in server.ex now validates `client_since_token` against `stored_token` after lookup. Token mismatch returns `fallback_to_initial: true` (AC2).
+- Resolved MAJOR-2: Added `SessionSupervisor.destroy_session/2` that delegates to `PgStore.invalidate_session/2`. Extended `InvalidateUserSessions` gRPC handler to call `destroy_session/2` when `device_id` is set. Go `PostLogout` now calls `InvalidateUserSessions` with `device_id` for per-device cleanup (AC4).
+- Resolved MAJOR-3: `invalidate_session/2` in `PgStore.Postgres` now uses `Application.get_env(:session_manager, :repo_module, Nebu.Repo)`, wraps both `sync_tokens` and `sessions` deletes in a transaction (atomicity guaranteed). Also fixed `@delete_sync_token_sql` to delete ALL per-user sync_tokens (not just `device_id = ''`).
+- Resolved MAJOR-4: Added 3 Go tests: `TestSyncTokens_PerDevice_NoOverwrite` (AC1), `TestSyncTokens_TokenMismatch_FallsBackToInitial` (AC2), `TestSyncTokens_UnknownDevice_FallsBackToInitial` (AC3).
+- Resolved MINOR-5: Removed dead `|| ""` from `device_id = request.device_id` in server.ex.
+- Proto change: Added `device_id` field to `InvalidateUserSessionsRequest` (field 2, optional) and regenerated Go + Elixir stubs.
+
+**Cycle 2b fixes applied (2026-05-06):**
+
+- Resolved MAJOR-A: Both fallback paths in `get_sync_delta/2` (`:not_found` AC3 and token-mismatch AC2) now call `persist_since_token(user_id, device_id, initial_resp.since_token, nil)` after `get_initial_sync` returns when `device_id != ""`. This prevents perpetual full-sync for per-device tokens.
+- Resolved MAJOR-T: Added Elixir test `"returns full initial sync with fallback_to_initial: true when stored token differs from client token"` in `sync_test.exs`. Extended `SyncDeltaFakePgStore` with `get_since_token/2` and `persist_since_token/4` + `invalidate_session/2` arities.
+- Resolved MINOR-1: Updated docstring for `invalidate_session/2` in `pg_store.ex` to mention both `sync_tokens` and `sessions` deletes.
+- Resolved MINOR-4: Unstaged `e2e/test-results/` artifacts; added `/e2e/test-results/` to `.gitignore`.
+- All tests pass: `make test-unit-go` (all matrix/sync tests green), `make test-unit-elixir` (199 event_dispatcher + 42 session_manager + 83 room_manager = 0 failures).
+
+### File List
+
+- `core/apps/event_dispatcher/lib/nebu/event_dispatcher/server.ex` — MAJOR-1 fix (token validation), MAJOR-2 fix (per-device `invalidate_user_sessions`), MINOR-5 fix, MAJOR-A fix (fallback paths re-persist per-device token)
+- `core/apps/event_dispatcher/lib/pb/core.pb.ex` — regenerated from proto (added `device_id` to `InvalidateUserSessionsRequest`)
+- `core/apps/event_dispatcher/test/nebu/event_dispatcher/sync_test.exs` — MAJOR-T fix: new AC2 token-mismatch test; extended `SyncDeltaFakePgStore` with `/2` arity functions
+- `core/apps/session_manager/lib/nebu/session/pg_store/postgres.ex` — MAJOR-3 fix (`invalidate_session/2` transactional + repo_module, fixed `@delete_sync_token_sql`)
+- `core/apps/session_manager/lib/nebu/session/pg_store.ex` — MINOR-1 fix: updated `invalidate_session/2` docstring
+- `core/apps/session_manager/lib/nebu/session/session_supervisor.ex` — MAJOR-2 fix (added `destroy_session/2`)
+- `core/apps/session_manager/test/nebu/session/pg_store_test.exs` — existing tests (from cycle 1)
+- `core/apps/session_manager/test/nebu/session/session_supervisor_test.exs` — existing tests (from cycle 1)
+- `gateway/cmd/gateway/main.go` — wired `NewLogoutHandlerWithCore` with Core gRPC client
+- `gateway/internal/grpc/pb/core.pb.go` — regenerated (added `DeviceId` to `InvalidateUserSessionsRequest`)
+- `gateway/internal/grpc/pb/core_grpc.pb.go` — regenerated (no functional change)
+- `gateway/internal/matrix/logout.go` — MAJOR-2 fix (added `LogoutCoreClient`, `NewLogoutHandlerWithCore`, Core gRPC call in `PostLogout`)
+- `gateway/internal/matrix/sync.go` — from cycle 1 (device_id forwarding)
+- `gateway/internal/matrix/sync_test.go` — MAJOR-4 fix (added 3 new tests: AC1, AC2, AC3)
+- `gateway/migrations/000041_sync_tokens_per_device.up.sql` — from cycle 1
+- `gateway/migrations/000041_sync_tokens_per_device.down.sql` — from cycle 1
+- `proto/core.proto` — added `device_id` field to `InvalidateUserSessionsRequest`
+- `.gitignore` — added `/e2e/test-results/` (MINOR-4 fix)
+
+### Change Log
+
+- **2026-05-06**: Cycle 2 — Fixed all MAJOR/MINOR code review findings (MAJOR-1 through MAJOR-4, MINOR-5). All tests green.
+- **2026-05-06**: Cycle 2b — Fixed cycle 2 review findings (MAJOR-A, MAJOR-T, MINOR-1, MINOR-4). 199 event_dispatcher tests, 0 failures.
+- **2026-05-06**: Cycle 3 — Fixed cycle 3 review findings (MAJOR-1, MAJOR-2, MINOR-1, MINOR-2, MINOR-3). All tests green.
+
+---
+
 ## Status
 
-Status: ready-for-dev
+Status: review

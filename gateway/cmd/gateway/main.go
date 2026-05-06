@@ -471,7 +471,11 @@ func main() {
 	}
 	defer tokenDB.Close()
 	tokenStore := db.NewPostgresTokenStore(tokenDB)
-	logoutHandler := matrix.NewLogoutHandler(tokenStore)
+	// AC4 (Story 9-22): wire Core gRPC client to logout handler for per-device sync-token cleanup.
+	logoutHandler := matrix.NewLogoutHandlerWithCore(matrix.LogoutConfig{
+		Store:      tokenStore,
+		CoreClient: coreClient.CoreServiceClient(),
+	})
 	jwtMiddleware := middleware.JWTMiddleware(oidcProvider, cfg.OIDCClientID, cfg.OIDCClaimRole, tokenStore, serverName)
 	// Story 6.5 (HIGH-1 fix): wrap jwtMiddleware with is_active check so ALL authenticated
 	// routes (Matrix, admin, compliance) reject tokens for deactivated users.

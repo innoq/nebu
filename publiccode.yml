@@ -114,9 +114,13 @@ maintenance:
     - name: "Philipp Beyerlein"
       email: "philipp.beyerlein@innoq.com"
       affiliation: "innoQ Deutschland GmbH"
-
+  contractors:
+    - name: "innoQ Deutschland GmbH"
+      email: "info@innoq.com"
+      website: "https://www.innoq.com"
+      until: "2028-05-02"
 localisation:
-  localisationReady: false
+  localisationReady: true
   availableLanguages:
     - de
     - en

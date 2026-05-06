@@ -1922,3 +1922,336 @@ func TestGetSyncHandler_BuildLeaveRooms_ForgottenExcluded(t *testing.T) {
 		t.Errorf("GAP-FORGET: room %q MUST NOT appear in rooms.leave after user has forgotten it", roomID)
 	}
 }
+
+// ─── Story 9-22: GAP-SINCE-IGNORED — per-device sync token ───────────────────
+
+// buildAuthedSyncDeltaHandlerWithClaims is a test helper that returns a handler
+// plus a makeToken function that accepts extra JWT claims (e.g. "did" for device_id).
+// Unlike buildAuthedSyncDeltaHandler, it does not return the oidcSrv separately.
+func buildAuthedSyncDeltaHandlerWithClaims(t *testing.T, mock *mockGetSyncDeltaCoreClient) (http.Handler, func(map[string]any) string) {
+	t.Helper()
+
+	oidcSrv, privateKey := setupOIDCServer(t)
+	t.Cleanup(oidcSrv.Close)
+
+	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
+
+	cfg := GetSyncConfig{
+		CoreClient: mock,
+		ServerName: "test.local",
+	}
+	handler := NewGetSyncHandler(cfg)
+
+	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+		http.HandlerFunc(handler.GetSync),
+	)
+
+	makeToken := func(extraClaims map[string]any) string {
+		return signJWT(t, oidcSrv.URL, privateKey, time.Now().Add(time.Hour), extraClaims)
+	}
+
+	return authed, makeToken
+}
+
+// TestGetSync_PerDevice_DeviceIdForwardedToCore verifies that the device_id from
+// the JWT "did" claim is forwarded as GetSyncDeltaRequest.DeviceId to the Core.
+//
+// AC6 (Story 9-22): This test FAILS before the fix because handleIncrementalSync
+// constructs GetSyncDeltaRequest without DeviceId (field stays empty "").
+//
+// Given:  JWT "did" claim = "TEST_DEVICE_D1"
+// When:   GET /_matrix/client/v3/sync?since=s_token_abc&timeout=0
+// Then:   capturedDeltaReq.DeviceId == "TEST_DEVICE_D1"
+func TestGetSync_PerDevice_DeviceIdForwardedToCore(t *testing.T) {
+	mock := &mockGetSyncDeltaCoreClient{
+		deltaResp: &pb.GetSyncDeltaResponse{
+			SinceToken:        "next_batch_device_test",
+			FallbackToInitial: false,
+			Rooms:             []*pb.SyncRoom{},
+		},
+	}
+
+	handler, makeToken := buildAuthedSyncDeltaHandlerWithClaims(t, mock)
+	token := makeToken(map[string]any{"did": "TEST_DEVICE_D1"})
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync?since=s_token_abc&timeout=0", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	if mock.capturedDeltaReq == nil {
+		t.Fatal("expected GetSyncDelta to be called, but capturedDeltaReq is nil")
+	}
+
+	if mock.capturedDeltaReq.DeviceId != "TEST_DEVICE_D1" {
+		t.Errorf("expected DeviceId=%q forwarded to Core, got %q",
+			"TEST_DEVICE_D1", mock.capturedDeltaReq.DeviceId)
+	}
+}
+
+// ─── Story 9-22 AC1: Per-device token independence ───────────────────────────
+//
+// TestSyncTokens_PerDevice_NoOverwrite verifies that two devices (D1 and D2)
+// each forward their own device_id independently to Core. The gateway correctly
+// isolates device contexts — the Core is responsible for per-device storage,
+// but the gateway must pass the right device_id so each device's checkpoint is
+// independently scoped.
+//
+// Given:  two devices D1 and D2 with distinct since_tokens S1 and S2
+// When:   GET /sync?since=S1 is called with device D1, then GET /sync?since=S2
+//         is called with device D2 (two separate requests)
+// Then:   each request forwards its own device_id and since_token to Core;
+//         D1 request has DeviceId="D1" and SinceToken="S1",
+//         D2 request has DeviceId="D2" and SinceToken="S2"
+func TestSyncTokens_PerDevice_NoOverwrite(t *testing.T) {
+	mockD1 := &mockGetSyncDeltaCoreClient{
+		deltaResp: &pb.GetSyncDeltaResponse{
+			SinceToken:        "next_batch_d1",
+			FallbackToInitial: false,
+			Rooms:             []*pb.SyncRoom{},
+		},
+	}
+	mockD2 := &mockGetSyncDeltaCoreClient{
+		deltaResp: &pb.GetSyncDeltaResponse{
+			SinceToken:        "next_batch_d2",
+			FallbackToInitial: false,
+			Rooms:             []*pb.SyncRoom{},
+		},
+	}
+
+	handlerD1, makeTokenWithClaims := buildAuthedSyncDeltaHandlerWithClaims(t, mockD1)
+	tokenD1 := makeTokenWithClaims(map[string]any{"did": "D1"})
+
+	handlerD2, makeTokenWithClaims2 := buildAuthedSyncDeltaHandlerWithClaims(t, mockD2)
+	tokenD2 := makeTokenWithClaims2(map[string]any{"did": "D2"})
+
+	// Device D1 syncs with since=S1
+	reqD1 := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync?since=S1&timeout=0", nil)
+	reqD1.Header.Set("Authorization", "Bearer "+tokenD1)
+	wD1 := httptest.NewRecorder()
+	handlerD1.ServeHTTP(wD1, reqD1)
+
+	if wD1.Code != http.StatusOK {
+		t.Fatalf("D1: expected 200, got %d; body: %s", wD1.Code, wD1.Body.String())
+	}
+	if mockD1.capturedDeltaReq == nil {
+		t.Fatal("D1: expected GetSyncDelta to be called")
+	}
+	if mockD1.capturedDeltaReq.DeviceId != "D1" {
+		t.Errorf("D1: expected DeviceId=%q, got %q", "D1", mockD1.capturedDeltaReq.DeviceId)
+	}
+	if mockD1.capturedDeltaReq.SinceToken != "S1" {
+		t.Errorf("D1: expected SinceToken=%q, got %q", "S1", mockD1.capturedDeltaReq.SinceToken)
+	}
+
+	// Device D2 syncs with since=S2 — must use its own device_id, not D1
+	reqD2 := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync?since=S2&timeout=0", nil)
+	reqD2.Header.Set("Authorization", "Bearer "+tokenD2)
+	wD2 := httptest.NewRecorder()
+	handlerD2.ServeHTTP(wD2, reqD2)
+
+	if wD2.Code != http.StatusOK {
+		t.Fatalf("D2: expected 200, got %d; body: %s", wD2.Code, wD2.Body.String())
+	}
+	if mockD2.capturedDeltaReq == nil {
+		t.Fatal("D2: expected GetSyncDelta to be called")
+	}
+	if mockD2.capturedDeltaReq.DeviceId != "D2" {
+		t.Errorf("D2: expected DeviceId=%q, got %q", "D2", mockD2.capturedDeltaReq.DeviceId)
+	}
+	if mockD2.capturedDeltaReq.SinceToken != "S2" {
+		t.Errorf("D2: expected SinceToken=%q, got %q", "S2", mockD2.capturedDeltaReq.SinceToken)
+	}
+
+	// AC1: D1 and D2 produced independent requests with separate device_ids and since_tokens.
+	// The gateway does not mix up the two device contexts.
+	if mockD1.capturedDeltaReq.DeviceId == mockD2.capturedDeltaReq.DeviceId {
+		t.Errorf("AC1 violation: D1 and D2 forwarded the same DeviceId %q — device contexts not isolated",
+			mockD1.capturedDeltaReq.DeviceId)
+	}
+}
+
+// ─── Story 9-22 AC2: Token mismatch → FallbackToInitial ──────────────────────
+//
+// TestSyncTokens_TokenMismatch_FallsBackToInitial verifies that when Core returns
+// FallbackToInitial=true (e.g. because the client sent a stale ?since token that
+// doesn't match the stored per-device token), the gateway falls back to
+// GetInitialSync and returns the initial sync response to the client.
+//
+// Given:  device D2 sends ?since=S1 (the token for D1, not D2)
+//         Core returns FallbackToInitial=true for the delta request
+//         Core returns a full initial sync response when GetInitialSync is called
+// When:   GET /sync?since=S1 with device D2's JWT
+// Then:   server returns 200 with rooms from the initial sync (not the delta);
+//         GetInitialSync WAS called; next_batch == "initial_token_for_d2"
+func TestSyncTokens_TokenMismatch_FallsBackToInitial(t *testing.T) {
+	stateContentBytes := []byte(`{"membership":"join"}`)
+
+	mock := &mockGetSyncDeltaCoreClient{
+		// Core signals token mismatch: FallbackToInitial=true
+		deltaResp: &pb.GetSyncDeltaResponse{
+			SinceToken:        "",
+			FallbackToInitial: true,
+			Rooms:             []*pb.SyncRoom{},
+		},
+		// Core returns a full initial sync response
+		initialResp: &pb.GetInitialSyncResponse{
+			SinceToken: "initial_token_for_d2",
+			Rooms: []*pb.SyncRoom{
+				{
+					RoomId: "!room_d2:test.local",
+					StateEvents: []*pb.SyncRoomStateEvent{
+						{
+							Type:     "m.room.member",
+							StateKey: "@alice:test.local",
+							Content:  stateContentBytes,
+							Sender:   "@alice:test.local",
+						},
+					},
+					TimelineEvents: []*pb.Event{},
+				},
+			},
+		},
+	}
+
+	// Device D2 sends S1 (wrong token — mismatch at Core)
+	handler, makeTokenWithClaims := buildAuthedSyncDeltaHandlerWithClaims(t, mock)
+	token := makeTokenWithClaims(map[string]any{"did": "D2"})
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync?since=S1&timeout=0", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("AC2: expected 200 after token mismatch fallback, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		NextBatch string `json:"next_batch"`
+		Rooms     struct {
+			Join map[string]json.RawMessage `json:"join"`
+		} `json:"rooms"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("AC2: failed to decode response: %v", err)
+	}
+
+	// next_batch must come from the initial sync response, not the empty delta
+	if resp.NextBatch != "initial_token_for_d2" {
+		t.Errorf("AC2: expected next_batch=%q (initial sync), got %q", "initial_token_for_d2", resp.NextBatch)
+	}
+
+	// GetInitialSync must have been called (fallback path taken)
+	if mock.capturedInitialReq == nil {
+		t.Error("AC2: expected GetInitialSync to be called after FallbackToInitial=true")
+	}
+
+	// GetSyncDelta must also have been called (it triggered the fallback)
+	if mock.capturedDeltaReq == nil {
+		t.Error("AC2: expected GetSyncDelta to be called with the stale token")
+	}
+	if mock.capturedDeltaReq.DeviceId != "D2" {
+		t.Errorf("AC2: expected DeviceId=%q forwarded to Core, got %q", "D2", mock.capturedDeltaReq.DeviceId)
+	}
+
+	// The room from the initial sync must be in rooms.join
+	if _, ok := resp.Rooms.Join["!room_d2:test.local"]; !ok {
+		t.Errorf("AC2: expected rooms.join to contain !room_d2:test.local after fallback, got: %v", resp.Rooms.Join)
+	}
+}
+
+// ─── Story 9-22 AC3: Unknown device → FallbackToInitial ──────────────────────
+//
+// TestSyncTokens_UnknownDevice_FallsBackToInitial verifies that when a device
+// has no stored sync_tokens row (e.g. first request after re-login), Core returns
+// FallbackToInitial=true and the gateway correctly serves a full initial sync.
+// The gateway must NOT crash or return a 5xx — it must return 200 with a full sync.
+//
+// Given:  no sync_tokens row for (user_id, device_id) — Core signals fallback
+//         Core returns FallbackToInitial=true for the delta request
+//         Core returns a full initial sync response
+// When:   GET /sync?since=<any_token>&device=<unknown_device>
+// Then:   200 response; GetInitialSync WAS called; no 500 error
+func TestSyncTokens_UnknownDevice_FallsBackToInitial(t *testing.T) {
+	stateContentBytes := []byte(`{"membership":"join"}`)
+
+	mock := &mockGetSyncDeltaCoreClient{
+		// Core returns fallback for unknown device
+		deltaResp: &pb.GetSyncDeltaResponse{
+			SinceToken:        "",
+			FallbackToInitial: true,
+			Rooms:             []*pb.SyncRoom{},
+		},
+		initialResp: &pb.GetInitialSyncResponse{
+			SinceToken: "initial_token_unknown_device",
+			Rooms: []*pb.SyncRoom{
+				{
+					RoomId: "!some_room:test.local",
+					StateEvents: []*pb.SyncRoomStateEvent{
+						{
+							Type:     "m.room.member",
+							StateKey: "@alice:test.local",
+							Content:  stateContentBytes,
+							Sender:   "@alice:test.local",
+						},
+					},
+					TimelineEvents: []*pb.Event{},
+				},
+			},
+		},
+	}
+
+	// Unknown device — no stored sync_tokens row; Core returns fallback
+	handler, makeTokenWithClaims := buildAuthedSyncDeltaHandlerWithClaims(t, mock)
+	token := makeTokenWithClaims(map[string]any{"did": "UNKNOWN_DEVICE_XYZ"})
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync?since=stale_token&timeout=0", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	// AC3: Must NOT crash with 500 — unknown device results in full initial sync (200)
+	if w.Code != http.StatusOK {
+		t.Fatalf("AC3: expected 200 for unknown device (not 500), got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		NextBatch string `json:"next_batch"`
+		Rooms     struct {
+			Join map[string]json.RawMessage `json:"join"`
+		} `json:"rooms"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("AC3: failed to decode response: %v", err)
+	}
+
+	// next_batch must come from the initial sync, not empty
+	if resp.NextBatch == "" {
+		t.Error("AC3: expected non-empty next_batch after fallback for unknown device")
+	}
+	if resp.NextBatch != "initial_token_unknown_device" {
+		t.Errorf("AC3: expected next_batch=%q, got %q", "initial_token_unknown_device", resp.NextBatch)
+	}
+
+	// GetInitialSync must have been called — unknown device triggers full sync
+	if mock.capturedInitialReq == nil {
+		t.Error("AC3: expected GetInitialSync to be called for unknown device")
+	}
+
+	// GetSyncDelta must have been called first (it returned fallback)
+	if mock.capturedDeltaReq == nil {
+		t.Error("AC3: expected GetSyncDelta to be called before fallback")
+	}
+	if mock.capturedDeltaReq.DeviceId != "UNKNOWN_DEVICE_XYZ" {
+		t.Errorf("AC3: expected DeviceId=%q forwarded to Core, got %q",
+			"UNKNOWN_DEVICE_XYZ", mock.capturedDeltaReq.DeviceId)
+	}
+}
