@@ -3,7 +3,7 @@ module github.com/nebu/nebu
 go 1.26
 
 require (
-	github.com/coreos/go-oidc/v3 v3.17.0
+	github.com/coreos/go-oidc/v3 v3.18.0
 	github.com/cucumber/godog v0.15.1
 	github.com/getkin/kin-openapi v0.137.0
 	github.com/go-jose/go-jose/v4 v4.1.4
