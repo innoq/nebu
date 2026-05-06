@@ -19,6 +19,16 @@ Orchestrates the complete Nebu development lifecycle. Thin and deterministic —
 `{project-root}/_bmad/nebu/pipeline-state.yaml` — written before and after every step.
 
 ```yaml
+# Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents.
+# Do not edit manually during an active pipeline run.
+# last_updated: 2026-05-06
+# [9-19] 2026-05-06T14:23Z code-review → 2 MINOR → cycle 1
+# [9-19] 2026-05-06T14:15Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
+# [9-19] 2026-05-06T14:05Z dev-story → done (cycle 0)
+# [9-19] 2026-05-06T13:55Z test-review → CLEAN (0 MAJOR)
+# [9-19] 2026-05-06T13:50Z atdd → 4 failing tests
+# [9-19] 2026-05-06T13:45Z create-story → 9-19-sync-gap-fixes.md
+# [9-19] 2026-05-06T13:44Z pipeline started
 story: "9-19"
 current_step: "code-review"
 completed:
@@ -27,20 +37,34 @@ completed:
   - test-review
   - dev-story
   - ci-gate
-cycle_count: 0
+cycle_count: 1
 blocked_reason: null
 last_updated: "2026-05-06T14:23Z"
 ```
 
-**Write the state file before executing each step** (set `current_step` to the step about to run).
-**Append to the completed list after each step succeeds.**
-Always update `last_updated` to the current ISO timestamp.
+**State update procedure (run before and after every step):**
+
+1. **Read** the current `pipeline-state.yaml` — never write from scratch, always update in place.
+2. **Prepend** the new log line directly below the `# last_updated:` comment line (newest entry at the top).
+3. **Update** the `# last_updated:` comment to `# last_updated: [TODAY]`.
+4. **Keep every existing `#` comment line unchanged** — they are the permanent pipeline journal and must never be removed.
+5. **Update** the YAML fields (`story`, `current_step`, `completed`, `cycle_count`, `blocked_reason`, `last_updated`).
+
+## Pipeline Log
+
+Log entries are **prepended** directly below the `# last_updated:` comment line — newest first, same convention as `sprint-status.yaml`.
+
+Format: `# [STORY_ID] YYYY-MM-DDTHH:MMZ step → compact outcome`
+
+The log is **permanent and additive** — every step adds a new line. Lines are never deleted or replaced. Only the YAML fields are zeroed on commit; all comment/log lines stay. Over time the file becomes a full pipeline journal across all stories.
+
+Each step prepends exactly one log line on completion (or skip). The commit step prepends the final `committed ✓` summary line.
 
 ---
 
 ## Activation
 
-**`nebu-pipeline`** (no args) — New story. Ask the user for the story description or story file. Write a fresh `pipeline-state.yaml`.
+**`nebu-pipeline`** (no args) — New story. Ask the user for the story description or story file. Read the existing `pipeline-state.yaml` (keep all existing log lines), then prepend `# [STORY_ID] TIMESTAMP pipeline started` and reset the YAML fields for the new story run.
 
 **`nebu-pipeline --resume`** — Read `pipeline-state.yaml`. Print current state (story, step, cycle count). Ask user to confirm. Skip all completed steps and continue from `current_step`.
 
@@ -72,6 +96,7 @@ rtk git status
 Note the created story file as `STORY_FILE`.
 
 **State:** Set `current_step: atdd`, append `create-story` to completed.
+**Log:** `# [STORY_ID] TIMESTAMP create-story → [STORY_FILE basename]`
 
 Show: `✓ Step 1: Story created → [STORY_FILE]`
 
@@ -104,6 +129,8 @@ Return compact Markdown (max 40 lines). Lists only, no prose. Then finish.
 
 Save output as `ORACLE_CONTEXT`.
 
+**Log:** `# [STORY_ID] TIMESTAMP oracle-gate → spec context captured` (or `→ skipped (no Matrix feature)`)
+
 Show: `✓ Step 1b: Oracle consulted — Matrix spec context captured.`
 
 ---
@@ -130,6 +157,7 @@ Finish after generating the tests.
 ```
 
 **State:** Set `current_step: test-review`, append `atdd` to completed.
+**Log:** `# [STORY_ID] TIMESTAMP atdd → N failing tests` (or `→ skipped (infra)`)
 
 Show: `✓ Step 2: Failing acceptance tests generated.`
 
@@ -172,6 +200,7 @@ Type "continue" to proceed anyway, or fix the gaps and restart Step 2.
 Stop and wait.
 
 **State:** Set `current_step: dev-story`, append `test-review` to completed.
+**Log:** `# [STORY_ID] TIMESTAMP test-review → CLEAN (0 MAJOR)` (or `→ N MAJOR [user continued]`)
 
 Show: `✓ Step 3: Pre-dev test quality verified.`
 
@@ -210,6 +239,7 @@ rtk git status
 ```
 
 **State:** Set `current_step: ci-gate`, append `dev-story` to completed.
+**Log:** `# [STORY_ID] TIMESTAMP dev-story → done (cycle [CYCLE_COUNT])`
 
 Show: `✓ Step 4: Implementation complete. Cycle: [CYCLE_COUNT]`
 
@@ -250,6 +280,7 @@ Type "continue" to skip the CI gate (not recommended).
 Stop and wait.
 
 **State:** Set `current_step: code-review`, append `ci-gate` to completed.
+**Log:** `# [STORY_ID] TIMESTAMP ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration` (or `→ FAILED: [failing suite]`)
 
 Show: `✓ Step 5: CI gate passed.`
 
@@ -290,6 +321,8 @@ Finish after the audit.
 Fix violations before code-review. Type "continue" to proceed with open violations.
 ```
 Stop and wait.
+
+**Log:** `# [STORY_ID] TIMESTAMP ux-gate → CLEAN` (or `→ skipped (no UI)` / `→ N violations [user continued]`)
 
 Show: `✓ Step 5b: UX audit passed.`
 
@@ -363,6 +396,11 @@ Stop and wait.
 **If no findings (or INFO only):** `✓ Step 6: Code-review clean.`
 
 **State:** Set `current_step: security-review`, append `code-review` to completed, update `cycle_count`.
+**Log:** one of:
+- `# [STORY_ID] TIMESTAMP code-review → CLEAN (cycle [CYCLE_COUNT])`
+- `# [STORY_ID] TIMESTAMP code-review → N MINOR → cycle [CYCLE_COUNT+1]`
+- `# [STORY_ID] TIMESTAMP code-review → N MAJOR blocked`
+- `# [STORY_ID] TIMESTAMP code-review → accepted (N MAJOR: [reason])`
 
 ---
 
@@ -417,6 +455,7 @@ rtk git add .
 Show: `✓ Step 7: Kassandra — clean.`
 
 **State:** Set `current_step: arc42-update`, append `security-review` to completed.
+**Log:** `# [STORY_ID] TIMESTAMP security-review → Kassandra CLEAN` (or `→ skipped (not-needed)` / `→ CRITICAL blocked` / `→ HIGH [blocking_severity=HIGH]`)
 
 ---
 
@@ -469,6 +508,7 @@ rtk git add docs/
 ```
 
 **State:** Set `current_step: commit`, append `arc42-update` to completed.
+**Log:** `# [STORY_ID] TIMESTAMP arc42-update → done` (or `→ no arch changes`)
 
 Show: `✓ Step 8: Arc42 documentation updated.`
 
@@ -506,7 +546,16 @@ EOF
 
 No `Co-Authored-By` line.
 
-**Clear the pipeline state:**
+**Write final log entry and clear YAML fields:**
+
+Read the file. Prepend one new line directly below `# last_updated:`:
+```
+# [STORY_ID] TIMESTAMP committed ✓ ([COMPACT_SUMMARY])
+```
+
+Compact summary examples: `ATDD+Code CLEAN`, `2 MINOR fixed 1 cycle+Kassandra CLEAN`, `MAJOR fixed 2 cycles+Kassandra HIGH resolved`
+
+Then zero **only** the YAML fields — every comment and log line stays intact:
 ```yaml
 story: null
 current_step: null
@@ -515,6 +564,18 @@ cycle_count: 0
 blocked_reason: null
 last_updated: "[NOW]"
 ```
+
+After multiple stories the comment block will look like:
+```yaml
+# [9-20] 2026-05-07T10:00Z committed ✓ (ATDD+Code CLEAN)
+# [9-20] 2026-05-07T09:55Z security-review → Kassandra CLEAN
+# [9-20] 2026-05-07T09:40Z code-review → CLEAN (cycle 0)
+# [9-19] 2026-05-06T14:23Z committed ✓ (2 MINOR fixed 1 cycle)
+# [9-19] 2026-05-06T14:15Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
+# [9-19] 2026-05-06T13:44Z pipeline started
+```
+
+This is the intended journal format — never truncate it.
 
 Show: `✓ Step 9: Committed. Pipeline state cleared.`
 

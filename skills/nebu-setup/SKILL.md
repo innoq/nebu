@@ -111,8 +111,10 @@ mkdir -p {project-root}/_bmad/nebu
 Write `{project-root}/_bmad/nebu/pipeline-state.yaml` if it does not yet exist:
 
 ```yaml
-# Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
-# Do not edit manually during a pipeline run.
+# Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents.
+# Do not edit manually during an active pipeline run.
+# last_updated: null
+# --- pipeline log (newest first) ---
 story: null
 current_step: null
 completed: []
