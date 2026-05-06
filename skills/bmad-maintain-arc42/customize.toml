@@ -1,0 +1,17 @@
+[workflow]
+name = "bmad-maintain-arc42"
+description = "Delta-Update for arc42 docs — only regenerates sections whose source artifact changed since last generation"
+
+[workflow.arc42_section_map]
+"01-intro"        = { source = "prd.md",          section = "Goals|Overview" }
+"02-constraints"  = { source = "architecture.md",  section = "Constraints" }
+"03-context"      = { source = "architecture.md",  section = "Context|Three-tier" }
+"04-solution-strategy" = { source = "architecture.md", section = "Core Architectural Decisions|Key Decisions" }
+"05-building-blocks"   = { source = "architecture.md", section = "Project Structure|Boundaries" }
+"06-runtime"      = { source = "architecture.md",  section = "Implementation Patterns|gRPC" }
+"07-deployment"   = { source = "architecture.md",  section = "Docker|Makefile" }
+"08-concepts"     = { source = "architecture.md",  section = "Cross-cutting|Auth|Crypto" }
+"09-decisions"    = { source = "architecture.md",  section = "ADR" }
+"10-quality"      = { source = "prd.md",           section = "Non-Functional" }
+"11-risks"        = { source = "sprint-status.yaml", section = "open items" }
+"12-glossary"     = { source = "architecture.md",  section = "Glossary|terms" }
