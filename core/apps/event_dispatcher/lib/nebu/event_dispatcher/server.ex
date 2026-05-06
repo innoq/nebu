@@ -1248,12 +1248,28 @@ defmodule Nebu.EventDispatcher.Server do
         {:ok, events} ->
           try do
             state = room_registry_module().get_state(room_id)
-            state_events = build_state_events(state, room_id)
             timeline_events = Enum.map(events, &event_map_to_proto/1)
             limited = length(events) >= 20
             # When limited, the oldest event's event_id is the backward-pagination
             # cursor (Spec §6.3.3). Client passes this to GET /messages?from=<token>&dir=b.
             prev_batch = if limited, do: List.first(events)["event_id"] || "", else: ""
+
+            # §6.3.3: state.events = room state BEFORE the timeline window. Any
+            # {type, state_key} already delivered in the timeline must be excluded
+            # from state so the client computes the change (not a no-op delta).
+            # We detect state events in the raw batch via Map.has_key?("state_key"),
+            # which correctly identifies state events with empty state_key (power_levels,
+            # name, join_rules) — proto conversion cannot distinguish them from messages.
+            timeline_state_keys =
+              events
+              |> Enum.filter(fn ev -> Map.has_key?(ev, "state_key") end)
+              |> MapSet.new(fn ev -> {ev["event_type"] || "", ev["state_key"] || ""} end)
+
+            state_events =
+              build_state_events(state, room_id)
+              |> Enum.reject(fn ev ->
+                MapSet.member?(timeline_state_keys, {ev.type, ev.state_key})
+              end)
 
             [
               %Core.SyncRoom{

@@ -1524,4 +1524,323 @@ defmodule Nebu.EventDispatcher.SyncTest do
              "expected room #{room_id} NOT in response when no new events"
     end
   end
+
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # Story 9-21: GAP-STATE-POSITION — state.events must not duplicate timeline state
+  # ═══════════════════════════════════════════════════════════════════════════════
+  #
+  # Matrix Spec §6.3.3: state.events = room state BEFORE the timeline window.
+  # Any {type, state_key} pair in timeline_events must NOT appear in state_events.
+  #
+  # These tests FAIL before the story 9-21 fix because build_state_events returns
+  # the current (post-timeline) state — the same state event appears in both
+  # state_events and timeline_events, causing the SDK to compute "no change".
+  #
+  # AC1: m.room.power_levels in timeline → NOT in state_events
+  # AC2: m.room.name in timeline → NOT in state_events
+  # AC3: unrelated state events (m.room.create) are KEPT in state_events
+  # AC4: m.room.member dedup regression guard (still excluded via existing path)
+
+  describe "Server.get_sync_delta/2 — state.events position correctness (Story 9-21)" do
+    test "AC1: excludes m.room.power_levels from state when it appears in timeline" do
+      alice = "@alice:test.local"
+      room_id = "!statepos1:test.local"
+
+      :ets.new(:sync_delta_pg_store_config, [:named_table, :public, :set])
+
+      on_exit(fn ->
+        if :ets.info(:sync_delta_pg_store_config) != :undefined do
+          :ets.delete(:sync_delta_pg_store_config)
+        end
+      end)
+
+      Application.put_env(:event_dispatcher, :pg_store_module, SyncDeltaFakePgStore)
+      Application.put_env(:event_dispatcher, :messages_db_module, SyncDeltaFakeDB)
+      Application.put_env(:event_dispatcher, :rooms_db_module, SyncDeltaFakeDB)
+
+      on_exit(fn ->
+        Application.delete_env(:event_dispatcher, :pg_store_module)
+        Application.delete_env(:event_dispatcher, :messages_db_module)
+        Application.delete_env(:event_dispatcher, :rooms_db_module)
+      end)
+
+      :ok = setup_room_with_member(room_id, alice)
+
+      # Anchor event (last_event_id reference point)
+      SyncDeltaFakeDB.insert_event(%{
+        "event_id" => "$sp1_anchor",
+        "room_id" => room_id,
+        "sender" => alice,
+        "event_type" => "m.room.message",
+        "content" => %{"msgtype" => "m.text", "body" => "anchor"},
+        "origin_server_ts" => 1_700_000_000_000
+      })
+
+      # New power_levels state event in the timeline
+      SyncDeltaFakeDB.insert_event(%{
+        "event_id" => "$sp1_pl_change",
+        "room_id" => room_id,
+        "sender" => alice,
+        "event_type" => "m.room.power_levels",
+        "state_key" => "",
+        "content" => %{"users_default" => 0},
+        "origin_server_ts" => 1_700_000_001_000
+      })
+
+      :ets.insert(:sync_delta_pg_store_config,
+        {:get_since_token_response,
+         {:ok, %{since_token: "s_sp1_anchor", last_event_id: "$sp1_anchor"}}})
+
+      request = %Core.GetSyncDeltaRequest{
+        user_id: alice,
+        since_token: "s_sp1_anchor",
+        timeout_ms: 5000
+      }
+
+      response = Server.get_sync_delta(request, build_stream())
+      room = Enum.find(response.rooms, fn r -> r.room_id == room_id end)
+
+      assert room != nil, "expected room #{room_id} in response"
+
+      pl_in_timeline =
+        Enum.any?(room.timeline_events, fn ev -> ev.event_type == "m.room.power_levels" end)
+
+      assert pl_in_timeline, "expected m.room.power_levels in timeline_events (precondition)"
+
+      pl_in_state =
+        Enum.any?(room.state_events, fn ev -> ev.type == "m.room.power_levels" end)
+
+      refute pl_in_state,
+             "expected m.room.power_levels NOT in state_events when it appears in timeline (Spec §6.3.3)"
+    end
+
+    test "AC2: excludes m.room.name from state when it appears in timeline" do
+      alice = "@alice:test.local"
+      room_id = "!statepos2:test.local"
+
+      :ets.new(:sync_delta_pg_store_config, [:named_table, :public, :set])
+
+      on_exit(fn ->
+        if :ets.info(:sync_delta_pg_store_config) != :undefined do
+          :ets.delete(:sync_delta_pg_store_config)
+        end
+      end)
+
+      Application.put_env(:event_dispatcher, :pg_store_module, SyncDeltaFakePgStore)
+      Application.put_env(:event_dispatcher, :messages_db_module, SyncDeltaFakeDB)
+      Application.put_env(:event_dispatcher, :rooms_db_module, SyncDeltaFakeDB)
+
+      on_exit(fn ->
+        Application.delete_env(:event_dispatcher, :pg_store_module)
+        Application.delete_env(:event_dispatcher, :messages_db_module)
+        Application.delete_env(:event_dispatcher, :rooms_db_module)
+      end)
+
+      :ok = setup_room_with_member(room_id, alice)
+
+      # A pre-existing name event — stored with "type" key so get_room_name/1 finds it,
+      # but WITHOUT "event_type" so fetch_events_since/3 ignores it (not a timeline event).
+      SyncDeltaFakeDB.insert_event(%{
+        "event_id" => "$sp2_name_old",
+        "room_id" => room_id,
+        "type" => "m.room.name",
+        "content" => %{"name" => "Old Room Name"},
+        "origin_server_ts" => 1_699_000_000_000
+      })
+
+      # Anchor event
+      SyncDeltaFakeDB.insert_event(%{
+        "event_id" => "$sp2_anchor",
+        "room_id" => room_id,
+        "sender" => alice,
+        "event_type" => "m.room.message",
+        "content" => %{"msgtype" => "m.text", "body" => "anchor"},
+        "origin_server_ts" => 1_700_000_000_000
+      })
+
+      # Name change in timeline — has "event_type" AND "state_key" to mark it as a state event
+      SyncDeltaFakeDB.insert_event(%{
+        "event_id" => "$sp2_name_change",
+        "room_id" => room_id,
+        "sender" => alice,
+        "event_type" => "m.room.name",
+        "state_key" => "",
+        "content" => %{"name" => "New Room Name"},
+        "origin_server_ts" => 1_700_000_001_000
+      })
+
+      :ets.insert(:sync_delta_pg_store_config,
+        {:get_since_token_response,
+         {:ok, %{since_token: "s_sp2_anchor", last_event_id: "$sp2_anchor"}}})
+
+      request = %Core.GetSyncDeltaRequest{
+        user_id: alice,
+        since_token: "s_sp2_anchor",
+        timeout_ms: 5000
+      }
+
+      response = Server.get_sync_delta(request, build_stream())
+      room = Enum.find(response.rooms, fn r -> r.room_id == room_id end)
+
+      assert room != nil, "expected room #{room_id} in response"
+
+      name_in_state =
+        Enum.any?(room.state_events, fn ev -> ev.type == "m.room.name" end)
+
+      refute name_in_state,
+             "expected m.room.name NOT in state_events when it appears in timeline (Spec §6.3.3)"
+    end
+
+    test "AC3: keeps unrelated state events in state when they do not appear in timeline" do
+      alice = "@alice:test.local"
+      room_id = "!statepos3:test.local"
+
+      :ets.new(:sync_delta_pg_store_config, [:named_table, :public, :set])
+
+      on_exit(fn ->
+        if :ets.info(:sync_delta_pg_store_config) != :undefined do
+          :ets.delete(:sync_delta_pg_store_config)
+        end
+      end)
+
+      Application.put_env(:event_dispatcher, :pg_store_module, SyncDeltaFakePgStore)
+      Application.put_env(:event_dispatcher, :messages_db_module, SyncDeltaFakeDB)
+      Application.put_env(:event_dispatcher, :rooms_db_module, SyncDeltaFakeDB)
+
+      on_exit(fn ->
+        Application.delete_env(:event_dispatcher, :pg_store_module)
+        Application.delete_env(:event_dispatcher, :messages_db_module)
+        Application.delete_env(:event_dispatcher, :rooms_db_module)
+      end)
+
+      :ok = setup_room_with_member(room_id, alice)
+
+      SyncDeltaFakeDB.insert_event(%{
+        "event_id" => "$sp3_anchor",
+        "room_id" => room_id,
+        "sender" => alice,
+        "event_type" => "m.room.message",
+        "content" => %{"msgtype" => "m.text", "body" => "anchor"},
+        "origin_server_ts" => 1_700_000_000_000
+      })
+
+      # Only a power_levels state event in the timeline — m.room.create is unrelated
+      SyncDeltaFakeDB.insert_event(%{
+        "event_id" => "$sp3_pl_change",
+        "room_id" => room_id,
+        "sender" => alice,
+        "event_type" => "m.room.power_levels",
+        "state_key" => "",
+        "content" => %{"users_default" => 0},
+        "origin_server_ts" => 1_700_000_001_000
+      })
+
+      :ets.insert(:sync_delta_pg_store_config,
+        {:get_since_token_response,
+         {:ok, %{since_token: "s_sp3_anchor", last_event_id: "$sp3_anchor"}}})
+
+      request = %Core.GetSyncDeltaRequest{
+        user_id: alice,
+        since_token: "s_sp3_anchor",
+        timeout_ms: 5000
+      }
+
+      response = Server.get_sync_delta(request, build_stream())
+      room = Enum.find(response.rooms, fn r -> r.room_id == room_id end)
+
+      assert room != nil, "expected room #{room_id} in response"
+
+      create_in_state =
+        Enum.any?(room.state_events, fn ev -> ev.type == "m.room.create" end)
+
+      assert create_in_state,
+             "expected m.room.create still in state_events (unrelated to power_levels timeline change)"
+
+      pl_in_state =
+        Enum.any?(room.state_events, fn ev -> ev.type == "m.room.power_levels" end)
+
+      refute pl_in_state,
+             "expected m.room.power_levels NOT in state_events (it changed in timeline)"
+    end
+
+    test "AC4: m.room.member dedup regression — member in timeline excluded from state" do
+      alice = "@alice:test.local"
+      bob = "@bob:test.local"
+      room_id = "!statepos4:test.local"
+
+      :ets.new(:sync_delta_pg_store_config, [:named_table, :public, :set])
+
+      on_exit(fn ->
+        if :ets.info(:sync_delta_pg_store_config) != :undefined do
+          :ets.delete(:sync_delta_pg_store_config)
+        end
+      end)
+
+      Application.put_env(:event_dispatcher, :pg_store_module, SyncDeltaFakePgStore)
+      Application.put_env(:event_dispatcher, :messages_db_module, SyncDeltaFakeDB)
+      Application.put_env(:event_dispatcher, :rooms_db_module, SyncDeltaFakeDB)
+
+      on_exit(fn ->
+        Application.delete_env(:event_dispatcher, :pg_store_module)
+        Application.delete_env(:event_dispatcher, :messages_db_module)
+        Application.delete_env(:event_dispatcher, :rooms_db_module)
+      end)
+
+      # Both alice (existing) and bob (newly joined) are members
+      :ok = setup_room_with_member(room_id, alice)
+      :ok = Nebu.Room.Server.join(room_id, bob)
+      :ets.insert(:sync_test_db, {{:member_for_user, bob, room_id}, :active})
+
+      SyncDeltaFakeDB.insert_event(%{
+        "event_id" => "$sp4_anchor",
+        "room_id" => room_id,
+        "sender" => alice,
+        "event_type" => "m.room.message",
+        "content" => %{"msgtype" => "m.text", "body" => "anchor"},
+        "origin_server_ts" => 1_700_000_000_000
+      })
+
+      # Bob's join event in the timeline
+      SyncDeltaFakeDB.insert_event(%{
+        "event_id" => "$sp4_bob_join",
+        "room_id" => room_id,
+        "sender" => bob,
+        "event_type" => "m.room.member",
+        "state_key" => bob,
+        "content" => %{"membership" => "join"},
+        "origin_server_ts" => 1_700_000_001_000
+      })
+
+      :ets.insert(:sync_delta_pg_store_config,
+        {:get_since_token_response,
+         {:ok, %{since_token: "s_sp4_anchor", last_event_id: "$sp4_anchor"}}})
+
+      request = %Core.GetSyncDeltaRequest{
+        user_id: alice,
+        since_token: "s_sp4_anchor",
+        timeout_ms: 5000
+      }
+
+      response = Server.get_sync_delta(request, build_stream())
+      room = Enum.find(response.rooms, fn r -> r.room_id == room_id end)
+
+      assert room != nil, "expected room #{room_id} in response"
+
+      bob_in_state =
+        Enum.any?(room.state_events, fn ev ->
+          ev.type == "m.room.member" and ev.state_key == bob
+        end)
+
+      refute bob_in_state,
+             "expected bob's m.room.member NOT in state_events when bob's join appears in timeline"
+
+      alice_in_state =
+        Enum.any?(room.state_events, fn ev ->
+          ev.type == "m.room.member" and ev.state_key == alice
+        end)
+
+      assert alice_in_state,
+             "expected alice's m.room.member still in state_events (alice not in timeline)"
+    end
+  end
 end

@@ -1,5 +1,6 @@
 # generated: 2026-03-20
 # last_updated: 2026-05-06
+# story 9-21 done (pipeline: ATDD+Dev+Test-Review CLEAN+Code-Review CLEAN; security_review not-needed): 2026-05-06
 # story 9-20 done (pipeline: ATDD+Dev+Test-Review CLEAN+Code-Review CLEAN; security_review not-needed): 2026-05-06
 # story 9-20 created: 9-20 → ready-for-dev: 2026-05-06 (GAP-PREV-BATCH — delta sync missing prev_batch when limited:true; fix fetch_delta_rooms to derive prev_batch from List.first(events)["event_id"]; security_review not-needed)
 # story 9-19 done (pipeline: ATDD+Dev+Test-Review (1 MAJOR fixed: buildInviteRooms forgotten exclusion)+Code-Review (3 MINOR auto-fixed: DEBUG logs, forgotten_rooms error log, polling loop replaced)+security_review not-needed): 2026-05-06
@@ -736,7 +737,7 @@ development_status:
   9-17-admin-rooms-patch-max-members-visibility-test: done  # story 9-17 done: 2026-05-05 (GAP-9-002 — 8 unit tests for UpdateRoomSettingsHandler; code-review CLEAN with 2 MINOR auto-fixed: t.Parallel() + maxMembersLimit constant; security_review: not-needed)
   9-18-admin-room-detail-member-list: done  # story 9-18 done: 2026-05-05 (Admin UI — Room Detail: Member-Liste anzeigen; new ListAdminRoomMembers gRPC RPC, Elixir DB query, Go client, page_data.go, template; security_review: required)
   9-19-sync-gap-fixes-join-public-leave-once-forget: done  # story 9-19 done: 2026-05-06 (Sync Gap Fixes: GAP-JOIN-PUBLIC {:new_join} :pg broadcast, GAP-LEAVE-ONCE sinceMs filter, GAP-FORGET forgotten_rooms table; security_review: not-needed)
-  9-21-sync-gap-state-position: backlog
+  9-21-sync-gap-state-position: done
   9-20-sync-gap-prev-batch: done
   9-23-sync-gap-invite-state-stripped-events: backlog
   9-25-sync-gap-buffer-next-batch: backlog
