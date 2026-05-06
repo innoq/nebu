@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-05-06T12:30:00Z",
-  "generator": "bmad-maintain-arc42 skill (Story 9-22)",
+  "generated_at": "2026-05-06T17:22:31Z",
+  "generator": "bmad-maintain-arc42 skill (Story 9-23)",
   "source_artifacts": [
     "_bmad-output/planning-artifacts/architecture.md",
     "_bmad-output/planning-artifacts/prd.md",
@@ -43,7 +43,7 @@
     },
     "docs/architecture/06-runtime.md": {
       "editable": false,
-      "generated_at": "2026-05-06T12:30:00Z",
+      "generated_at": "2026-05-06T17:22:31Z",
       "source": "_bmad-output/planning-artifacts/architecture.md",
       "arc42_section": "06 Runtime View"
     },

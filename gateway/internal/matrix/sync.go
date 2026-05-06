@@ -279,6 +279,61 @@ func (h *GetSyncHandler) buildInviteRooms(ctx context.Context, userID string) ma
 				"content":   map[string]string{"name": roomName},
 			})
 		}
+		// m.room.join_rules — included per Matrix spec §4.4.4 stripped state
+		var joinRule string
+		joinRulesRow := h.db.QueryRowContext(ctx,
+			`SELECT CASE
+				WHEN jsonb_typeof(content) = 'object' THEN content->>'join_rule'
+				ELSE ((content#>>'{}')::jsonb)->>'join_rule'
+			 END
+			 FROM events WHERE room_id = $1 AND event_type = 'm.room.join_rules'
+			 ORDER BY origin_server_ts DESC LIMIT 1`,
+			roomID)
+		if err := joinRulesRow.Scan(&joinRule); err == nil && joinRule != "" {
+			events = append(events, map[string]interface{}{
+				"type":      "m.room.join_rules",
+				"sender":    inviterID,
+				"state_key": "",
+				"content":   map[string]string{"join_rule": joinRule},
+			})
+		}
+		// m.room.avatar — included per Matrix spec §4.4.4 stripped state
+		// Omitted entirely when url is empty or missing (Element Web handles gracefully).
+		var avatarURL string
+		avatarRow := h.db.QueryRowContext(ctx,
+			`SELECT CASE
+				WHEN jsonb_typeof(content) = 'object' THEN content->>'url'
+				ELSE ((content#>>'{}')::jsonb)->>'url'
+			 END
+			 FROM events WHERE room_id = $1 AND event_type = 'm.room.avatar'
+			 ORDER BY origin_server_ts DESC LIMIT 1`,
+			roomID)
+		if err := avatarRow.Scan(&avatarURL); err == nil && avatarURL != "" {
+			events = append(events, map[string]interface{}{
+				"type":      "m.room.avatar",
+				"sender":    inviterID,
+				"state_key": "",
+				"content":   map[string]string{"url": avatarURL},
+			})
+		}
+		// m.room.create — included per Matrix spec §4.4.4 stripped state
+		var roomCreator string
+		createRow := h.db.QueryRowContext(ctx,
+			`SELECT CASE
+				WHEN jsonb_typeof(content) = 'object' THEN content->>'creator'
+				ELSE ((content#>>'{}')::jsonb)->>'creator'
+			 END
+			 FROM events WHERE room_id = $1 AND event_type = 'm.room.create'
+			 ORDER BY origin_server_ts DESC LIMIT 1`,
+			roomID)
+		if err := createRow.Scan(&roomCreator); err == nil && roomCreator != "" {
+			events = append(events, map[string]interface{}{
+				"type":      "m.room.create",
+				"sender":    roomCreator,
+				"state_key": "",
+				"content":   map[string]string{"creator": roomCreator},
+			})
+		}
 		invites[roomID] = map[string]interface{}{
 			"invite_state": map[string]interface{}{
 				"events": events,

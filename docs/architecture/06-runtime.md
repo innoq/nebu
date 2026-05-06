@@ -201,6 +201,69 @@ Matrix Client      Go Gateway            Elixir Core               PostgreSQL
 **Non-fatal on gRPC failure:** The JWT is already invalidated before the gRPC call. If the Core
 call fails, a warning is logged but the client still receives `200 {}` (Matrix spec conformance).
 
+## Scenario 3f: Invite Tiles — Stripped State Enrichment (GAP-INVITE-STATE, Story 9-23)
+
+Matrix Client-Server API spec §4.4.4 requires `invite_state` to contain stripped state events
+so clients can display room context before a user accepts an invitation. Without these events,
+Element Web invite tiles show no avatar, no join-rules badge, and no creator info.
+
+`buildInviteRooms` in `gateway/internal/matrix/sync.go` queries five stripped state event types
+per pending invite room:
+
+| Event type | Content field queried | Inclusion condition |
+|---|---|---|
+| `m.room.member` | `membership = "invite"` | Always (mandatory by spec) |
+| `m.room.name` | `name` | Non-empty name |
+| `m.room.join_rules` | `join_rule` | Non-empty join_rule |
+| `m.room.avatar` | `url` | Non-empty url |
+| `m.room.create` | `creator` | Non-empty creator |
+
+Each query uses a JSONB double-encoding guard (`CASE WHEN jsonb_typeof(content) = 'object'`)
+to handle both direct JSONB objects and legacy double-encoded events. Missing events are silently
+omitted (spec SHOULD semantics) — no error is returned when an event type is absent for a room.
+
+```
+Matrix Client      Go Gateway                                  PostgreSQL
+     │                   │                                          │
+     │  GET /sync        │                                          │
+     │──────────────────►│                                          │
+     │                   │  SELECT room_id, inviter_id              │
+     │                   │  FROM room_invitations WHERE user_id=$1  │
+     │                   │─────────────────────────────────────────►│
+     │                   │  ◄── [roomID, inviterID, ...]            │
+     │                   │                                          │
+     │                   │  -- per room (5 queries, sequential):    │
+     │                   │  SELECT content->>'name'                 │
+     │                   │    FROM events WHERE room_id=$1          │
+     │                   │    AND event_type='m.room.name' LIMIT 1  │
+     │                   │─────────────────────────────────────────►│
+     │                   │  SELECT content->>'join_rule'            │
+     │                   │    FROM events WHERE room_id=$1          │
+     │                   │    AND event_type='m.room.join_rules'    │
+     │                   │─────────────────────────────────────────►│
+     │                   │  SELECT content->>'url'                  │
+     │                   │    FROM events WHERE room_id=$1          │
+     │                   │    AND event_type='m.room.avatar'        │
+     │                   │─────────────────────────────────────────►│
+     │                   │  SELECT content->>'creator'              │
+     │                   │    FROM events WHERE room_id=$1          │
+     │                   │    AND event_type='m.room.create'        │
+     │                   │─────────────────────────────────────────►│
+     │                   │                                          │
+     │  200 {rooms.invite: {                                        │
+     │    invite_state.events: [                                     │
+     │      {type: "m.room.member", membership: "invite"},          │
+     │      {type: "m.room.name", content: {name: "..."}},          │
+     │      {type: "m.room.join_rules", content: {join_rule: "..."}},
+     │      {type: "m.room.avatar", content: {url: "mxc://..."}},   │
+     │      {type: "m.room.create", content: {creator: "@..."}},    │
+     │    ]}}                                                        │
+     │◄──────────────────│                                          │
+```
+
+**Performance note:** The five queries run sequentially per invite room. For typical instances
+with few pending invites (< 10) this is negligible. Batching is deferred to Phase 2.
+
 ## Scenario 4: Compliance Four-Eyes Export Flow
 
 ```
@@ -218,4 +281,4 @@ On restart, Horde re-discovers Room GenServers across the cluster via CRDT regis
 Session Manager GenServer reads since-token checkpoints from PostgreSQL (no cold-sync forced on clients).
 EventBus stream re-connects to Go Gateway after exponential backoff (max 30s + jitter).
 
-_Source: `_bmad-output/planning-artifacts/architecture.md`, §Implementation Patterns, §API & Kommunikation, §Resilienz & Selbst-Heilung; Story 9-19 (GAP-JOIN-PUBLIC, GAP-LEAVE-ONCE, GAP-FORGET); Story 9-22 (GAP-SINCE-IGNORED — per-device sync tokens, per-device logout cleanup)_
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Implementation Patterns, §API & Kommunikation, §Resilienz & Selbst-Heilung; Story 9-19 (GAP-JOIN-PUBLIC, GAP-LEAVE-ONCE, GAP-FORGET); Story 9-22 (GAP-SINCE-IGNORED — per-device sync tokens, per-device logout cleanup); Story 9-23 (GAP-INVITE-STATE — invite_state stripped state enrichment: join_rules, avatar, create)_

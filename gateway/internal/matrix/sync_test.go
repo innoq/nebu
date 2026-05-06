@@ -2255,3 +2255,470 @@ func TestSyncTokens_UnknownDevice_FallsBackToInitial(t *testing.T) {
 			"UNKNOWN_DEVICE_XYZ", mock.capturedDeltaReq.DeviceId)
 	}
 }
+
+// ─── Story 9-23: GAP-INVITE-STATE — invite_state Missing join_rules, avatar, create ──
+//
+// These tests are written FIRST (ATDD red phase), before any implementation code exists.
+// ALL tests in this block are expected to FAIL until Story 9-23 is implemented.
+//
+// Spec §4.4.4: Stripped state events — each event MUST contain type, sender, state_key,
+// and content ONLY. The following events SHOULD be included in invite_state.events:
+//   - m.room.join_rules  (AC1)
+//   - m.room.avatar      (AC2 — omitted entirely when url is empty/missing)
+//   - m.room.create      (AC3)
+//   - m.room.member      (AC4 regression)
+//   - m.room.name        (AC4 regression)
+//
+// DB error / missing event → silently omit (never propagate as API error).
+// JSONB double-encoding: content stored as string-escaped JSON must parse correctly
+// using the CASE guard pattern already used for m.room.name.
+//
+// Test helper: insertInviteFixture sets up users + room + room_invitations row.
+// Each test inserts its own events rows and cleans up via t.Cleanup.
+
+// insertInviteFixture inserts a minimal pending-invite fixture:
+//   - inviterID user row
+//   - inviteeID user row
+//   - room row
+//   - room_invitations row (pending: accepted_at and rejected_at both NULL)
+//
+// Returns a cleanup function that removes all inserted rows.
+func insertInviteFixture(t *testing.T, db *sql.DB, inviterID, inviteeID, roomID string) func() {
+	t.Helper()
+	now := int64(1700001000000)
+
+	for _, uid := range []string{inviterID, inviteeID} {
+		_, err := db.Exec(
+			`INSERT INTO users (user_id, system_role, is_active, created_at) VALUES ($1, 'user', true, $2) ON CONFLICT DO NOTHING`,
+			uid, now,
+		)
+		if err != nil {
+			t.Fatalf("insertInviteFixture: insert user %s: %v", uid, err)
+		}
+	}
+
+	_, err := db.Exec(
+		`INSERT INTO rooms (room_id, visibility, created_at) VALUES ($1, 'private', $2) ON CONFLICT DO NOTHING`,
+		roomID, now,
+	)
+	if err != nil {
+		t.Fatalf("insertInviteFixture: insert room: %v", err)
+	}
+
+	_, err = db.Exec(
+		`INSERT INTO room_invitations (room_id, inviter_id, invitee_id, invited_at)
+		 VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
+		roomID, inviterID, inviteeID, now,
+	)
+	if err != nil {
+		t.Fatalf("insertInviteFixture: insert invitation: %v", err)
+	}
+
+	return func() {
+		_, _ = db.Exec(`DELETE FROM room_invitations WHERE room_id = $1 AND invitee_id = $2`, roomID, inviteeID)
+		_, _ = db.Exec(`DELETE FROM rooms WHERE room_id = $1`, roomID)
+		for _, uid := range []string{inviterID, inviteeID} {
+			_, _ = db.Exec(`DELETE FROM users WHERE user_id = $1`, uid)
+		}
+	}
+}
+
+// findInviteEvent is a helper that searches invite_state.events for an event of the
+// given type and returns it plus a found flag.
+func findInviteEvent(t *testing.T, invites map[string]interface{}, roomID, eventType string) (map[string]interface{}, bool) {
+	t.Helper()
+	roomRaw, ok := invites[roomID]
+	if !ok {
+		return nil, false
+	}
+	roomMap, ok := roomRaw.(map[string]interface{})
+	if !ok {
+		t.Fatalf("findInviteEvent: room entry is not map[string]interface{}, got %T", roomRaw)
+	}
+	inviteStateRaw, ok := roomMap["invite_state"]
+	if !ok {
+		return nil, false
+	}
+	inviteStateMap, ok := inviteStateRaw.(map[string]interface{})
+	if !ok {
+		t.Fatalf("findInviteEvent: invite_state is not map[string]interface{}, got %T", inviteStateRaw)
+	}
+	eventsRaw, ok := inviteStateMap["events"]
+	if !ok {
+		return nil, false
+	}
+	// Handle both []map[string]interface{} (our concrete type) and []interface{}
+	// (e.g. when the slice has been round-tripped through JSON or an interface{}
+	// container). This is consistent with how other helpers in sync_test.go work.
+	switch ev := eventsRaw.(type) {
+	case []map[string]interface{}:
+		for _, e := range ev {
+			if e["type"] == eventType {
+				return e, true
+			}
+		}
+	case []interface{}:
+		for _, eRaw := range ev {
+			e, ok := eRaw.(map[string]interface{})
+			if !ok {
+				t.Fatalf("findInviteEvent: events[i] is not map[string]interface{}, got %T", eRaw)
+			}
+			if e["type"] == eventType {
+				return e, true
+			}
+		}
+	default:
+		t.Fatalf("findInviteEvent: events is not a recognized slice type, got %T", eventsRaw)
+	}
+	return nil, false
+}
+
+// assertStrippedStateFields verifies that a stripped state event (Matrix spec §4.4.4)
+// contains ONLY the four allowed fields: type, sender, state_key, content.
+// The following fields MUST be absent: event_id, unsigned, origin_server_ts, room_id.
+// MINOR-3: added per pre-dev test quality review to enforce Matrix spec §4.4.4 MUST.
+func assertStrippedStateFields(t *testing.T, ev map[string]interface{}, eventType string) {
+	t.Helper()
+	forbidden := []string{"event_id", "unsigned", "origin_server_ts", "room_id"}
+	for _, field := range forbidden {
+		if _, present := ev[field]; present {
+			t.Errorf("spec §4.4.4 MUST: stripped state event %q MUST NOT contain field %q", eventType, field)
+		}
+	}
+}
+
+// TestBuildInviteRooms_JoinRulesPresent — AC1
+//
+// Given: a pending invite and a m.room.join_rules event with join_rule="public" in the
+//
+//	events table (JSONB object form)
+//
+// When:  buildInviteRooms is called for the invitee
+// Then:  invite_state.events contains an event with type="m.room.join_rules" and
+//
+//	content.join_rule="public"
+//
+// RED: this test MUST FAIL until buildInviteRooms queries m.room.join_rules.
+func TestBuildInviteRooms_JoinRulesPresent(t *testing.T) {
+	db := openTestDB(t)
+
+	inviterID := "@9-23-jr-inviter:test.local"
+	inviteeID := "@9-23-jr-invitee:test.local"
+	roomID := "!9-23-jr-room:test.local"
+	eventID := "$9-23-jr-ev1:test.local"
+
+	cleanup := insertInviteFixture(t, db, inviterID, inviteeID, roomID)
+	t.Cleanup(cleanup)
+
+	// Insert m.room.join_rules event (JSONB object form)
+	_, err := db.Exec(
+		`INSERT INTO events (event_id, room_id, sender, event_type, content, origin_server_ts)
+		 VALUES ($1, $2, $3, 'm.room.join_rules', '{"join_rule":"public"}'::jsonb, $4)
+		 ON CONFLICT DO NOTHING`,
+		eventID, roomID, inviterID, int64(1700001001000),
+	)
+	if err != nil {
+		t.Fatalf("JoinRulesPresent: insert event: %v", err)
+	}
+	t.Cleanup(func() { _, _ = db.Exec(`DELETE FROM events WHERE event_id = $1`, eventID) })
+
+	h := &GetSyncHandler{db: db}
+	invites := h.buildInviteRooms(context.Background(), inviteeID)
+
+	ev, found := findInviteEvent(t, invites, roomID, "m.room.join_rules")
+	if !found {
+		t.Fatalf("AC1: invite_state.events MUST contain m.room.join_rules when event is in DB; got events: %v", invites[roomID])
+	}
+
+	content, ok := ev["content"].(map[string]string)
+	if !ok {
+		t.Fatalf("AC1: m.room.join_rules content is not map[string]string, got %T", ev["content"])
+	}
+	if content["join_rule"] != "public" {
+		t.Errorf("AC1: expected content.join_rule=%q, got %q", "public", content["join_rule"])
+	}
+	// MINOR-3: verify stripped-state field exclusion (spec §4.4.4 MUST)
+	assertStrippedStateFields(t, ev, "m.room.join_rules")
+}
+
+// TestBuildInviteRooms_JoinRulesMissing — AC1 (absent branch)
+//
+// Given: a pending invite but NO m.room.join_rules event in the events table for that room
+// When:  buildInviteRooms is called
+// Then:  no m.room.join_rules entry appears in invite_state.events (graceful omission, no error)
+//
+// RED: this test MUST FAIL until buildInviteRooms correctly omits the event on sql.ErrNoRows.
+func TestBuildInviteRooms_JoinRulesMissing(t *testing.T) {
+	db := openTestDB(t)
+
+	inviterID := "@9-23-jrm-inviter:test.local"
+	inviteeID := "@9-23-jrm-invitee:test.local"
+	roomID := "!9-23-jrm-room:test.local"
+
+	cleanup := insertInviteFixture(t, db, inviterID, inviteeID, roomID)
+	t.Cleanup(cleanup)
+
+	// Deliberately do NOT insert a m.room.join_rules event.
+
+	h := &GetSyncHandler{db: db}
+	invites := h.buildInviteRooms(context.Background(), inviteeID)
+
+	// Room must still appear in invites (the invite itself is present)
+	if _, ok := invites[roomID]; !ok {
+		t.Fatalf("JoinRulesMissing: room %q must appear in rooms.invite even without join_rules event", roomID)
+	}
+
+	_, found := findInviteEvent(t, invites, roomID, "m.room.join_rules")
+	if found {
+		t.Errorf("AC1 (absent): m.room.join_rules MUST NOT appear in invite_state.events when no event is in DB")
+	}
+}
+
+// TestBuildInviteRooms_AvatarPresentWhenUrlSet — AC2
+//
+// Given: a pending invite and a m.room.avatar event with url="mxc://example.com/abc" in
+//
+//	the events table (JSONB object form)
+//
+// When:  buildInviteRooms is called
+// Then:  invite_state.events contains an event with type="m.room.avatar" and
+//
+//	content.url="mxc://example.com/abc"
+//
+// RED: this test MUST FAIL until buildInviteRooms queries m.room.avatar.
+func TestBuildInviteRooms_AvatarPresentWhenUrlSet(t *testing.T) {
+	db := openTestDB(t)
+
+	inviterID := "@9-23-av-inviter:test.local"
+	inviteeID := "@9-23-av-invitee:test.local"
+	roomID := "!9-23-av-room:test.local"
+	eventID := "$9-23-av-ev1:test.local"
+
+	cleanup := insertInviteFixture(t, db, inviterID, inviteeID, roomID)
+	t.Cleanup(cleanup)
+
+	// Insert m.room.avatar event with a non-empty url (JSONB object form)
+	_, err := db.Exec(
+		`INSERT INTO events (event_id, room_id, sender, event_type, content, origin_server_ts)
+		 VALUES ($1, $2, $3, 'm.room.avatar', '{"url":"mxc://example.com/abc"}'::jsonb, $4)
+		 ON CONFLICT DO NOTHING`,
+		eventID, roomID, inviterID, int64(1700001002000),
+	)
+	if err != nil {
+		t.Fatalf("AvatarPresentWhenUrlSet: insert event: %v", err)
+	}
+	t.Cleanup(func() { _, _ = db.Exec(`DELETE FROM events WHERE event_id = $1`, eventID) })
+
+	h := &GetSyncHandler{db: db}
+	invites := h.buildInviteRooms(context.Background(), inviteeID)
+
+	ev, found := findInviteEvent(t, invites, roomID, "m.room.avatar")
+	if !found {
+		t.Fatalf("AC2: invite_state.events MUST contain m.room.avatar when url is set; got events: %v", invites[roomID])
+	}
+
+	content, ok := ev["content"].(map[string]string)
+	if !ok {
+		t.Fatalf("AC2: m.room.avatar content is not map[string]string, got %T", ev["content"])
+	}
+	if content["url"] != "mxc://example.com/abc" {
+		t.Errorf("AC2: expected content.url=%q, got %q", "mxc://example.com/abc", content["url"])
+	}
+	// MINOR-3: verify stripped-state field exclusion (spec §4.4.4 MUST)
+	assertStrippedStateFields(t, ev, "m.room.avatar")
+}
+
+// TestBuildInviteRooms_AvatarAbsentWhenNoUrl — AC2 (absent branch)
+//
+// Given: a pending invite but no m.room.avatar event (or event with empty url)
+// When:  buildInviteRooms is called
+// Then:  no m.room.avatar entry appears in invite_state.events (graceful omission)
+//
+// Spec: "Rooms with no avatar are silently omitted — Element Web handles the missing
+// event gracefully."
+//
+// RED: this test MUST FAIL until buildInviteRooms correctly omits avatar on empty url.
+func TestBuildInviteRooms_AvatarAbsentWhenNoUrl(t *testing.T) {
+	db := openTestDB(t)
+
+	inviterID := "@9-23-avn-inviter:test.local"
+	inviteeID := "@9-23-avn-invitee:test.local"
+	roomID := "!9-23-avn-room:test.local"
+	eventID := "$9-23-avn-ev1:test.local"
+
+	cleanup := insertInviteFixture(t, db, inviterID, inviteeID, roomID)
+	t.Cleanup(cleanup)
+
+	// Insert m.room.avatar event with EMPTY url — must be omitted by buildInviteRooms
+	_, err := db.Exec(
+		`INSERT INTO events (event_id, room_id, sender, event_type, content, origin_server_ts)
+		 VALUES ($1, $2, $3, 'm.room.avatar', '{"url":""}'::jsonb, $4)
+		 ON CONFLICT DO NOTHING`,
+		eventID, roomID, inviterID, int64(1700001003000),
+	)
+	if err != nil {
+		t.Fatalf("AvatarAbsentWhenNoUrl: insert event: %v", err)
+	}
+	t.Cleanup(func() { _, _ = db.Exec(`DELETE FROM events WHERE event_id = $1`, eventID) })
+
+	h := &GetSyncHandler{db: db}
+	invites := h.buildInviteRooms(context.Background(), inviteeID)
+
+	if _, ok := invites[roomID]; !ok {
+		t.Fatalf("AvatarAbsentWhenNoUrl: room %q must appear in rooms.invite even without avatar url", roomID)
+	}
+
+	_, found := findInviteEvent(t, invites, roomID, "m.room.avatar")
+	if found {
+		t.Errorf("AC2 (absent): m.room.avatar MUST NOT appear in invite_state.events when url is empty")
+	}
+}
+
+// TestBuildInviteRooms_CreatePresent — AC3
+//
+// Given: a pending invite and a m.room.create event with creator="@alice:example.com" in
+//
+//	the events table (JSONB object form)
+//
+// When:  buildInviteRooms is called
+// Then:  invite_state.events contains an event with type="m.room.create" and
+//
+//	content.creator="@alice:example.com"
+//
+// RED: this test MUST FAIL until buildInviteRooms queries m.room.create.
+func TestBuildInviteRooms_CreatePresent(t *testing.T) {
+	db := openTestDB(t)
+
+	inviterID := "@9-23-cr-inviter:test.local"
+	inviteeID := "@9-23-cr-invitee:test.local"
+	roomCreator := "@alice:example.com"
+	roomID := "!9-23-cr-room:test.local"
+	eventID := "$9-23-cr-ev1:test.local"
+
+	cleanup := insertInviteFixture(t, db, inviterID, inviteeID, roomID)
+	t.Cleanup(cleanup)
+
+	// Insert m.room.create event (JSONB object form)
+	_, err := db.Exec(
+		`INSERT INTO events (event_id, room_id, sender, event_type, content, origin_server_ts)
+		 VALUES ($1, $2, $3, 'm.room.create', $4::jsonb, $5)
+		 ON CONFLICT DO NOTHING`,
+		eventID, roomID, roomCreator, fmt.Sprintf(`{"creator":"%s"}`, roomCreator), int64(1700001004000),
+	)
+	if err != nil {
+		t.Fatalf("CreatePresent: insert event: %v", err)
+	}
+	t.Cleanup(func() { _, _ = db.Exec(`DELETE FROM events WHERE event_id = $1`, eventID) })
+
+	h := &GetSyncHandler{db: db}
+	invites := h.buildInviteRooms(context.Background(), inviteeID)
+
+	ev, found := findInviteEvent(t, invites, roomID, "m.room.create")
+	if !found {
+		t.Fatalf("AC3: invite_state.events MUST contain m.room.create when event is in DB; got events: %v", invites[roomID])
+	}
+
+	content, ok := ev["content"].(map[string]string)
+	if !ok {
+		t.Fatalf("AC3: m.room.create content is not map[string]string, got %T", ev["content"])
+	}
+	if content["creator"] != roomCreator {
+		t.Errorf("AC3: expected content.creator=%q, got %q", roomCreator, content["creator"])
+	}
+	// MINOR-3: verify stripped-state field exclusion (spec §4.4.4 MUST)
+	assertStrippedStateFields(t, ev, "m.room.create")
+}
+
+// TestBuildInviteRooms_RegressionMemberStillPresent — AC4 regression
+//
+// Given: a pending invite (no name/join_rules/avatar/create events in DB)
+// When:  buildInviteRooms is called
+// Then:  invite_state.events still contains m.room.member with content.membership="invite"
+//
+// Regression guard: new events (join_rules, avatar, create) MUST NOT displace the
+// mandatory m.room.member event that was already present before Story 9-23.
+//
+// RED: this test MUST FAIL until buildInviteRooms is implemented in 9-23 and still
+// preserves m.room.member.
+func TestBuildInviteRooms_RegressionMemberStillPresent(t *testing.T) {
+	db := openTestDB(t)
+
+	inviterID := "@9-23-reg-inviter:test.local"
+	inviteeID := "@9-23-reg-invitee:test.local"
+	roomID := "!9-23-reg-room:test.local"
+
+	cleanup := insertInviteFixture(t, db, inviterID, inviteeID, roomID)
+	t.Cleanup(cleanup)
+
+	// No additional events — only the mandatory m.room.member must be present.
+
+	h := &GetSyncHandler{db: db}
+	invites := h.buildInviteRooms(context.Background(), inviteeID)
+
+	ev, found := findInviteEvent(t, invites, roomID, "m.room.member")
+	if !found {
+		t.Fatalf("AC4 regression: invite_state.events MUST always contain m.room.member; got: %v", invites[roomID])
+	}
+
+	content, ok := ev["content"].(map[string]string)
+	if !ok {
+		t.Fatalf("AC4 regression: m.room.member content is not map[string]string, got %T", ev["content"])
+	}
+	if content["membership"] != "invite" {
+		t.Errorf("AC4 regression: expected content.membership=%q, got %q", "invite", content["membership"])
+	}
+	if ev["state_key"] != inviteeID {
+		t.Errorf("AC4 regression: expected state_key=%q (invitee), got %q", inviteeID, ev["state_key"])
+	}
+}
+
+// TestBuildInviteRooms_RegressionNameStillPresent — AC4 regression
+//
+// Given: a pending invite with a m.room.name event in the events table
+// When:  buildInviteRooms is called
+// Then:  invite_state.events still contains m.room.name with the correct room name
+//
+// Regression guard: the addition of join_rules, avatar, create queries MUST NOT break
+// the existing m.room.name behaviour introduced before Story 9-23.
+//
+// RED: this test MUST FAIL until buildInviteRooms is implemented in 9-23 and still
+// includes m.room.name.
+func TestBuildInviteRooms_RegressionNameStillPresent(t *testing.T) {
+	db := openTestDB(t)
+
+	inviterID := "@9-23-regn-inviter:test.local"
+	inviteeID := "@9-23-regn-invitee:test.local"
+	roomID := "!9-23-regn-room:test.local"
+	eventID := "$9-23-regn-ev1:test.local"
+
+	cleanup := insertInviteFixture(t, db, inviterID, inviteeID, roomID)
+	t.Cleanup(cleanup)
+
+	// Insert m.room.name event (JSONB object form)
+	_, err := db.Exec(
+		`INSERT INTO events (event_id, room_id, sender, event_type, content, origin_server_ts)
+		 VALUES ($1, $2, $3, 'm.room.name', '{"name":"ATDD Room 9-23"}'::jsonb, $4)
+		 ON CONFLICT DO NOTHING`,
+		eventID, roomID, inviterID, int64(1700001005000),
+	)
+	if err != nil {
+		t.Fatalf("RegressionNameStillPresent: insert event: %v", err)
+	}
+	t.Cleanup(func() { _, _ = db.Exec(`DELETE FROM events WHERE event_id = $1`, eventID) })
+
+	h := &GetSyncHandler{db: db}
+	invites := h.buildInviteRooms(context.Background(), inviteeID)
+
+	ev, found := findInviteEvent(t, invites, roomID, "m.room.name")
+	if !found {
+		t.Fatalf("AC4 regression: invite_state.events MUST still contain m.room.name after 9-23 changes; got: %v", invites[roomID])
+	}
+
+	content, ok := ev["content"].(map[string]string)
+	if !ok {
+		t.Fatalf("AC4 regression: m.room.name content is not map[string]string, got %T", ev["content"])
+	}
+	if content["name"] != "ATDD Room 9-23" {
+		t.Errorf("AC4 regression: expected content.name=%q, got %q", "ATDD Room 9-23", content["name"])
+	}
+}

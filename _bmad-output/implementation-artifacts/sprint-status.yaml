@@ -1,5 +1,6 @@
 # generated: 2026-03-20
 # last_updated: 2026-05-06
+# story 9-23 done (pipeline: ATDD+Dev+Test-Review CLEAN+Code-Review CLEAN; security_review not-needed): 2026-05-06
 # story 9-22 done (pipeline: 4 MAJOR fixed 3 cycles+Code CLEAN; security_review not-needed): 2026-05-06
 # story 9-21 done (pipeline: ATDD+Dev+Test-Review CLEAN+Code-Review CLEAN; security_review not-needed): 2026-05-06
 # story 9-20 done (pipeline: ATDD+Dev+Test-Review CLEAN+Code-Review CLEAN; security_review not-needed): 2026-05-06
@@ -740,7 +741,7 @@ development_status:
   9-19-sync-gap-fixes-join-public-leave-once-forget: done  # story 9-19 done: 2026-05-06 (Sync Gap Fixes: GAP-JOIN-PUBLIC {:new_join} :pg broadcast, GAP-LEAVE-ONCE sinceMs filter, GAP-FORGET forgotten_rooms table; security_review: not-needed)
   9-21-sync-gap-state-position: done
   9-20-sync-gap-prev-batch: done
-  9-23-sync-gap-invite-state-stripped-events: backlog
+  9-23-sync-gap-invite-state-stripped-events: done
   9-25-sync-gap-buffer-next-batch: backlog
   9-22-sync-gap-since-ignored-per-device-tokens: done
   9-24-sync-gap-global-account-data: backlog

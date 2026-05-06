@@ -1,5 +1,5 @@
 ---
-status: ready-for-dev
+status: review
 epic: 9
 story: 23
 security_review: not-needed
@@ -7,7 +7,7 @@ security_review: not-needed
 
 # Story 9.23: GAP-INVITE-STATE — invite_state Missing join_rules, avatar, create Fields
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -246,8 +246,52 @@ could be batched, but that optimization is explicitly out of scope for this stor
 - `sqlmock` usage in tests: `gateway/internal/matrix/sync_test.go`
 - Existing `buildInviteRooms` function entry point: `sync.go` line 232
 
+### ATDD Artifacts
+
+- Checklist: `_bmad-output/test-artifacts/atdd-checklist-9-23-sync-gap-invite-state-stripped-events.md`
+- Tests: `gateway/internal/matrix/sync_test.go` (Story 9-23 section at end of file)
+
+---
+
+## Tasks/Subtasks
+
+- [x] Task 1: Implement `m.room.join_rules` query in `buildInviteRooms` (AC1)
+- [x] Task 2: Implement `m.room.avatar` query in `buildInviteRooms` (AC2)
+- [x] Task 3: Implement `m.room.create` query in `buildInviteRooms` (AC3)
+- [x] Task 4: Fix `findInviteEvent` helper to handle both slice types (MINOR-1)
+- [x] Task 5: Add `assertStrippedStateFields` helper and call in positive tests (MINOR-3)
+- [x] Task 6: Verify all 7 AC tests pass + full suite green
+
+---
+
+## Dev Agent Record
+
+### Implementation Plan
+
+Followed the `m.room.name` pattern exactly: one `QueryRowContext` per new event type, using the JSONB double-encoding CASE guard, appending only when the scanned value is non-empty. The `m.room.create` sender uses `roomCreator` (not `inviterID`) as specified in Dev Notes.
+
+### Completion Notes
+
+- Implemented three new stripped-state event queries in `buildInviteRooms` (`gateway/internal/matrix/sync.go`)
+- Fixed `findInviteEvent` test helper to use a type-switch handling both `[]map[string]interface{}` and `[]interface{}` (MINOR-1)
+- Added `assertStrippedStateFields` helper and wired it into the three positive-case tests to enforce spec §4.4.4 MUST (MINOR-3)
+- All 7 Story 9-23 tests pass; full `make test-unit-go` suite green (no regressions)
+
+---
+
+## File List
+
+- `gateway/internal/matrix/sync.go` — added join_rules, avatar, create queries in `buildInviteRooms`
+- `gateway/internal/matrix/sync_test.go` — fixed `findInviteEvent`, added `assertStrippedStateFields`, added MINOR-3 assertions in positive tests
+
+---
+
+## Change Log
+
+- 2026-05-06: Story 9-23 implemented — AC1/AC2/AC3/AC4/AC5 all satisfied; MINOR-1 and MINOR-3 pre-dev review findings addressed
+
 ---
 
 ## Status
 
-Status: ready-for-dev
+Status: review
