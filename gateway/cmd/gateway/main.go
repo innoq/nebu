@@ -104,8 +104,12 @@ func main() {
 
 	// Story 5.29a — AC3: migrations run as nebu_migrate (table owner).
 	// NEBU_DB_URL_MIGRATE is the privileged role; falls back to NEBU_DB_URL if unset.
-	if err := db.RunMigrations(cfg.DBURL, cfg.DBURLMigrate); err != nil {
-		slog.Error("database connection failed: " + err.Error())
+	// Story 8-11: use WaitAndRunMigrations with a 30s timeout so the gateway
+	// survives a slow postgres boot in environments without start ordering (GitLab CI services:).
+	migrationCtx, migrationCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer migrationCancel()
+	if err := db.WaitAndRunMigrations(migrationCtx, cfg.DBURL, cfg.DBURLMigrate); err != nil {
+		slog.Error("database connection failed", "err", err)
 		os.Exit(1)
 	}
 
@@ -123,10 +127,17 @@ func main() {
 	// Story 5.29a — AC10: gRPC client attaches PSK token to every call.
 	// internalSecret is read later in this function; read it now for gRPC init.
 	// Note: internalSecret is also used below for PSK middleware — reading once.
+	// Story 8-11: fall back to NEBU_INTERNAL_SECRET env var when the secret file
+	// does not exist (e.g. GitLab CI services: without mounted secrets).
 	pskBytesEarly, errEarlyPSK := os.ReadFile(cfg.InternalSecretFile)
 	if errEarlyPSK != nil {
-		slog.Error("failed to read internal secret file for gRPC auth", "path", cfg.InternalSecretFile, "err", errEarlyPSK)
-		os.Exit(1)
+		fallback := os.Getenv("NEBU_INTERNAL_SECRET")
+		if fallback == "" {
+			slog.Error("failed to read internal secret file for gRPC auth", "path", cfg.InternalSecretFile, "err", errEarlyPSK)
+			os.Exit(1)
+		}
+		slog.Warn("internal secret file not found — using NEBU_INTERNAL_SECRET env var")
+		pskBytesEarly = []byte(fallback)
 	}
 	internalSecretEarly := strings.TrimSpace(string(pskBytesEarly))
 
@@ -811,7 +822,7 @@ func main() {
 		CoreClient:    coreClient,
 		ServerName:    serverName,
 		Buffer:        msgBuf,
-		DB:            bootstrapDB, // for rooms.invite pending invitation queries
+		DB:            bootstrapDB,                              // for rooms.invite pending invitation queries
 		AccountDataDB: db.NewPostgresAccountDataDB(bootstrapDB), // Story 7-24 AC4: account_data in sync
 	})
 	mux.Handle("GET /_matrix/client/v3/sync",

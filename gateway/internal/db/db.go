@@ -1,10 +1,12 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
@@ -56,6 +58,31 @@ func RunMigrations(dbURL string, migrateURL ...string) error {
 	}
 
 	return nil
+}
+
+// WaitAndRunMigrations retries RunMigrations every 2s until ctx is done or success.
+// Use this at gateway startup so the container survives a slow postgres boot in
+// environments where start ordering is not guaranteed (e.g. GitLab CI services:).
+// Returns immediately on ErrDirty — a dirty schema cannot self-heal by retrying.
+func WaitAndRunMigrations(ctx context.Context, dbURL string, migrateURL ...string) error {
+	for {
+		if ctx.Err() != nil {
+			return fmt.Errorf("waiting for database: %w", ctx.Err())
+		}
+		err := RunMigrations(dbURL, migrateURL...)
+		if err == nil {
+			return nil
+		}
+		var dirtyErr migrate.ErrDirty
+		if errors.As(err, &dirtyErr) {
+			return fmt.Errorf("database schema is dirty (version %d) — run 'migrate force <version>' to recover: %w", dirtyErr.Version, err)
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("waiting for database: %w (last migration error: %v)", ctx.Err(), err)
+		case <-time.After(2 * time.Second):
+		}
+	}
 }
 
 // CheckDB opens a connection and pings the database.

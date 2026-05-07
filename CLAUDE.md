@@ -135,6 +135,9 @@ ADRs are tracked in `docs/architecture/adr/`:
 | 007 | Ed25519 (signing) + X25519 (encryption) — two key pairs per user |
 | 008 | Node registration: PSK via Compose secrets (MVP) → Ephemeral mTLS (Phase 2) |
 | 009 | OpenAPI Spec-First with oapi-codegen |
+| 010 | Full-Text Search strategy (deferred) |
+| 011 | Managed E2EE key escrow (server-side decryption model) |
+| 012 | Upstream repo = reference implementation only; no official deployments; example-only CI credentials |
 
 ## BMAD Workflow
 
