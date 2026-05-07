@@ -358,6 +358,53 @@ Matrix Client      Go Gateway (buffer fast-path)
 `matrix-js-sdk` always issues a fresh `since=` on the next poll. The fallback-to-initial
 safety net was already production-tested before this story.
 
+## Scenario 3i: Room Upgrade — Matrix §11.35.1 (Story 9-27)
+
+`POST /rooms/{oldRoomId}/upgrade` triggers `gRPC UpgradeRoom` which executes the full
+Matrix spec §11.35.1 sequence inside `upgrade_room/2` in `event_dispatcher/server.ex`.
+
+```
+Matrix Client      Go Gateway          Elixir Core (upgrade_room/2)         PostgreSQL
+     │                   │                        │                               │
+     │  POST /upgrade    │                        │                               │
+     │──────────────────►│  gRPC UpgradeRoom      │                               │
+     │                   │───────────────────────►│                               │
+     │                   │                        │  1. verify old room + power_level ≥ 100
+     │                   │                        │  2. start_room(new_room_id)           │
+     │                   │                        │  3. emit m.room.tombstone (old room)  │
+     │                   │                        │──────────────────────────────────────►│
+     │                   │                        │  4. emit m.room.create (predecessor)  │
+     │                   │                        │──────────────────────────────────────►│
+     │                   │                        │  5. Room.Server.join/2 (new room)     │
+     │                   │                        │  6. Room.Server.set_power_levels/3    │
+     │                   │                        │  7. copy_state_events                 │
+     │                   │                        │──────────────────────────────────────►│
+     │                   │                        │  8. insert_invitation per old member  │
+     │                   │                        │──────────────────────────────────────►│
+     │                   │                        │  9. archive_room_atomic(old_room_id)  │
+     │                   │                        │──────────────────────────────────────►│
+     │                   │                        │  10. terminate_child(old_pid)         │
+     │                   │  {new_room_id}          │  11. audit_log "room_upgraded/success"│
+     │                   │◄───────────────────────│                               │
+     │  200 {new_room_id}│                        │                               │
+     │◄──────────────────│                        │                               │
+```
+
+**Error handling invariants (Story 9-27 fixes):**
+
+- `Room.Server.join/2` and `Room.Server.set_power_levels/3` are wrapped in `case` expressions.
+  Unexpected `{:error, reason}` tuples raise `GRPC.RPCError` with `GRPC.Status.internal()`,
+  surfacing as HTTP 500 (not MatchError → `codes.Unknown`).
+- `archive_room_atomic/1` uses SELECT FOR UPDATE; `:not_found` is handled idempotently (`:ok`)
+  to tolerate concurrent admin operations.
+- `terminate_child/2` failure is non-fatal: a `Logger.warning` is emitted but the upgrade
+  response is still returned (the GenServer will idle and be collected by Horde on restart).
+- The entire upgrade body is wrapped in `try/rescue` that writes a "failure" audit entry
+  (with `error` field) before reraising, ensuring partial upgrades leave an audit trail.
+
+**Audit trail:** Both success and failure paths write to `audit_logs` via `audit_writer_module().log/6`
+with action `"room_upgraded"`, target `old_room_id`, and `%{"new_room_id" => ..., "error" => ...}` metadata.
+
 ## Scenario 4: Compliance Four-Eyes Export Flow
 
 ```
@@ -375,4 +422,4 @@ On restart, Horde re-discovers Room GenServers across the cluster via CRDT regis
 Session Manager GenServer reads since-token checkpoints from PostgreSQL (no cold-sync forced on clients).
 EventBus stream re-connects to Go Gateway after exponential backoff (max 30s + jitter).
 
-_Source: `_bmad-output/planning-artifacts/architecture.md`, §Implementation Patterns, §API & Kommunikation, §Resilienz & Selbst-Heilung; Story 9-19 (GAP-JOIN-PUBLIC, GAP-LEAVE-ONCE, GAP-FORGET); Story 9-22 (GAP-SINCE-IGNORED — per-device sync tokens, per-device logout cleanup); Story 9-23 (GAP-INVITE-STATE — invite_state stripped state enrichment: join_rules, avatar, create); Story 9-24 (GAP-GLOBAL-ACCOUNT-DATA — top-level account_data delivery in all 4 sync paths, RLS-aware ListGlobalAccountData); Story 9-25 (GAP-BUFFER-NEXT-BATCH — synthetic buf_<ms>_<seq> next_batch token on buffer fast-path, replaces echoed since= token)_
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Implementation Patterns, §API & Kommunikation, §Resilienz & Selbst-Heilung; Story 9-19 (GAP-JOIN-PUBLIC, GAP-LEAVE-ONCE, GAP-FORGET); Story 9-22 (GAP-SINCE-IGNORED — per-device sync tokens, per-device logout cleanup); Story 9-23 (GAP-INVITE-STATE — invite_state stripped state enrichment: join_rules, avatar, create); Story 9-24 (GAP-GLOBAL-ACCOUNT-DATA — top-level account_data delivery in all 4 sync paths, RLS-aware ListGlobalAccountData); Story 9-25 (GAP-BUFFER-NEXT-BATCH — synthetic buf_<ms>_<seq> next_batch token on buffer fast-path, replaces echoed since= token); Story 9-27 (Scenario 3i — full Matrix §11.35.1 room upgrade flow, GRPC.RPCError error handling, archive_room_atomic idempotency, terminate_child, try/rescue failure audit)_

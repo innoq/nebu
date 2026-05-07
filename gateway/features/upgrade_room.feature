@@ -64,6 +64,18 @@ Feature: Room Version Upgrade — POST /rooms/{roomId}/upgrade
     And the response body contains "\"default\":\"10\""
     And the response body contains "\"10\":"
 
+  # AC5 (Story 9-27) — Old room is archived after upgrade; sending to it returns 403 M_ROOM_ARCHIVED
+  #
+  # Fixed in story 9-27: upgrade_room/2 now calls archive_room_atomic/1 and terminates
+  # the old room GenServer after emitting the tombstone event.
+  Scenario: OldRoom_ArchivedAfterUpgrade
+    When kai posts upgrade for room "upgrade-test-room" with new_version "10"
+    Then the response status is 200
+    And the response body contains "replacement_room"
+    When kai sends a message to the old room after upgrade
+    Then the response status is 403
+    And the response body has errcode "M_ROOM_ARCHIVED"
+
   # AC-9.8-3 (GAP-9-001) — State event copy order: m.room.join_rules is always last
   #
   # Story 9.16: This scenario was surfaced by the traceability matrix as a test gap.

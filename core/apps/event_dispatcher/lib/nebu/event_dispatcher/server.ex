@@ -2453,71 +2453,138 @@ defmodule Nebu.EventDispatcher.Server do
 
         case Nebu.Room.RoomSupervisor.start_room(new_room_id) do
           {:ok, _new_pid} ->
-            # 3. Emit m.room.tombstone in the OLD room (via private helper, bypasses Room.Server
-            #    power check — we already confirmed power_level >= 100 above).
-            tombstone_content = %{
-              "body"             => "This room has been replaced",
-              "replacement_room" => new_room_id
-            }
+            try do
+              # 3. Emit m.room.tombstone in the OLD room (via private helper, bypasses Room.Server
+              #    power check — we already confirmed power_level >= 100 above).
+              tombstone_content = %{
+                "body"             => "This room has been replaced",
+                "replacement_room" => new_room_id
+              }
 
-            tombstone_event_id =
-              case emit_state_event(old_room_id, requester_id, "m.room.tombstone", "", tombstone_content) do
-                {:ok, event_id} -> event_id
+              tombstone_event_id =
+                case emit_state_event(old_room_id, requester_id, "m.room.tombstone", "", tombstone_content) do
+                  {:ok, event_id} -> event_id
+                  {:error, reason} ->
+                    raise GRPC.RPCError,
+                      status: GRPC.Status.internal(),
+                      message: "Failed to emit tombstone event: #{inspect(reason)}"
+                end
+
+              # 4. Emit m.room.create in new room WITH predecessor FIRST (before join).
+              # MAJOR-3 fix: create event must be the first event written to the new room.
+              create_content = %{
+                "creator"      => requester_id,
+                "room_version" => new_version,
+                "predecessor"  => %{
+                  "room_id"  => old_room_id,
+                  "event_id" => tombstone_event_id
+                }
+              }
+              case emit_state_event(new_room_id, requester_id, "m.room.create", "", create_content) do
+                {:ok, _} -> :ok
                 {:error, reason} ->
                   raise GRPC.RPCError,
                     status: GRPC.Status.internal(),
-                    message: "Failed to emit tombstone event: #{inspect(reason)}"
+                    message: "Failed to emit m.room.create in new room: #{inspect(reason)}"
               end
 
-            # 4. Emit m.room.create in new room WITH predecessor FIRST (before join).
-            # MAJOR-3 fix: create event must be the first event written to the new room.
-            create_content = %{
-              "creator"      => requester_id,
-              "room_version" => new_version,
-              "predecessor"  => %{
-                "room_id"  => old_room_id,
-                "event_id" => tombstone_event_id
-              }
-            }
-            emit_state_event(new_room_id, requester_id, "m.room.create", "", create_content)
-
-            # Now join the creator and set power levels (m.room.member comes AFTER m.room.create).
-            :ok = Nebu.Room.Server.join(new_room_id, requester_id)
-
-            default_pl  = Nebu.Room.Server.default_power_levels()
-            creator_pl  = put_in(default_pl, ["users", requester_id], 100)
-            :ok = Nebu.Room.Server.set_power_levels(new_room_id, requester_id, creator_pl)
-
-            # 5. Copy state events from old room (spec-mandated order).
-            copy_state_events(old_room_id, new_room_id, requester_id)
-
-            # 6. Invite all old members (except requester — already joined).
-            old_members = MapSet.delete(old_state.members, requester_id)
-
-            Enum.each(old_members, fn member_id ->
-              case db_module_invite().insert_invitation(new_room_id, requester_id, member_id) do
-                :ok ->
-                  :pg.get_local_members("user:#{member_id}")
-                  |> Enum.each(&send(&1, {:new_invite, new_room_id}))
-
+              # Now join the creator and set power levels (m.room.member comes AFTER m.room.create).
+              case Nebu.Room.Server.join(new_room_id, requester_id) do
+                :ok -> :ok
                 {:error, reason} ->
-                  Logger.warning(
-                    "upgrade_room: invite failed for #{member_id} in #{new_room_id}: #{inspect(reason)}"
-                  )
+                  raise GRPC.RPCError,
+                    status: GRPC.Status.internal(),
+                    message: "Failed to join requester to new room: #{inspect(reason)}"
               end
-            end)
 
-            # 7. Audit log.
-            audit_writer_module().log(
-              requester_id,
-              "room_upgraded",
-              "room",
-              old_room_id,
-              %{"new_room_id" => new_room_id, "new_version" => new_version},
-              "success"
-            )
+              default_pl = Nebu.Room.Server.default_power_levels()
+              creator_pl = put_in(default_pl, ["users", requester_id], 100)
 
-            %Core.UpgradeRoomResponse{new_room_id: new_room_id}
+              case Nebu.Room.Server.set_power_levels(new_room_id, requester_id, creator_pl) do
+                :ok -> :ok
+                {:error, reason} ->
+                  raise GRPC.RPCError,
+                    status: GRPC.Status.internal(),
+                    message: "Failed to set power levels on new room: #{inspect(reason)}"
+              end
+
+              # 5. Copy state events from old room (spec-mandated order).
+              copy_state_events(old_room_id, new_room_id, requester_id)
+
+              # 6. Invite all old members (except requester — already joined).
+              old_members = MapSet.delete(old_state.members, requester_id)
+
+              Enum.each(old_members, fn member_id ->
+                case db_module_invite().insert_invitation(new_room_id, requester_id, member_id) do
+                  :ok ->
+                    :pg.get_local_members("user:#{member_id}")
+                    |> Enum.each(&send(&1, {:new_invite, new_room_id}))
+
+                  {:error, reason} ->
+                    Logger.warning(
+                      "upgrade_room: invite failed for #{member_id} in #{new_room_id}: #{inspect(reason)}"
+                    )
+                end
+              end)
+
+              # 7. Archive old room (Matrix spec §11.35.1 — no new events after tombstone).
+              case admin_db_module().archive_room_atomic(old_room_id) do
+                :ok -> :ok
+                {:error, :not_found} ->
+                  # Idempotent: room row already removed by a concurrent admin operation.
+                  :ok
+                {:error, reason} ->
+                  raise GRPC.RPCError,
+                    status: GRPC.Status.internal(),
+                    message: "Failed to archive old room after upgrade: #{inspect(reason)}"
+              end
+
+              # Stop the old room GenServer — no new writes possible after tombstone.
+              case Nebu.Room.RoomSupervisor.lookup_room(old_room_id) do
+                {:ok, old_pid} ->
+                  case Horde.DynamicSupervisor.terminate_child(Nebu.Room.HordeSupervisor, old_pid) do
+                    :ok -> :ok
+                    {:error, reason} ->
+                      Logger.warning(
+                        "upgrade_room: terminate_child for old room #{old_room_id} failed: #{inspect(reason)}"
+                      )
+                  end
+                {:error, :not_found} -> :ok
+              end
+
+              # 8. Audit log — success.
+              audit_writer_module().log(
+                requester_id,
+                "room_upgraded",
+                "room",
+                old_room_id,
+                %{"new_room_id" => new_room_id, "new_version" => new_version},
+                "success"
+              )
+
+              %Core.UpgradeRoomResponse{new_room_id: new_room_id}
+            rescue
+              e ->
+                # Audit log — partial failure (tombstone may already be in old room).
+                # Wrap in its own rescue so an audit-writer outage never masks the original error.
+                error_msg = if is_exception(e), do: Exception.message(e), else: inspect(e)
+                try do
+                  audit_writer_module().log(
+                    requester_id,
+                    "room_upgraded",
+                    "room",
+                    old_room_id,
+                    %{"new_room_id" => new_room_id, "new_version" => new_version, "error" => error_msg},
+                    "failure"
+                  )
+                rescue
+                  audit_err ->
+                    Logger.error(
+                      "upgrade_room: failure audit log failed for #{old_room_id}: #{inspect(audit_err)}"
+                    )
+                end
+                reraise e, __STACKTRACE__
+            end
 
           {:error, reason} ->
             raise GRPC.RPCError,

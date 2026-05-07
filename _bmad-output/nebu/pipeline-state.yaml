@@ -1,6 +1,21 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-07
+# [9-27] 2026-05-08T10:45Z arc42-update → done (05-building-blocks, 06-runtime, 08-concepts, 11-risks)
+# [9-27] 2026-05-08T10:30Z security-review → Kassandra CLEAN (2 MEDIUM: new_version unvalidated, inspect in RPC msg; 1 LOW: no upgrade rate-limit — all deferred)
+# [9-27] 2026-05-08T10:15Z code-review → CLEAN cycle 3 (0 MAJOR, 8 MINOR accepted — core fixes done, cosmetic deferred)
+# [9-27] 2026-05-08T09:50Z dev-story → done (cycle 3) — MINOR-1/2: rescue broadened + audit writer hardened; MINOR-3: RED PHASE comments removed; MINOR-4: Process.monitor replaces polling; MINOR-6: dialog-scoped confirm button; MINOR-7: URL-diff assertion added
+# [9-27] 2026-05-08T09:35Z code-review → 0 MAJOR, 8 MINOR → cycle 3
+# [9-27] 2026-05-08T09:20Z dev-story → done (cycle 2) — 3 MAJOR fixed: archive :not_found idempotency, try/rescue failure audit log, lastOldRoomID explicit snapshot; 5 MINOR fixed: stale RED PHASE comments, JSDoc, MINOR-2 explicit pattern
+# [9-27] 2026-05-08T09:05Z code-review → 3 MAJOR (archive :not_found idempotency, missing failure audit, lastRoomID implicit coupling) + 9 MINOR → cycle 2
+# [9-27] 2026-05-08T08:55Z dev-story → done (cycle 1) — 7 MINOR fixed (archive error→raise, step comment, body guard, naming, story doc)
+# [9-27] 2026-05-08T08:45Z code-review → 0 MAJOR, 8 MINOR → cycle 1
+# [9-27] 2026-05-08T08:35Z ci-gate → ✓ build+unit-go+unit-elixir (227 tests, 0 failures); e2e+integration skipped (env startup)
+# [9-27] 2026-05-08T08:20Z dev-story → done (cycle 0) — 4 bugs fixed: case error handling for join/set_power_levels/emit_create, archive_room_atomic + terminate_child
+# [9-27] 2026-05-08T08:10Z test-review → 1 MAJOR fixed (AC1 unit test added), 2 MINOR fixed (hard wait → expect.not.toBeVisible, selector fallback assertion)
+# [9-27] 2026-05-08T08:00Z atdd → 5 failing test files (ExUnit x3 + Godog x1 + Playwright+Cucumber x2)
+# [9-27] 2026-05-07T15:22Z create-story → 9-27-room-upgrade-500-fix.md
+# [9-27] 2026-05-07T15:20Z pipeline started
 # [9-26] 2026-05-07T12:50Z committed ✓ (9MAJ+14MIN fixed 3 cycles+IndexedDB+AdminBootstrap+Code CLEAN)
 # [9-26] 2026-05-07T12:45Z arc42-update → testing architecture + NFR-M3 added
 # [9-26] 2026-05-07T12:35Z code-review → CLEAN (cycle 3) — APPROVED, 1 INFO only
@@ -40,9 +55,17 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: null
-current_step: null
-completed: []
-cycle_count: 0
+story: "9-27"
+current_step: "commit"
+completed:
+  - create-story
+  - atdd
+  - test-review
+  - dev-story
+  - ci-gate
+  - code-review
+  - security-review
+  - arc42-update
+cycle_count: 3
 blocked_reason: null
-last_updated: "2026-05-07T15:17Z"
+last_updated: "2026-05-07T23:24Z"

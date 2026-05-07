@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-05-07T00:00:00Z",
-  "generator": "bmad-maintain-arc42 skill (Story 9-26)",
+  "generated_at": "2026-05-08T00:00:00Z",
+  "generator": "bmad-maintain-arc42 skill (Story 9-27 delta)",
   "source_artifacts": [
     "_bmad-output/planning-artifacts/architecture.md",
     "_bmad-output/planning-artifacts/prd.md",
@@ -37,13 +37,13 @@
     },
     "docs/architecture/05-building-blocks.md": {
       "editable": false,
-      "generated_at": "2026-05-06T18:38:04Z",
+      "generated_at": "2026-05-08T00:00:00Z",
       "source": "_bmad-output/planning-artifacts/architecture.md",
       "arc42_section": "05 Building Block View"
     },
     "docs/architecture/06-runtime.md": {
       "editable": false,
-      "generated_at": "2026-05-06T18:38:04Z",
+      "generated_at": "2026-05-08T00:00:00Z",
       "source": "_bmad-output/planning-artifacts/architecture.md",
       "arc42_section": "06 Runtime View"
     },
@@ -55,7 +55,7 @@
     },
     "docs/architecture/08-concepts.md": {
       "editable": false,
-      "generated_at": "2026-05-07T00:00:00Z",
+      "generated_at": "2026-05-08T00:00:00Z",
       "source": "_bmad-output/planning-artifacts/architecture.md",
       "arc42_section": "08 Cross-cutting Concepts"
     },
@@ -73,7 +73,7 @@
     },
     "docs/architecture/11-risks.md": {
       "editable": false,
-      "generated_at": "2026-05-01T00:00:00Z",
+      "generated_at": "2026-05-08T00:00:00Z",
       "source": "_bmad-output/implementation-artifacts/sprint-status.yaml",
       "arc42_section": "11 Risks and Technical Debt"
     },

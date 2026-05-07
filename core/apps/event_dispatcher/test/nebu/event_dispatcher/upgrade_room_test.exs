@@ -39,6 +39,23 @@ defmodule Nebu.EventDispatcher.UpgradeRoomTest do
   # Spy that sends {:audit_log, ...} to the test process for assertable capture.
   # Pattern identical to audit_archive_ops_test.exs.
 
+  # ─── NoOpAdminDB ─────────────────────────────────────────────────────────────
+  #
+  # No-op admin DB used in tests that don't exercise archival or admin operations.
+  # archive_room_atomic/1 returns :ok so upgrade_room/2 can complete without Ecto.
+
+  defmodule NoOpAdminDB do
+    def list_users(_limit, _cursor, _search), do: {[], ""}
+    def get_user(_user_id), do: {:error, :not_found}
+    def set_is_active(_user_id, _is_active), do: :ok
+    def set_system_role(_user_id, _role), do: :ok
+    def list_rooms(_limit, _cursor, _status_filter, _search), do: {[], ""}
+    def get_room(_room_id), do: {:error, :not_found}
+    def archive_room_atomic(_room_id), do: :ok
+    def get_server_config, do: {:ok, %{}}
+    def upsert_server_config(_changes), do: :ok
+  end
+
   defmodule FakeAuditWriter do
     def log(actor, action, target_type, target_id, metadata, outcome, error_detail \\ nil) do
       test_pid = Application.get_env(:compliance, :__upgrade_audit_test_pid__)
@@ -184,9 +201,10 @@ defmodule Nebu.EventDispatcher.UpgradeRoomTest do
     end
     :ets.new(:upgrade_room_test_db, [:named_table, :public, :set])
 
-    Application.put_env(:room_manager,   :db_module,           FakeDB)
+    Application.put_env(:room_manager,     :db_module,           FakeDB)
     Application.put_env(:event_dispatcher, :messages_db_module, FakeDB)
     Application.put_env(:event_dispatcher, :invite_db_module,   FakeInviteDB)
+    Application.put_env(:event_dispatcher, :admin_db_module,    NoOpAdminDB)
     Application.put_env(:event_dispatcher, :server_name,        "test.local")
     Application.put_env(:compliance,       :audit_writer,        NoOpAuditWriter)
 
@@ -200,9 +218,10 @@ defmodule Nebu.EventDispatcher.UpgradeRoomTest do
     end
 
     on_exit(fn ->
-      Application.delete_env(:room_manager,   :db_module)
+      Application.delete_env(:room_manager,     :db_module)
       Application.delete_env(:event_dispatcher, :messages_db_module)
       Application.delete_env(:event_dispatcher, :invite_db_module)
+      Application.delete_env(:event_dispatcher, :admin_db_module)
       Application.delete_env(:event_dispatcher, :server_name)
       Application.delete_env(:compliance,       :audit_writer)
       Application.delete_env(:compliance,       :__upgrade_audit_test_pid__)

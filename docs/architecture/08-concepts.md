@@ -60,6 +60,13 @@ All administrative actions and compliance access events are written to an append
 table. An `BEFORE INSERT` trigger prevents UPDATE and DELETE (enforced at the DB level via RLS).
 Entries are Ed25519-signed for tamper evidence. Retention is configurable (default: 2555 days / 7 years).
 
+**Failure audit trail pattern (Story 9-27):** Multi-step operations (e.g. room upgrade) that can
+fail partway through wrap their entire body in `try/rescue`. The `rescue` clause writes a "failure"
+audit entry (including an `"error"` metadata field with the exception message) before reraising the
+original exception. A nested `try/rescue` around the audit write itself ensures an outage in the
+audit writer never masks the original error. This guarantees that any partially-applied operation
+leaves a forensic record even when the gRPC call ultimately returns an error to the client.
+
 ## Three PII Tiers
 
 | Tier | Data | At Rest | GDPR Deletion |
@@ -96,6 +103,14 @@ gateway boundary. Matrix endpoints return `{"errcode": "M_...", "error": "..."}`
 
 **Elixir:** Tagged tuples `{:ok, result}` / `{:error, reason}`. No raise/throw for business logic.
 Let-it-crash + OTP Supervisor Trees for unexpected failures.
+
+**gRPC error surface rule (Story 9-27):** Elixir gRPC handlers must use `raise GRPC.RPCError,
+status: GRPC.Status.<code>(), message: "..."` to propagate errors to the Go gateway. Bare `:ok =`
+pattern matches on `Room.Server` calls produce `MatchError` at runtime, which gRPC-elixir maps to
+`codes.Unknown` → HTTP 500 with no structured error message. The correct form is a `case` expression
+that raises `GRPC.RPCError` with `GRPC.Status.internal()` on unexpected `{:error, reason}` tuples.
+This distinction is critical: `codes.Unknown` is ambiguous whereas `codes.Internal` correctly
+signals a server-side failure to the Go gateway's error mapper.
 
 ## Logging
 
@@ -213,4 +228,4 @@ make test-e2e-admin     # admin-ui project (bddgen + playwright)
 make test-e2e           # all projects (legacy + BDD)
 ```
 
-_Source: `_bmad-output/planning-artifacts/architecture.md`, §Cross-Cutting Concerns, §Auth-Token-Flow, §Enforcement; `_bmad-output/planning-artifacts/prd.md`, §Cryptographic Identity Architecture; Story 9-22 (per-device sync token isolation, logout cleanup); Story 9-26 (Browser-First E2E layer, playwright-bdd, token sidecar pattern)_
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Cross-Cutting Concerns, §Auth-Token-Flow, §Enforcement; `_bmad-output/planning-artifacts/prd.md`, §Cryptographic Identity Architecture; Story 9-22 (per-device sync token isolation, logout cleanup); Story 9-26 (Browser-First E2E layer, playwright-bdd, token sidecar pattern); Story 9-27 (gRPC error surface rule — GRPC.RPCError vs MatchError; failure audit trail pattern for multi-step operations)_

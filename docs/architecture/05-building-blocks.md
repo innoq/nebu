@@ -87,7 +87,12 @@ core/apps/
 │   └── lib/nebu/event_dispatcher/
 │       ├── server.ex       ← gRPC handlers: join_room/2 broadcasts {:new_join} to user :pg group;
 │       │                      leave_room/2 broadcasts {:new_leave}; do_incremental_sync handles
-│       │                      {:new_join}/{:new_leave} to wake long-poll sync Tasks (GAP-JOIN-PUBLIC)
+│       │                      {:new_join}/{:new_leave} to wake long-poll sync Tasks (GAP-JOIN-PUBLIC);
+│       │                      upgrade_room/2 implements full Matrix §11.35.1 flow: tombstone →
+│       │                      create → join → set_power_levels → copy_state → invite → archive_old
+│       │                      → terminate_old_genserver; uses GRPC.RPCError instead of bare `:ok =`
+│       │                      pattern matches; wraps entire body in try/rescue with audit-trail
+│       │                      on failure (Story 9-27)
 │       ├── dispatcher.ex   ← Routes events to rooms + subscribers
 │       └── bus.ex          ← gRPC ServerStream to Go Gateway
 ├── signature/        ← FR25–29: Ed25519 signing + Canonical JSON + Event-ID
@@ -101,6 +106,16 @@ core/apps/
 │       └── room_policy.ex       ← Power-level checks for room operations
 └── compliance/       ← FR30–35: Four-eyes access, audit-log writers, signed export
 ```
+
+> **Room upgrade flow (Story 9-27):** `upgrade_room/2` in `event_dispatcher/server.ex` now
+> implements the complete Matrix spec §11.35.1 sequence atomically: (1) tombstone the old room,
+> (2) create the new room with `predecessor` field, (3) join creator, (4) set power levels,
+> (5) copy state events, (6) invite old members, (7) `admin_db_module().archive_room_atomic/1`
+> (SELECT FOR UPDATE, idempotent on `:not_found`) marks the old room row as archived in PostgreSQL,
+> (8) `Horde.DynamicSupervisor.terminate_child/2` stops the old room GenServer.
+> Error handling throughout uses `GRPC.RPCError` + `GRPC.Status.internal()` to surface Elixir
+> errors as gRPC `INTERNAL` → Go gateway HTTP 500 (not MatchError → `codes.Unknown`).
+> A top-level `try/rescue` writes a failure entry to the audit trail before reraising.
 
 > **Note:** `gateway/internal/` additionally contains support packages not visualized
 > above (`api/`, `audit/`, `db/`, `ui/`, `validate/`). They wrap shared infrastructure
@@ -167,4 +182,4 @@ Key gRPC services: `SendEvent`, `CreateRoom`, `JoinRoom`, `GetMessages`, `GetRoo
 | `user_id` | string | Matrix user ID |
 | `device_id` | string | When set, only invalidates this device; when empty, invalidates all user sessions |
 
-_Source: `_bmad-output/planning-artifacts/architecture.md`, §Project Structure & Boundaries, §Complete Project Directory Structure; Story 9-19 (room_moderation.go, sync.go, event_dispatcher/server.ex, forgotten_rooms migration); Story 9-22 (per-device sync tokens, device_id in proto); Story 9-24 (GlobalAccountDataDB interface, ListGlobalAccountData, top-level account_data in syncResponse); Story 9-25 (syntheticNextBatch helper, syntheticBatchSeq atomic counter, sinceToken param removed from buildResponseFromBufferedEvents)_
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Project Structure & Boundaries, §Complete Project Directory Structure; Story 9-19 (room_moderation.go, sync.go, event_dispatcher/server.ex, forgotten_rooms migration); Story 9-22 (per-device sync tokens, device_id in proto); Story 9-24 (GlobalAccountDataDB interface, ListGlobalAccountData, top-level account_data in syncResponse); Story 9-25 (syntheticNextBatch helper, syntheticBatchSeq atomic counter, sinceToken param removed from buildResponseFromBufferedEvents); Story 9-27 (upgrade_room/2 full Matrix §11.35.1 flow, GRPC.RPCError error handling, archive_room_atomic, terminate_child, try/rescue failure audit)_

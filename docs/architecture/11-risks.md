@@ -33,7 +33,7 @@
 | Item | Deferred In | Priority |
 |---|---|---|
 | Real alias storage (`PUT /directory/room/{alias}` currently a stub) | Epic 7 | Medium |
-| Room upgrade implementation (`POST /rooms/{id}/upgrade` returns 501) | Epic 7 | Low |
+| Room upgrade implementation (`POST /rooms/{id}/upgrade` returns 501) | Epic 7 (resolved Story 9-27) | Resolved |
 | `GET /joined_rooms` returns empty list (clients use /sync instead) | Epic 7 | Low |
 | Multi-instance dashboard for hosters | Epic 7 retrospective | Growth |
 | Apple/Google push notifications | PRD §Growth Features | Growth |

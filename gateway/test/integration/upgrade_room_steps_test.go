@@ -46,6 +46,11 @@ var alexUpgradeInviteSyncBody string
 // Used by kaiCallsGetRoomStateForNewRoom to GET state on the newly created room.
 var lastNewRoomID string
 
+// lastOldRoomID holds the room ID that was passed to POST /upgrade.
+// Snapshot of lastRoomID before the upgrade, so AC5 steps can explicitly
+// send to the pre-upgrade room without implicit coupling to lastRoomID state.
+var lastOldRoomID string
+
 // kaiPostsUpgradeForRoomWithNewVersion sends POST /_matrix/client/v3/rooms/{lastRoomID}/upgrade
 // authenticated as kai with the given new_version.
 //
@@ -55,6 +60,8 @@ var lastNewRoomID string
 //
 // RED PHASE: currently returns 501 M_UNRECOGNIZED — all callers that assert 200 will fail.
 func kaiPostsUpgradeForRoomWithNewVersion(_, newVersion string) error {
+	// Snapshot the pre-upgrade room ID so AC5 steps can send to the OLD room explicitly.
+	lastOldRoomID = lastRoomID
 	url := fmt.Sprintf(
 		"%s/_matrix/client/v3/rooms/%s/upgrade",
 		matrixURL, lastRoomID,
@@ -325,6 +332,65 @@ func theLastCopiedStateEventTypeIs(expectedType string) error {
 	return nil
 }
 
+// ─── Story 9-27: AC5 — Old room archived after upgrade ───────────────────────
+
+// kaiSendsMessageToOldRoomAfterUpgrade sends a message to the OLD room (lastRoomID,
+// which was set before the upgrade) using kai's access token.
+//
+// Story 9-27 AC5: After a successful upgrade, the old room must be archived.
+// Any attempt to send to the old room must return 403 M_ROOM_ARCHIVED.
+// Fixed in story 9-27: archive_room_atomic and GenServer termination added to upgrade_room/2.
+func kaiSendsMessageToOldRoomAfterUpgrade() error {
+	// Use the explicitly-snapshotted pre-upgrade room ID — not lastRoomID, which
+	// could be overwritten by future steps. lastOldRoomID is set in kaiPostsUpgradeForRoomWithNewVersion.
+	if lastOldRoomID == "" {
+		return fmt.Errorf("lastOldRoomID is empty — upgrade step must have run before this step")
+	}
+	txnID := fmt.Sprintf("send-to-old-room-%d", time.Now().UnixNano())
+	url := fmt.Sprintf(
+		"%s/_matrix/client/v3/rooms/%s/send/m.room.message/%s",
+		matrixURL, lastOldRoomID, txnID,
+	)
+	payload := `{"msgtype":"m.text","body":"this must be rejected by the archived room"}`
+	req, err := http.NewRequest(http.MethodPut, url, strings.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("building PUT /send request to old room: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+kaiAccessToken)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("PUT /send to old room failed: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	lastStatusCode = resp.StatusCode
+	lastBody = string(body)
+	return nil
+}
+
+// theResponseHasErrcodeIs asserts that lastBody's JSON "errcode" field equals expectedErrcode.
+// Generic step — matches any .feature using this phrase.
+func theResponseHasErrcodeIs(expectedErrcode string) error {
+	if lastBody == "" {
+		return fmt.Errorf("expected errcode %q but response body was empty (status: %d)", expectedErrcode, lastStatusCode)
+	}
+	var body struct {
+		Errcode string `json:"errcode"`
+	}
+	if err := json.Unmarshal([]byte(lastBody), &body); err != nil {
+		return fmt.Errorf("parsing response body for errcode: %w (status: %d, body: %s)", err, lastStatusCode, lastBody)
+	}
+	if body.Errcode != expectedErrcode {
+		return fmt.Errorf(
+			"expected errcode %q, got %q (status: %d, body: %s)",
+			expectedErrcode, body.Errcode, lastStatusCode, lastBody,
+		)
+	}
+	return nil
+}
+
 // ─── Step registration ────────────────────────────────────────────────────────
 
 // initializeUpgradeRoomSteps registers all step definitions for upgrade_room.feature.
@@ -380,5 +446,17 @@ func initializeUpgradeRoomSteps(sc *godog.ScenarioContext) {
 	sc.Step(
 		`^the last copied state event type is "([^"]*)"$`,
 		theLastCopiedStateEventTypeIs,
+	)
+
+	// Story 9-27 AC5 — old room archived after upgrade
+	sc.Step(
+		`^kai sends a message to the old room after upgrade$`,
+		kaiSendsMessageToOldRoomAfterUpgrade,
+	)
+	// Generic errcode assertion — matches any .feature that uses this phrase,
+	// including archived_room_send_event.feature. Intentionally cross-feature.
+	sc.Step(
+		`^the response body has errcode "([^"]*)"$`,
+		theResponseHasErrcodeIs,
 	)
 }
