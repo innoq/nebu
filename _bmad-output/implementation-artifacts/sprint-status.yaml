@@ -1,5 +1,7 @@
 # generated: 2026-03-20
-# last_updated: 2026-05-06
+# last_updated: 2026-05-07
+# story 9-26 done (pipeline: ATDD+Dev+Test-Review CLEAN — 14/15 pass (1 skip: bootstrap-wizard correctly skipped on non-fresh DB), M-1 regression stable; 13 BUG-E2E fixes including BUG-E2E-11 core auto-bootstrap preemption; security_review not-needed): 2026-05-07
+# story 9-26 created: Element Web E2E Browser-First Suite (Phase 1: Framework + Phase 2: 8 Feature-Specs; security_review not-needed): 2026-05-07
 # epic-9 SEC Gate 2 final (stories 9-19..9-25) — CLEAN (0 HIGH, 2 MEDIUM non-blocking: forgotten_rooms RLS + querySinceTsMs device-unaware; follow-ups needed in epic-10): 2026-05-06
 # story 9-25 done (pipeline: ATDD+Dev+Code-Review CLEAN 1 cycle (3 MINOR doc fixes); security_review not-needed): 2026-05-06
 # story 9-24 done (pipeline: ATDD+Dev+Test-Review 2 MAJOR fixed+Code-Review CLEAN+RLS fix in CI; security_review not-needed): 2026-05-06
@@ -748,6 +750,7 @@ development_status:
   9-25-sync-gap-buffer-next-batch: done
   9-22-sync-gap-since-ignored-per-device-tokens: done
   9-24-sync-gap-global-account-data: done
+  9-26-element-web-e2e-browser-first-suite: review
   epic-9-retrospective: optional
 
   # ─────────────────────────────────────────────────────────────────────────

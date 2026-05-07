@@ -139,8 +139,9 @@ test-load-silber:
 		-e NEBU_DEX_URL=$${NEBU_DEX_URL:-http://dex:5556} \
 		grafana/k6:0.50.0 run /scripts/k6_chat.js
 
-## test-e2e: Run Playwright E2E tests against a running stack (make dev must be up)
+## test-e2e: Run all Playwright E2E tests (BDD + legacy) against a running stack.
 ## Requires: 127.0.0.1 dex in /etc/hosts for OIDC redirect flows
+## Story 9-26 AC5: runs bddgen first, then all projects including element-web + admin-ui.
 ## Reset DB to bootstrap state first:
 ##   docker compose exec postgres psql -U nebu -d nebu -c \
 ##     "DELETE FROM server_config WHERE key IN ('bootstrap_completed','oidc_issuer','oidc_client_id','oidc_client_secret','instance_name');"
@@ -148,23 +149,40 @@ test-e2e:
 	cd e2e && \
 	npm install --silent && \
 	npx playwright install chromium --with-deps --quiet && \
-	npx playwright test tests/bootstrap*.spec.ts
+	npx bddgen && \
+	npx playwright test --reporter=list
 
 ## build-element-e2e: Build the Element Web E2E Docker image (uses official vectorim/element-web)
 ## Fast build (~5s) — no Rust/Flutter compilation required.
 build-element-e2e:
 	docker build -t nebu-element-e2e:dev -f docker/Dockerfile.element-e2e .
 
-## test-e2e-element: Run Playwright E2E tests against Element Web (real Matrix client)
-## Requires: 127.0.0.1 dex in /etc/hosts (for SSO redirect via Dex)
-## Starts full stack + element sidecar via --profile e2e.
-## Does NOT run docker compose down after tests — leaves stack for debugging.
+## test-e2e-element: Run Element Web Browser-First BDD tests (story 9-26, Phase 2).
+## Story 9-26 AC5: canonical target name (also aliased as test-e2e-element-bdd).
+## Requires: stack running (`make dev`) + `127.0.0.1 dex` in /etc/hosts
 test-e2e-element:
+	cd e2e && npm install --silent && \
+	npx playwright install chromium --with-deps --quiet && \
+	npx bddgen && \
+	npx playwright test --project=element-web --reporter=list
+
+## test-e2e-element-legacy: Run old Element Web E2E tests (non-BDD, pre-story-9-26).
+## Requires: stack running + element sidecar via --profile e2e.
+test-e2e-element-legacy:
 	docker compose --profile e2e up -d --wait && \
 	cd e2e && npm install --silent && \
 	npx playwright install chromium --with-deps --quiet && \
 	npx playwright test tests/element_e2e.spec.ts; \
 	EXIT=$$?; exit $$EXIT
+
+## test-e2e-admin: Run Admin UI BDD tests (story 9-26, Phase 3).
+## Story 9-26 AC5: canonical target name (also aliased as test-e2e-admin-bdd).
+## Requires: playwright-bdd installed + stack running
+test-e2e-admin:
+	cd e2e && npm install --silent && \
+	npx playwright install chromium --with-deps --quiet && \
+	npx bddgen && \
+	npx playwright test --project=admin-ui --reporter=list
 
 ## build-fluffychat-e2e: Build the FluffyChat Web E2E Docker image (Flutter multi-stage — slow first build)
 ## Requires: tmp/fluffychat/ to contain the FluffyChat source checkout.
@@ -181,6 +199,15 @@ test-e2e-fluffychat:
 	npx playwright install chromium --with-deps --quiet && \
 	npx playwright test tests/fluffychat_e2e.spec.ts; \
 	EXIT=$$?; exit $$EXIT
+
+## test-e2e-element-bdd: Alias for test-e2e-element (story 9-26 AC5 compatibility).
+test-e2e-element-bdd: test-e2e-element
+
+## test-e2e-admin-bdd: Alias for test-e2e-admin (story 9-26 AC5 compatibility).
+test-e2e-admin-bdd: test-e2e-admin
+
+## test-e2e-all: Alias for test-e2e (runs all BDD + legacy tests).
+test-e2e-all: test-e2e
 
 ## test-compose-ports: CI smoke test — assert that port 9000 is NOT published by the core service.
 ## Story 5.29a AC8: gRPC port must not be bound to the host.

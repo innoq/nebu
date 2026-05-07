@@ -1,0 +1,22 @@
+# Project-level ATDD overrides for Nebu.
+# Injects BDD conventions as persistent facts loaded on activation.
+
+[workflow]
+
+persistent_facts = [
+  "BDD is the project standard for all acceptance and E2E tests in Nebu. Every user-facing behavior must be expressed as a Gherkin scenario before implementation code is written.",
+
+  "Playwright E2E tests MUST use Gherkin feature files and a Cucumber-based framework (playwright-bdd or @cucumber/cucumber + Playwright). Plain .spec.ts files without a .feature counterpart are not accepted.",
+
+  "Playwright E2E file structure: e2e/features/<feature>.feature (Gherkin scenarios, written first), e2e/steps/<feature>.steps.ts (Cucumber step definitions, initially failing). Both files are part of the same ATDD scaffold.",
+
+  "For Matrix feature stories: generate at least one Gherkin scenario in e2e/features/ that tests the feature through a real browser-level Matrix client (Element Web or the project web client). The scenario must perform the Matrix action as a user would and assert the outcome in the UI. Godog HTTP-level scenarios alone do NOT cover this requirement.",
+
+  "For Admin UI stories (ui: true): generate Gherkin scenarios in e2e/features/ for every acceptance criterion that involves browser interaction. Each scenario maps 1:1 to an AC.",
+
+  "For Elixir GenServer / ETS stories: generate ExUnit tests (not Gherkin). Gherkin is for user-facing acceptance behavior, not internal state machines.",
+
+  "For Matrix API protocol stories (no browser UI): generate Godog Gherkin scenarios in gateway/features/. These test the HTTP/gRPC protocol layer. A separate Playwright+Gherkin scenario is still required if the behavior is also visible through a web client.",
+
+  "The ATDD output for a story with browser-visible behavior must include: (1) a .feature file with Given/When/Then scenarios, (2) a step definition scaffold (.steps.ts) with empty step bodies that fail immediately, (3) a note on which Cucumber runner to use.",
+]

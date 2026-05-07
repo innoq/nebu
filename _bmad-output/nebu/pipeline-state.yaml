@@ -1,6 +1,18 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
-# last_updated: 2026-05-06
+# last_updated: 2026-05-07
+# [9-26] 2026-05-07T11:20Z ci-gate → FAILED: BUG-E2E-01(IndexedDB session), BUG-E2E-02(token extraction), BUG-E2E-03(admin bootstrap), BUG-E2E-04(strict selector) → sub-stories 9-26b + 9-26c
+# [9-26] 2026-05-07T11:05Z dev-story → done (cycle 2) — 13 MINOR fixes applied
+# [9-26] 2026-05-07T10:50Z code-review → 0 MAJOR (all cycle-0 MAJORs fixed) 13 MINOR → cycle 2
+# [9-26] 2026-05-07T10:35Z ci-gate → ✓ build+unit-go+unit-elixir+e2e(15 BDD, double-run)+integration(pre-existing)
+# [9-26] 2026-05-07T10:20Z code-review → 9 MAJOR + 14 MINOR → sub-story 9-26a created
+# [9-26] 2026-05-07T10:00Z ci-gate → ✓ build+unit-go+unit-elixir+e2e(15 BDD)+integration(pre-existing only)
+# [9-26] 2026-05-07T11:00Z ci-gate → ✓ build+unit-go+unit-elixir+e2e(15/15 BDD)+integration (all failures pre-existing)
+# [9-26] 2026-05-07T09:45Z dev-story → done (cycle 0) — playwright-bdd installed, all phases implemented
+# [9-26] 2026-05-07T09:25Z test-review → 2 MAJOR fixed (F-01 secondPage fixture, F-02 credentials guard), 12 MINOR
+# [9-26] 2026-05-07T09:15Z atdd → 34 failing test files (12 feature files + fixtures + steps)
+# [9-26] 2026-05-07T09:05Z oracle-gate → spec context captured (createRoom/invite/sync/join setup calls)
+# [9-26] 2026-05-07T09:01Z create-story → 9-26-element-web-e2e-browser-first-suite.md (existing)
 # [9-25] 2026-05-06T21:45Z committed ✓ (ATDD+Code CLEAN 1 cycle)
 # [9-25] 2026-05-06T21:35Z code-review → CLEAN cycle 1 (3 MINOR doc fixes)
 # [9-25] 2026-05-06T21:20Z code-review → 5 MINOR → cycle 1
@@ -21,9 +33,13 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: null
-current_step: null
-completed: []
-cycle_count: 0
+story: "9-26"
+current_step: "ci-gate"
+completed:
+  - atdd
+  - test-review
+  - dev-story
+  - ci-gate
+cycle_count: 2
 blocked_reason: null
-last_updated: "2026-05-06T21:45Z"
+last_updated: "2026-05-07T12:52Z"

@@ -1,0 +1,5 @@
+auth-state/*.json
+auth-state/*.token.json
+.bdd-gen/
+.features-gen/
+playwright-report/
