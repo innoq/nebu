@@ -85,6 +85,29 @@ Valid step names: `create-story` `atdd` `test-review` `dev-story` `ci-gate` `cod
 
 ---
 
+## Story File Location
+
+Story files live under `docs/stories/` organized by phase and epic:
+
+```
+docs/stories/
+  mvp/
+    epic-1/   ← epics 1–9
+    epic-2/
+    ...
+    epic-9/
+  phase2/
+    epic-10/  ← epics 10+
+    epic-11/
+    ...
+```
+
+**When creating a story** (Step 1): the `bmad-create-story` skill writes the file. After it completes, verify the file landed in `docs/stories/mvp/epic-{N}/` (or `phase2/` for epic 10+). If it was written elsewhere, move it with `git mv` before continuing.
+
+**When referencing `STORY_FILE`** throughout the pipeline: the path is always `docs/stories/mvp/epic-{N}/[STORY_ID]-slug.md` (or `phase2/`).
+
+---
+
 ## Pipeline Steps
 
 ### Step 1: create-story
@@ -286,27 +309,13 @@ Show: `✓ Step 4: Implementation complete. Cycle: [CYCLE_COUNT]`
 
 **Agent:** `nebu-agent-testing` | **Model:** sonnet | **Fresh context**
 
-```
-Read and follow skills/nebu-agent-testing/SKILL.md.
-Load references/ci-gate.md and execute the full CI gate.
-
-Story: [STORY_FILE]
-Pipeline state: [contents of _bmad/nebu/pipeline-state.yaml]
-
-Run the full CI suite in order:
-1. make build-gateway && make build-core
-2. make test-unit-go
-3. make test-unit-elixir
-4. Start fresh E2E environment
-5. make test-e2e
-6. docker compose down
-7. make test-integration
-
-Return: pass/fail per suite + structured bug list for any failures.
-Finish after the CI run.
+```bash
+python3 skills/nebu-agent-testing/scripts/ci_gate.py --story [STORY_ID]
 ```
 
-**Fallback if nebu-agent-testing is unavailable:** Execute Steps 3b.1–3b.6 inline (build → unit-go → unit-elixir → docker compose down --volumes && docker compose up -d --wait → make test-e2e → docker compose down → make test-integration).
+Read the JSON output. If Tank agent is available, pass the output to it for interpretation and memory update. If unavailable, parse the JSON directly.
+
+**Fallback if script is unavailable:** invoke `nebu-agent-testing` with `references/ci-gate.md`.
 
 **If CI fails:**
 ```
@@ -478,7 +487,7 @@ Scope: staged diff (git diff --staged)
 Story: [STORY_FILE]
 
 Write the report to:
-_bmad-output/implementation-artifacts/security-reports/[STORY_ID]-security-review-[DATE].md
+docs/stories/mvp/epic-{N}/security-reports/[STORY_ID]-security-review-[DATE].md
 Always write the report, even if zero findings (audit trail).
 
 Return: Classification (CRITICAL | HIGH | CLEAN) + report path + severity count.

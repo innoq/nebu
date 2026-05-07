@@ -14,71 +14,39 @@ Every suite runs to completion against a fresh stack. The result is unambiguous:
 
 Before starting: read MEMORY.md for known flaky tests. If a known flaky test fails in isolation, note it but do not let it block — re-run that suite once. If it fails again, it counts.
 
-## Mini-Workflow (run in order, stop on CRITICAL failure)
+## Run the Gate Script
 
-### Step 1 — Build
-
-```bash
-make build-gateway && make build-core
-```
-
-**On failure:** Stop. Report build errors. Do not continue to tests — broken build means tests are meaningless.
-
-### Step 2 — Unit Tests: Go
+The full CI gate is scripted. Run it and read the JSON output:
 
 ```bash
-make test-unit-go
+python3 skills/nebu-agent-testing/scripts/ci_gate.py --story [STORY_ID]
 ```
 
-Collect failing test names and error output.
+The script orchestrates in order: build → unit-go → unit-elixir → `docker compose down --volumes` → `docker compose up -d --wait` → health check (Gateway + Keycloak) → e2e → integration → teardown. Build failure aborts immediately. Environment startup timeout (120s) skips e2e and integration.
 
-### Step 3 — Unit Tests: Elixir
+**Options:**
+- `--only SUITE` — run one suite: `build` | `unit-go` | `unit-elixir` | `e2e` | `integration`
+- `--skip SUITE` — skip a suite (repeatable)
+- `--no-reset` — skip volume wipe (use when environment is already running cleanly)
+- `--env-timeout N` — override 120s startup timeout
 
+Exit code 0 = pass, 1 = fail.
+
+## Coverage Checks (apply after script completes)
+
+These checks are not automated by the script — apply them manually against the JSON output and staged diff:
+
+**All E2E tests — Gherkin format required:** Every new Playwright test must have a `.feature` file in `e2e/features/` and step definitions in `e2e/steps/`. Check:
 ```bash
-make test-unit-elixir
+rtk git diff --staged --name-only | grep "^e2e/"
 ```
+If new `e2e/` files exist but no `.feature` is among them → set `missing_gherkin_feature: true` in the report and block.
 
-Collect failing test names and error output.
-
-### Step 4 — Start E2E Environment
-
+**Matrix feature stories** (story touches `/_matrix/`, `m.room.*`, or sync): At least one Gherkin scenario must exercise the feature through a browser-level Matrix client. Godog HTTP tests alone do not satisfy this. Check:
 ```bash
-make dev
+rtk grep -r "_matrix/\|MatrixClient\|element\|web-client" e2e/features/ 2>/dev/null | head -20
 ```
-
-Wait for all services healthy. Check:
-- Gateway: `GET http://localhost:8008/_matrix/client/versions` → 200
-- Core: Elixir application started (check compose logs)
-- PostgreSQL: accepting connections
-- Keycloak: `GET http://localhost:8080/` → 200
-
-**On timeout (120s):** Report environment startup failure. Do not run E2E tests against a broken stack.
-
-### Step 5 — E2E Tests
-
-```bash
-make test-e2e
-```
-
-Uses Playwright. Collect failing test names, screenshots (if available), and error output.
-
-If this is a story with `ui: true`: verify that new E2E tests exist in `e2e/tests/` or `e2e/features/` for the story's UI behavior. Flag missing coverage as a finding.
-
-### Step 6 — Integration Tests
-
-```bash
-make test-integration
-```
-
-Godog/Gherkin tests. Collect failing scenario names and step errors.
-
-### Step 7 — Tear Down
-
-```bash
-docker compose down
-```
-
-Always tear down, even on failure.
+If missing → set `missing_matrix_e2e_coverage: true` and block.
 
 ## Output Format
 
@@ -86,11 +54,12 @@ Always tear down, even on failure.
 {
   "status": "pass" | "fail",
   "story": "<story-id>",
+  "timestamp": "ISO",
   "suites": {
     "build": { "status": "pass" | "fail", "errors": [] },
     "unit-go": { "status": "pass" | "fail", "failures": [], "count": { "passed": N, "failed": N } },
     "unit-elixir": { "status": "pass" | "fail", "failures": [], "count": { "passed": N, "failed": N } },
-    "e2e": { "status": "pass" | "fail", "failures": [], "missing_coverage": false },
+    "e2e": { "status": "pass" | "fail", "failures": [], "missing_gherkin_feature": false, "missing_coverage": false, "missing_matrix_e2e_coverage": false },
     "integration": { "status": "pass" | "fail", "failures": [], "count": { "passed": N, "failed": N } }
   },
   "blocking_failures": [],
