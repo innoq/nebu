@@ -1,6 +1,12 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-07
+# [9-26] 2026-05-07T12:45Z arc42-update → testing architecture + NFR-M3 added
+# [9-26] 2026-05-07T12:35Z code-review → CLEAN (cycle 3) — APPROVED, 1 INFO only
+# [9-26] 2026-05-07T12:25Z dev-story → done (cycle 3) — N-14..N-22 fixed
+# [9-26] 2026-05-07T12:15Z code-review → 0 MAJOR (READY FOR DONE), 10 MINOR → cycle 3 final
+# [9-26] 2026-05-07T12:00Z ci-gate → ✓ 14/15 BDD green (1 skipped: bootstrap-wizard fresh-DB), double-run M-1 stable
+# [9-26] 2026-05-07T11:35Z dev-story → done (cycle 2+9-26b+9-26c) — IndexedDB fix, admin bootstrap helper, selector fix
 # [9-26] 2026-05-07T11:20Z ci-gate → FAILED: BUG-E2E-01(IndexedDB session), BUG-E2E-02(token extraction), BUG-E2E-03(admin bootstrap), BUG-E2E-04(strict selector) → sub-stories 9-26b + 9-26c
 # [9-26] 2026-05-07T11:05Z dev-story → done (cycle 2) — 13 MINOR fixes applied
 # [9-26] 2026-05-07T10:50Z code-review → 0 MAJOR (all cycle-0 MAJORs fixed) 13 MINOR → cycle 2
@@ -34,12 +40,14 @@
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
 story: "9-26"
-current_step: "ci-gate"
+current_step: "commit"
 completed:
   - atdd
   - test-review
   - dev-story
   - ci-gate
-cycle_count: 2
+  - code-review
+  - arc42-update
+cycle_count: 3
 blocked_reason: null
-last_updated: "2026-05-07T12:52Z"
+last_updated: "2026-05-07T15:16Z"

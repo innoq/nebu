@@ -127,4 +127,90 @@ middleware on all `/admin/*` routes (CSP, HSTS, X-Frame-Options). Session cookie
 `HttpOnly`, `SameSite=Lax`. Admin UI templates served via `go:embed` — no filesystem access
 at runtime.
 
-_Source: `_bmad-output/planning-artifacts/architecture.md`, §Cross-Cutting Concerns, §Auth-Token-Flow, §Enforcement; `_bmad-output/planning-artifacts/prd.md`, §Cryptographic Identity Architecture; Story 9-22 (per-device sync token isolation, logout cleanup)_
+## Testing Architecture (Story 9-26)
+
+Nebu uses a two-layer E2E test strategy, splitting tests by the level of observable behavior:
+
+| Layer | Runner | Scope | Location |
+|---|---|---|---|
+| HTTP / Matrix API | Godog + `net/http` | REST endpoints, Matrix CS protocol, gRPC | `gateway/features/` |
+| Browser / UI | Playwright + `playwright-bdd` | Element Web flows, Admin UI, real OIDC redirects | `e2e/` |
+
+**No plain `.spec.ts` files without a `.feature` counterpart are accepted for new stories.**
+Gherkin `.feature` files are the single source of truth for all E2E scenarios.
+
+### Browser-First E2E Layer
+
+All browser-level tests use `playwright-bdd` as the execution engine. Feature files are defined
+first (failing), step definitions implement them in TypeScript. The `playwright.config.ts` registers
+three test projects:
+
+- `chromium` — legacy API-contract tests (no BDD change)
+- `admin-ui` — Admin UI BDD tests via `playwright-bdd`
+- `element-web` — Element Web browser-first E2E via `playwright-bdd`
+
+```
+e2e/
+  features/
+    element/            ← login, room/{create,join,leave}, messages/{send,receive}
+    admin/              ← bootstrap, dashboard, auth-guard, users, rooms, audit-log
+  step-definitions/
+    common/             ← auth, navigation, stack-health, room-setup, assertions (shared)
+    element/            ← login, room, messages steps
+    admin/              ← bootstrap, dashboard, users, rooms steps
+  fixtures/
+    users.ts            ← NEBU_USERS const (4 pre-configured Dex test users)
+    dex-auth.ts         ← loginViaOidcBrowser(), ensureStorageState(), getApiSession()
+    element-app.ts      ← ElementAppPage (Playwright page object for Element Web)
+    nebu-fixtures.ts    ← createBdd(test) — exports { Given, When, Then }
+  global-setup.ts       ← warms token sidecars + bootstraps admin before tests
+```
+
+### Token Sidecar Pattern for IndexedDB Sessions (Story 9-26b)
+
+Element Web 1.11+ stores `mx_access_token` in **IndexedDB**, not localStorage. Playwright's
+`storageState()` captures only localStorage and cookies — not IndexedDB. The token sidecar
+pattern solves this:
+
+1. `loginViaOidcBrowser()` intercepts the `POST /_matrix/client/v3/login` response via
+   Playwright route interception, captures the `access_token` + `user_id` from the JSON body.
+2. The token is written to `e2e/auth-state/{user}.token.json` (the "sidecar" file).
+3. `getApiSession()` reads the sidecar to obtain a valid token for Matrix API setup calls
+   (`createRoom`, `inviteUser`) — without touching localStorage or IndexedDB.
+4. `global-setup.ts` warms sidecars for `alex`, `marie`, and `kai` before any test runs.
+5. Each test context performs a **fresh OIDC browser login** (no storageState restore) because
+   IndexedDB sessions cannot be injected via `browser.newContext({ storageState })`.
+
+The `auth-state/` directory is gitignored. Sidecars expire after 12 hours (staleness check in
+`ensureStorageState()`).
+
+### API Seeding vs. UI Assertion Boundary
+
+Matrix API calls via `page.request` are permitted in **Given/When (setup)** steps only:
+
+| Step type | API calls allowed? | Rationale |
+|---|---|---|
+| `Given` — test pre-condition | Yes | Set up rooms, send invites, seed data |
+| `When` — user action | No (UI only) | The feature under test |
+| `Then` — assertion | No (UI only) | Assertions must target the visible UI |
+
+Example for `room/join.feature`: kai creates the room and sends the invite via Matrix API
+(`Given`), the assertion is that alex sees the invite banner in Element Web and clicks "Accept"
+(`When`/`Then`).
+
+### OIDC Authorization Code + PKCE Requirement
+
+All Gherkin E2E tests use Authorization Code + PKCE. `grant_type=password` (ROPC) is not
+supported by Dex v2.41+ and is forbidden in all tests. The consent screen is handled inside
+`loginViaOidcBrowser()` (first login only) via a role-based button locator
+(`/grant access|allow|approve|confirm/i`).
+
+### Makefile Targets
+
+```bash
+make test-e2e-element   # element-web project (bddgen + playwright)
+make test-e2e-admin     # admin-ui project (bddgen + playwright)
+make test-e2e           # all projects (legacy + BDD)
+```
+
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Cross-Cutting Concerns, §Auth-Token-Flow, §Enforcement; `_bmad-output/planning-artifacts/prd.md`, §Cryptographic Identity Architecture; Story 9-22 (per-device sync token isolation, logout cleanup); Story 9-26 (Browser-First E2E layer, playwright-bdd, token sidecar pattern)_

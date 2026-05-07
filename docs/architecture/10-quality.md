@@ -35,7 +35,9 @@ Quality
 │   └── NFR-C3: All data in operator-controlled PostgreSQL (on-premise capable)
 ├── Matrix Protocol Conformance
 │   ├── NFR-M1: Compatible with Element, FluffyChat, Hydrogen (incompatibilities = bugs)
-│   └── NFR-M2: OIDC integration via m.login.sso per Matrix OIDC Specification
+│   ├── NFR-M2: OIDC integration via m.login.sso per Matrix OIDC Specification
+│   └── NFR-M3: Element Web browser-first E2E suite (playwright-bdd) validates login,
+│              room create/join/leave, and message send/receive via real browser flows
 ├── Accessibility
 │   ├── NFR-A1: Admin UI WCAG 2.1 Level AA
 │   ├── NFR-A2: Admin UI fully keyboard navigable

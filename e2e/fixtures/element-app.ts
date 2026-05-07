@@ -27,51 +27,79 @@ export class ElementAppPage {
   }
 
   /**
-   * Open the "New room" / create room dialog.
+   * Open the "Create a private room" dialog.
    *
-   * Element Web renders a "+" / "Add room" button in the left panel header.
-   * We click it, then select "Create new room" from the resulting menu.
+   * Element Web 1.12.15 removed the dedicated "Add room" / "+" button from the room list header.
+   * The most reliable approach across versions is to navigate to /#/new which opens the
+   * "Create a private room" dialog directly.
+   *
+   * Fallback for older versions: try the "Add room" button first.
    */
   async openCreateRoomDialog(): Promise<void> {
-    // Click the "Add room" composite button (various labels depending on Element version)
-    const addRoomBtn = this.page.getByRole('button', { name: /add room|new room|create.*room|plus/i })
-      .or(this.page.locator('.mx_RoomListHeader_auxButton'))
-      .first();
+    // Element Web 1.12.15+: navigate to /#/new to open create room dialog
+    await this.page.goto('/#/new');
+    // Wait for the URL to settle before checking for the dialog
+    await this.page.waitForLoadState('domcontentloaded').catch(() => {});
 
-    await addRoomBtn.waitFor({ state: 'visible', timeout: 10_000 });
-    await addRoomBtn.click();
+    // Check if the dialog is now open
+    const dialogVisible = await this.page.locator('.mx_CreateRoomDialog, [role="dialog"]').first()
+      .isVisible({ timeout: 5_000 }).catch(() => false);
 
-    // A context menu appears — click "Create new room"
-    const createItem = this.page.getByRole('menuitem', { name: /create.*room|new room/i })
-      .or(this.page.getByRole('option', { name: /create.*room|new room/i }));
+    if (!dialogVisible) {
+      // Fallback for older versions: "Add room" button in the left panel header
+      const addRoomBtn = this.page.getByRole('button', { name: /add room|new room|create.*room|plus/i })
+        .or(this.page.locator('.mx_RoomListHeader_auxButton'))
+        .first();
 
-    if (await createItem.first().isVisible({ timeout: 3_000 }).catch(() => false)) {
-      await createItem.first().click();
+      const btnVisible = await addRoomBtn.isVisible({ timeout: 5_000 }).catch(() => false);
+      if (btnVisible) {
+        await addRoomBtn.click();
+        // A context menu may appear — click "Create new room"
+        const createItem = this.page.getByRole('menuitem', { name: /create.*room|new room/i })
+          .or(this.page.getByRole('option', { name: /create.*room|new room/i }));
+        if (await createItem.first().isVisible({ timeout: 3_000 }).catch(() => false)) {
+          await createItem.first().click();
+        }
+      }
     }
-    // The .mx_CreateRoomDialog should now be visible
-    await this.page.locator('.mx_CreateRoomDialog').waitFor({ state: 'visible', timeout: 10_000 });
+
+    // Wait for the create room dialog (either .mx_CreateRoomDialog or generic dialog)
+    await this.page.locator('.mx_CreateRoomDialog, [role="dialog"]:has(input[placeholder="Name"])').first()
+      .waitFor({ state: 'visible', timeout: 10_000 });
   }
 
   /**
    * Navigate to a room by its display name in the sidebar.
    * Tries multiple selector strategies for robustness across Element versions.
+   *
+   * Element Web 1.12.15 change: Room tiles use aria-label="Open room {name}" buttons
+   * (no title attribute, no .mx_RoomTile class).
    */
   async viewRoomByName(name: string): Promise<void> {
-    // Strategy 1: getByTestId room-list then title attribute
+    // Strategy 1 (Element Web 1.12.15+): aria-label="Open room {name}" (joined) OR
+    // aria-label="Open room {name} invitation." (pending invite)
+    const byAriaLabel = this.page.locator(
+      `[aria-label="Open room ${name}"], [aria-label="Open room ${name} invitation."]`
+    );
+
+    // Strategy 2 (older versions): title attribute in room list
     const byTitle = this.page.getByTestId('room-list').locator(`[title="${name}"]`);
 
-    // Strategy 2: direct locator on room list items by title
+    // Strategy 3: direct locator on room list items by title/aria-label (even older)
     const byListItem = this.page.locator(`.mx_RoomTile[title="${name}"], .mx_RoomTile[aria-label="${name}"]`);
 
     let found = false;
 
-    // Try strategy 1
-    if (await byTitle.first().isVisible({ timeout: 5_000 }).catch(() => false)) {
+    if (await byAriaLabel.first().isVisible({ timeout: 5_000 }).catch(() => false)) {
+      await byAriaLabel.first().click();
+      found = true;
+    }
+
+    if (!found && await byTitle.first().isVisible({ timeout: 5_000 }).catch(() => false)) {
       await byTitle.first().click();
       found = true;
     }
 
-    // Try strategy 2
     if (!found && await byListItem.first().isVisible({ timeout: 5_000 }).catch(() => false)) {
       await byListItem.first().click();
       found = true;
@@ -97,10 +125,17 @@ export class ElementAppPage {
 
   /**
    * Get the message composer input field (contenteditable div).
-   * Selector: .mx_RoomView_body .mx_MessageComposer div[contenteditable]
+   *
+   * Element Web 1.12.15 uses .mx_BasicMessageComposer_input as the contenteditable element.
+   * Fallback selectors for older versions are chained via .or().
    */
   getComposerField(): Locator {
-    return this.page.locator('.mx_RoomView_body .mx_MessageComposer div[contenteditable]');
+    // Primary: Element Web 1.12.15 class
+    return this.page.locator('.mx_BasicMessageComposer_input')
+      // Fallback 1: generic role=textbox in the message composer area
+      .or(this.page.locator('.mx_SendMessageComposer [contenteditable="true"]'))
+      // Fallback 2: older versions
+      .or(this.page.locator('.mx_RoomView_body .mx_MessageComposer div[contenteditable]'));
   }
 
   /**

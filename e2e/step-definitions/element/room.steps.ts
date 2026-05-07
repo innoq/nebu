@@ -207,8 +207,7 @@ When(
       await firstTile.click({ button: 'right' });
     }
 
-    // Wait for context menu to appear and click the matching item
-    await page.waitForTimeout(400);
+    // Wait for context menu to appear and click the matching item (deterministic — no hard wait)
     // Element 1.12.15 context menu items have no aria-label — match by text content
     const menuItemLocator = page.locator('[role="menuitem"]').filter({ hasText: new RegExp(menuItem, 'i') })
       .or(page.getByRole('menuitem', { name: new RegExp(menuItem, 'i') }));

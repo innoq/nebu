@@ -46,6 +46,13 @@ Given('bootstrap has been completed', async ({ page }: { page: Page }) => {
   // BUG-E2E-11 fix: doBootstrapAdmin() is safe to call again — it's idempotent.
   // global-setup already ran it, but this ensures correctness if tests run alone.
   await doBootstrapAdmin(page);
+  // N-14: Clear admin session so auth-guard tests start unauthenticated.
+  // doBootstrapAdmin() leaves the page in an authenticated admin session;
+  // auth-guard.feature tests must start without an active session.
+  await page.context().clearCookies();
+  await page.evaluate(() => {
+    try { sessionStorage.clear(); } catch { /* ignore cross-origin */ }
+  });
 });
 
 Given('the operator is logged in as admin', async ({ page }: { page: Page }) => {

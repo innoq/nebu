@@ -115,94 +115,106 @@ export async function loginViaOidcBrowser(
     await route.fulfill({ response });
   });
 
-  await page.goto(ELEMENT_URL);
+  // N-22: wrap all login steps in try/finally so the route handler is always removed,
+  // even if an early exception occurs (e.g. network error, assertion failure).
+  try {
+    await page.goto(ELEMENT_URL);
 
-  // Click "Sign in" link on the Element welcome screen
-  await page.getByRole('link', { name: /sign in|anmelden/i })
-    .waitFor({ state: 'visible', timeout: 15_000 });
-  await page.getByRole('link', { name: /sign in|anmelden/i }).click();
+    // Click "Sign in" link on the Element welcome screen
+    await page.getByRole('link', { name: /sign in|anmelden/i })
+      .waitFor({ state: 'visible', timeout: 15_000 });
+    await page.getByRole('link', { name: /sign in|anmelden/i }).click();
 
-  // Wait for "Continue with SSO" button
-  await page.getByRole('button', { name: /continue with sso|mit sso|weiter mit sso/i })
-    .waitFor({ state: 'visible', timeout: 15_000 });
-  await page.getByRole('button', { name: /continue with sso|mit sso|weiter mit sso/i }).click();
+    // Wait for "Continue with SSO" button
+    await page.getByRole('button', { name: /continue with sso|mit sso|weiter mit sso/i })
+      .waitFor({ state: 'visible', timeout: 15_000 });
+    await page.getByRole('button', { name: /continue with sso|mit sso|weiter mit sso/i }).click();
 
-  // Dex login page
-  await page.waitForURL(/dex.*\/auth/i, { timeout: 20_000 });
-  await page.locator('input[name="login"]').fill(email);
-  await page.locator('input[name="password"]').fill(password);
-  await page.locator('button[type="submit"]').click();
+    // Dex login page
+    await page.waitForURL(/dex.*\/auth/i, { timeout: 20_000 });
+    await page.locator('input[name="login"]').fill(email);
+    await page.locator('input[name="password"]').fill(password);
+    await page.locator('button[type="submit"]').click();
 
-  // Dex may show a consent / grant access screen (only on first login per client)
-  const consentBtn = page.getByRole('button', { name: /grant access|allow|approve|confirm/i });
-  if (await consentBtn.isVisible({ timeout: 6_000 }).catch(() => false)) {
-    await consentBtn.click();
-  }
+    // Dex may show a consent / grant access screen (only on first login per client)
+    const consentBtn = page.getByRole('button', { name: /grant access|allow|approve|confirm/i });
+    if (await consentBtn.isVisible({ timeout: 6_000 }).catch(() => false)) {
+      await consentBtn.click();
+    }
 
-  // Wait for redirect back to Element Web
-  await page.waitForURL(/localhost:7070/, { timeout: 30_000 });
+    // Wait for redirect back to Element Web
+    await page.waitForURL(/localhost:7070/, { timeout: 30_000 });
 
-  // Element may show a key-setup dialog on first login — dismiss it
-  // m-9 fix: only swallow Timeout races; re-throw real errors
-  await Promise.race([
-    page.locator('.mx_LeftPanel').waitFor({ state: 'visible', timeout: 25_000 }),
-    page.getByRole('button', { name: /cancel|abbrechen/i })
-      .waitFor({ state: 'visible', timeout: 25_000 }),
-  ]).catch((e: Error) => { if (!e.message?.includes('Timeout')) throw e; });
+    // Element may show a key-setup dialog on first login — dismiss it
+    // m-9 fix: only swallow Timeout races; re-throw real errors
+    await Promise.race([
+      page.locator('.mx_LeftPanel').waitFor({ state: 'visible', timeout: 25_000 }),
+      page.getByRole('button', { name: /cancel|abbrechen/i })
+        .waitFor({ state: 'visible', timeout: 25_000 }),
+    ]).catch((e: Error) => { if (!e.message?.includes('Timeout')) throw e; });
 
-  const cancelBtn = page.getByRole('button', { name: /cancel|abbrechen/i });
-  if (await cancelBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
-    await cancelBtn.click();
-  }
+    const cancelBtn = page.getByRole('button', { name: /cancel|abbrechen/i });
+    if (await cancelBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
+      await cancelBtn.click();
+    }
 
-  // Ensure .mx_LeftPanel is visible before proceeding
-  await page.locator('.mx_LeftPanel').waitFor({ state: 'visible', timeout: 20_000 });
+    // Ensure .mx_LeftPanel is visible before proceeding
+    await page.locator('.mx_LeftPanel').waitFor({ state: 'visible', timeout: 20_000 });
 
-  // Story 9-26b Fix C: if route interception didn't capture the token (e.g. token came from
-  // a cached OIDC session without a fresh /login POST), try reading from the page context.
-  // Fallback: check localStorage (legacy Element Web < 1.11) then MatrixClient in-memory.
-  if (!capturedToken) {
-    const fromPage = await page.evaluate(async () => {
-      // Legacy path: localStorage (Element Web < 1.11)
-      const legacyToken = localStorage.getItem('mx_access_token');
-      if (legacyToken) {
-        return {
-          access_token: legacyToken,
-          user_id: localStorage.getItem('mx_user_id') ?? '',
-        };
-      }
-      // Modern path: read from the active MatrixClient (set on window by Element Web)
-      const w = window as unknown as Record<string, unknown>;
-      const peg = w['mxMatrixClientPeg'] as { get?: () => { getAccessToken: () => string; getUserId: () => string } } | undefined;
-      if (peg?.get) {
-        const client = peg.get();
-        if (client) {
+    // Story 9-26b Fix C: if route interception didn't capture the token (e.g. token came from
+    // a cached OIDC session without a fresh /login POST), try reading from the page context.
+    // Fallback: check localStorage (legacy Element Web < 1.11) then MatrixClient in-memory.
+    if (!capturedToken) {
+      const fromPage = await page.evaluate(async () => {
+        // Legacy path: localStorage (Element Web < 1.11)
+        const legacyToken = localStorage.getItem('mx_access_token');
+        if (legacyToken) {
           return {
-            access_token: client.getAccessToken(),
-            user_id: client.getUserId(),
+            access_token: legacyToken,
+            user_id: localStorage.getItem('mx_user_id') ?? '',
           };
         }
+        // Modern path: read from the active MatrixClient (set on window by Element Web)
+        const w = window as unknown as Record<string, unknown>;
+        const peg = w['mxMatrixClientPeg'] as { get?: () => { getAccessToken: () => string; getUserId: () => string } } | undefined;
+        if (peg?.get) {
+          const client = peg.get();
+          if (client) {
+            return {
+              access_token: client.getAccessToken(),
+              user_id: client.getUserId(),
+            };
+          }
+        }
+        return null;
+      });
+      if (fromPage?.access_token) {
+        capturedToken  = fromPage.access_token;
+        capturedUserId = fromPage.user_id;
       }
-      return null;
-    });
-    if (fromPage?.access_token) {
-      capturedToken  = fromPage.access_token;
-      capturedUserId = fromPage.user_id;
     }
-  }
 
-  // Write token sidecar for use by getApiSession()
-  if (capturedToken) {
-    writeTokenSidecar(user, capturedToken, capturedUserId ?? '');
-  } else {
-    console.warn(
-      `[loginViaOidcBrowser] Could not capture access_token for "${user.name}". ` +
-      'getApiSession() will need to re-authenticate.'
-    );
+    // Write token sidecar for use by getApiSession()
+    if (capturedToken) {
+      // N-16: validate that userId is non-empty before writing sidecar
+      const finalUserId = capturedUserId ?? '';
+      if (!finalUserId) {
+        throw new Error(
+          `loginViaOidcBrowser: failed to capture user_id for ${user.name}. ` +
+          'Element Web may have changed its session storage format.'
+        );
+      }
+      writeTokenSidecar(user, capturedToken, finalUserId);
+    } else {
+      console.warn(
+        `[loginViaOidcBrowser] Could not capture access_token for "${user.name}". ` +
+        'getApiSession() will need to re-authenticate.'
+      );
+    }
+  } finally {
+    // N-22: always remove the route intercept, even if an exception occurred above
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
   }
-
-  // Remove the route intercept — leave page in a clean state for the caller
-  await page.unrouteAll({ behavior: 'ignoreErrors' });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

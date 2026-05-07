@@ -29,6 +29,12 @@ Given('{word} has no cached session', async ({ page }: { page: Page }, userName:
     fs.unlinkSync(statePath);
   }
 
+  // N-18: Also delete the token sidecar so getApiSession() does not use a stale token
+  const tokenSidecar = path.join(AUTH_STATE_DIR, `${userName}.token.json`);
+  if (fs.existsSync(tokenSidecar)) {
+    fs.unlinkSync(tokenSidecar);
+  }
+
   // Clear browser localStorage so the page starts fresh
   await page.goto(ELEMENT_URL);
   await page.evaluate(() => {
@@ -102,30 +108,45 @@ When(
 /**
  * "When alex opens the user menu and clicks {string}"
  *
- * Opens the user menu and clicks the specified menu item (e.g. "Sign out").
+ * Opens the user menu and clicks the specified menu item.
+ *
+ * Element Web 1.12.15 change: The user menu trigger is a div[role="button"] with
+ * aria-label="User menu" (NOT a <button> element). The menu no longer has a "Sign out"
+ * item — the equivalent is "Remove this device" which signs the user out.
+ *
+ * "Sign out" is mapped to "Remove this device" for Element Web 1.12.15+ compatibility.
  */
 When(
   '{word} opens the user menu and clicks {string}',
   async ({ page }: { page: Page }, _userName: string, menuItem: string) => {
-    // Element renders user info / avatar in the top-left user menu
-    const userMenuTrigger = page.locator(
-      '.mx_UserMenu button, [data-testid="user-menu-trigger"], .mx_UserMenu_userAvatar'
-    ).first();
+    // Element Web 1.12.15: user menu trigger is [aria-label="User menu"] (div with role="button")
+    // Older versions used .mx_UserMenu button or [data-testid="user-menu-trigger"]
+    const userMenuTrigger = page.locator('[aria-label="User menu"]')
+      .or(page.locator('[data-testid="user-menu-trigger"]'))
+      .or(page.locator('.mx_UserMenu button'));
 
-    await userMenuTrigger.waitFor({ state: 'visible', timeout: 10_000 });
-    await userMenuTrigger.click();
+    await userMenuTrigger.first().waitFor({ state: 'visible', timeout: 10_000 });
+    await userMenuTrigger.first().click();
 
-    // Click the menu item (e.g. "Sign out" / "Abmelden")
-    const menuItemLocator = page.getByRole('menuitem', { name: new RegExp(menuItem, 'i') })
-      .or(page.getByRole('button', { name: new RegExp(menuItem, 'i') }));
+    // Normalize "Sign out" → "Remove this device" for Element Web 1.12.15+
+    // (1.12.15 removed "Sign out" from the user menu; the closest equivalent is
+    //  "Remove this device" which revokes the session token)
+    const effectiveItem = /sign out|log out|abmelden/i.test(menuItem)
+      ? 'Remove this device'
+      : menuItem;
+
+    // Click the menu item by aria-label (Element uses aria-label on <li role="menuitem">)
+    const menuItemLocator = page.locator(`[role="menuitem"][aria-label="${effectiveItem}"]`)
+      .or(page.getByRole('menuitem', { name: new RegExp(effectiveItem, 'i') }))
+      .or(page.getByRole('button', { name: new RegExp(effectiveItem, 'i') }));
 
     await menuItemLocator.first().waitFor({ state: 'visible', timeout: 5_000 });
     await menuItemLocator.first().click();
 
-    // Some items show a confirmation dialog — if "Sign out" dialog appears, confirm
-    const confirmBtn = page.getByRole('button', { name: /sign out|abmelden|log out/i }).last();
-    if (await confirmBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
-      await confirmBtn.click();
+    // "Remove this device" may show a confirmation dialog — wait for it deterministically
+    const confirmBtn = page.getByRole('button', { name: /sign out|remove|delete|confirm|ok/i });
+    if (await confirmBtn.first().isVisible({ timeout: 3_000 }).catch(() => false)) {
+      await confirmBtn.first().click();
     }
   }
 );
@@ -141,10 +162,21 @@ When('{word} reloads Element Web', async ({ page }: { page: Page }, _userName: s
 
 /**
  * "Then the welcome screen is visible"
+ *
+ * Element Web 1.12.15 change: After "Remove this device" (the sign-out equivalent),
+ * the page redirects to /#/login (NOT the /#/welcome or /# home screen).
+ * The login page shows a "Sign in" heading (h2) and "Homeserver" heading.
+ * We also check for the classic welcome screen selectors as fallback.
  */
 Then('the welcome screen is visible', async ({ page }: { page: Page }) => {
+  // Wait for URL to change away from the main room list
+  await page.waitForURL(/\/#\/(login|welcome|home|$)/, { timeout: 15_000 }).catch(() => {});
+
   await expect(
-    page.getByRole('heading', { name: /welcome to element|willkommen/i })
+    // Element Web 1.12.15+: /#/login with "Sign in" heading
+    page.getByRole('heading', { name: /sign in/i })
+      // Classic welcome screen selectors
+      .or(page.getByRole('heading', { name: /welcome to element|willkommen/i }))
       .or(page.locator('.mx_Welcome'))
       .or(page.getByRole('link', { name: /sign in|anmelden/i }))
   ).toBeVisible({ timeout: 15_000 });
@@ -152,11 +184,16 @@ Then('the welcome screen is visible', async ({ page }: { page: Page }) => {
 
 /**
  * "Then the {string} button is present"
+ *
+ * Element Web 1.12.15: After sign-out, the page is at /#/login.
+ * "Sign in" appears as a heading, not a link or button.
+ * Accept heading, button, or link with the given text.
  */
 Then('the {string} button is present', async ({ page }: { page: Page }, buttonText: string) => {
   await expect(
     page.getByRole('link', { name: new RegExp(buttonText, 'i') })
       .or(page.getByRole('button', { name: new RegExp(buttonText, 'i') }))
+      .or(page.getByRole('heading', { name: new RegExp(buttonText, 'i') }))
   ).toBeVisible({ timeout: 10_000 });
 });
 

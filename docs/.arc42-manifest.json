@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-05-06T18:38:04Z",
-  "generator": "bmad-maintain-arc42 skill (Story 9-25)",
+  "generated_at": "2026-05-07T00:00:00Z",
+  "generator": "bmad-maintain-arc42 skill (Story 9-26)",
   "source_artifacts": [
     "_bmad-output/planning-artifacts/architecture.md",
     "_bmad-output/planning-artifacts/prd.md",
@@ -55,7 +55,7 @@
     },
     "docs/architecture/08-concepts.md": {
       "editable": false,
-      "generated_at": "2026-05-06T12:30:00Z",
+      "generated_at": "2026-05-07T00:00:00Z",
       "source": "_bmad-output/planning-artifacts/architecture.md",
       "arc42_section": "08 Cross-cutting Concepts"
     },
@@ -67,7 +67,7 @@
     },
     "docs/architecture/10-quality.md": {
       "editable": false,
-      "generated_at": "2026-05-01T00:00:00Z",
+      "generated_at": "2026-05-07T00:00:00Z",
       "source": "_bmad-output/planning-artifacts/prd.md",
       "arc42_section": "10 Quality Requirements"
     },

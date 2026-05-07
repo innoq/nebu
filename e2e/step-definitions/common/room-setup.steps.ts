@@ -11,6 +11,10 @@
  * - All helpers MUST fail loudly on 401 M_MISSING_TOKEN (not swallow)
  * - inviteUser MUST validate user_id format before calling (avoid 400 M_BAD_JSON)
  * - Rate limiting: helpers MUST handle 429 M_LIMIT_EXCEEDED with retry_after_ms
+ *
+ * NOTE: Template names (e.g. "msg-send-template") must be unique across ALL feature files
+ * in a single test run. The module-level Map does not scope by scenario.
+ * Each .feature file must use a distinct template name.
  */
 
 import { Given } from '../../fixtures/nebu-fixtures';

@@ -1,3 +1,0 @@
-# This directory holds cached Playwright storageState files (one per test user).
-# Files are gitignored — generated at runtime by global-setup.ts.
-# Story 9-26, AC3.
