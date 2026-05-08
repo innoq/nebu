@@ -61,13 +61,13 @@
     },
     "docs/architecture/09-decisions.md": {
       "editable": false,
-      "generated_at": "2026-05-01T00:00:00Z",
+      "generated_at": "2026-05-08T12:00:00Z",
       "source": "CLAUDE.md",
       "arc42_section": "09 Architecture Decisions"
     },
     "docs/architecture/10-quality.md": {
       "editable": false,
-      "generated_at": "2026-05-07T00:00:00Z",
+      "generated_at": "2026-05-08T12:00:00Z",
       "source": "_bmad-output/planning-artifacts/prd.md",
       "arc42_section": "10 Quality Requirements"
     },
@@ -139,9 +139,9 @@
     },
     "docs/architecture/adr/ADR-010-fts-strategy.md": {
       "editable": true,
-      "generated_at": "2026-05-01T00:00:00Z",
-      "source": "Story 9-11 Dev Notes",
-      "arc42_section": "ADR-010 (Proposed)"
+      "generated_at": "2026-05-08T12:00:00Z",
+      "source": "Story 11-1 (migration 000042, search_vector tsvector + GIN index)",
+      "arc42_section": "ADR-010 (Accepted 2026-05-08)"
     },
     "docs/architecture/adr/ADR-011-managed-e2ee-key-escrow.md": {
       "editable": true,

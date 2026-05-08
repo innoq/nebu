@@ -36,8 +36,10 @@ Quality
 ├── Matrix Protocol Conformance
 │   ├── NFR-M1: Compatible with Element, FluffyChat, Hydrogen (incompatibilities = bugs)
 │   ├── NFR-M2: OIDC integration via m.login.sso per Matrix OIDC Specification
-│   └── NFR-M3: Element Web browser-first E2E suite (playwright-bdd) validates login,
-│              room create/join/leave, and message send/receive via real browser flows
+│   ├── NFR-M3: Element Web browser-first E2E suite (playwright-bdd) validates login,
+│   │          room create/join/leave, and message send/receive via real browser flows
+│   └── NFR-M4: POST /_matrix/client/v3/search returns only results from rooms the
+│              requesting user is a member of (no cross-room leakage)
 ├── Accessibility
 │   ├── NFR-A1: Admin UI WCAG 2.1 Level AA
 │   ├── NFR-A2: Admin UI fully keyboard navigable
@@ -54,6 +56,7 @@ Quality
 | Gateway restart | SIGTERM | HTTP traffic resumes | ≤5s cold start |
 | Core restart | docker restart core | Events resume delivery, no cold-sync | Recovery via ETS + PostgreSQL checkpoint |
 | gRPC stream lost | Network partition | message_buffer absorbs writes; drain on reconnect | 0 message loss |
+| Full-text search | POST /search with keyword query across user's rooms | GIN index hit, no seq-scan | ≤500ms at Silver load; scope enforced via room membership filter |
 
 ## Security Scenarios
 

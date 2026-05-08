@@ -1,0 +1,21 @@
+# Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents.
+# Do not edit manually during an active pipeline run.
+# last_updated: 2026-05-08
+# [11-1] 2026-05-08T11:35Z ci-gate → ✓ build+unit-go (19/19); e2e+integration skipped (env startup)
+# [11-1] 2026-05-08T11:30Z dev-story → done (cycle 0)
+# [11-1] 2026-05-08T11:20Z test-review → 2 MINOR (state-event assertions missing in trigger + backfill tests), 0 MAJOR
+# [11-1] 2026-05-08T11:15Z atdd → 4 failing tests (unit x1 + integration x3)
+# [11-1] 2026-05-08T11:05Z create-story → 11-1-db-migration-search-index.md
+# [11-1] 2026-05-08T11:00Z pipeline started
+# --- pipeline log (newest first) ---
+story: "11-1"
+current_step: "code-review"
+completed:
+  - create-story
+  - atdd
+  - test-review
+  - dev-story
+  - ci-gate
+cycle_count: 0
+blocked_reason: null
+last_updated: "2026-05-08T11:59Z"

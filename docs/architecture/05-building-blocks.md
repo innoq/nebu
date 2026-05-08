@@ -158,12 +158,15 @@ core/apps/
 > sync checkpoint, preventing parallel sessions on different devices from overwriting each other's
 > `since` token.
 
-> **Thread relations index (Story 9-28, migration 000042):**
-> `CREATE INDEX CONCURRENTLY IF NOT EXISTS events_relates_to_event_id_idx ON events
-> ((content->'m.relates_to'->>'event_id')) WHERE content ? 'm.relates_to'` — partial expression
-> index on the JSONB `m.relates_to` field. Required so that `fetch_events_by_relation/5` and
-> `count_thread_children/2` can resolve thread replies without a sequential scan.
-> Story 9-29 adds `event_type` and `dir` filtering via the same index path (no new migration).
+> **Full-text search column in Story 11-1 (ADR-010):** migration 000042 adds a `search_vector tsvector`
+> column to the `events` table, populated by a PL/pgSQL trigger (`events_search_vector_trigger`)
+> on every `INSERT OR UPDATE OF content`. The trigger calls
+> `to_tsvector('pg_catalog.simple', coalesce(content->>'body', ''))`, using the `simple`
+> text search configuration (language-agnostic, no stemming — appropriate for a multilingual
+> chat server). A GIN index (`events_search_vector_gin_idx`) enables efficient `@@ tsquery`
+> queries. All existing events were backfilled during the migration. This is the database
+> foundation for `POST /_matrix/client/v3/search` (Epic 11). Scope enforcement at query time:
+> `WHERE room_id = ANY($membership_room_ids)` prevents cross-room leakage.
 
 > **Global account data in sync responses (Story 9-24):** `syncResponse` gains a top-level
 > `AccountData syncAccountDataSection` field (JSON key `account_data`, never omitted) that carries

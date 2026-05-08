@@ -3,6 +3,7 @@
 # story 9-30 done (pipeline: ATDD+Code CLEAN 2 cycles+Kassandra CLEAN): 2026-05-08
 # story 9-29 done (pipeline: ATDD+Dev+Code CLEAN 1 cycle (MINORs fixed)+Kassandra CLEAN): 2026-05-08
 # story 9-28 done (pipeline: ATDD+Dev+Code+Kassandra CLEAN — 1 cycle (MAJOR-1 noproc pattern, MAJOR-3 index, MINOR-1 event_in_room?)): 2026-05-08
+# story 11-1 done (pipeline: ATDD+Code CLEAN — tsvector GIN index, trigger, backfill; ADR-010 accepted): 2026-05-08
 # story 9-27 done (pipeline: ATDD+Code CLEAN 3 cycles — MatchError→500 fixed, §11.35.1 compliant, Kassandra CLEAN): 2026-05-08
 # story 9-26 done (pipeline: ATDD+9MAJ fixed(9-26a)+IndexedDB fix(9-26b)+AdminBootstrap(9-26c)+Code CLEAN 3 cycles): 2026-05-07
 # story 9-26 done (pipeline: ATDD+Dev+Test-Review CLEAN — 14/15 pass (1 skip: bootstrap-wizard correctly skipped on non-fresh DB), M-1 regression stable; 13 BUG-E2E fixes including BUG-E2E-11 core auto-bootstrap preemption; security_review not-needed): 2026-05-07
@@ -190,7 +191,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-20
-last_updated: 2026-05-06
+last_updated: 2026-05-08
 # story 6-10 created: 6-10 → ready-for-dev: 2026-05-01 (Server Config API + Metrics API — GET/PATCH /admin/config, GET /admin/metrics, proto InvalidateAllAdminSessions, ServerConfigRepository, MetricsRepository, oidc_client_secret encryption, session invalidation on OIDC change)
 # story 6-1 created: epic-6 → in-progress, 6-1 → ready-for-dev: 2026-05-01
 # story 5-1 review: 2026-04-23 (audit-log schema + RLS + retention cleanup)
@@ -782,8 +783,8 @@ development_status:
   # Pre-Epic-TODO: ADR-010 finalisieren (tsvector vs. pgvector, PoC-Query)
   #   — vor Sprint-Start; Story 7-31 bleibt backlog bis ADR accepted
   # ─────────────────────────────────────────────────────────────────────────
-  epic-11: backlog
-  11-1-db-migration-search-index: backlog
+  epic-11: in-progress
+  11-1-db-migration-search-index: done
   11-2-search-membership-enforcement: backlog
   11-3-elixir-core-searchmessages-grpc-handler: backlog
   11-4-gateway-post-search-handler: backlog
