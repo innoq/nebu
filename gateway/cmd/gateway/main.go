@@ -734,6 +734,15 @@ func main() {
 	mux.Handle("GET /_matrix/client/v3/rooms/{roomId}/context/{eventId}",
 		jwtWithStatusCheck(http.HandlerFunc(eventContextHandler.GetEventContext)))
 
+	// Story 9-28: Thread Relations — GET /_matrix/client/v1/rooms/{roomId}/relations/{eventId}/{relType}.
+	// Element Web calls /{relType} (typically "m.thread") to populate the thread panel.
+	// JWT required. Returns events with the given rel_type that reference the parent event.
+	relationsHandler := matrix.NewGetRelationsHandler(matrix.GetRelationsConfig{
+		CoreClient: coreClient,
+	})
+	mux.Handle("GET /_matrix/client/v1/rooms/{roomId}/relations/{eventId}/{relType}",
+		jwtWithStatusCheck(http.HandlerFunc(relationsHandler.GetRelations)))
+
 	// Story 7-29: Notifications API — GET /_matrix/client/v3/notifications.
 	// Reads from the notifications table (migration 000031) with cursor-based pagination.
 	// JWT required (jwtMiddleware). Query params: from (cursor), limit (default 50, max 200), only.

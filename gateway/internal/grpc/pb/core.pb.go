@@ -23,17 +23,18 @@ const (
 
 // Shared event type used across multiple RPCs
 type Event struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	EventId       string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
-	RoomId        string                 `protobuf:"bytes,2,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
-	SenderId      string                 `protobuf:"bytes,3,opt,name=sender_id,json=senderId,proto3" json:"sender_id,omitempty"`
-	EventType     string                 `protobuf:"bytes,4,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"`
-	Content       []byte                 `protobuf:"bytes,5,opt,name=content,proto3" json:"content,omitempty"`                    // JSON-encoded event content
-	OriginTs      int64                  `protobuf:"varint,6,opt,name=origin_ts,json=originTs,proto3" json:"origin_ts,omitempty"` // Unix milliseconds
-	ServerTs      int64                  `protobuf:"varint,7,opt,name=server_ts,json=serverTs,proto3" json:"server_ts,omitempty"` // Unix milliseconds
-	StateKey      string                 `protobuf:"bytes,8,opt,name=state_key,json=stateKey,proto3" json:"state_key,omitempty"`  // Matrix state_key (subject of state event, e.g. user_id for m.room.member)
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	EventId           string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
+	RoomId            string                 `protobuf:"bytes,2,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
+	SenderId          string                 `protobuf:"bytes,3,opt,name=sender_id,json=senderId,proto3" json:"sender_id,omitempty"`
+	EventType         string                 `protobuf:"bytes,4,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"`
+	Content           []byte                 `protobuf:"bytes,5,opt,name=content,proto3" json:"content,omitempty"`                                              // JSON-encoded event content
+	OriginTs          int64                  `protobuf:"varint,6,opt,name=origin_ts,json=originTs,proto3" json:"origin_ts,omitempty"`                           // Unix milliseconds
+	ServerTs          int64                  `protobuf:"varint,7,opt,name=server_ts,json=serverTs,proto3" json:"server_ts,omitempty"`                           // Unix milliseconds
+	StateKey          string                 `protobuf:"bytes,8,opt,name=state_key,json=stateKey,proto3" json:"state_key,omitempty"`                            // Matrix state_key (subject of state event, e.g. user_id for m.room.member)
+	UnsignedRelations []byte                 `protobuf:"bytes,9,opt,name=unsigned_relations,json=unsignedRelations,proto3" json:"unsigned_relations,omitempty"` // Story 9-28: JSON {"m.thread":{"count":N,"latest_event":{...},"current_user_participated":bool}}
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *Event) Reset() {
@@ -120,6 +121,13 @@ func (x *Event) GetStateKey() string {
 		return x.StateKey
 	}
 	return ""
+}
+
+func (x *Event) GetUnsignedRelations() []byte {
+	if x != nil {
+		return x.UnsignedRelations
+	}
+	return nil
 }
 
 // SendEvent
@@ -5320,12 +5328,143 @@ func (x *ListAdminRoomMembersResponse) GetMembers() []*AdminRoomMemberProto {
 	return nil
 }
 
+// GetRelations — Story 9-28
+// Returns all events that relate to parent_event_id via rel_type (e.g. "m.thread").
+// Ordered newest first. Caller must be a joined member of the room.
+type GetRelationsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	RoomId        string                 `protobuf:"bytes,2,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
+	EventId       string                 `protobuf:"bytes,3,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"` // parent event ID (thread root)
+	RelType       string                 `protobuf:"bytes,4,opt,name=rel_type,json=relType,proto3" json:"rel_type,omitempty"` // e.g. "m.thread"
+	Limit         int32                  `protobuf:"varint,5,opt,name=limit,proto3" json:"limit,omitempty"`                   // 0 = default 20; clamped to 100
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetRelationsRequest) Reset() {
+	*x = GetRelationsRequest{}
+	mi := &file_core_proto_msgTypes[95]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetRelationsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetRelationsRequest) ProtoMessage() {}
+
+func (x *GetRelationsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[95]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetRelationsRequest.ProtoReflect.Descriptor instead.
+func (*GetRelationsRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{95}
+}
+
+func (x *GetRelationsRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *GetRelationsRequest) GetRoomId() string {
+	if x != nil {
+		return x.RoomId
+	}
+	return ""
+}
+
+func (x *GetRelationsRequest) GetEventId() string {
+	if x != nil {
+		return x.EventId
+	}
+	return ""
+}
+
+func (x *GetRelationsRequest) GetRelType() string {
+	if x != nil {
+		return x.RelType
+	}
+	return ""
+}
+
+func (x *GetRelationsRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+type GetRelationsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Events        []*Event               `protobuf:"bytes,1,rep,name=events,proto3" json:"events,omitempty"`
+	NextBatch     string                 `protobuf:"bytes,2,opt,name=next_batch,json=nextBatch,proto3" json:"next_batch,omitempty"` // empty when no more pages
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetRelationsResponse) Reset() {
+	*x = GetRelationsResponse{}
+	mi := &file_core_proto_msgTypes[96]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetRelationsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetRelationsResponse) ProtoMessage() {}
+
+func (x *GetRelationsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[96]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetRelationsResponse.ProtoReflect.Descriptor instead.
+func (*GetRelationsResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{96}
+}
+
+func (x *GetRelationsResponse) GetEvents() []*Event {
+	if x != nil {
+		return x.Events
+	}
+	return nil
+}
+
+func (x *GetRelationsResponse) GetNextBatch() string {
+	if x != nil {
+		return x.NextBatch
+	}
+	return ""
+}
+
 var File_core_proto protoreflect.FileDescriptor
 
 const file_core_proto_rawDesc = "" +
 	"\n" +
 	"\n" +
-	"core.proto\x12\x04core\"\xe8\x01\n" +
+	"core.proto\x12\x04core\"\x97\x02\n" +
 	"\x05Event\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x17\n" +
 	"\aroom_id\x18\x02 \x01(\tR\x06roomId\x12\x1b\n" +
@@ -5335,7 +5474,8 @@ const file_core_proto_rawDesc = "" +
 	"\acontent\x18\x05 \x01(\fR\acontent\x12\x1b\n" +
 	"\torigin_ts\x18\x06 \x01(\x03R\boriginTs\x12\x1b\n" +
 	"\tserver_ts\x18\a \x01(\x03R\bserverTs\x12\x1b\n" +
-	"\tstate_key\x18\b \x01(\tR\bstateKey\"\xf8\x01\n" +
+	"\tstate_key\x18\b \x01(\tR\bstateKey\x12-\n" +
+	"\x12unsigned_relations\x18\t \x01(\fR\x11unsignedRelations\"\xf8\x01\n" +
 	"\x10SendEventRequest\x12\x17\n" +
 	"\aroom_id\x18\x01 \x01(\tR\x06roomId\x12\x1b\n" +
 	"\tsender_id\x18\x02 \x01(\tR\bsenderId\x12\x1d\n" +
@@ -5691,7 +5831,17 @@ const file_core_proto_rawDesc = "" +
 	"\x1bListAdminRoomMembersRequest\x12\x17\n" +
 	"\aroom_id\x18\x01 \x01(\tR\x06roomId\"T\n" +
 	"\x1cListAdminRoomMembersResponse\x124\n" +
-	"\amembers\x18\x01 \x03(\v2\x1a.core.AdminRoomMemberProtoR\amembers2\xd7\x18\n" +
+	"\amembers\x18\x01 \x03(\v2\x1a.core.AdminRoomMemberProtoR\amembers\"\x93\x01\n" +
+	"\x13GetRelationsRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x17\n" +
+	"\aroom_id\x18\x02 \x01(\tR\x06roomId\x12\x19\n" +
+	"\bevent_id\x18\x03 \x01(\tR\aeventId\x12\x19\n" +
+	"\brel_type\x18\x04 \x01(\tR\arelType\x12\x14\n" +
+	"\x05limit\x18\x05 \x01(\x05R\x05limit\"Z\n" +
+	"\x14GetRelationsResponse\x12#\n" +
+	"\x06events\x18\x01 \x03(\v2\v.core.EventR\x06events\x12\x1d\n" +
+	"\n" +
+	"next_batch\x18\x02 \x01(\tR\tnextBatch2\x9e\x19\n" +
 	"\vCoreService\x12<\n" +
 	"\tSendEvent\x12\x16.core.SendEventRequest\x1a\x17.core.SendEventResponse\x12?\n" +
 	"\n" +
@@ -5739,7 +5889,8 @@ const file_core_proto_rawDesc = "" +
 	"\x0fGetServerConfig\x12\x1c.core.GetServerConfigRequest\x1a\x1d.core.GetServerConfigResponse\x12W\n" +
 	"\x12UpdateServerConfig\x12\x1f.core.UpdateServerConfigRequest\x1a .core.UpdateServerConfigResponse\x12B\n" +
 	"\vUpgradeRoom\x12\x18.core.UpgradeRoomRequest\x1a\x19.core.UpgradeRoomResponse\x12]\n" +
-	"\x14ListAdminRoomMembers\x12!.core.ListAdminRoomMembersRequest\x1a\".core.ListAdminRoomMembersResponseB'Z%github.com/nebu/nebu/internal/grpc/pbb\x06proto3"
+	"\x14ListAdminRoomMembers\x12!.core.ListAdminRoomMembersRequest\x1a\".core.ListAdminRoomMembersResponse\x12E\n" +
+	"\fGetRelations\x12\x19.core.GetRelationsRequest\x1a\x1a.core.GetRelationsResponseB'Z%github.com/nebu/nebu/internal/grpc/pbb\x06proto3"
 
 var (
 	file_core_proto_rawDescOnce sync.Once
@@ -5753,7 +5904,7 @@ func file_core_proto_rawDescGZIP() []byte {
 	return file_core_proto_rawDescData
 }
 
-var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 95)
+var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 97)
 var file_core_proto_goTypes = []any{
 	(*Event)(nil),                              // 0: core.Event
 	(*SendEventRequest)(nil),                   // 1: core.SendEventRequest
@@ -5850,6 +6001,8 @@ var file_core_proto_goTypes = []any{
 	(*AdminRoomMemberProto)(nil),               // 92: core.AdminRoomMemberProto
 	(*ListAdminRoomMembersRequest)(nil),        // 93: core.ListAdminRoomMembersRequest
 	(*ListAdminRoomMembersResponse)(nil),       // 94: core.ListAdminRoomMembersResponse
+	(*GetRelationsRequest)(nil),                // 95: core.GetRelationsRequest
+	(*GetRelationsResponse)(nil),               // 96: core.GetRelationsResponse
 }
 var file_core_proto_depIdxs = []int32{
 	0,  // 0: core.GetMessagesResponse.events:type_name -> core.Event
@@ -5870,97 +6023,100 @@ var file_core_proto_depIdxs = []int32{
 	80, // 15: core.GetAdminRoomResponse.room:type_name -> core.AdminRoomDetailProto
 	85, // 16: core.GetServerConfigResponse.config:type_name -> core.ServerConfigProto
 	92, // 17: core.ListAdminRoomMembersResponse.members:type_name -> core.AdminRoomMemberProto
-	1,  // 18: core.CoreService.SendEvent:input_type -> core.SendEventRequest
-	3,  // 19: core.CoreService.CreateRoom:input_type -> core.CreateRoomRequest
-	5,  // 20: core.CoreService.JoinRoom:input_type -> core.JoinRoomRequest
-	7,  // 21: core.CoreService.LeaveRoom:input_type -> core.LeaveRoomRequest
-	9,  // 22: core.CoreService.GetMessages:input_type -> core.GetMessagesRequest
-	11, // 23: core.CoreService.SetPresence:input_type -> core.SetPresenceRequest
-	13, // 24: core.CoreService.SetTyping:input_type -> core.SetTypingRequest
-	15, // 25: core.CoreService.ValidateToken:input_type -> core.ValidateTokenRequest
-	17, // 26: core.CoreService.GetPendingEvents:input_type -> core.GetPendingEventsRequest
-	19, // 27: core.CoreService.EventBus:input_type -> core.EventBusRequest
-	20, // 28: core.CoreService.GetMetrics:input_type -> core.GetMetricsRequest
-	24, // 29: core.CoreService.GetRoomState:input_type -> core.GetRoomStateRequest
-	22, // 30: core.CoreService.InviteUser:input_type -> core.InviteUserRequest
-	26, // 31: core.CoreService.SetPowerLevels:input_type -> core.SetPowerLevelsRequest
-	28, // 32: core.CoreService.SendReceipt:input_type -> core.SendReceiptRequest
-	30, // 33: core.CoreService.GetInitialSync:input_type -> core.GetInitialSyncRequest
-	33, // 34: core.CoreService.GetSyncDelta:input_type -> core.GetSyncDeltaRequest
-	36, // 35: core.CoreService.GetPresence:input_type -> core.GetPresenceRequest
-	38, // 36: core.CoreService.UpdateProfile:input_type -> core.UpdateProfileRequest
-	40, // 37: core.CoreService.WriteAuditLog:input_type -> core.WriteAuditLogRequest
-	42, // 38: core.CoreService.DeleteUserKeys:input_type -> core.DeleteUserKeysRequest
-	44, // 39: core.CoreService.KickUser:input_type -> core.KickUserRequest
-	46, // 40: core.CoreService.BanUser:input_type -> core.BanUserRequest
-	48, // 41: core.CoreService.UnbanUser:input_type -> core.UnbanUserRequest
-	50, // 42: core.CoreService.ForgetRoom:input_type -> core.ForgetRoomRequest
-	52, // 43: core.CoreService.ListPublicRooms:input_type -> core.ListPublicRoomsRequest
-	55, // 44: core.CoreService.GetEventContext:input_type -> core.GetEventContextRequest
-	58, // 45: core.CoreService.InvalidateUserSessions:input_type -> core.InvalidateUserSessionsRequest
-	60, // 46: core.CoreService.UpdateRoomSettings:input_type -> core.UpdateRoomSettingsRequest
-	62, // 47: core.CoreService.ArchiveRoom:input_type -> core.ArchiveRoomRequest
-	64, // 48: core.CoreService.UnarchiveRoom:input_type -> core.UnarchiveRoomRequest
-	66, // 49: core.CoreService.InvalidateAllAdminSessions:input_type -> core.InvalidateAllAdminSessionsRequest
-	69, // 50: core.CoreService.ListAdminUsers:input_type -> core.ListAdminUsersRequest
-	71, // 51: core.CoreService.GetAdminUser:input_type -> core.GetAdminUserRequest
-	73, // 52: core.CoreService.DeactivateUser:input_type -> core.DeactivateUserRequest
-	75, // 53: core.CoreService.ReactivateUser:input_type -> core.ReactivateUserRequest
-	77, // 54: core.CoreService.UpdateUserRole:input_type -> core.UpdateUserRoleRequest
-	81, // 55: core.CoreService.ListAdminRooms:input_type -> core.ListAdminRoomsRequest
-	83, // 56: core.CoreService.GetAdminRoom:input_type -> core.GetAdminRoomRequest
-	86, // 57: core.CoreService.GetServerConfig:input_type -> core.GetServerConfigRequest
-	88, // 58: core.CoreService.UpdateServerConfig:input_type -> core.UpdateServerConfigRequest
-	90, // 59: core.CoreService.UpgradeRoom:input_type -> core.UpgradeRoomRequest
-	93, // 60: core.CoreService.ListAdminRoomMembers:input_type -> core.ListAdminRoomMembersRequest
-	2,  // 61: core.CoreService.SendEvent:output_type -> core.SendEventResponse
-	4,  // 62: core.CoreService.CreateRoom:output_type -> core.CreateRoomResponse
-	6,  // 63: core.CoreService.JoinRoom:output_type -> core.JoinRoomResponse
-	8,  // 64: core.CoreService.LeaveRoom:output_type -> core.LeaveRoomResponse
-	10, // 65: core.CoreService.GetMessages:output_type -> core.GetMessagesResponse
-	12, // 66: core.CoreService.SetPresence:output_type -> core.SetPresenceResponse
-	14, // 67: core.CoreService.SetTyping:output_type -> core.SetTypingResponse
-	16, // 68: core.CoreService.ValidateToken:output_type -> core.ValidateTokenResponse
-	18, // 69: core.CoreService.GetPendingEvents:output_type -> core.GetPendingEventsResponse
-	0,  // 70: core.CoreService.EventBus:output_type -> core.Event
-	21, // 71: core.CoreService.GetMetrics:output_type -> core.GetMetricsResponse
-	25, // 72: core.CoreService.GetRoomState:output_type -> core.GetRoomStateResponse
-	23, // 73: core.CoreService.InviteUser:output_type -> core.InviteUserResponse
-	27, // 74: core.CoreService.SetPowerLevels:output_type -> core.SetPowerLevelsResponse
-	29, // 75: core.CoreService.SendReceipt:output_type -> core.SendReceiptResponse
-	31, // 76: core.CoreService.GetInitialSync:output_type -> core.GetInitialSyncResponse
-	34, // 77: core.CoreService.GetSyncDelta:output_type -> core.GetSyncDeltaResponse
-	37, // 78: core.CoreService.GetPresence:output_type -> core.GetPresenceResponse
-	39, // 79: core.CoreService.UpdateProfile:output_type -> core.UpdateProfileResponse
-	41, // 80: core.CoreService.WriteAuditLog:output_type -> core.WriteAuditLogResponse
-	43, // 81: core.CoreService.DeleteUserKeys:output_type -> core.DeleteUserKeysResponse
-	45, // 82: core.CoreService.KickUser:output_type -> core.KickUserResponse
-	47, // 83: core.CoreService.BanUser:output_type -> core.BanUserResponse
-	49, // 84: core.CoreService.UnbanUser:output_type -> core.UnbanUserResponse
-	51, // 85: core.CoreService.ForgetRoom:output_type -> core.ForgetRoomResponse
-	54, // 86: core.CoreService.ListPublicRooms:output_type -> core.ListPublicRoomsResponse
-	57, // 87: core.CoreService.GetEventContext:output_type -> core.GetEventContextResponse
-	59, // 88: core.CoreService.InvalidateUserSessions:output_type -> core.InvalidateUserSessionsResponse
-	61, // 89: core.CoreService.UpdateRoomSettings:output_type -> core.UpdateRoomSettingsResponse
-	63, // 90: core.CoreService.ArchiveRoom:output_type -> core.ArchiveRoomResponse
-	65, // 91: core.CoreService.UnarchiveRoom:output_type -> core.UnarchiveRoomResponse
-	67, // 92: core.CoreService.InvalidateAllAdminSessions:output_type -> core.InvalidateAllAdminSessionsResponse
-	70, // 93: core.CoreService.ListAdminUsers:output_type -> core.ListAdminUsersResponse
-	72, // 94: core.CoreService.GetAdminUser:output_type -> core.GetAdminUserResponse
-	74, // 95: core.CoreService.DeactivateUser:output_type -> core.DeactivateUserResponse
-	76, // 96: core.CoreService.ReactivateUser:output_type -> core.ReactivateUserResponse
-	78, // 97: core.CoreService.UpdateUserRole:output_type -> core.UpdateUserRoleResponse
-	82, // 98: core.CoreService.ListAdminRooms:output_type -> core.ListAdminRoomsResponse
-	84, // 99: core.CoreService.GetAdminRoom:output_type -> core.GetAdminRoomResponse
-	87, // 100: core.CoreService.GetServerConfig:output_type -> core.GetServerConfigResponse
-	89, // 101: core.CoreService.UpdateServerConfig:output_type -> core.UpdateServerConfigResponse
-	91, // 102: core.CoreService.UpgradeRoom:output_type -> core.UpgradeRoomResponse
-	94, // 103: core.CoreService.ListAdminRoomMembers:output_type -> core.ListAdminRoomMembersResponse
-	61, // [61:104] is the sub-list for method output_type
-	18, // [18:61] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	0,  // 18: core.GetRelationsResponse.events:type_name -> core.Event
+	1,  // 19: core.CoreService.SendEvent:input_type -> core.SendEventRequest
+	3,  // 20: core.CoreService.CreateRoom:input_type -> core.CreateRoomRequest
+	5,  // 21: core.CoreService.JoinRoom:input_type -> core.JoinRoomRequest
+	7,  // 22: core.CoreService.LeaveRoom:input_type -> core.LeaveRoomRequest
+	9,  // 23: core.CoreService.GetMessages:input_type -> core.GetMessagesRequest
+	11, // 24: core.CoreService.SetPresence:input_type -> core.SetPresenceRequest
+	13, // 25: core.CoreService.SetTyping:input_type -> core.SetTypingRequest
+	15, // 26: core.CoreService.ValidateToken:input_type -> core.ValidateTokenRequest
+	17, // 27: core.CoreService.GetPendingEvents:input_type -> core.GetPendingEventsRequest
+	19, // 28: core.CoreService.EventBus:input_type -> core.EventBusRequest
+	20, // 29: core.CoreService.GetMetrics:input_type -> core.GetMetricsRequest
+	24, // 30: core.CoreService.GetRoomState:input_type -> core.GetRoomStateRequest
+	22, // 31: core.CoreService.InviteUser:input_type -> core.InviteUserRequest
+	26, // 32: core.CoreService.SetPowerLevels:input_type -> core.SetPowerLevelsRequest
+	28, // 33: core.CoreService.SendReceipt:input_type -> core.SendReceiptRequest
+	30, // 34: core.CoreService.GetInitialSync:input_type -> core.GetInitialSyncRequest
+	33, // 35: core.CoreService.GetSyncDelta:input_type -> core.GetSyncDeltaRequest
+	36, // 36: core.CoreService.GetPresence:input_type -> core.GetPresenceRequest
+	38, // 37: core.CoreService.UpdateProfile:input_type -> core.UpdateProfileRequest
+	40, // 38: core.CoreService.WriteAuditLog:input_type -> core.WriteAuditLogRequest
+	42, // 39: core.CoreService.DeleteUserKeys:input_type -> core.DeleteUserKeysRequest
+	44, // 40: core.CoreService.KickUser:input_type -> core.KickUserRequest
+	46, // 41: core.CoreService.BanUser:input_type -> core.BanUserRequest
+	48, // 42: core.CoreService.UnbanUser:input_type -> core.UnbanUserRequest
+	50, // 43: core.CoreService.ForgetRoom:input_type -> core.ForgetRoomRequest
+	52, // 44: core.CoreService.ListPublicRooms:input_type -> core.ListPublicRoomsRequest
+	55, // 45: core.CoreService.GetEventContext:input_type -> core.GetEventContextRequest
+	58, // 46: core.CoreService.InvalidateUserSessions:input_type -> core.InvalidateUserSessionsRequest
+	60, // 47: core.CoreService.UpdateRoomSettings:input_type -> core.UpdateRoomSettingsRequest
+	62, // 48: core.CoreService.ArchiveRoom:input_type -> core.ArchiveRoomRequest
+	64, // 49: core.CoreService.UnarchiveRoom:input_type -> core.UnarchiveRoomRequest
+	66, // 50: core.CoreService.InvalidateAllAdminSessions:input_type -> core.InvalidateAllAdminSessionsRequest
+	69, // 51: core.CoreService.ListAdminUsers:input_type -> core.ListAdminUsersRequest
+	71, // 52: core.CoreService.GetAdminUser:input_type -> core.GetAdminUserRequest
+	73, // 53: core.CoreService.DeactivateUser:input_type -> core.DeactivateUserRequest
+	75, // 54: core.CoreService.ReactivateUser:input_type -> core.ReactivateUserRequest
+	77, // 55: core.CoreService.UpdateUserRole:input_type -> core.UpdateUserRoleRequest
+	81, // 56: core.CoreService.ListAdminRooms:input_type -> core.ListAdminRoomsRequest
+	83, // 57: core.CoreService.GetAdminRoom:input_type -> core.GetAdminRoomRequest
+	86, // 58: core.CoreService.GetServerConfig:input_type -> core.GetServerConfigRequest
+	88, // 59: core.CoreService.UpdateServerConfig:input_type -> core.UpdateServerConfigRequest
+	90, // 60: core.CoreService.UpgradeRoom:input_type -> core.UpgradeRoomRequest
+	93, // 61: core.CoreService.ListAdminRoomMembers:input_type -> core.ListAdminRoomMembersRequest
+	95, // 62: core.CoreService.GetRelations:input_type -> core.GetRelationsRequest
+	2,  // 63: core.CoreService.SendEvent:output_type -> core.SendEventResponse
+	4,  // 64: core.CoreService.CreateRoom:output_type -> core.CreateRoomResponse
+	6,  // 65: core.CoreService.JoinRoom:output_type -> core.JoinRoomResponse
+	8,  // 66: core.CoreService.LeaveRoom:output_type -> core.LeaveRoomResponse
+	10, // 67: core.CoreService.GetMessages:output_type -> core.GetMessagesResponse
+	12, // 68: core.CoreService.SetPresence:output_type -> core.SetPresenceResponse
+	14, // 69: core.CoreService.SetTyping:output_type -> core.SetTypingResponse
+	16, // 70: core.CoreService.ValidateToken:output_type -> core.ValidateTokenResponse
+	18, // 71: core.CoreService.GetPendingEvents:output_type -> core.GetPendingEventsResponse
+	0,  // 72: core.CoreService.EventBus:output_type -> core.Event
+	21, // 73: core.CoreService.GetMetrics:output_type -> core.GetMetricsResponse
+	25, // 74: core.CoreService.GetRoomState:output_type -> core.GetRoomStateResponse
+	23, // 75: core.CoreService.InviteUser:output_type -> core.InviteUserResponse
+	27, // 76: core.CoreService.SetPowerLevels:output_type -> core.SetPowerLevelsResponse
+	29, // 77: core.CoreService.SendReceipt:output_type -> core.SendReceiptResponse
+	31, // 78: core.CoreService.GetInitialSync:output_type -> core.GetInitialSyncResponse
+	34, // 79: core.CoreService.GetSyncDelta:output_type -> core.GetSyncDeltaResponse
+	37, // 80: core.CoreService.GetPresence:output_type -> core.GetPresenceResponse
+	39, // 81: core.CoreService.UpdateProfile:output_type -> core.UpdateProfileResponse
+	41, // 82: core.CoreService.WriteAuditLog:output_type -> core.WriteAuditLogResponse
+	43, // 83: core.CoreService.DeleteUserKeys:output_type -> core.DeleteUserKeysResponse
+	45, // 84: core.CoreService.KickUser:output_type -> core.KickUserResponse
+	47, // 85: core.CoreService.BanUser:output_type -> core.BanUserResponse
+	49, // 86: core.CoreService.UnbanUser:output_type -> core.UnbanUserResponse
+	51, // 87: core.CoreService.ForgetRoom:output_type -> core.ForgetRoomResponse
+	54, // 88: core.CoreService.ListPublicRooms:output_type -> core.ListPublicRoomsResponse
+	57, // 89: core.CoreService.GetEventContext:output_type -> core.GetEventContextResponse
+	59, // 90: core.CoreService.InvalidateUserSessions:output_type -> core.InvalidateUserSessionsResponse
+	61, // 91: core.CoreService.UpdateRoomSettings:output_type -> core.UpdateRoomSettingsResponse
+	63, // 92: core.CoreService.ArchiveRoom:output_type -> core.ArchiveRoomResponse
+	65, // 93: core.CoreService.UnarchiveRoom:output_type -> core.UnarchiveRoomResponse
+	67, // 94: core.CoreService.InvalidateAllAdminSessions:output_type -> core.InvalidateAllAdminSessionsResponse
+	70, // 95: core.CoreService.ListAdminUsers:output_type -> core.ListAdminUsersResponse
+	72, // 96: core.CoreService.GetAdminUser:output_type -> core.GetAdminUserResponse
+	74, // 97: core.CoreService.DeactivateUser:output_type -> core.DeactivateUserResponse
+	76, // 98: core.CoreService.ReactivateUser:output_type -> core.ReactivateUserResponse
+	78, // 99: core.CoreService.UpdateUserRole:output_type -> core.UpdateUserRoleResponse
+	82, // 100: core.CoreService.ListAdminRooms:output_type -> core.ListAdminRoomsResponse
+	84, // 101: core.CoreService.GetAdminRoom:output_type -> core.GetAdminRoomResponse
+	87, // 102: core.CoreService.GetServerConfig:output_type -> core.GetServerConfigResponse
+	89, // 103: core.CoreService.UpdateServerConfig:output_type -> core.UpdateServerConfigResponse
+	91, // 104: core.CoreService.UpgradeRoom:output_type -> core.UpgradeRoomResponse
+	94, // 105: core.CoreService.ListAdminRoomMembers:output_type -> core.ListAdminRoomMembersResponse
+	96, // 106: core.CoreService.GetRelations:output_type -> core.GetRelationsResponse
+	63, // [63:107] is the sub-list for method output_type
+	19, // [19:63] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_core_proto_init() }
@@ -5978,7 +6134,7 @@ func file_core_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_core_proto_rawDesc), len(file_core_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   95,
+			NumMessages:   97,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

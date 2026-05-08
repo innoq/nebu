@@ -405,6 +405,75 @@ Matrix Client      Go Gateway          Elixir Core (upgrade_room/2)         Post
 **Audit trail:** Both success and failure paths write to `audit_logs` via `audit_writer_module().log/6`
 with action `"room_upgraded"`, target `old_room_id`, and `%{"new_room_id" => ..., "error" => ...}` metadata.
 
+## Scenario 3j: Thread Relations — GetRelations + Bundled Aggregations in Sync (Story 9-28)
+
+Story 9-28 adds two complementary mechanisms for Matrix threaded messages:
+
+### 3j-1: Explicit relation fetch (GET /_matrix/client/v1/rooms/{roomId}/relations/{eventId}/{relType})
+
+Element Web calls this endpoint after receiving the first thread reply to populate the thread panel.
+
+```
+Matrix Client      Go Gateway                         Elixir Core         PostgreSQL
+     │                   │                                  │                   │
+     │  GET /relations   │                                  │                   │
+     │  /{eventId}/      │                                  │                   │
+     │  m.thread         │                                  │                   │
+     │──────────────────►│  gRPC GetRelations               │                   │
+     │                   │─────────────────────────────────►│                   │
+     │                   │                                  │  event_in_room?   │
+     │                   │                                  │──────────────────►│
+     │                   │                                  │  fetch_events_by_ │
+     │                   │                                  │  relation(room,   │
+     │                   │                                  │  eventId, m.thread│
+     │                   │                                  │  , limit=20)      │
+     │                   │                                  │──────────────────►│
+     │                   │  GetRelationsResponse            │                   │
+     │                   │◄─────────────────────────────────│                   │
+     │  200 {chunk: [...]}│                                  │                   │
+     │◄──────────────────│                                  │                   │
+```
+
+**Error cases:**
+- Non-member → Elixir raises `GRPC.RPCError` with `PERMISSION_DENIED` → Go returns `403 M_FORBIDDEN`
+- Unknown event_id → `NOT_FOUND` → `404 M_NOT_FOUND`
+- Not authenticated → `401 M_MISSING_TOKEN` (JWT middleware, before gRPC call)
+
+### 3j-2: Bundled aggregations in /sync response (m.relations in unsigned)
+
+Every timeline event that has thread replies receives bundled aggregation data in its `unsigned.m.relations`
+JSON field. Element Web reads this to show reply count badges on parent messages without a separate
+`/relations` HTTP call.
+
+```
+                    Elixir Core (attach_thread_aggregations/3)              PostgreSQL
+                          │                                                      │
+   build_sync_response    │                                                      │
+   (initial or delta)     │  -- for each timeline event:                        │
+          │               │  count_thread_children(room_id, event_id)           │
+          │               │─────────────────────────────────────────────────────►│
+          │               │  fetch_events_by_relation(room_id, event_id,        │
+          │               │    "m.thread", limit=1) → latest reply              │
+          │               │─────────────────────────────────────────────────────►│
+          │               │                                                      │
+          │               │  Event.unsigned_relations =                          │
+          │               │    JSON {"m.thread": {                               │
+          │               │      "count": N,                                     │
+          │               │      "latest_event": {...},                          │
+          │               │      "current_user_participated": bool               │
+          │               │    }}                                                 │
+          │               │                                                      │
+   Go Gateway (sync.go)   │                                                      │
+   syncUnsigned {         │                                                      │
+     Age: ...,            │                                                      │
+     MRelations: <json>   │  ← from Event.unsigned_relations (field 9)          │
+   }                      │                                                      │
+```
+
+**Performance invariant:** Events with no thread children have `unsigned_relations = nil` (zero bytes).
+The Go gateway sets `MRelations` only when `len(te.GetUnsignedRelations()) > 0`, so `m.relations` is
+entirely omitted from the `unsigned` JSON object for non-thread events (`omitempty` on the struct field).
+
 ## Scenario 4: Compliance Four-Eyes Export Flow
 
 ```
@@ -422,4 +491,4 @@ On restart, Horde re-discovers Room GenServers across the cluster via CRDT regis
 Session Manager GenServer reads since-token checkpoints from PostgreSQL (no cold-sync forced on clients).
 EventBus stream re-connects to Go Gateway after exponential backoff (max 30s + jitter).
 
-_Source: `_bmad-output/planning-artifacts/architecture.md`, §Implementation Patterns, §API & Kommunikation, §Resilienz & Selbst-Heilung; Story 9-19 (GAP-JOIN-PUBLIC, GAP-LEAVE-ONCE, GAP-FORGET); Story 9-22 (GAP-SINCE-IGNORED — per-device sync tokens, per-device logout cleanup); Story 9-23 (GAP-INVITE-STATE — invite_state stripped state enrichment: join_rules, avatar, create); Story 9-24 (GAP-GLOBAL-ACCOUNT-DATA — top-level account_data delivery in all 4 sync paths, RLS-aware ListGlobalAccountData); Story 9-25 (GAP-BUFFER-NEXT-BATCH — synthetic buf_<ms>_<seq> next_batch token on buffer fast-path, replaces echoed since= token); Story 9-27 (Scenario 3i — full Matrix §11.35.1 room upgrade flow, GRPC.RPCError error handling, archive_room_atomic idempotency, terminate_child, try/rescue failure audit)_
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Implementation Patterns, §API & Kommunikation, §Resilienz & Selbst-Heilung; Story 9-19 (GAP-JOIN-PUBLIC, GAP-LEAVE-ONCE, GAP-FORGET); Story 9-22 (GAP-SINCE-IGNORED — per-device sync tokens, per-device logout cleanup); Story 9-23 (GAP-INVITE-STATE — invite_state stripped state enrichment: join_rules, avatar, create); Story 9-24 (GAP-GLOBAL-ACCOUNT-DATA — top-level account_data delivery in all 4 sync paths, RLS-aware ListGlobalAccountData); Story 9-25 (GAP-BUFFER-NEXT-BATCH — synthetic buf_<ms>_<seq> next_batch token on buffer fast-path, replaces echoed since= token); Story 9-27 (Scenario 3i — full Matrix §11.35.1 room upgrade flow, GRPC.RPCError error handling, archive_room_atomic idempotency, terminate_child, try/rescue failure audit); Story 9-28 (Scenario 3j — GetRelations RPC + bundled m.thread aggregations in sync unsigned field, attach_thread_aggregations, fetch_events_by_relation, count_thread_children, migration 000042)_

@@ -301,6 +301,22 @@ defmodule Nebu.Room.DB do
     end
   end
 
+  @sql_event_in_room "SELECT 1 FROM events WHERE event_id = $1 AND room_id = $2 LIMIT 1"
+
+  @doc """
+  Returns `true` if `event_id` belongs to `room_id`, `false` otherwise.
+
+  Used by `get_relations` to prevent cross-room event-existence probing.
+  Fail-closed: DB errors return `false` so missing events yield 404, not 500.
+  """
+  @spec event_in_room?(String.t(), String.t()) :: boolean()
+  def event_in_room?(event_id, room_id) do
+    case Ecto.Adapters.SQL.query(Nebu.Repo, @sql_event_in_room, [event_id, room_id]) do
+      {:ok, %{rows: [_]}} -> true
+      _                   -> false
+    end
+  end
+
   @sql_get_event_ts "SELECT origin_server_ts FROM events WHERE event_id = $1 LIMIT 1"
 
   @doc """
@@ -604,6 +620,73 @@ defmodule Nebu.Room.DB do
     case Ecto.Adapters.SQL.query(Nebu.Repo, sql, [room_id]) do
       {:ok, %{rows: [[name]]}} when not is_nil(name) -> {:ok, name}
       {:ok, _} -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @sql_fetch_events_by_relation """
+  SELECT event_id, room_id, sender, event_type, content, origin_server_ts, state_key
+  FROM events
+  WHERE room_id = $1
+    AND content->'m.relates_to'->>'rel_type' = $2
+    AND content->'m.relates_to'->>'event_id' = $3
+  ORDER BY origin_server_ts DESC, event_id DESC
+  LIMIT $4
+  """
+
+  @doc """
+  Returns events in `room_id` that relate to `event_id` via `rel_type`.
+
+  Queries the JSONB content column for the `m.relates_to` object.
+  Returns up to `limit` events ordered newest first.
+
+  Returns `{:ok, [event_map]}` — empty list if no matching events.
+  Returns `{:error, reason}` on DB error.
+
+  Story 9-28: used by GetRelations gRPC handler and attach_thread_aggregations.
+  """
+  @spec fetch_events_by_relation(String.t(), String.t(), String.t(), pos_integer()) ::
+          {:ok, [map()]} | {:error, term()}
+  def fetch_events_by_relation(room_id, event_id, rel_type, limit) do
+    case Ecto.Adapters.SQL.query(
+           Nebu.Repo,
+           @sql_fetch_events_by_relation,
+           [room_id, rel_type, event_id, limit]
+         ) do
+      {:ok, %{columns: cols, rows: rows}} ->
+        events =
+          Enum.map(rows, fn row ->
+            cols |> Enum.zip(row) |> Map.new()
+          end)
+        {:ok, events}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @sql_count_thread_children """
+  SELECT COUNT(*)
+  FROM events
+  WHERE room_id = $1
+    AND content->'m.relates_to'->>'rel_type' = 'm.thread'
+    AND content->'m.relates_to'->>'event_id' = $2
+  """
+
+  @doc """
+  Returns the number of `m.thread` replies to `event_id` in `room_id`.
+
+  Returns `{:ok, count}` — 0 when no thread replies exist.
+  Returns `{:error, reason}` on DB error.
+
+  Story 9-28: used by attach_thread_aggregations to build bundled aggregations.
+  """
+  @spec count_thread_children(String.t(), String.t()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  def count_thread_children(room_id, event_id) do
+    case Ecto.Adapters.SQL.query(Nebu.Repo, @sql_count_thread_children, [room_id, event_id]) do
+      {:ok, %{rows: [[count]]}} -> {:ok, count}
+      {:ok, _} -> {:ok, 0}
       {:error, reason} -> {:error, reason}
     end
   end

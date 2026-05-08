@@ -191,6 +191,11 @@ func (m *mockCoreClient) ListAdminRoomMembers(_ context.Context, _ *pb.ListAdmin
 	return &pb.ListAdminRoomMembersResponse{}, nil
 }
 
+// Story 9-28: stub — GetRelations not expected in stream tests.
+func (m *mockCoreClient) GetRelations(_ context.Context, _ *pb.GetRelationsRequest, _ ...grpc.CallOption) (*pb.GetRelationsResponse, error) {
+	panic("unexpected call: GetRelations")
+}
+
 // ─── Mock server-streaming client ────────────────────────────────────────────
 
 // mockEventStream is a fake grpc.ServerStreamingClient[pb.Event].

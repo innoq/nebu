@@ -9,6 +9,9 @@
 | **Homeserver** | A Matrix server that stores user accounts, rooms, and events for a domain |
 | **Room** | A Matrix concept: a named, persistent channel where users exchange messages and state events |
 | **Event** | The fundamental unit in Matrix: a JSON object representing a message, state change, or reaction |
+| **Thread** | A Matrix concept (spec §11.12) for grouping related replies under a parent event using `m.relates_to` with `rel_type: "m.thread"` |
+| **Bundled Aggregations** | Inline relation metadata (e.g. thread reply count, latest reply) delivered in `unsigned.m.relations` of a parent event during `/sync` to avoid extra HTTP round-trips |
+| **m.relates_to** | A Matrix event content key that links a reply or reaction to its parent event via `event_id` + `rel_type` |
 | **Sync** | Matrix's long-polling endpoint (`GET /sync`) that delivers new events and room state to clients |
 | **since-token** | An opaque cursor used with `/sync` to retrieve only events after a given point in time |
 | **Content-Hash Event ID** | Event ID format `$<base64url(SHA-256(canonical_json(event)))>` — tamper-evident, deterministic |
@@ -56,4 +59,4 @@
 | **Operator** | The organization or individual who deploys and runs a Nebu instance |
 | **Hoster** | An IT service provider who runs Nebu as a managed service for customers |
 
-_Source: `CLAUDE.md`, §Tech Stack, §Matrix API Scope; `_bmad-output/planning-artifacts/architecture.md`, §Naming Conventions; `_bmad-output/planning-artifacts/prd.md`, §User Journeys_
+_Source: `CLAUDE.md`, §Tech Stack, §Matrix API Scope; `_bmad-output/planning-artifacts/architecture.md`, §Naming Conventions; `_bmad-output/planning-artifacts/prd.md`, §User Journeys; Story 9-28 (Thread, Bundled Aggregations, m.relates_to)_

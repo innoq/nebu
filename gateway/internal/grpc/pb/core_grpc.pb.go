@@ -62,6 +62,7 @@ const (
 	CoreService_UpdateServerConfig_FullMethodName         = "/core.CoreService/UpdateServerConfig"
 	CoreService_UpgradeRoom_FullMethodName                = "/core.CoreService/UpgradeRoom"
 	CoreService_ListAdminRoomMembers_FullMethodName       = "/core.CoreService/ListAdminRoomMembers"
+	CoreService_GetRelations_FullMethodName               = "/core.CoreService/GetRelations"
 )
 
 // CoreServiceClient is the client API for CoreService service.
@@ -172,6 +173,11 @@ type CoreServiceClient interface {
 	// Returns all members where left_at IS NULL, ordered by joined_at ASC.
 	// Returns empty list (not an error) when the room has no current members.
 	ListAdminRoomMembers(ctx context.Context, in *ListAdminRoomMembersRequest, opts ...grpc.CallOption) (*ListAdminRoomMembersResponse, error)
+	// GetRelations — Story 9-28: returns events that relate to a given parent event
+	// via the specified rel_type (e.g. "m.thread").
+	// Returns PERMISSION_DENIED if user is not a room member.
+	// Returns NOT_FOUND if the parent event does not exist.
+	GetRelations(ctx context.Context, in *GetRelationsRequest, opts ...grpc.CallOption) (*GetRelationsResponse, error)
 }
 
 type coreServiceClient struct {
@@ -621,6 +627,16 @@ func (c *coreServiceClient) ListAdminRoomMembers(ctx context.Context, in *ListAd
 	return out, nil
 }
 
+func (c *coreServiceClient) GetRelations(ctx context.Context, in *GetRelationsRequest, opts ...grpc.CallOption) (*GetRelationsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetRelationsResponse)
+	err := c.cc.Invoke(ctx, CoreService_GetRelations_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CoreServiceServer is the server API for CoreService service.
 // All implementations must embed UnimplementedCoreServiceServer
 // for forward compatibility.
@@ -729,6 +745,11 @@ type CoreServiceServer interface {
 	// Returns all members where left_at IS NULL, ordered by joined_at ASC.
 	// Returns empty list (not an error) when the room has no current members.
 	ListAdminRoomMembers(context.Context, *ListAdminRoomMembersRequest) (*ListAdminRoomMembersResponse, error)
+	// GetRelations — Story 9-28: returns events that relate to a given parent event
+	// via the specified rel_type (e.g. "m.thread").
+	// Returns PERMISSION_DENIED if user is not a room member.
+	// Returns NOT_FOUND if the parent event does not exist.
+	GetRelations(context.Context, *GetRelationsRequest) (*GetRelationsResponse, error)
 	mustEmbedUnimplementedCoreServiceServer()
 }
 
@@ -867,6 +888,9 @@ func (UnimplementedCoreServiceServer) UpgradeRoom(context.Context, *UpgradeRoomR
 }
 func (UnimplementedCoreServiceServer) ListAdminRoomMembers(context.Context, *ListAdminRoomMembersRequest) (*ListAdminRoomMembersResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListAdminRoomMembers not implemented")
+}
+func (UnimplementedCoreServiceServer) GetRelations(context.Context, *GetRelationsRequest) (*GetRelationsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetRelations not implemented")
 }
 func (UnimplementedCoreServiceServer) mustEmbedUnimplementedCoreServiceServer() {}
 func (UnimplementedCoreServiceServer) testEmbeddedByValue()                     {}
@@ -1656,6 +1680,24 @@ func _CoreService_ListAdminRoomMembers_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_GetRelations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetRelationsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).GetRelations(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_GetRelations_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).GetRelations(ctx, req.(*GetRelationsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CoreService_ServiceDesc is the grpc.ServiceDesc for CoreService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1830,6 +1872,10 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListAdminRoomMembers",
 			Handler:    _CoreService_ListAdminRoomMembers_Handler,
+		},
+		{
+			MethodName: "GetRelations",
+			Handler:    _CoreService_GetRelations_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

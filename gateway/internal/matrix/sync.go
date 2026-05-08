@@ -422,8 +422,14 @@ type syncTimelineSection struct {
 // time.Now().UnixMilli() - event.OriginTS. matrix-js-sdk uses this field for
 // event deduplication and lag detection; missing unsigned.age causes sporadic
 // re-polling of already-seen events during DM creation.
+//
+// Story 9-28: MRelations carries bundled aggregations (e.g. m.thread count +
+// latest_event) for thread-root events. Only set when unsigned_relations is
+// non-empty on the proto Event. Element Web reads this to show thread reply
+// counts on the parent message.
 type syncUnsigned struct {
-	Age int64 `json:"age"`
+	Age        int64           `json:"age"`
+	MRelations json.RawMessage `json:"m.relations,omitempty"`
 }
 
 type syncTimelineEvent struct {
@@ -751,6 +757,11 @@ func buildJoinedRooms(rooms []*pb.SyncRoom) map[string]syncJoinedRoom {
 
 		timelineEvents := make([]syncTimelineEvent, 0, len(room.GetTimelineEvents()))
 		for _, te := range room.GetTimelineEvents() {
+			// Story 9-28: attach bundled m.thread aggregations when present.
+			var mRelations json.RawMessage
+			if unsignedRel := te.GetUnsignedRelations(); len(unsignedRel) > 0 {
+				mRelations = json.RawMessage(unsignedRel)
+			}
 			timelineEvents = append(timelineEvents, syncTimelineEvent{
 				EventID:  te.GetEventId(),
 				Type:     te.GetEventType(),
@@ -759,7 +770,10 @@ func buildJoinedRooms(rooms []*pb.SyncRoom) map[string]syncJoinedRoom {
 				RoomID:   te.GetRoomId(),
 				Content:  json.RawMessage(te.GetContent()),
 				OriginTS: te.GetOriginTs(),
-				Unsigned: syncUnsigned{Age: max(1, time.Now().UnixMilli()-te.GetOriginTs())},
+				Unsigned: syncUnsigned{
+					Age:        max(1, time.Now().UnixMilli()-te.GetOriginTs()),
+					MRelations: mRelations,
+				},
 			})
 		}
 

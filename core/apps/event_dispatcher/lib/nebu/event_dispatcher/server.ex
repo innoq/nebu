@@ -1002,11 +1002,12 @@ defmodule Nebu.EventDispatcher.Server do
           {:ok, events, _next_batch, prev_batch} =
             messages_db_module().fetch_events(room_id, "b", 20, "")
 
-          timeline_events =
+          raw_tl_events =
             events
             |> Enum.reverse()
             |> Enum.map(&event_map_to_proto/1)
 
+          timeline_events = attach_thread_aggregations(raw_tl_events, room_id, user_id)
           limited = length(events) >= 20
 
           [
@@ -1028,7 +1029,8 @@ defmodule Nebu.EventDispatcher.Server do
               state_evs  = build_state_events(state, room_id)
               {:ok, evs, _next_batch, prev_b} =
                 messages_db_module().fetch_events(room_id, "b", 20, "")
-              tl_evs = evs |> Enum.reverse() |> Enum.map(&event_map_to_proto/1)
+              raw_tl_evs = evs |> Enum.reverse() |> Enum.map(&event_map_to_proto/1)
+              tl_evs = attach_thread_aggregations(raw_tl_evs, room_id, user_id)
               [%Core.SyncRoom{
                 room_id:        room_id,
                 state_events:   dedup_member_state_events(state_evs, tl_evs),
@@ -1215,7 +1217,7 @@ defmodule Nebu.EventDispatcher.Server do
 
     # Step 6: Check DB for pending events per room.
     # Pass last_event_id (string) directly — the DB module resolves the ts internally.
-    delta_rooms = fetch_delta_rooms(room_ids, last_event_id)
+    delta_rooms = fetch_delta_rooms(room_ids, last_event_id, user_id)
 
     leave_all_groups = fn ->
       :pg.leave("user:#{user_id}", self())
@@ -1238,7 +1240,7 @@ defmodule Nebu.EventDispatcher.Server do
                 # Cancel the timer and re-query DB for all pending events
                 Process.cancel_timer(timer_ref)
                 flush_long_poll_timeout()
-                fetch_delta_rooms(room_ids, last_event_id)
+                fetch_delta_rooms(room_ids, last_event_id, user_id)
 
               {:new_invite, _room_id} ->
                 # New invitation for this user — cancel timer and return empty delta.
@@ -1254,7 +1256,7 @@ defmodule Nebu.EventDispatcher.Server do
                 Process.cancel_timer(timer_ref)
                 flush_long_poll_timeout()
                 :pg.join("room:#{new_room_id}", self())
-                fetch_delta_rooms(Enum.uniq([new_room_id | room_ids]), last_event_id)
+                fetch_delta_rooms(Enum.uniq([new_room_id | room_ids]), last_event_id, user_id)
 
               {:new_leave, recv_room_id} ->
                 # User left a room — wake up immediately so Go's buildLeaveRooms can find it via DB query.
@@ -1299,7 +1301,8 @@ defmodule Nebu.EventDispatcher.Server do
 
   # Fetch events since last_event_id for each room, build SyncRoom protos.
   # last_event_id is the string event_id — the DB module resolves it to a timestamp.
-  defp fetch_delta_rooms(room_ids, last_event_id) do
+  # user_id is passed so attach_thread_aggregations can compute current_user_participated.
+  defp fetch_delta_rooms(room_ids, last_event_id, user_id) do
     Enum.flat_map(room_ids, fn room_id ->
       case messages_db_module().fetch_events_since(room_id, last_event_id, 20) do
         {:ok, []} ->
@@ -1308,7 +1311,8 @@ defmodule Nebu.EventDispatcher.Server do
         {:ok, events} ->
           try do
             state = room_registry_module().get_state(room_id)
-            timeline_events = Enum.map(events, &event_map_to_proto/1)
+            raw_timeline_events = Enum.map(events, &event_map_to_proto/1)
+            timeline_events = attach_thread_aggregations(raw_timeline_events, room_id, user_id)
             limited = length(events) >= 20
             # When limited, the oldest event's event_id is the backward-pagination
             # cursor (Spec §6.3.3). Client passes this to GET /messages?from=<token>&dir=b.
@@ -2697,5 +2701,120 @@ defmodule Nebu.EventDispatcher.Server do
         end
       emit_state_event(new_room_id, requester_id, e.type, e.state_key || "", content)
     end)
+  end
+
+  # ─── GetRelations — Story 9-28 ───────────────────────────────────────────────
+  #
+  # Returns events that relate to `event_id` via `rel_type` (e.g. "m.thread").
+  # Membership check: caller must be a joined room member.
+  # Unknown event_id: returns NOT_FOUND.
+  # Ordered newest first. Limit clamped to 1–100 (default 20).
+
+  def get_relations(request, _stream) do
+    user_id  = request.user_id
+    room_id  = request.room_id
+    event_id = request.event_id
+    rel_type = request.rel_type
+    limit    = request.limit |> max(1) |> min(100)
+
+    # Room existence + membership — uses injected room_registry_module for testability.
+    # Archived and non-existent rooms have no running GenServer; {:noproc, _} → NOT_FOUND.
+    # Pattern mirrors get_room_state/2 (same injectable guard, no hardcoded RoomSupervisor call).
+    state =
+      try do
+        room_registry_module().get_state(room_id)
+      catch
+        :exit, {:noproc, _} ->
+          raise GRPC.RPCError,
+            status: GRPC.Status.not_found(),
+            message: "room not found: #{room_id}"
+      end
+
+    unless MapSet.member?(state.members, user_id) do
+      raise GRPC.RPCError,
+        status: GRPC.Status.permission_denied(),
+        message: "#{user_id} is not a member of #{room_id}"
+    end
+
+    # Unknown parent event (scoped to this room) → 404 NOT_FOUND.
+    # Room-scoped check prevents cross-room event-existence probing by room members.
+    case messages_db_module().event_in_room?(event_id, room_id) do
+      false ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "event not found: #{event_id}"
+
+      true ->
+        :ok
+    end
+
+    case messages_db_module().fetch_events_by_relation(room_id, event_id, rel_type, limit) do
+      {:ok, events} ->
+        proto_events = Enum.map(events, &event_map_to_proto/1)
+        %Core.GetRelationsResponse{events: proto_events}
+
+      {:error, reason} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.internal(),
+          message: "fetch_events_by_relation failed: #{inspect(reason)}"
+    end
+  end
+
+  # ─── attach_thread_aggregations — Story 9-28 ──────────────────────────────────
+  #
+  # For each timeline event that has thread children, attach bundled aggregations
+  # (unsigned_relations field) so Go can include them in the /sync response.
+  # Only m.room.message events can be thread roots — skip state events.
+  # N+1 for MVP (small rooms); acceptable until thread lists grow large.
+
+  defp attach_thread_aggregations(events, room_id, user_id) do
+    Enum.map(events, fn ev ->
+      # Only message events can be thread roots (skip state events).
+      if ev.event_type == "m.room.message" do
+        with {:ok, [latest | _]} <-
+               messages_db_module().fetch_events_by_relation(room_id, ev.event_id, "m.thread", 1),
+             {:ok, count} <- messages_db_module().count_thread_children(room_id, ev.event_id),
+             true <- count > 0 do
+          current_user_participated =
+            latest["sender"] == user_id or ev.sender_id == user_id
+
+          latest_event_map = %{
+            "event_id"         => latest["event_id"] || "",
+            "room_id"          => room_id,
+            "sender"           => latest["sender"] || "",
+            "type"             => latest["event_type"] || "",
+            "origin_server_ts" => latest["origin_server_ts"] || 0,
+            "content"          => normalise_content(latest["content"])
+          }
+
+          agg = %{
+            "m.thread" => %{
+              "count"                      => count,
+              "current_user_participated"  => current_user_participated,
+              "latest_event"               => latest_event_map
+            }
+          }
+
+          %{ev | unsigned_relations: Jason.encode!(agg)}
+        else
+          _ -> ev
+        end
+      else
+        ev
+      end
+    end)
+  end
+
+  # Normalises a content value from the DB (map or JSON string) to a plain map.
+  defp normalise_content(raw) do
+    cond do
+      is_map(raw) -> raw
+      is_binary(raw) ->
+        case Jason.decode(raw) do
+          {:ok, map} when is_map(map) -> map
+          _ -> %{}
+        end
+      true -> %{}
+    end
   end
 end

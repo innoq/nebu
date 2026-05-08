@@ -228,4 +228,43 @@ defmodule Nebu.Room.DBBehaviour do
   """
   @callback get_room_create_event(room_id :: String.t()) ::
               {:ok, map()} | {:error, :not_found | term()}
+
+  @doc """
+  Returns events in `room_id` that relate to `event_id` via `rel_type`.
+
+  Queries JSONB content column for `m.relates_to` object.
+  Returns up to `limit` events ordered newest first.
+
+  Returns `{:ok, [event_map]}` — empty list if no matching events.
+  Returns `{:error, reason}` on DB error.
+
+  Story 9-28: used by GetRelations gRPC handler and attach_thread_aggregations.
+  """
+  @callback fetch_events_by_relation(
+              room_id :: String.t(),
+              event_id :: String.t(),
+              rel_type :: String.t(),
+              limit :: pos_integer()
+            ) :: {:ok, [map()]} | {:error, term()}
+
+  @doc """
+  Returns the number of `m.thread` replies to `event_id` in `room_id`.
+
+  Returns `{:ok, count}` — 0 when no thread replies exist.
+  Returns `{:error, reason}` on DB error.
+
+  Story 9-28: used by attach_thread_aggregations to build bundled aggregations.
+  """
+  @callback count_thread_children(room_id :: String.t(), event_id :: String.t()) ::
+              {:ok, non_neg_integer()} | {:error, term()}
+
+  @doc """
+  Returns `true` if `event_id` belongs to `room_id`, `false` otherwise.
+
+  Fail-closed: DB errors return `false` so callers get a 404, not a 500.
+
+  Story 9-28: room-scoped existence check used by GetRelations to prevent
+  cross-room event-existence probing by room members.
+  """
+  @callback event_in_room?(event_id :: String.t(), room_id :: String.t()) :: boolean()
 end

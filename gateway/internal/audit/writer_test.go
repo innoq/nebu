@@ -176,6 +176,11 @@ func (m *mockCoreClient) ListAdminRoomMembers(_ context.Context, _ *pb.ListAdmin
 	return &pb.ListAdminRoomMembersResponse{}, nil
 }
 
+// Story 9-28: stub — GetRelations not called in audit tests.
+func (m *mockCoreClient) GetRelations(_ context.Context, _ *pb.GetRelationsRequest, _ ...grpc.CallOption) (*pb.GetRelationsResponse, error) {
+	panic("unexpected call: GetRelations")
+}
+
 // ─── AC11 Test 5: LogEvent_Success ───────────────────────────────────────────
 //
 // Given: Mock CoreServiceClient.WriteAuditLog returns {Ok: true}, nil

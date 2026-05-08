@@ -351,6 +351,14 @@ func (c *Client) ListAdminRoomMembers(ctx context.Context, req *pb.ListAdminRoom
 	return c.core.ListAdminRoomMembers(ctx, req)
 }
 
+// GetRelations calls the Elixir core to retrieve events related to a parent event via rel_type.
+// Returns PERMISSION_DENIED if the user is not a room member.
+// Returns NOT_FOUND if the parent event does not exist.
+// Story 9-28: GET /_matrix/client/v1/rooms/{roomId}/relations/{eventId}/{relType}.
+func (c *Client) GetRelations(ctx context.Context, req *pb.GetRelationsRequest) (*pb.GetRelationsResponse, error) {
+	return c.core.GetRelations(ctx, req)
+}
+
 // CoreServiceClient returns the underlying generated gRPC client stub.
 // Used by EventBusStream (Story 4-16) which requires the raw pb.CoreServiceClient.
 func (c *Client) CoreServiceClient() pb.CoreServiceClient {

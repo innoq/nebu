@@ -1,6 +1,12 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
-# last_updated: 2026-05-07
+# last_updated: 2026-05-08
+# [9-28] 2026-05-08T07:53Z ci-gate → ✓ build+unit-go+unit-elixir; e2e+integration skipped (env startup)
+# [9-28] 2026-05-08T07:45Z dev-story → done (cycle 0) — /relations endpoint + unsigned.m.relations.m.thread bundled aggregations
+# [9-28] 2026-05-08T07:15Z test-review → 1 MAJOR fixed (missing step def), 2 MINOR fixed (comment+errcode)
+# [9-28] 2026-05-08T07:04Z atdd → 3 failing tests (Godog feature x1 + ExUnit x1 + steps_test.go x1)
+# [9-28] 2026-05-08T07:00Z oracle-gate → /relations endpoint + bundled aggregations required
+# [9-28] 2026-05-08T06:54Z pipeline started (--bug: thread first reply not arriving)
 # [9-27] 2026-05-08T10:55Z committed ✓ (ATDD+Code CLEAN 3 cycles+Kassandra CLEAN)
 # [9-27] 2026-05-08T10:45Z arc42-update → done (05-building-blocks, 06-runtime, 08-concepts, 11-risks)
 # [9-27] 2026-05-08T10:30Z security-review → Kassandra CLEAN (2 MEDIUM: new_version unvalidated, inspect in RPC msg; 1 LOW: no upgrade rate-limit — all deferred)
@@ -56,9 +62,14 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: null
-current_step: null
-completed: []
+story: "9-28"
+current_step: "code-review"
+completed:
+  - oracle-gate
+  - atdd
+  - test-review
+  - dev-story
+  - ci-gate
 cycle_count: 0
 blocked_reason: null
-last_updated: "2026-05-07T23:25Z"
+last_updated: "2026-05-08T07:53Z"

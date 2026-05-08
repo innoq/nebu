@@ -95,6 +95,10 @@ defmodule Nebu.RoomTest do
 
     # Story 9-9: TOCTOU fix — returns {:ok, "active"} for normal rooms.
     def check_room_status_for_update(_room_id), do: {:ok, "active"}
+    # Story 9-28: no thread relations in room_manager unit tests.
+    def fetch_events_by_relation(_room_id, _event_id, _rel_type, _limit), do: {:ok, []}
+    def count_thread_children(_room_id, _event_id), do: {:ok, 0}
+    def event_in_room?(_event_id, _room_id), do: true
   end
 
   # Fake DB that always returns a DB error on writes — for testing fail-safe behavior
@@ -125,6 +129,10 @@ defmodule Nebu.RoomTest do
     def get_generic_state_events(_room_id), do: {:ok, []}
     # MAJOR-2 fix: no persisted create event in these unit tests; synthesized fallback used.
     def get_room_create_event(_room_id), do: {:error, :not_found}
+    # Story 9-28: no thread relations in room_manager unit tests.
+    def fetch_events_by_relation(_room_id, _event_id, _rel_type, _limit), do: {:ok, []}
+    def count_thread_children(_room_id, _event_id), do: {:ok, 0}
+    def event_in_room?(_event_id, _room_id), do: true
   end
 
   # ─── Setup ──────────────────────────────────────────────────────────────────

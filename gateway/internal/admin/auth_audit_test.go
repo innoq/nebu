@@ -214,6 +214,11 @@ func (m *mockCoreClient) ListAdminRoomMembers(_ context.Context, _ *pb.ListAdmin
 	return &pb.ListAdminRoomMembersResponse{}, nil
 }
 
+// Story 9-28: stub — GetRelations not called in admin auth tests.
+func (m *mockCoreClient) GetRelations(_ context.Context, _ *pb.GetRelationsRequest, _ ...grpc.CallOption) (*pb.GetRelationsResponse, error) {
+	panic("unexpected call: GetRelations")
+}
+
 // lastReceived returns the most recently recorded request (nil if none).
 func (m *mockCoreClient) lastReceived() *pb.WriteAuditLogRequest {
 	m.mu.Lock()

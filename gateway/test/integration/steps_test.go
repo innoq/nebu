@@ -115,4 +115,5 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	initializeSetRoomStateFullSteps(sc)        // room state full implementation + whitelist steps (Story 9-7 / 9-6)
 	initializeUpgradeRoomSteps(sc)             // room version upgrade steps (Story 9-8)
 	initializeMatrixEventCorrectnessSteps(sc)  // Matrix event correctness steps (Story 9-10b)
+	initializeThreadRelationsSteps(sc)          // thread relations steps (Story 9-28)
 }

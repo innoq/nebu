@@ -142,18 +142,25 @@ service CoreService {
   // Returns all members where left_at IS NULL, ordered by joined_at ASC.
   // Returns empty list (not an error) when the room has no current members.
   rpc ListAdminRoomMembers(ListAdminRoomMembersRequest) returns (ListAdminRoomMembersResponse);
+
+  // GetRelations — Story 9-28: returns events that relate to a given parent event
+  // via the specified rel_type (e.g. "m.thread").
+  // Returns PERMISSION_DENIED if user is not a room member.
+  // Returns NOT_FOUND if the parent event does not exist.
+  rpc GetRelations(GetRelationsRequest) returns (GetRelationsResponse);
 }
 
 // Shared event type used across multiple RPCs
 message Event {
-  string event_id   = 1;
-  string room_id    = 2;
-  string sender_id  = 3;
-  string event_type = 4;
-  bytes  content    = 5;  // JSON-encoded event content
-  int64  origin_ts  = 6;  // Unix milliseconds
-  int64  server_ts  = 7;  // Unix milliseconds
-  string state_key  = 8;  // Matrix state_key (subject of state event, e.g. user_id for m.room.member)
+  string event_id          = 1;
+  string room_id           = 2;
+  string sender_id         = 3;
+  string event_type        = 4;
+  bytes  content           = 5;  // JSON-encoded event content
+  int64  origin_ts         = 6;  // Unix milliseconds
+  int64  server_ts         = 7;  // Unix milliseconds
+  string state_key         = 8;  // Matrix state_key (subject of state event, e.g. user_id for m.room.member)
+  bytes  unsigned_relations = 9; // Story 9-28: JSON {"m.thread":{"count":N,"latest_event":{...},"current_user_participated":bool}}
 }
 
 // SendEvent
@@ -656,3 +663,19 @@ message AdminRoomMemberProto {
 // ListAdminRoomMembers — Story 9.18
 message ListAdminRoomMembersRequest  { string room_id = 1; }
 message ListAdminRoomMembersResponse { repeated AdminRoomMemberProto members = 1; }
+
+// GetRelations — Story 9-28
+// Returns all events that relate to parent_event_id via rel_type (e.g. "m.thread").
+// Ordered newest first. Caller must be a joined member of the room.
+message GetRelationsRequest {
+  string user_id  = 1;
+  string room_id  = 2;
+  string event_id = 3;  // parent event ID (thread root)
+  string rel_type = 4;  // e.g. "m.thread"
+  int32  limit    = 5;  // 0 = default 20; clamped to 100
+}
+
+message GetRelationsResponse {
+  repeated Event events     = 1;
+  string         next_batch = 2;  // empty when no more pages
+}

@@ -228,4 +228,31 @@ make test-e2e-admin     # admin-ui project (bddgen + playwright)
 make test-e2e           # all projects (legacy + BDD)
 ```
 
-_Source: `_bmad-output/planning-artifacts/architecture.md`, §Cross-Cutting Concerns, §Auth-Token-Flow, §Enforcement; `_bmad-output/planning-artifacts/prd.md`, §Cryptographic Identity Architecture; Story 9-22 (per-device sync token isolation, logout cleanup); Story 9-26 (Browser-First E2E layer, playwright-bdd, token sidecar pattern); Story 9-27 (gRPC error surface rule — GRPC.RPCError vs MatchError; failure audit trail pattern for multi-step operations)_
+## Thread Aggregations in Sync (Story 9-28)
+
+Matrix spec §11.12 defines "bundled aggregations" — a mechanism for delivering relation metadata
+(reply counts, latest replies) inline in a parent event's `unsigned.m.relations` field during sync,
+avoiding extra HTTP round-trips from clients.
+
+**How Nebu implements bundled aggregations for `m.thread`:**
+
+1. `attach_thread_aggregations/3` is called for every list of timeline events returned from an
+   initial sync or an incremental delta sync in Elixir Core.
+2. For each event, it calls `count_thread_children(room_id, event_id)` and (when count > 0)
+   fetches the latest reply via `fetch_events_by_relation/4` with `limit = 1`.
+3. The aggregation struct `%{"m.thread" => %{count: N, latest_event: %{...}, current_user_participated: bool}}`
+   is JSON-encoded and stored in `Event.unsigned_relations` (proto field 9).
+4. In Go Gateway `sync.go`, `syncUnsigned.MRelations` is populated from `te.GetUnsignedRelations()`
+   only when the bytes are non-empty; `json:"m.relations,omitempty"` ensures absent relations
+   produce no extra JSON key.
+
+**Database invariant:** The expression index on `events((content->'m.relates_to'->>'event_id'))`
+(migration 000042) is required; without it, `attach_thread_aggregations/3` would cause N sequential
+scans per sync response (one per timeline event).
+
+**Scope:** Only `m.thread` relation type is aggregated in the current implementation.
+The `/relations` endpoint (`GetRelations` RPC) supports any `rel_type` but Element Web typically
+calls it only for `m.thread`. The `fetch_events_by_relation/4` function is parameterised on
+`rel_type` and can be extended to other relation types (reactions, edits) in a future story.
+
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Cross-Cutting Concerns, §Auth-Token-Flow, §Enforcement; `_bmad-output/planning-artifacts/prd.md`, §Cryptographic Identity Architecture; Story 9-22 (per-device sync token isolation, logout cleanup); Story 9-26 (Browser-First E2E layer, playwright-bdd, token sidecar pattern); Story 9-27 (gRPC error surface rule — GRPC.RPCError vs MatchError; failure audit trail pattern for multi-step operations); Story 9-28 (Thread aggregations in sync, bundled m.thread via unsigned_relations, GetRelations RPC, migration 000042 expression index)_

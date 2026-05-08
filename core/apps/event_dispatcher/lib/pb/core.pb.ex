@@ -11,6 +11,7 @@ defmodule Core.Event do
   field :origin_ts, 6, type: :int64, json_name: "originTs"
   field :server_ts, 7, type: :int64, json_name: "serverTs"
   field :state_key, 8, type: :string, json_name: "stateKey"
+  field :unsigned_relations, 9, type: :bytes, json_name: "unsignedRelations"
 end
 
 defmodule Core.SendEventRequest do
@@ -1153,4 +1154,31 @@ defmodule Core.ListAdminRoomMembersResponse do
     syntax: :proto3
 
   field :members, 1, repeated: true, type: Core.AdminRoomMemberProto
+end
+
+defmodule Core.GetRelationsRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.GetRelationsRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :user_id, 1, type: :string, json_name: "userId"
+  field :room_id, 2, type: :string, json_name: "roomId"
+  field :event_id, 3, type: :string, json_name: "eventId"
+  field :rel_type, 4, type: :string, json_name: "relType"
+  field :limit, 5, type: :int32
+end
+
+defmodule Core.GetRelationsResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.GetRelationsResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :events, 1, repeated: true, type: Core.Event
+  field :next_batch, 2, type: :string, json_name: "nextBatch"
 end

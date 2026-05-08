@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-05-08T00:00:00Z",
-  "generator": "bmad-maintain-arc42 skill (Story 9-27 delta)",
+  "generated_at": "2026-05-08T10:00:00Z",
+  "generator": "bmad-maintain-arc42 skill (Story 9-28 delta)",
   "source_artifacts": [
     "_bmad-output/planning-artifacts/architecture.md",
     "_bmad-output/planning-artifacts/prd.md",
@@ -37,13 +37,13 @@
     },
     "docs/architecture/05-building-blocks.md": {
       "editable": false,
-      "generated_at": "2026-05-08T00:00:00Z",
+      "generated_at": "2026-05-08T10:00:00Z",
       "source": "_bmad-output/planning-artifacts/architecture.md",
       "arc42_section": "05 Building Block View"
     },
     "docs/architecture/06-runtime.md": {
       "editable": false,
-      "generated_at": "2026-05-08T00:00:00Z",
+      "generated_at": "2026-05-08T10:00:00Z",
       "source": "_bmad-output/planning-artifacts/architecture.md",
       "arc42_section": "06 Runtime View"
     },
@@ -55,7 +55,7 @@
     },
     "docs/architecture/08-concepts.md": {
       "editable": false,
-      "generated_at": "2026-05-08T00:00:00Z",
+      "generated_at": "2026-05-08T10:00:00Z",
       "source": "_bmad-output/planning-artifacts/architecture.md",
       "arc42_section": "08 Cross-cutting Concepts"
     },
@@ -79,7 +79,7 @@
     },
     "docs/architecture/12-glossary.md": {
       "editable": false,
-      "generated_at": "2026-05-01T00:00:00Z",
+      "generated_at": "2026-05-08T10:00:00Z",
       "source": "CLAUDE.md",
       "arc42_section": "12 Glossary"
     },
@@ -157,7 +157,7 @@
     },
     "docs/matrix-api-scope.md": {
       "editable": false,
-      "generated_at": "2026-05-01T00:00:00Z",
+      "generated_at": "2026-05-08T10:00:00Z",
       "source": "gateway/cmd/gateway/main.go",
       "arc42_section": "Matrix API Scope"
     },
