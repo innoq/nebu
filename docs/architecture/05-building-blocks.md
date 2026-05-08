@@ -36,10 +36,16 @@ gateway/
     │   │                          Story 9-25) — replaces echoed sinceToken to prevent stuck-token loops;
     │   │                          syncUnsigned.MRelations carries bundled m.thread aggregations from
     │   │                          proto Event.unsigned_relations (Story 9-28)
-    │   ├── relations.go        ← GET /_matrix/client/v1/rooms/{roomId}/relations/{eventId}/{relType};
+    │   ├── relations.go        ← All three /relations route variants (Story 9-28 / 9-29):
+    │   │                          • GET /relations/{eventId}                       (base, Story 9-29)
+    │   │                          • GET /relations/{eventId}/{relType}             (Story 9-28)
+    │   │                          • GET /relations/{eventId}/{relType}/{eventType} (Story 9-29)
     │   │                          GetRelationsHandler + GetRelationsCoreClient consumer interface;
+    │   │                          query params: dir (f/b, default b), limit (default 20, max 100),
+    │   │                          recurse (bool, accepted without error), from (pagination token);
+    │   │                          invalid dir → 400 M_BAD_PARAM; invalid recurse → 400 M_BAD_PARAM;
     │   │                          maps gRPC PERMISSION_DENIED → 403 M_FORBIDDEN,
-    │   │                          NOT_FOUND → 404 M_NOT_FOUND (Story 9-28)
+    │   │                          NOT_FOUND → 404 M_NOT_FOUND (Story 9-28 / 9-29)
     │   ├── account_data.go     ← AccountDataDB + GlobalAccountDataDB interfaces; GlobalAccountDataRow
     │   │                          struct; AccountDataHandler (GET/PUT global + room-scoped endpoints)
     │   ├── send.go             ← PUT /rooms/{id}/send/...
@@ -79,11 +85,13 @@ core/apps/
 │       ├── manager.ex      ← Horde.DynamicSupervisor
 │       ├── server.ex       ← Room GenServer (state, history, power levels)
 │       ├── db.ex           ← PostgreSQL queries; get_recently_left_rooms_for_user/1 added (Story 9-19);
-│       │                      fetch_events_by_relation/4 (events by m.relates_to event_id + rel_type),
-│       │                      count_thread_children/2 (reply count for thread root),
+│       │                      fetch_events_by_relation/5 (events by m.relates_to event_id; optional
+│       │                      rel_type filter — empty = all types; opts: event_type filter, dir for
+│       │                      ORDER BY ASC/DESC; dynamic WHERE builder — Story 9-28/9-29);
+│       │                      count_thread_children/2 (reply count for thread root);
 │       │                      event_in_room?/2 (membership guard) added (Story 9-28)
 │       ├── db_behaviour.ex ← @callback contract for db.ex (mockable in tests);
-│       │                      corresponding callbacks for Story 9-28 DB functions
+│       │                      corresponding callbacks for Story 9-28/9-29 DB functions
 │       └── power_level.ex  ← Room policy enforcement
 ├── session_manager/  ← ETS + PostgreSQL Hybrid since-Token (per-device since Story 9-22)
 │   └── lib/nebu/session/
@@ -103,8 +111,10 @@ core/apps/
 │       │                      → terminate_old_genserver; uses GRPC.RPCError instead of bare `:ok =`
 │       │                      pattern matches; wraps entire body in try/rescue with audit-trail
 │       │                      on failure (Story 9-27);
-│       │                      get_relations/2 gRPC handler validates membership, delegates to
-│       │                      fetch_events_by_relation/4, returns Core.GetRelationsResponse;
+│       │                      get_relations/2 gRPC handler reads event_type, dir, recurse from
+│       │                      proto request; validates membership + event_in_room?; delegates to
+│       │                      fetch_events_by_relation/5 with opts map; returns
+│       │                      Core.GetRelationsResponse (Story 9-28/9-29);
 │       │                      attach_thread_aggregations/3 private fn: for each timeline event
 │       │                      calls count_thread_children/2 + fetch latest reply, encodes
 │       │                      JSON {"m.thread":{count,latest_event,current_user_participated}}
@@ -151,8 +161,9 @@ core/apps/
 > **Thread relations index (Story 9-28, migration 000042):**
 > `CREATE INDEX CONCURRENTLY IF NOT EXISTS events_relates_to_event_id_idx ON events
 > ((content->'m.relates_to'->>'event_id')) WHERE content ? 'm.relates_to'` — partial expression
-> index on the JSONB `m.relates_to` field. Required so that `fetch_events_by_relation/4` and
+> index on the JSONB `m.relates_to` field. Required so that `fetch_events_by_relation/5` and
 > `count_thread_children/2` can resolve thread replies without a sequential scan.
+> Story 9-29 adds `event_type` and `dir` filtering via the same index path (no new migration).
 
 > **Global account data in sync responses (Story 9-24):** `syncResponse` gains a top-level
 > `AccountData syncAccountDataSection` field (JSON key `account_data`, never omitted) that carries
@@ -218,21 +229,25 @@ Set by `attach_thread_aggregations/3` in Elixir for events that have at least on
 Empty (zero bytes) for events with no relations — the Go gateway omits `m.relations` from the
 `unsigned` JSON object when the field is absent.
 
-**`GetRelationsRequest` / `GetRelationsResponse` fields (Story 9-28):**
+**`GetRelationsRequest` / `GetRelationsResponse` fields (Story 9-28 / 9-29):**
 
 | Field | Type | Description |
 |---|---|---|
 | `user_id` | string | Caller; membership guard enforced in Elixir |
 | `room_id` | string | Room that contains the parent event |
 | `event_id` | string | Parent event ID (thread root) |
-| `rel_type` | string | Relation type, e.g. `"m.thread"` |
+| `rel_type` | string | Relation type, e.g. `"m.thread"`; empty = all relation types (Story 9-29) |
 | `limit` | int32 | Max events returned; 0 = default 20; clamped to 100 |
+| `event_type` | string | Filter by event type; empty = all event types (Story 9-29, field 6) |
+| `dir` | string | `"f"` = oldest-first ASC; `"b"` = newest-first DESC (default) (Story 9-29, field 7) |
+| `recurse` | bool | Accepted without error; MVP passes through (Story 9-29, field 8) |
+| `from` | string | Opaque pagination token; empty = first page (Story 9-29, field 9) |
 
-Response: `repeated Event events` (newest first) + `string next_batch` (empty when no more pages).
+Response: `repeated Event events` + `string next_batch` (empty when no more pages) + `string prev_batch` (for dir=b backward pagination, Story 9-29, field 3).
 
 > **Migration 000042 (Story 9-28):** `CREATE INDEX CONCURRENTLY … ON events
 > ((content->'m.relates_to'->>'event_id')) WHERE content ? 'm.relates_to'` — expression index
-> on the `m.relates_to` JSONB field; required by `fetch_events_by_relation/4` and
+> on the `m.relates_to` JSONB field; required by `fetch_events_by_relation/5` and
 > `count_thread_children/2` to avoid sequential scans on the events table.
 
-_Source: `_bmad-output/planning-artifacts/architecture.md`, §Project Structure & Boundaries, §Complete Project Directory Structure; Story 9-19 (room_moderation.go, sync.go, event_dispatcher/server.ex, forgotten_rooms migration); Story 9-22 (per-device sync tokens, device_id in proto); Story 9-24 (GlobalAccountDataDB interface, ListGlobalAccountData, top-level account_data in syncResponse); Story 9-25 (syntheticNextBatch helper, syntheticBatchSeq atomic counter, sinceToken param removed from buildResponseFromBufferedEvents); Story 9-27 (upgrade_room/2 full Matrix §11.35.1 flow, GRPC.RPCError error handling, archive_room_atomic, terminate_child, try/rescue failure audit); Story 9-28 (GetRelations RPC, unsigned_relations field on Event, attach_thread_aggregations, fetch_events_by_relation, count_thread_children, event_in_room?, migration 000042)_
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Project Structure & Boundaries, §Complete Project Directory Structure; Story 9-19 (room_moderation.go, sync.go, event_dispatcher/server.ex, forgotten_rooms migration); Story 9-22 (per-device sync tokens, device_id in proto); Story 9-24 (GlobalAccountDataDB interface, ListGlobalAccountData, top-level account_data in syncResponse); Story 9-25 (syntheticNextBatch helper, syntheticBatchSeq atomic counter, sinceToken param removed from buildResponseFromBufferedEvents); Story 9-27 (upgrade_room/2 full Matrix §11.35.1 flow, GRPC.RPCError error handling, archive_room_atomic, terminate_child, try/rescue failure audit); Story 9-28 (GetRelations RPC, unsigned_relations field on Event, attach_thread_aggregations, fetch_events_by_relation, count_thread_children, event_in_room?, migration 000042); Story 9-29 (base /relations/{eventId} route, three-segment /{relType}/{eventType} route, dir/event_type/recurse/from query params, prev_batch in response, fetch_events_by_relation/5 dynamic WHERE builder)_

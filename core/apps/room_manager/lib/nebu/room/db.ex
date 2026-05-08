@@ -624,35 +624,56 @@ defmodule Nebu.Room.DB do
     end
   end
 
-  @sql_fetch_events_by_relation """
-  SELECT event_id, room_id, sender, event_type, content, origin_server_ts, state_key
-  FROM events
-  WHERE room_id = $1
-    AND content->'m.relates_to'->>'rel_type' = $2
-    AND content->'m.relates_to'->>'event_id' = $3
-  ORDER BY origin_server_ts DESC, event_id DESC
-  LIMIT $4
-  """
-
   @doc """
-  Returns events in `room_id` that relate to `event_id` via `rel_type`.
+  Returns events in `room_id` that relate to `event_id`, optionally filtered by `rel_type`.
 
-  Queries the JSONB content column for the `m.relates_to` object.
-  Returns up to `limit` events ordered newest first.
+  Story 9-28: original 4-arity variant — always filters by rel_type, newest-first (DESC).
+  Story 9-29: 5-arity variant with opts map for extended behaviour:
+    - `rel_type` empty string = no rel_type filter (return all relation types)
+    - opts `event_type`: filter by event_type; empty = all event types
+    - opts `dir`: "b" (DESC, default) or "f" (ASC)
 
   Returns `{:ok, [event_map]}` — empty list if no matching events.
   Returns `{:error, reason}` on DB error.
 
   Story 9-28: used by GetRelations gRPC handler and attach_thread_aggregations.
+  Story 9-29: extended with opts for dir and event_type filtering.
   """
-  @spec fetch_events_by_relation(String.t(), String.t(), String.t(), pos_integer()) ::
+  @spec fetch_events_by_relation(String.t(), String.t(), String.t(), pos_integer(), map()) ::
           {:ok, [map()]} | {:error, term()}
-  def fetch_events_by_relation(room_id, event_id, rel_type, limit) do
-    case Ecto.Adapters.SQL.query(
-           Nebu.Repo,
-           @sql_fetch_events_by_relation,
-           [room_id, rel_type, event_id, limit]
-         ) do
+  # `limit` is clamped to a minimum of 1 internally — a caller passing 0 yields LIMIT 1.
+  def fetch_events_by_relation(room_id, event_id, rel_type, limit, opts \\ %{}) do
+    limit      = max(1, limit)
+    event_type = Map.get(opts, :event_type, "")
+
+    # dir is sanitised here: only "f" produces ASC; any other value (including unexpected
+    # values) defaults to "DESC" so the DB layer is never exposed to an invalid ORDER BY.
+    order_dir  =
+      case Map.get(opts, :dir, "b") do
+        "f" -> "ASC"
+        _   -> "DESC"
+      end
+
+    # Build WHERE clauses dynamically.
+    # Fixed params: $1=room_id, $2=event_id. Optional filter params follow.
+    # LIMIT param index is determined after all optional filters are assigned.
+    {extra_where, base_params, limit_idx} =
+      []
+      |> add_rel_type_clause(rel_type)
+      |> add_event_type_clause(event_type)
+      |> build_where_and_params([room_id, event_id], 3)
+
+    sql = """
+    SELECT event_id, room_id, sender, event_type, content, origin_server_ts, state_key
+    FROM events
+    WHERE room_id = $1
+      AND content->'m.relates_to'->>'event_id' = $2
+      #{extra_where}
+    ORDER BY origin_server_ts #{order_dir}, event_id #{order_dir}
+    LIMIT $#{limit_idx}
+    """
+
+    case Ecto.Adapters.SQL.query(Nebu.Repo, sql, base_params ++ [limit]) do
       {:ok, %{columns: cols, rows: rows}} ->
         events =
           Enum.map(rows, fn row ->
@@ -663,6 +684,34 @@ defmodule Nebu.Room.DB do
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  # ── Private helpers for fetch_events_by_relation SQL building ──────────────
+
+  # Returns a clause list with a rel_type filter appended (unless rel_type is empty).
+  defp add_rel_type_clause(clauses, ""), do: clauses
+  defp add_rel_type_clause(clauses, rel_type), do: clauses ++ [{:rel_type, rel_type}]
+
+  # Returns a clause list with an event_type filter appended (unless event_type is empty).
+  defp add_event_type_clause(clauses, ""), do: clauses
+  defp add_event_type_clause(clauses, event_type), do: clauses ++ [{:event_type, event_type}]
+
+  # Converts a list of {kind, value} tuples into a SQL WHERE fragment and params list.
+  # fixed_params contains the already-bound positional params ($1..$N-1).
+  # next_idx starts as length(fixed_params) + 1.
+  defp build_where_and_params(clauses, fixed_params, next_idx) do
+    {where_parts, extra_params, final_idx} =
+      Enum.reduce(clauses, {[], [], next_idx}, fn {kind, val}, {parts, params, idx} ->
+        sql_fragment =
+          case kind do
+            :rel_type   -> "AND content->'m.relates_to'->>'rel_type' = $#{idx}"
+            :event_type -> "AND event_type = $#{idx}"
+          end
+        {parts ++ [sql_fragment], params ++ [val], idx + 1}
+      end)
+
+    extra_sql = Enum.join(where_parts, "\n  ")
+    {extra_sql, fixed_params ++ extra_params, final_idx}
   end
 
   @sql_count_thread_children """

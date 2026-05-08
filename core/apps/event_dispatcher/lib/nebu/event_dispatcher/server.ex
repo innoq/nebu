@@ -2703,23 +2703,31 @@ defmodule Nebu.EventDispatcher.Server do
     end)
   end
 
-  # ─── GetRelations — Story 9-28 ───────────────────────────────────────────────
+  # ─── GetRelations — Story 9-28 / 9-29 ───────────────────────────────────────
   #
-  # Returns events that relate to `event_id` via `rel_type` (e.g. "m.thread").
+  # Returns events that relate to `event_id`, optionally filtered by rel_type and event_type.
+  # Story 9-28: initial implementation for m.thread relations.
+  # Story 9-29:
+  #   - rel_type empty → return all relation types (no filter).
+  #   - event_type non-empty → additionally filter by event_type.
+  #   - dir "f" → ASC ordering; dir "b" (default) → DESC ordering.
+  #   - recurse: accepted per spec; transitive recursion not yet implemented — ignored by DB layer.
+  #
   # Membership check: caller must be a joined room member.
   # Unknown event_id: returns NOT_FOUND.
-  # Ordered newest first. Limit clamped to 1–100 (default 20).
+  # Limit clamped to 1–100 (default 20).
 
   def get_relations(request, _stream) do
-    user_id  = request.user_id
-    room_id  = request.room_id
-    event_id = request.event_id
-    rel_type = request.rel_type
-    limit    = request.limit |> max(1) |> min(100)
+    user_id    = request.user_id
+    room_id    = request.room_id
+    event_id   = request.event_id
+    rel_type   = request.rel_type   # empty = all relation types (Story 9-29)
+    event_type = request.event_type # empty = no event_type filter (Story 9-29)
+    dir        = if request.dir in ["f", "b"], do: request.dir, else: "b"
+    limit      = request.limit |> max(1) |> min(100)
 
     # Room existence + membership — uses injected room_registry_module for testability.
     # Archived and non-existent rooms have no running GenServer; {:noproc, _} → NOT_FOUND.
-    # Pattern mirrors get_room_state/2 (same injectable guard, no hardcoded RoomSupervisor call).
     state =
       try do
         room_registry_module().get_state(room_id)
@@ -2748,7 +2756,12 @@ defmodule Nebu.EventDispatcher.Server do
         :ok
     end
 
-    case messages_db_module().fetch_events_by_relation(room_id, event_id, rel_type, limit) do
+    opts = %{
+      event_type: event_type,
+      dir:        dir
+    }
+
+    case messages_db_module().fetch_events_by_relation(room_id, event_id, rel_type, limit, opts) do
       {:ok, events} ->
         proto_events = Enum.map(events, &event_map_to_proto/1)
         %Core.GetRelationsResponse{events: proto_events}
@@ -2772,7 +2785,7 @@ defmodule Nebu.EventDispatcher.Server do
       # Only message events can be thread roots (skip state events).
       if ev.event_type == "m.room.message" do
         with {:ok, [latest | _]} <-
-               messages_db_module().fetch_events_by_relation(room_id, ev.event_id, "m.thread", 1),
+               messages_db_module().fetch_events_by_relation(room_id, ev.event_id, "m.thread", 1, %{}),
              {:ok, count} <- messages_db_module().count_thread_children(room_id, ev.event_id),
              true <- count > 0 do
           current_user_participated =

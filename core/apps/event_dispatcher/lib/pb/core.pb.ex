@@ -1169,6 +1169,10 @@ defmodule Core.GetRelationsRequest do
   field :event_id, 3, type: :string, json_name: "eventId"
   field :rel_type, 4, type: :string, json_name: "relType"
   field :limit, 5, type: :int32
+  field :event_type, 6, type: :string, json_name: "eventType"
+  field :dir, 7, type: :string
+  field :recurse, 8, type: :bool
+  field :from, 9, type: :string
 end
 
 defmodule Core.GetRelationsResponse do
@@ -1181,4 +1185,5 @@ defmodule Core.GetRelationsResponse do
 
   field :events, 1, repeated: true, type: Core.Event
   field :next_batch, 2, type: :string, json_name: "nextBatch"
+  field :prev_batch, 3, type: :string, json_name: "prevBatch"
 end

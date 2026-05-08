@@ -371,7 +371,7 @@ defmodule Nebu.EventDispatcher.GrpcHandlerTest do
       def get_generic_state_events(_room_id), do: {:ok, []}
       def get_room_create_event(_room_id), do: {:error, :not_found}
       # Story 9-28: no thread relations in grpc handler tests.
-      def fetch_events_by_relation(_room_id, _event_id, _rel_type, _limit), do: {:ok, []}
+      def fetch_events_by_relation(_room_id, _event_id, _rel_type, _limit, _opts), do: {:ok, []}
       def count_thread_children(_room_id, _event_id), do: {:ok, 0}
       def event_in_room?(_event_id, _room_id), do: true
     end

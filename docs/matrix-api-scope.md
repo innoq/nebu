@@ -71,7 +71,9 @@ cross-referenced with the Matrix Client-Server API specification.
 
 | Method | Endpoint | Status | Notes |
 |---|---|---|---|
-| GET | `/_matrix/client/v1/rooms/{roomId}/relations/{eventId}/{relType}` | ✅ | Thread reply list via gRPC GetRelations; m.relations bundled aggregations in /sync unsigned field |
+| GET | `/_matrix/client/v1/rooms/{roomId}/relations/{eventId}` | ✅ | Base route — all relation types; dir/limit/recurse/from params; prev_batch in response (Story 9-29) |
+| GET | `/_matrix/client/v1/rooms/{roomId}/relations/{eventId}/{relType}` | ✅ | Filter by relation type; same params (Story 9-28 / 9-29) |
+| GET | `/_matrix/client/v1/rooms/{roomId}/relations/{eventId}/{relType}/{eventType}` | ✅ | Filter by relation type and event type (Story 9-29) |
 
 ## Room Members
 
@@ -194,4 +196,4 @@ identity services.
 | `/_matrix/key/v2/server` | Server key exchange only needed for federation |
 | `POST /_matrix/client/v3/search` | Requires ADR-010 (FTS strategy) decision first — see [ADR-010](architecture/adr/ADR-010-fts-strategy.md) |
 
-_Source: `gateway/cmd/gateway/main.go` route registrations; `CLAUDE.md`, §Matrix API Scope; `_bmad-output/planning-artifacts/prd.md`, §Endpoint Specification; Story 9-28 (GET /_matrix/client/v1/rooms/{roomId}/relations/{eventId}/{relType})_
+_Source: `gateway/cmd/gateway/main.go` route registrations; `CLAUDE.md`, §Matrix API Scope; `_bmad-output/planning-artifacts/prd.md`, §Endpoint Specification; Story 9-28 (GET /_matrix/client/v1/rooms/{roomId}/relations/{eventId}/{relType}); Story 9-29 (base /relations/{eventId} route, three-segment /{relType}/{eventType} route, dir/recurse/from query params, prev_batch response field)_

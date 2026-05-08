@@ -1,6 +1,14 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-08
+# [9-29] 2026-05-08T09:30Z code-review → 0 MAJOR, 5 MINOR → cycle 1
+# [9-29] 2026-05-08T09:15Z dev-story → done (cycle 0)
+# [9-29] 2026-05-08T08:55Z test-review → CLEAN after MAJOR-1 fix (ordering assertions added for dir=b/dir=f)
+# [9-29] 2026-05-08T08:35Z pipeline started (--bug: relations endpoint missing base route + dir/recurse params)
+# [9-28] 2026-05-08T08:25Z committed ✓ (ATDD+Code+Kassandra CLEAN, 1 cycle)
+# [9-28] 2026-05-08T08:22Z arc42-update → done (05-building-blocks, 06-runtime, 08-concepts, 12-glossary, matrix-api-scope)
+# [9-28] 2026-05-08T08:15Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 2 MEDIUM, 2 LOW)
+# [9-28] 2026-05-08T08:10Z code-review → MAJOR-1(lookup_room→noproc pattern)+MAJOR-3(index migration)+MINOR-1(event_in_room?) fixed, MAJOR-2 accepted (pagination deferred) → cycle 1 CLEAN
 # [9-28] 2026-05-08T07:53Z ci-gate → ✓ build+unit-go+unit-elixir; e2e+integration skipped (env startup)
 # [9-28] 2026-05-08T07:45Z dev-story → done (cycle 0) — /relations endpoint + unsigned.m.relations.m.thread bundled aggregations
 # [9-28] 2026-05-08T07:15Z test-review → 1 MAJOR fixed (missing step def), 2 MINOR fixed (comment+errcode)
@@ -62,14 +70,11 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: "9-28"
-current_step: "code-review"
+story: "9-29"
+current_step: "dev-story"
 completed:
-  - oracle-gate
-  - atdd
   - test-review
   - dev-story
-  - ci-gate
-cycle_count: 0
+cycle_count: 1
 blocked_reason: null
-last_updated: "2026-05-08T07:53Z"
+last_updated: "2026-05-08T09:58Z"

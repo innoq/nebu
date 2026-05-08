@@ -734,13 +734,20 @@ func main() {
 	mux.Handle("GET /_matrix/client/v3/rooms/{roomId}/context/{eventId}",
 		jwtWithStatusCheck(http.HandlerFunc(eventContextHandler.GetEventContext)))
 
-	// Story 9-28: Thread Relations — GET /_matrix/client/v1/rooms/{roomId}/relations/{eventId}/{relType}.
-	// Element Web calls /{relType} (typically "m.thread") to populate the thread panel.
-	// JWT required. Returns events with the given rel_type that reference the parent event.
+	// Story 9-28 / 9-29: Thread Relations — all three /relations route variants.
+	// Matrix CS API v1 requires all three to be registered:
+	//   1. /relations/{eventId}                       — base route (fixes Element Web 404, Story 9-29)
+	//   2. /relations/{eventId}/{relType}              — filter by relation type (Story 9-28)
+	//   3. /relations/{eventId}/{relType}/{eventType}  — filter by both (Story 9-29)
+	// JWT required. All three variants share the same GetRelations handler method.
 	relationsHandler := matrix.NewGetRelationsHandler(matrix.GetRelationsConfig{
 		CoreClient: coreClient,
 	})
+	mux.Handle("GET /_matrix/client/v1/rooms/{roomId}/relations/{eventId}",
+		jwtWithStatusCheck(http.HandlerFunc(relationsHandler.GetRelations)))
 	mux.Handle("GET /_matrix/client/v1/rooms/{roomId}/relations/{eventId}/{relType}",
+		jwtWithStatusCheck(http.HandlerFunc(relationsHandler.GetRelations)))
+	mux.Handle("GET /_matrix/client/v1/rooms/{roomId}/relations/{eventId}/{relType}/{eventType}",
 		jwtWithStatusCheck(http.HandlerFunc(relationsHandler.GetRelations)))
 
 	// Story 7-29: Notifications API — GET /_matrix/client/v3/notifications.

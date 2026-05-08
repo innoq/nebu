@@ -5328,16 +5328,24 @@ func (x *ListAdminRoomMembersResponse) GetMembers() []*AdminRoomMemberProto {
 	return nil
 }
 
-// GetRelations — Story 9-28
+// GetRelations — Story 9-28 / 9-29
 // Returns all events that relate to parent_event_id via rel_type (e.g. "m.thread").
-// Ordered newest first. Caller must be a joined member of the room.
+// Story 9-29: rel_type empty = all relation types; event_type filters further.
+// dir: "b" = newest-first (DESC, default), "f" = oldest-first (ASC).
+// recurse: accepted without error; MVP passes through (Core may ignore).
+// from: opaque pagination token; empty = start from newest (dir=b) or oldest (dir=f).
+// Caller must be a joined member of the room.
 type GetRelationsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	RoomId        string                 `protobuf:"bytes,2,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
-	EventId       string                 `protobuf:"bytes,3,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"` // parent event ID (thread root)
-	RelType       string                 `protobuf:"bytes,4,opt,name=rel_type,json=relType,proto3" json:"rel_type,omitempty"` // e.g. "m.thread"
-	Limit         int32                  `protobuf:"varint,5,opt,name=limit,proto3" json:"limit,omitempty"`                   // 0 = default 20; clamped to 100
+	EventId       string                 `protobuf:"bytes,3,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`       // parent event ID (thread root)
+	RelType       string                 `protobuf:"bytes,4,opt,name=rel_type,json=relType,proto3" json:"rel_type,omitempty"`       // e.g. "m.thread"; empty = all relation types (Story 9-29)
+	Limit         int32                  `protobuf:"varint,5,opt,name=limit,proto3" json:"limit,omitempty"`                         // 0 = default 20; clamped to 100
+	EventType     string                 `protobuf:"bytes,6,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"` // filter by event type; empty = all event types (Story 9-29)
+	Dir           string                 `protobuf:"bytes,7,opt,name=dir,proto3" json:"dir,omitempty"`                              // "f" or "b" (default "b" = newest-first DESC) (Story 9-29)
+	Recurse       bool                   `protobuf:"varint,8,opt,name=recurse,proto3" json:"recurse,omitempty"`                     // accepted without error; MVP: same as dir=b (Story 9-29)
+	From          string                 `protobuf:"bytes,9,opt,name=from,proto3" json:"from,omitempty"`                            // opaque pagination token; empty = first page (Story 9-29)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5407,10 +5415,39 @@ func (x *GetRelationsRequest) GetLimit() int32 {
 	return 0
 }
 
+func (x *GetRelationsRequest) GetEventType() string {
+	if x != nil {
+		return x.EventType
+	}
+	return ""
+}
+
+func (x *GetRelationsRequest) GetDir() string {
+	if x != nil {
+		return x.Dir
+	}
+	return ""
+}
+
+func (x *GetRelationsRequest) GetRecurse() bool {
+	if x != nil {
+		return x.Recurse
+	}
+	return false
+}
+
+func (x *GetRelationsRequest) GetFrom() string {
+	if x != nil {
+		return x.From
+	}
+	return ""
+}
+
 type GetRelationsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Events        []*Event               `protobuf:"bytes,1,rep,name=events,proto3" json:"events,omitempty"`
 	NextBatch     string                 `protobuf:"bytes,2,opt,name=next_batch,json=nextBatch,proto3" json:"next_batch,omitempty"` // empty when no more pages
+	PrevBatch     string                 `protobuf:"bytes,3,opt,name=prev_batch,json=prevBatch,proto3" json:"prev_batch,omitempty"` // for dir=b pagination (Story 9-29)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5455,6 +5492,13 @@ func (x *GetRelationsResponse) GetEvents() []*Event {
 func (x *GetRelationsResponse) GetNextBatch() string {
 	if x != nil {
 		return x.NextBatch
+	}
+	return ""
+}
+
+func (x *GetRelationsResponse) GetPrevBatch() string {
+	if x != nil {
+		return x.PrevBatch
 	}
 	return ""
 }
@@ -5831,17 +5875,24 @@ const file_core_proto_rawDesc = "" +
 	"\x1bListAdminRoomMembersRequest\x12\x17\n" +
 	"\aroom_id\x18\x01 \x01(\tR\x06roomId\"T\n" +
 	"\x1cListAdminRoomMembersResponse\x124\n" +
-	"\amembers\x18\x01 \x03(\v2\x1a.core.AdminRoomMemberProtoR\amembers\"\x93\x01\n" +
+	"\amembers\x18\x01 \x03(\v2\x1a.core.AdminRoomMemberProtoR\amembers\"\xf2\x01\n" +
 	"\x13GetRelationsRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x17\n" +
 	"\aroom_id\x18\x02 \x01(\tR\x06roomId\x12\x19\n" +
 	"\bevent_id\x18\x03 \x01(\tR\aeventId\x12\x19\n" +
 	"\brel_type\x18\x04 \x01(\tR\arelType\x12\x14\n" +
-	"\x05limit\x18\x05 \x01(\x05R\x05limit\"Z\n" +
+	"\x05limit\x18\x05 \x01(\x05R\x05limit\x12\x1d\n" +
+	"\n" +
+	"event_type\x18\x06 \x01(\tR\teventType\x12\x10\n" +
+	"\x03dir\x18\a \x01(\tR\x03dir\x12\x18\n" +
+	"\arecurse\x18\b \x01(\bR\arecurse\x12\x12\n" +
+	"\x04from\x18\t \x01(\tR\x04from\"y\n" +
 	"\x14GetRelationsResponse\x12#\n" +
 	"\x06events\x18\x01 \x03(\v2\v.core.EventR\x06events\x12\x1d\n" +
 	"\n" +
-	"next_batch\x18\x02 \x01(\tR\tnextBatch2\x9e\x19\n" +
+	"next_batch\x18\x02 \x01(\tR\tnextBatch\x12\x1d\n" +
+	"\n" +
+	"prev_batch\x18\x03 \x01(\tR\tprevBatch2\x9e\x19\n" +
 	"\vCoreService\x12<\n" +
 	"\tSendEvent\x12\x16.core.SendEventRequest\x1a\x17.core.SendEventResponse\x12?\n" +
 	"\n" +

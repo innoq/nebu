@@ -45,7 +45,7 @@ defmodule Nebu.EventDispatcher.ThreadRelationsTest do
   # ─── FakeRelationsDB (happy-path) ────────────────────────────────────────────
 
   defmodule FakeRelationsDB do
-    def fetch_events_by_relation(room_id, event_id, "m.thread", _limit) do
+    def fetch_events_by_relation(room_id, event_id, "m.thread", _limit, _opts) do
       {:ok, [
         %{
           "event_id"         => "$reply_event_9_28:nebu.local",
@@ -66,7 +66,7 @@ defmodule Nebu.EventDispatcher.ThreadRelationsTest do
       ]}
     end
 
-    def fetch_events_by_relation(_room_id, _event_id, _rel_type, _limit), do: {:ok, []}
+    def fetch_events_by_relation(_room_id, _event_id, _rel_type, _limit, _opts), do: {:ok, []}
     def count_thread_children(_room_id, _event_id), do: {:ok, 0}
     def event_in_room?("$root_event_9_28:nebu.local", _room_id), do: true
     def event_in_room?(_event_id, _room_id), do: false
@@ -78,7 +78,7 @@ defmodule Nebu.EventDispatcher.ThreadRelationsTest do
   # ─── FakeRelationsDBEmpty ────────────────────────────────────────────────────
 
   defmodule FakeRelationsDBEmpty do
-    def fetch_events_by_relation(_room_id, _event_id, _rel_type, _limit), do: {:ok, []}
+    def fetch_events_by_relation(_room_id, _event_id, _rel_type, _limit, _opts), do: {:ok, []}
     def count_thread_children(_room_id, _event_id), do: {:ok, 0}
     def event_in_room?("$root_event_9_28:nebu.local", _room_id), do: true
     def event_in_room?(_event_id, _room_id), do: false

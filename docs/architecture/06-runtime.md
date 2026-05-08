@@ -405,39 +405,64 @@ Matrix Client      Go Gateway          Elixir Core (upgrade_room/2)         Post
 **Audit trail:** Both success and failure paths write to `audit_logs` via `audit_writer_module().log/6`
 with action `"room_upgraded"`, target `old_room_id`, and `%{"new_room_id" => ..., "error" => ...}` metadata.
 
-## Scenario 3j: Thread Relations — GetRelations + Bundled Aggregations in Sync (Story 9-28)
+## Scenario 3j: Thread Relations — GetRelations + Bundled Aggregations in Sync (Story 9-28 / 9-29)
 
-Story 9-28 adds two complementary mechanisms for Matrix threaded messages:
+Stories 9-28 and 9-29 together add two complementary mechanisms for Matrix threaded messages.
 
-### 3j-1: Explicit relation fetch (GET /_matrix/client/v1/rooms/{roomId}/relations/{eventId}/{relType})
+### 3j-1: Explicit relation fetch
 
-Element Web calls this endpoint after receiving the first thread reply to populate the thread panel.
+Story 9-29 extended the single `/{relType}` route to three variants, all handled by the same
+`GetRelationsHandler.GetRelations` method:
+
+- `GET /_matrix/client/v1/rooms/{roomId}/relations/{eventId}` — base route (Story 9-29)
+- `GET /_matrix/client/v1/rooms/{roomId}/relations/{eventId}/{relType}` — (Story 9-28)
+- `GET /_matrix/client/v1/rooms/{roomId}/relations/{eventId}/{relType}/{eventType}` — (Story 9-29)
+
+Query params added in Story 9-29: `dir` (`f`/`b`, default `b`), `recurse` (bool, accepted without
+error), `from` (pagination token). `limit` existed from Story 9-28.
 
 ```
 Matrix Client      Go Gateway                         Elixir Core         PostgreSQL
      │                   │                                  │                   │
      │  GET /relations   │                                  │                   │
-     │  /{eventId}/      │                                  │                   │
-     │  m.thread         │                                  │                   │
-     │──────────────────►│  gRPC GetRelations               │                   │
+     │  /{eventId}[/...] │                                  │                   │
+     │  ?dir=b&limit=20  │                                  │                   │
+     │──────────────────►│  validate dir, recurse params    │                   │
+     │                   │  (400 on invalid)                │                   │
+     │                   │  gRPC GetRelations               │                   │
+     │                   │  (event_type, dir, recurse, from)│                   │
      │                   │─────────────────────────────────►│                   │
      │                   │                                  │  event_in_room?   │
      │                   │                                  │──────────────────►│
      │                   │                                  │  fetch_events_by_ │
-     │                   │                                  │  relation(room,   │
-     │                   │                                  │  eventId, m.thread│
-     │                   │                                  │  , limit=20)      │
+     │                   │                                  │  relation/5(room, │
+     │                   │                                  │  eventId, relType,│
+     │                   │                                  │  limit, opts{dir, │
+     │                   │                                  │  event_type})     │
      │                   │                                  │──────────────────►│
      │                   │  GetRelationsResponse            │                   │
+     │                   │  {events, next_batch, prev_batch}│                   │
      │                   │◄─────────────────────────────────│                   │
-     │  200 {chunk: [...]}│                                  │                   │
+     │  200 {chunk: [...],│                                  │                   │
+     │   prev_batch: ...} │                                  │                   │
      │◄──────────────────│                                  │                   │
 ```
+
+**Query param validation (Story 9-29, Go Gateway):**
+- `dir` not in `{"f", "b"}` → `400 M_BAD_PARAM`
+- `recurse` not parseable as bool → `400 M_BAD_PARAM`
+- `recurse=true` is accepted without error (MVP: Core treats same as `dir=b`)
 
 **Error cases:**
 - Non-member → Elixir raises `GRPC.RPCError` with `PERMISSION_DENIED` → Go returns `403 M_FORBIDDEN`
 - Unknown event_id → `NOT_FOUND` → `404 M_NOT_FOUND`
 - Not authenticated → `401 M_MISSING_TOKEN` (JWT middleware, before gRPC call)
+
+**Ordering and pagination:**
+- `dir=b` (default): newest-first (DESC). `dir=f`: oldest-first (ASC).
+- `prev_batch` is returned in the response for `dir=b` pagination (Story 9-29, `GetRelationsResponse` field 3).
+- `rel_type` empty string = return all relation types (base route case, Story 9-29).
+- `event_type` filter applied via dynamic WHERE clause in `fetch_events_by_relation/5` (Story 9-29).
 
 ### 3j-2: Bundled aggregations in /sync response (m.relations in unsigned)
 
@@ -491,4 +516,4 @@ On restart, Horde re-discovers Room GenServers across the cluster via CRDT regis
 Session Manager GenServer reads since-token checkpoints from PostgreSQL (no cold-sync forced on clients).
 EventBus stream re-connects to Go Gateway after exponential backoff (max 30s + jitter).
 
-_Source: `_bmad-output/planning-artifacts/architecture.md`, §Implementation Patterns, §API & Kommunikation, §Resilienz & Selbst-Heilung; Story 9-19 (GAP-JOIN-PUBLIC, GAP-LEAVE-ONCE, GAP-FORGET); Story 9-22 (GAP-SINCE-IGNORED — per-device sync tokens, per-device logout cleanup); Story 9-23 (GAP-INVITE-STATE — invite_state stripped state enrichment: join_rules, avatar, create); Story 9-24 (GAP-GLOBAL-ACCOUNT-DATA — top-level account_data delivery in all 4 sync paths, RLS-aware ListGlobalAccountData); Story 9-25 (GAP-BUFFER-NEXT-BATCH — synthetic buf_<ms>_<seq> next_batch token on buffer fast-path, replaces echoed since= token); Story 9-27 (Scenario 3i — full Matrix §11.35.1 room upgrade flow, GRPC.RPCError error handling, archive_room_atomic idempotency, terminate_child, try/rescue failure audit); Story 9-28 (Scenario 3j — GetRelations RPC + bundled m.thread aggregations in sync unsigned field, attach_thread_aggregations, fetch_events_by_relation, count_thread_children, migration 000042)_
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Implementation Patterns, §API & Kommunikation, §Resilienz & Selbst-Heilung; Story 9-19 (GAP-JOIN-PUBLIC, GAP-LEAVE-ONCE, GAP-FORGET); Story 9-22 (GAP-SINCE-IGNORED — per-device sync tokens, per-device logout cleanup); Story 9-23 (GAP-INVITE-STATE — invite_state stripped state enrichment: join_rules, avatar, create); Story 9-24 (GAP-GLOBAL-ACCOUNT-DATA — top-level account_data delivery in all 4 sync paths, RLS-aware ListGlobalAccountData); Story 9-25 (GAP-BUFFER-NEXT-BATCH — synthetic buf_<ms>_<seq> next_batch token on buffer fast-path, replaces echoed since= token); Story 9-27 (Scenario 3i — full Matrix §11.35.1 room upgrade flow, GRPC.RPCError error handling, archive_room_atomic idempotency, terminate_child, try/rescue failure audit); Story 9-28 (Scenario 3j — GetRelations RPC + bundled m.thread aggregations in sync unsigned field, attach_thread_aggregations, fetch_events_by_relation, count_thread_children, migration 000042); Story 9-29 (Scenario 3j-1 expanded — base route + three-segment route, dir/event_type/recurse/from params, prev_batch response field, fetch_events_by_relation/5 dynamic WHERE builder, 400 validation for invalid dir/recurse)_

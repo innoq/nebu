@@ -1,21 +1,25 @@
 package matrix
 
-// ─── Story 9-28: GET /_matrix/client/v1/rooms/{roomId}/relations/{eventId}/{relType} ───
+// ─── Story 9-28 / 9-29: GET /_matrix/client/v1/rooms/{roomId}/relations/{eventId}[/{relType}[/{eventType}]] ───
 //
-// Returns events that relate to a parent event via the specified rel_type (e.g. "m.thread").
-// Element Web calls this to populate the thread panel after receiving the first thread reply.
+// Returns events that relate to a parent event, optionally filtered by rel_type and event_type.
+// Story 9-28: introduced handler for /{relType} variant.
+// Story 9-29:
+//   - Adds base route /relations/{eventId} (no relType) — fixes Element Web 404.
+//   - Adds three-segment route /relations/{eventId}/{relType}/{eventType}.
+//   - Adds query param support: dir (f/b), limit, recurse, from.
+//   - dir=b → newest-first (DESC, default). dir=f → oldest-first (ASC).
+//   - recurse=true MUST be accepted without error (Matrix CS API requirement).
+//   - Returns prev_batch when more results exist in dir=b direction.
 //
-// AC1: returns events with rel_type m.thread for the given parent event_id.
-// AC2: returns empty chunk when no thread replies exist.
-// AC4: non-member → 403 M_FORBIDDEN.
-// AC5: unauthenticated → 401 M_MISSING_TOKEN.
-// AC6: unknown event_id → 404 M_NOT_FOUND.
+// All three URL variants share a single GetRelations handler method.
 
 import (
 	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	coregrpc "github.com/nebu/nebu/internal/grpc"
 	pb "github.com/nebu/nebu/internal/grpc/pb"
@@ -35,7 +39,7 @@ type GetRelationsConfig struct {
 	CoreClient GetRelationsCoreClient
 }
 
-// GetRelationsHandler handles GET /_matrix/client/v1/rooms/{roomId}/relations/{eventId}/{relType}.
+// GetRelationsHandler handles all three /relations route variants.
 type GetRelationsHandler struct {
 	coreClient GetRelationsCoreClient
 }
@@ -59,13 +63,24 @@ type relationsChunkEvent struct {
 type relationsResponse struct {
 	Chunk     []relationsChunkEvent `json:"chunk"`
 	NextBatch string                `json:"next_batch,omitempty"`
+	PrevBatch string                `json:"prev_batch,omitempty"`
 }
 
-// GetRelations handles GET /_matrix/client/v1/rooms/{roomId}/relations/{eventId}/{relType}.
+// GetRelations handles all three route variants:
+//   - GET /_matrix/client/v1/rooms/{roomId}/relations/{eventId}
+//   - GET /_matrix/client/v1/rooms/{roomId}/relations/{eventId}/{relType}
+//   - GET /_matrix/client/v1/rooms/{roomId}/relations/{eventId}/{relType}/{eventType}
+//
+// Query params:
+//   - dir: "f" or "b" (default "b"). Returns 400 M_BAD_PARAM if invalid.
+//   - limit: integer, default 20, max 100.
+//   - recurse: boolean, accepted without error (MVP: pass through to Core).
+//   - from: opaque pagination token, passed through to Core.
 func (h *GetRelationsHandler) GetRelations(w http.ResponseWriter, r *http.Request) {
-	roomID  := r.PathValue("roomId")
-	eventID := r.PathValue("eventId")
-	relType := r.PathValue("relType")
+	roomID    := r.PathValue("roomId")
+	eventID   := r.PathValue("eventId")
+	relType   := r.PathValue("relType")   // empty for base route
+	eventType := r.PathValue("eventType") // empty unless three-segment route
 
 	userID, _ := r.Context().Value(middleware.ContextKeyUserID).(string)
 	if userID == "" {
@@ -73,15 +88,59 @@ func (h *GetRelationsHandler) GetRelations(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// ── Query param: dir ─────────────────────────────────────────────────────
+	// Matrix spec: "b" (newest-first DESC) or "f" (oldest-first ASC). Default "b".
+	// Return 400 M_BAD_PARAM for any other value.
+	dir := r.URL.Query().Get("dir")
+	if dir == "" {
+		dir = "b"
+	}
+	if dir != "b" && dir != "f" {
+		writeMatrixError(w, http.StatusBadRequest, "M_BAD_PARAM",
+			"dir must be 'f' or 'b'")
+		return
+	}
+
+	// ── Query param: limit ───────────────────────────────────────────────────
+	limit := int32(20)
+	if rawLimit := r.URL.Query().Get("limit"); rawLimit != "" {
+		if n, err := strconv.ParseInt(rawLimit, 10, 32); err == nil && n > 0 {
+			if n > 100 {
+				n = 100
+			}
+			limit = int32(n)
+		}
+	}
+
+	// ── Query param: recurse ─────────────────────────────────────────────────
+	// Matrix spec: MUST be accepted without error. Pass through to Core.
+	recurse := false
+	if rawRecurse := r.URL.Query().Get("recurse"); rawRecurse != "" {
+		parsed, err := strconv.ParseBool(rawRecurse)
+		if err != nil {
+			writeMatrixError(w, http.StatusBadRequest, "M_BAD_PARAM",
+				"recurse must be a boolean (true/false/1/0)")
+			return
+		}
+		recurse = parsed
+	}
+
+	// ── Query param: from ────────────────────────────────────────────────────
+	from := r.URL.Query().Get("from")
+
 	systemRole, _ := r.Context().Value(middleware.ContextKeySystemRole).(string)
 	grpcCtx := coregrpc.WithUserMetadata(r.Context(), userID, systemRole)
 
 	resp, err := h.coreClient.GetRelations(grpcCtx, &pb.GetRelationsRequest{
-		UserId:  userID,
-		RoomId:  roomID,
-		EventId: eventID,
-		RelType: relType,
-		Limit:   20,
+		UserId:    userID,
+		RoomId:    roomID,
+		EventId:   eventID,
+		RelType:   relType,
+		Limit:     limit,
+		EventType: eventType,
+		Dir:       dir,
+		Recurse:   recurse,
+		From:      from,
 	})
 	if err != nil {
 		st, _ := status.FromError(err)
@@ -117,5 +176,6 @@ func (h *GetRelationsHandler) GetRelations(w http.ResponseWriter, r *http.Reques
 	_ = json.NewEncoder(w).Encode(relationsResponse{
 		Chunk:     chunk,
 		NextBatch: resp.GetNextBatch(),
+		PrevBatch: resp.GetPrevBatch(),
 	})
 }

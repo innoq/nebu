@@ -149,7 +149,7 @@ defmodule Nebu.EventDispatcher.UpgradeRoomErrorHandlingTest do
     end
 
     # Story 9-28: no thread relations in upgrade error tests — return empty / 0.
-    def fetch_events_by_relation(_room_id, _event_id, _rel_type, _limit), do: {:ok, []}
+    def fetch_events_by_relation(_room_id, _event_id, _rel_type, _limit, _opts), do: {:ok, []}
     def count_thread_children(_room_id, _event_id), do: {:ok, 0}
     def event_in_room?(_event_id, _room_id), do: true
   end
@@ -207,7 +207,7 @@ defmodule Nebu.EventDispatcher.UpgradeRoomErrorHandlingTest do
     end
 
     # Story 9-28: no thread relations in upgrade error tests.
-    def fetch_events_by_relation(_room_id, _event_id, _rel_type, _limit), do: {:ok, []}
+    def fetch_events_by_relation(_room_id, _event_id, _rel_type, _limit, _opts), do: {:ok, []}
     def count_thread_children(_room_id, _event_id), do: {:ok, 0}
     def event_in_room?(_event_id, _room_id), do: true
   end
@@ -259,7 +259,7 @@ defmodule Nebu.EventDispatcher.UpgradeRoomErrorHandlingTest do
     end
 
     # Story 9-28: no thread relations in upgrade error tests.
-    def fetch_events_by_relation(_room_id, _event_id, _rel_type, _limit), do: {:ok, []}
+    def fetch_events_by_relation(_room_id, _event_id, _rel_type, _limit, _opts), do: {:ok, []}
     def count_thread_children(_room_id, _event_id), do: {:ok, 0}
     def event_in_room?(_event_id, _room_id), do: true
   end
@@ -312,7 +312,7 @@ defmodule Nebu.EventDispatcher.UpgradeRoomErrorHandlingTest do
     end
 
     # Story 9-28: no thread relations in upgrade error tests.
-    def fetch_events_by_relation(_room_id, _event_id, _rel_type, _limit), do: {:ok, []}
+    def fetch_events_by_relation(_room_id, _event_id, _rel_type, _limit, _opts), do: {:ok, []}
     def count_thread_children(_room_id, _event_id), do: {:ok, 0}
     def event_in_room?(_event_id, _room_id), do: true
   end

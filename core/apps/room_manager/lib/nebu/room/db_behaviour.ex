@@ -233,18 +233,24 @@ defmodule Nebu.Room.DBBehaviour do
   Returns events in `room_id` that relate to `event_id` via `rel_type`.
 
   Queries JSONB content column for `m.relates_to` object.
-  Returns up to `limit` events ordered newest first.
+  Story 9-28: up to `limit` events ordered newest first (DESC).
+  Story 9-29: opts map extends behaviour:
+    - `rel_type`: empty string = all relation types (no rel_type filter)
+    - `event_type`: filter by event_type; empty = all event types
+    - `dir`: "b" (DESC, default) or "f" (ASC)
 
   Returns `{:ok, [event_map]}` — empty list if no matching events.
   Returns `{:error, reason}` on DB error.
 
   Story 9-28: used by GetRelations gRPC handler and attach_thread_aggregations.
+  Story 9-29: extended with opts for dir and event_type filtering.
   """
   @callback fetch_events_by_relation(
               room_id :: String.t(),
               event_id :: String.t(),
               rel_type :: String.t(),
-              limit :: pos_integer()
+              limit :: pos_integer(),
+              opts :: map()
             ) :: {:ok, [map()]} | {:error, term()}
 
   @doc """

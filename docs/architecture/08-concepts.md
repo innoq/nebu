@@ -239,7 +239,7 @@ avoiding extra HTTP round-trips from clients.
 1. `attach_thread_aggregations/3` is called for every list of timeline events returned from an
    initial sync or an incremental delta sync in Elixir Core.
 2. For each event, it calls `count_thread_children(room_id, event_id)` and (when count > 0)
-   fetches the latest reply via `fetch_events_by_relation/4` with `limit = 1`.
+   fetches the latest reply via `fetch_events_by_relation/5` with `limit = 1` and empty opts.
 3. The aggregation struct `%{"m.thread" => %{count: N, latest_event: %{...}, current_user_participated: bool}}`
    is JSON-encoded and stored in `Event.unsigned_relations` (proto field 9).
 4. In Go Gateway `sync.go`, `syncUnsigned.MRelations` is populated from `te.GetUnsignedRelations()`
@@ -251,8 +251,32 @@ avoiding extra HTTP round-trips from clients.
 scans per sync response (one per timeline event).
 
 **Scope:** Only `m.thread` relation type is aggregated in the current implementation.
-The `/relations` endpoint (`GetRelations` RPC) supports any `rel_type` but Element Web typically
-calls it only for `m.thread`. The `fetch_events_by_relation/4` function is parameterised on
-`rel_type` and can be extended to other relation types (reactions, edits) in a future story.
+The `/relations` endpoint (`GetRelations` RPC) supports any `rel_type` (including empty for all
+types) via `fetch_events_by_relation/5`'s dynamic WHERE builder. Element Web typically calls it
+for `m.thread`. The function is parameterised on `rel_type` and `event_type` and can be extended
+to other relation types (reactions, edits) in a future story.
 
-_Source: `_bmad-output/planning-artifacts/architecture.md`, §Cross-Cutting Concerns, §Auth-Token-Flow, §Enforcement; `_bmad-output/planning-artifacts/prd.md`, §Cryptographic Identity Architecture; Story 9-22 (per-device sync token isolation, logout cleanup); Story 9-26 (Browser-First E2E layer, playwright-bdd, token sidecar pattern); Story 9-27 (gRPC error surface rule — GRPC.RPCError vs MatchError; failure audit trail pattern for multi-step operations); Story 9-28 (Thread aggregations in sync, bundled m.thread via unsigned_relations, GetRelations RPC, migration 000042 expression index)_
+## Relations API — Query Parameters (Story 9-29)
+
+Story 9-29 extended the `GET /relations` handler with Matrix CS API-compliant query parameters
+and two additional route variants:
+
+| Parameter | Type | Default | Validation |
+|---|---|---|---|
+| `dir` | string | `"b"` | Must be `"f"` or `"b"`; `400 M_BAD_PARAM` otherwise |
+| `limit` | integer | 20 | Clamped to 100; 0 uses default |
+| `recurse` | boolean | false | Must be parseable; `400 M_BAD_PARAM` otherwise |
+| `from` | string | `""` | Opaque pagination token; passed through to Core |
+
+**dir semantics:** `"b"` (backward) = newest-first DESC; `"f"` (forward) = oldest-first ASC.
+This mirrors the `GET /messages` semantics from the Matrix CS API spec.
+
+**recurse=true:** Accepted without error (Matrix spec MUST requirement). MVP implementation
+treats it the same as `dir=b`; true recursive relation traversal is deferred to Phase 2.
+
+**prev_batch:** When using `dir=b` pagination, the response includes a `prev_batch` token in
+`GetRelationsResponse` (field 3) allowing clients to page backwards. Currently always empty
+(no prev-page cursor implemented in MVP); the field is present in the proto contract for
+forward compatibility.
+
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Cross-Cutting Concerns, §Auth-Token-Flow, §Enforcement; `_bmad-output/planning-artifacts/prd.md`, §Cryptographic Identity Architecture; Story 9-22 (per-device sync token isolation, logout cleanup); Story 9-26 (Browser-First E2E layer, playwright-bdd, token sidecar pattern); Story 9-27 (gRPC error surface rule — GRPC.RPCError vs MatchError; failure audit trail pattern for multi-step operations); Story 9-28 (Thread aggregations in sync, bundled m.thread via unsigned_relations, GetRelations RPC, migration 000042 expression index); Story 9-29 (Relations API query params: dir, recurse, from; base and three-segment routes; prev_batch response field; fetch_events_by_relation/5 dynamic WHERE builder with rel_type + event_type + dir opts)_

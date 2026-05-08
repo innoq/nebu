@@ -664,18 +664,27 @@ message AdminRoomMemberProto {
 message ListAdminRoomMembersRequest  { string room_id = 1; }
 message ListAdminRoomMembersResponse { repeated AdminRoomMemberProto members = 1; }
 
-// GetRelations — Story 9-28
+// GetRelations — Story 9-28 / 9-29
 // Returns all events that relate to parent_event_id via rel_type (e.g. "m.thread").
-// Ordered newest first. Caller must be a joined member of the room.
+// Story 9-29: rel_type empty = all relation types; event_type filters further.
+// dir: "b" = newest-first (DESC, default), "f" = oldest-first (ASC).
+// recurse: accepted without error; MVP passes through (Core may ignore).
+// from: opaque pagination token; empty = start from newest (dir=b) or oldest (dir=f).
+// Caller must be a joined member of the room.
 message GetRelationsRequest {
-  string user_id  = 1;
-  string room_id  = 2;
-  string event_id = 3;  // parent event ID (thread root)
-  string rel_type = 4;  // e.g. "m.thread"
-  int32  limit    = 5;  // 0 = default 20; clamped to 100
+  string user_id    = 1;
+  string room_id    = 2;
+  string event_id   = 3;  // parent event ID (thread root)
+  string rel_type   = 4;  // e.g. "m.thread"; empty = all relation types (Story 9-29)
+  int32  limit      = 5;  // 0 = default 20; clamped to 100
+  string event_type = 6;  // filter by event type; empty = all event types (Story 9-29)
+  string dir        = 7;  // "f" or "b" (default "b" = newest-first DESC) (Story 9-29)
+  bool   recurse    = 8;  // accepted without error; MVP: same as dir=b (Story 9-29)
+  string from       = 9;  // opaque pagination token; empty = first page (Story 9-29)
 }
 
 message GetRelationsResponse {
   repeated Event events     = 1;
   string         next_batch = 2;  // empty when no more pages
+  string         prev_batch = 3;  // for dir=b pagination (Story 9-29)
 }

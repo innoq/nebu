@@ -1,5 +1,6 @@
 # generated: 2026-03-20
 # last_updated: 2026-05-08
+# story 9-29 done (pipeline: ATDD+Dev+Code CLEAN 1 cycle (MINORs fixed)+Kassandra CLEAN): 2026-05-08
 # story 9-28 done (pipeline: ATDD+Dev+Code+Kassandra CLEAN — 1 cycle (MAJOR-1 noproc pattern, MAJOR-3 index, MINOR-1 event_in_room?)): 2026-05-08
 # story 9-27 done (pipeline: ATDD+Code CLEAN 3 cycles — MatchError→500 fixed, §11.35.1 compliant, Kassandra CLEAN): 2026-05-08
 # story 9-26 done (pipeline: ATDD+9MAJ fixed(9-26a)+IndexedDB fix(9-26b)+AdminBootstrap(9-26c)+Code CLEAN 3 cycles): 2026-05-07
@@ -754,6 +755,7 @@ development_status:
   9-22-sync-gap-since-ignored-per-device-tokens: done
   9-24-sync-gap-global-account-data: done
   9-26-element-web-e2e-browser-first-suite: done
+  9-29-matrix-relations-api-base-route-query-params: review  # story 9-29: 2026-05-08 (Bug Fix: Matrix Relations API base route + query params; all 3 route variants, dir/recurse/event_type, proto extended; security_review: not-needed)
   epic-9-retrospective: optional
 
   # ─────────────────────────────────────────────────────────────────────────

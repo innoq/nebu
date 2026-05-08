@@ -351,10 +351,11 @@ func (c *Client) ListAdminRoomMembers(ctx context.Context, req *pb.ListAdminRoom
 	return c.core.ListAdminRoomMembers(ctx, req)
 }
 
-// GetRelations calls the Elixir core to retrieve events related to a parent event via rel_type.
+// GetRelations calls the Elixir core to retrieve events related to a parent event.
+// Story 9-28: initial implementation for /{relType} variant.
+// Story 9-29: extended with dir, event_type, recurse, from; all three route variants share this call.
 // Returns PERMISSION_DENIED if the user is not a room member.
 // Returns NOT_FOUND if the parent event does not exist.
-// Story 9-28: GET /_matrix/client/v1/rooms/{roomId}/relations/{eventId}/{relType}.
 func (c *Client) GetRelations(ctx context.Context, req *pb.GetRelationsRequest) (*pb.GetRelationsResponse, error) {
 	return c.core.GetRelations(ctx, req)
 }
