@@ -101,7 +101,7 @@ core/apps/
 │       │                           get_since_token/1 + /2; invalidate_session/1 + /2
 │       └── session_supervisor.ex ← destroy_session/1 (all devices) + /2 (per-device)
 ├── presence/         ← FR15: Presence status (online/offline/unavailable)
-├── event_dispatcher/ ← EventBus gRPC streaming + pg Process Groups fanout
+├── event_dispatcher/ ← EventBus gRPC streaming + pg Process Groups fanout + FTS search layer
 │   └── lib/nebu/event_dispatcher/
 │       ├── server.ex       ← gRPC handlers: join_room/2 broadcasts {:new_join} to user :pg group;
 │       │                      leave_room/2 broadcasts {:new_leave}; do_incremental_sync handles
@@ -120,7 +120,16 @@ core/apps/
 │       │                      JSON {"m.thread":{count,latest_event,current_user_participated}}
 │       │                      into Event.unsigned_relations field (Story 9-28)
 │       ├── dispatcher.ex   ← Routes events to rooms + subscribers
-│       └── bus.ex          ← gRPC ServerStream to Go Gateway
+│       ├── bus.ex          ← gRPC ServerStream to Go Gateway
+│       └── lib/nebu/search/
+│           └── db.ex       ← Nebu.Search.DB — membership-scoped full-text search SQL layer (Story 11-2);
+│                              search_messages/4 (user_id, term, limit, offset) executes canonical SQL
+│                              against the events.search_vector GIN index (migration 000042); membership
+│                              filter enforced at SQL layer via subquery on room_members WHERE left_at IS NULL
+│                              (NOT application-layer post-filter); encrypted rooms excluded via NOT EXISTS
+│                              on m.room.encryption state events; sql_search_messages/0 exposes the SQL
+│                              constant for structural testing (AC2); Story 11.3 wires this module to the
+│                              SearchMessages gRPC handler
 ├── signature/        ← FR25–29: Ed25519 signing + Canonical JSON + Event-ID
 │   └── lib/nebu/
 │       ├── signature.ex         ← :crypto.sign/4 with eddsa
@@ -219,6 +228,8 @@ Key gRPC services: `SendEvent`, `CreateRoom`, `JoinRoom`, `GetMessages`, `GetRoo
 | `user_id` | string | Matrix user ID |
 | `device_id` | string | When set, only invalidates this device; when empty, invalidates all user sessions |
 
+
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Project Structure & Boundaries, §Complete Project Directory Structure; Story 9-19 (room_moderation.go, sync.go, event_dispatcher/server.ex, forgotten_rooms migration); Story 9-22 (per-device sync tokens, device_id in proto); Story 9-24 (GlobalAccountDataDB interface, ListGlobalAccountData, top-level account_data in syncResponse); Story 9-25 (syntheticNextBatch helper, syntheticBatchSeq atomic counter, sinceToken param removed from buildResponseFromBufferedEvents); Story 9-27 (upgrade_room/2 full Matrix §11.35.1 flow, GRPC.RPCError error handling, archive_room_atomic, terminate_child, try/rescue failure audit); Story 11-2 (Nebu.Search.DB, membership-scoped FTS SQL contract, encrypted-room exclusion, integration test infrastructure)_
 **`Event` message — `unsigned_relations` field (Story 9-28):**
 
 The shared `Event` proto message gained field 9:
@@ -252,5 +263,21 @@ Response: `repeated Event events` + `string next_batch` (empty when no more page
 > ((content->'m.relates_to'->>'event_id')) WHERE content ? 'm.relates_to'` — expression index
 > on the `m.relates_to` JSONB field; required by `fetch_events_by_relation/5` and
 > `count_thread_children/2` to avoid sequential scans on the events table.
+
+> **`Nebu.Search.DB` — membership-scoped FTS query layer (Story 11-2):**
+> `core/apps/event_dispatcher/lib/nebu/search/db.ex` defines the SQL contract for
+> `POST /_matrix/client/v3/search` (Epic 11). Key design invariants:
+>
+> 1. **SQL-layer membership enforcement** — the subquery `WHERE room_id IN (SELECT room_id FROM room_members WHERE user_id = $1 AND left_at IS NULL)` runs inside the same PostgreSQL query. There is no application-layer post-filter; membership is checked at query execution time. This prevents cross-room IDOR leakage even if Elixir application logic is bypassed.
+>
+> 2. **Encrypted-room exclusion** — rooms that have an `m.room.encryption` state event (`state_key = '' OR state_key IS NULL`) are excluded from search results via `NOT EXISTS (SELECT 1 FROM events enc WHERE enc.room_id = e.room_id AND enc.event_type = 'm.room.encryption')`. Ciphertext bodies are never returned in plaintext search responses.
+>
+> 3. **`user_id` security invariant** — the `user_id` parameter MUST be sourced from the validated session (gRPC metadata or JWT claim), never from the request payload. Passing a caller-supplied user_id bypasses all membership enforcement and enables cross-room IDOR. This invariant is enforced by the caller (Story 11.3 SearchMessages handler) not by `Nebu.Search.DB` itself.
+>
+> 4. **`websearch_to_tsquery` + `pg_catalog.simple`** — consistent with the trigger configuration in migration 000042 (ADR-010). `ts_rank_cd` for result ordering (density-aware ranking).
+>
+> 5. **Module placement** — in `event_dispatcher` (not `room_manager`) because the gRPC search handler (Story 11.3) lives in `Nebu.EventDispatcher.Server`. Adding search to `Nebu.Room.DB` would violate the single-responsibility principle and pollute `Nebu.Room.DBBehaviour`.
+
+> **Integration test infrastructure (Story 11-2):** `Makefile` gains a `test-integration-elixir` target that runs ExUnit tests tagged `@tag :integration` against a live PostgreSQL instance (`NEBU_TEST_DB_URL`). The 6 search integration tests (AC1 cross-room scope, AC2 structural SQL shape, AC3 kicked-user exclusion, zero-membership guard, encrypted-room exclusion, multi-room inclusion) are excluded from the `test-unit-elixir` target via `ExUnit.configure(exclude: [:integration])` in `event_dispatcher/test/test_helper.exs`.
 
 _Source: `_bmad-output/planning-artifacts/architecture.md`, §Project Structure & Boundaries, §Complete Project Directory Structure; Story 9-19 (room_moderation.go, sync.go, event_dispatcher/server.ex, forgotten_rooms migration); Story 9-22 (per-device sync tokens, device_id in proto); Story 9-24 (GlobalAccountDataDB interface, ListGlobalAccountData, top-level account_data in syncResponse); Story 9-25 (syntheticNextBatch helper, syntheticBatchSeq atomic counter, sinceToken param removed from buildResponseFromBufferedEvents); Story 9-27 (upgrade_room/2 full Matrix §11.35.1 flow, GRPC.RPCError error handling, archive_room_atomic, terminate_child, try/rescue failure audit); Story 9-28 (GetRelations RPC, unsigned_relations field on Event, attach_thread_aggregations, fetch_events_by_relation, count_thread_children, event_in_room?, migration 000042); Story 9-29 (base /relations/{eventId} route, three-segment /{relType}/{eventType} route, dir/event_type/recurse/from query params, prev_batch in response, fetch_events_by_relation/5 dynamic WHERE builder)_

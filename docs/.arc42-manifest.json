@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-05-08T12:07:28Z",
-  "generator": "bmad-maintain-arc42 skill (Story 9-30 delta)",
+  "generated_at": "2026-05-08T13:00:00Z",
+  "generator": "bmad-maintain-arc42 skill (Story 11-2 delta)",
   "source_artifacts": [
     "_bmad-output/planning-artifacts/architecture.md",
     "_bmad-output/planning-artifacts/prd.md",
@@ -37,7 +37,7 @@
     },
     "docs/architecture/05-building-blocks.md": {
       "editable": false,
-      "generated_at": "2026-05-08T11:00:00Z",
+      "generated_at": "2026-05-08T13:00:00Z",
       "source": "_bmad-output/planning-artifacts/architecture.md",
       "arc42_section": "05 Building Block View"
     },
@@ -67,7 +67,7 @@
     },
     "docs/architecture/10-quality.md": {
       "editable": false,
-      "generated_at": "2026-05-08T12:00:00Z",
+      "generated_at": "2026-05-08T13:00:00Z",
       "source": "_bmad-output/planning-artifacts/prd.md",
       "arc42_section": "10 Quality Requirements"
     },

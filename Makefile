@@ -7,7 +7,7 @@ DOCKER_ELIXIR = docker run --rm -v $(PWD):/workspace -w /workspace elixir:1.19-a
 DOCKER_BUF    = docker run --rm -v $(PWD):/workspace -w /workspace bufbuild/buf
 DOCKER_NODE   = docker run --rm -v $(PWD):/workspace -w /workspace node:22-alpine
 
-.PHONY: build-gateway build-core build-admin-css download-fonts download-vendor dev setup test-unit-go test-unit-elixir test-integration test-integration-ci test-e2e test-matrix-compat test-load-silber build-element-e2e test-e2e-element build-fluffychat-e2e test-e2e-fluffychat proto gen-api test-compose-ports
+.PHONY: build-gateway build-core build-admin-css download-fonts download-vendor dev setup test-unit-go test-unit-elixir test-integration test-integration-elixir test-integration-ci test-e2e test-matrix-compat test-load-silber build-element-e2e test-e2e-element build-fluffychat-e2e test-e2e-fluffychat proto gen-api test-compose-ports
 
 ## download-fonts: Download Inter + JetBrains Mono WOFF2 fonts (run once; commit results)
 download-fonts:
@@ -78,9 +78,10 @@ test-unit-go: download-vendor
 test-unit-elixir:
 	$(DOCKER_ELIXIR) sh -c "cd core && mix local.hex --force && mix deps.get && mix test --warnings-as-errors"
 
-## test-integration: Run full stack integration tests (Godog / Gherkin)
-## The test runner joins the nebu_default compose network so it can reach
+## test-integration: Run full stack integration tests (Godog / Gherkin + Elixir integration tests).
+## The Go test runner joins the nebu_default compose network so it can reach
 ## gateway:8080 and core:4000 by service name — works locally and in DinD CI.
+## Elixir integration tests (mix test --include integration) also run against the live stack.
 test-integration: setup
 	docker compose up -d --wait && \
 	docker run --rm -v $(PWD):/workspace -w /workspace \
@@ -95,6 +96,26 @@ test-integration: setup
 		-e NEBU_TEST_INTERNAL_SECRET=$$(cat .secrets/internal_secret) \
 		golang:1.26-alpine \
 		sh -c "apk add -q --no-cache gcc musl-dev && cd gateway && go test -v -tags integration ./test/integration/..."; \
+	GO_EXIT=$$?; \
+	docker run --rm -v $(PWD):/workspace -w /workspace \
+		--network=nebu_default \
+		-e NEBU_DB_URL=postgresql://nebu_app:nebu_app_dev_pw@postgres:5432/nebu \
+		elixir:1.19-alpine \
+		sh -c "cd core && mix local.hex --force && mix deps.get && mix test --include integration --warnings-as-errors"; \
+	ELIXIR_EXIT=$$?; \
+	docker compose down; \
+	[ $$GO_EXIT -eq 0 ] && [ $$ELIXIR_EXIT -eq 0 ]
+
+## test-integration-elixir: Run Elixir integration tests only (mix test --include integration).
+## Requires the full stack to be running (docker compose up -d --wait).
+## Connects to the nebu_default network to reach PostgreSQL at postgres:5432.
+test-integration-elixir: setup
+	docker compose up -d --wait && \
+	docker run --rm -v $(PWD):/workspace -w /workspace \
+		--network=nebu_default \
+		-e NEBU_DB_URL=postgresql://nebu_app:nebu_app_dev_pw@postgres:5432/nebu \
+		elixir:1.19-alpine \
+		sh -c "cd core && mix local.hex --force && mix deps.get && mix test --include integration --warnings-as-errors"; \
 	EXIT=$$?; docker compose down; exit $$EXIT
 
 ## test-integration-ci: Run full stack integration tests using pre-built registry images (CI only).

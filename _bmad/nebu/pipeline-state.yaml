@@ -1,6 +1,22 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents.
 # Do not edit manually during an active pipeline run.
 # last_updated: 2026-05-08
+# [11-2] 2026-05-08T13:35Z code-review → CLEAN cycle 2 (MAJOR-3 fixed; MAJOR-1/MAJOR-2 accepted with justification)
+# [11-2] 2026-05-08T13:28Z ci-gate → ✓ unit-go(19/19)+unit-elixir(3 suites, 0 failures)
+# [11-2] 2026-05-08T13:25Z dev-story → done (cycle 2) — MAJOR-3: dead skip guard removed, flunk() fast-fail added; MAJOR-1/MAJOR-2 accepted (Elixir int-test infra → follow-up story)
+# [11-2] 2026-05-08T13:20Z code-review → 3 MAJOR (MAJOR-1/MAJOR-2 accepted: Elixir int-test infra → follow-up story; MAJOR-3 dead skip guard → cycle 2) + 7 MINOR → cycle 2
+# [11-2] 2026-05-08T13:10Z ci-gate → ✓ unit-go(19/19)+unit-elixir(207/207); e2e+integration skipped
+# [11-2] 2026-05-08T13:05Z dev-story → done (cycle 1) — MAJOR-1: test-integration-elixir target added to Makefile; MINOR-1: comment corrected; MINOR-2: state_key='' added
+# [11-2] 2026-05-08T12:55Z code-review → 1 MAJOR (Elixir integration tests have no runner) + 4 MINOR → cycle 1
+# [11-2] 2026-05-08T12:45Z ci-gate → ✓ unit-go(19/19)+unit-elixir(207/207); e2e+integration skipped (env startup)
+# [11-2] 2026-05-08T12:40Z dev-story → done (cycle 0)
+# [11-2] 2026-05-08T12:25Z test-review → 2 MINOR fixed inline (arity /4, AC2 extracted to unit module), 0 MAJOR
+# [11-2] 2026-05-08T12:15Z atdd → 7 failing ExUnit tests (AC1-AC3 + 4 spec edge cases)
+# [11-2] 2026-05-08T12:05Z create-story → 11-2-search-membership-enforcement.md
+# [11-2] 2026-05-08T12:00Z pipeline started
+# [11-1] 2026-05-08T11:55Z committed ✓ (ATDD+Code CLEAN)
+# [11-1] 2026-05-08T11:50Z arc42-update → 05-building-blocks, 09-decisions, 10-quality
+# [11-1] 2026-05-08T11:45Z code-review → CLEAN (0 MAJOR, 2 MINOR cosmetic accepted — keep-as-is per reviewer; cycle 0)
 # [11-1] 2026-05-08T11:35Z ci-gate → ✓ build+unit-go (19/19); e2e+integration skipped (env startup)
 # [11-1] 2026-05-08T11:30Z dev-story → done (cycle 0)
 # [11-1] 2026-05-08T11:20Z test-review → 2 MINOR (state-event assertions missing in trigger + backfill tests), 0 MAJOR
@@ -8,14 +24,15 @@
 # [11-1] 2026-05-08T11:05Z create-story → 11-1-db-migration-search-index.md
 # [11-1] 2026-05-08T11:00Z pipeline started
 # --- pipeline log (newest first) ---
-story: "11-1"
-current_step: "code-review"
+story: "11-2"
+current_step: "security-review"
 completed:
   - create-story
   - atdd
   - test-review
   - dev-story
   - ci-gate
-cycle_count: 0
+  - code-review
+cycle_count: 2
 blocked_reason: null
-last_updated: "2026-05-08T11:59Z"
+last_updated: "2026-05-08T12:47Z"

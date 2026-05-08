@@ -38,8 +38,10 @@ Quality
 │   ├── NFR-M2: OIDC integration via m.login.sso per Matrix OIDC Specification
 │   ├── NFR-M3: Element Web browser-first E2E suite (playwright-bdd) validates login,
 │   │          room create/join/leave, and message send/receive via real browser flows
-│   └── NFR-M4: POST /_matrix/client/v3/search returns only results from rooms the
-│              requesting user is a member of (no cross-room leakage)
+│   ├── NFR-M4: POST /_matrix/client/v3/search returns only results from rooms the
+│   │          requesting user is a member of (no cross-room leakage)
+│   └── NFR-M5: Search results never include messages from encrypted rooms
+│              (m.room.encryption state event present → room excluded from FTS results)
 ├── Accessibility
 │   ├── NFR-A1: Admin UI WCAG 2.1 Level AA
 │   ├── NFR-A2: Admin UI fully keyboard navigable
@@ -65,5 +67,7 @@ Quality
 | Compromised token | JWT stolen | Short-lived OIDC token + deactivation endpoint invalidates all sessions |
 | GDPR deletion request | User wants data removed | Delete private keys → all sensitive PII irrecoverable (audit log intact) |
 | Compliance audit request | Legal request for message content | Four-eyes approval + 24h session limit + signed export |
+| Search cross-room IDOR | Caller-supplied user_id bypasses membership filter | `Nebu.Search.DB.search_messages/4` user_id parameter MUST come from validated session (gRPC metadata / JWT claim); Story 11.3 SearchMessages handler enforces this invariant; SQL-layer subquery on `room_members WHERE left_at IS NULL` prevents leakage even if called with a foreign user_id |
+| Search on encrypted rooms | Ciphertext bodies returned in plaintext search response | `Nebu.Search.DB` excludes rooms with `m.room.encryption` state event via `NOT EXISTS` subquery; no application-layer bypass possible (enforced in SQL, NFR-M5) |
 
-_Source: `_bmad-output/planning-artifacts/prd.md`, §Non-Functional Requirements; `_bmad-output/planning-artifacts/architecture.md`, §Gaps & Open Questions_
+_Source: `_bmad-output/planning-artifacts/prd.md`, §Non-Functional Requirements; `_bmad-output/planning-artifacts/architecture.md`, §Gaps & Open Questions; Story 11-2 (Nebu.Search.DB security invariants, encrypted-room exclusion)_
