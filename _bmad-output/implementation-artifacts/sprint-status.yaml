@@ -1,5 +1,6 @@
 # generated: 2026-03-20
 # last_updated: 2026-05-08
+# story 9-30 done (pipeline: ATDD+Code CLEAN 2 cycles+Kassandra CLEAN): 2026-05-08
 # story 9-29 done (pipeline: ATDD+Dev+Code CLEAN 1 cycle (MINORs fixed)+Kassandra CLEAN): 2026-05-08
 # story 9-28 done (pipeline: ATDD+Dev+Code+Kassandra CLEAN — 1 cycle (MAJOR-1 noproc pattern, MAJOR-3 index, MINOR-1 event_in_room?)): 2026-05-08
 # story 9-27 done (pipeline: ATDD+Code CLEAN 3 cycles — MatchError→500 fixed, §11.35.1 compliant, Kassandra CLEAN): 2026-05-08

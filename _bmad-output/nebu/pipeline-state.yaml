@@ -1,6 +1,18 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-08
+# [9-30] 2026-05-08T12:30Z arc42-update → done (08-concepts: JSONB normalisation contract)
+# [9-30] 2026-05-08T12:25Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW)
+# [9-30] 2026-05-08T12:20Z code-review → CLEAN cycle 2 (0 MAJOR, 7 MINOR fixed)
+# [9-30] 2026-05-08T12:05Z code-review → 2 MAJOR (capture timing; unused param) + 6 MINOR → cycle 2
+# [9-30] 2026-05-08T11:55Z code-review → 5 MAJOR (MAJOR-1/2: waitForResponse race; MAJOR-3: struct guard; MAJOR-4: unused import; MAJOR-5: room isolation) + 8 MINOR → cycle 1
+# [9-30] 2026-05-08T11:50Z ci-gate → ✓ build+unit-go+unit-elixir (4 event_dispatcher tests green)
+# [9-30] 2026-05-08T11:45Z dev-story → done (cycle 0) — event_map_to_proto/1: Postgrex.JSONB struct branch added before is_map; 4 Elixir tests green; Playwright E2E step MAJOR fixes
+# [9-30] 2026-05-08T11:30Z test-review → CLEAN (MAJOR-1: waitForTimeout→waitForResponse, MAJOR-2: page.on→waitForResponse, MINOR: duplicate test removed)
+# [9-30] 2026-05-08T10:20Z pipeline started (--bug: GET /relations returns 500, needs proper E2E Playwright test)
+# [9-29] 2026-05-08T10:05Z committed ✓ (ATDD+Code CLEAN 1 cycle+Kassandra CLEAN)
+# [9-29] 2026-05-08T10:00Z arc42-update → done (05, 06, 08, matrix-api-scope)
+# [9-29] 2026-05-08T09:45Z code-review → CLEAN (cycle 1, all MINORs fixed)
 # [9-29] 2026-05-08T09:30Z code-review → 0 MAJOR, 5 MINOR → cycle 1
 # [9-29] 2026-05-08T09:15Z dev-story → done (cycle 0)
 # [9-29] 2026-05-08T08:55Z test-review → CLEAN after MAJOR-1 fix (ordering assertions added for dir=b/dir=f)
@@ -70,11 +82,16 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: "9-29"
-current_step: "dev-story"
+story: "9-30"
+current_step: "commit"
 completed:
+  - atdd
   - test-review
   - dev-story
-cycle_count: 1
+  - ci-gate
+  - code-review
+  - security-review
+  - arc42-update
+cycle_count: 2
 blocked_reason: null
-last_updated: "2026-05-08T09:58Z"
+last_updated: "2026-05-08T12:08Z"

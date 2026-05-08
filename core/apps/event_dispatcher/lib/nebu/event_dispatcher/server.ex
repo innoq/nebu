@@ -461,18 +461,21 @@ defmodule Nebu.EventDispatcher.Server do
   end
 
   # Convert a DB event map (string keys) to a %Core.Event{} protobuf struct.
-  # The `content` column is JSONB (returned as Elixir map by Postgrex) —
-  # re-encode to JSON bytes for the proto bytes field.
+  # The `content` column is JSONB — Postgrex returns it as either an Elixir map,
+  # a %Postgrex.JSONB{decoded: map} struct, or a binary string.
+  # All three forms are normalised to a map before re-encoding.
   defp event_map_to_proto(event) do
-    # content from the DB may arrive as either:
+    # content from the DB may arrive as:
+    #   - %Postgrex.JSONB{decoded: map} struct (Story 9-30 fix — must be before is_map)
     #   - Elixir map (Postgrex decoded JSONB object directly)
-    #   - Elixir binary/string (Postgrex decoded JSONB string — happens when
-    #     the content was stored as a JSON-encoded string rather than a raw object).
-    # Normalise to a map before re-encoding so the proto bytes field always
-    # contains a JSON object, never a doubly-encoded JSON string.
+    #   - Elixir binary/string (Postgrex decoded JSONB string)
     raw = Map.get(event, "content", %{})
     content_map =
       cond do
+        # Postgrex returns JSONB columns as %Postgrex.JSONB{decoded: map}.
+        # Postgrex is not a direct dep of event_dispatcher so we match by shape
+        # rather than module name. Only DB-sourced structs appear in `content`.
+        is_struct(raw) and Map.has_key?(raw, :decoded) and is_map(raw.decoded) -> raw.decoded
         is_map(raw) -> raw
         is_binary(raw) ->
           case Jason.decode(raw) do

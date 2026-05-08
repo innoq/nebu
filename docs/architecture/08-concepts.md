@@ -279,4 +279,41 @@ treats it the same as `dir=b`; true recursive relation traversal is deferred to 
 (no prev-page cursor implemented in MVP); the field is present in the proto contract for
 forward compatibility.
 
-_Source: `_bmad-output/planning-artifacts/architecture.md`, §Cross-Cutting Concerns, §Auth-Token-Flow, §Enforcement; `_bmad-output/planning-artifacts/prd.md`, §Cryptographic Identity Architecture; Story 9-22 (per-device sync token isolation, logout cleanup); Story 9-26 (Browser-First E2E layer, playwright-bdd, token sidecar pattern); Story 9-27 (gRPC error surface rule — GRPC.RPCError vs MatchError; failure audit trail pattern for multi-step operations); Story 9-28 (Thread aggregations in sync, bundled m.thread via unsigned_relations, GetRelations RPC, migration 000042 expression index); Story 9-29 (Relations API query params: dir, recurse, from; base and three-segment routes; prev_batch response field; fetch_events_by_relation/5 dynamic WHERE builder with rel_type + event_type + dir opts)_
+## Relations API — JSONB Content Normalisation (Story 9-30)
+
+**Bug fix:** Postgrex returns JSONB columns as a `%Postgrex.JSONB{decoded: map}` struct when the
+column value is a JSON object. Prior to Story 9-30, `event_map_to_proto/1` in
+`Nebu.EventDispatcher.Server` only handled plain Elixir maps and binary strings, causing a
+`Protocol.UndefinedError` (gRPC `INTERNAL` / HTTP 500) whenever `/relations` was called on rooms
+that stored events with JSONB-typed `content` columns.
+
+**Fix:** A shape-based guard was added as the first branch in the `cond` inside
+`event_map_to_proto/1`:
+
+```elixir
+is_struct(raw) and Map.has_key?(raw, :decoded) and is_map(raw.decoded) -> raw.decoded
+```
+
+This extracts `.decoded` before `Jason.encode!/1`. The guard precedes the `is_map/1` branch
+because `%Postgrex.JSONB{}` structs also satisfy `is_map/1` (all structs are maps in Elixir).
+
+**Normalisation contract — all three Postgrex return forms are now handled:**
+
+| Postgrex return form | Guard matched | Action |
+|---|---|---|
+| `%Postgrex.JSONB{decoded: map}` | `is_struct and has :decoded` | Extract `.decoded` |
+| Plain `%{...}` map | `is_map` | Use as-is |
+| Binary `"..."` string | `is_binary` | `Jason.decode/1` |
+
+**Shape matching rationale:** `Postgrex` is not a direct dependency of the `event_dispatcher` OTP
+application. Matching by module name (`%Postgrex.JSONB{}`) would introduce a compile-time
+dependency. The shape guard (`is_struct/1 + Map.has_key?(:decoded) + is_map(.decoded)`) is safe
+because the `events.content` column round-trips through PostgreSQL JSONB — no user-supplied term
+can produce an arbitrary Elixir struct with a `:decoded` key via this code path (Postgrex returns
+native Elixir terms, not ETF-deserialised arbitrary structs).
+
+**Scope:** The fix applies to every call site of `event_map_to_proto/1` — currently
+`GetRelations` (Story 9-29) and `GetMessages`. No new endpoints, migrations, gRPC handlers, or
+schema changes were introduced.
+
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Cross-Cutting Concerns, §Auth-Token-Flow, §Enforcement; `_bmad-output/planning-artifacts/prd.md`, §Cryptographic Identity Architecture; Story 9-22 (per-device sync token isolation, logout cleanup); Story 9-26 (Browser-First E2E layer, playwright-bdd, token sidecar pattern); Story 9-27 (gRPC error surface rule — GRPC.RPCError vs MatchError; failure audit trail pattern for multi-step operations); Story 9-28 (Thread aggregations in sync, bundled m.thread via unsigned_relations, GetRelations RPC, migration 000042 expression index); Story 9-29 (Relations API query params: dir, recurse, from; base and three-segment routes; prev_batch response field; fetch_events_by_relation/5 dynamic WHERE builder with rel_type + event_type + dir opts); Story 9-30 (JSONB content normalisation bug fix — %Postgrex.JSONB{decoded} struct guard in event_map_to_proto/1; resolves /relations HTTP 500 on JSONB-typed content columns)_
