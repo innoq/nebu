@@ -380,10 +380,8 @@ defmodule Nebu.EventDispatcher.UpgradeRoomErrorHandlingTest do
 
   # ─── AC1 — upgrade_room/2: successful upgrade returns new_room_id ────────────
   #
-  # RED PHASE: This test is currently GREEN only if the happy path already works
-  # (upgrade_room/2 was implemented). If not yet implemented, it fails with a
-  # missing function error or a 500. The key regression: once AC2–AC5 fixes are
-  # applied, the happy path must still return a non-empty new_room_id.
+  # Regression guard: verifies the happy path still works after AC2–AC5 error-handling
+  # fixes are applied. Owner upgrades successfully and receives a non-empty new_room_id.
 
   describe "AC1 — upgrade_room/2: successful upgrade returns new_room_id" do
     test "owner upgrades room and receives non-empty replacement_room id" do
@@ -442,12 +440,8 @@ defmodule Nebu.EventDispatcher.UpgradeRoomErrorHandlingTest do
 
   # ─── AC2 (set_power_levels) — set_power_levels returns {:error, :db_error} ───
   #
-  # RED PHASE: Currently, upgrade_room/2 uses:
-  #   `:ok = Nebu.Room.Server.set_power_levels(new_room_id, requester_id, creator_pl)`
-  # When DBSetPowerLevelsError.set_power_levels returns {:error, :db_error},
-  # Room.Server.set_power_levels returns that error, the bare match causes MatchError.
-  #
-  # The fix must raise GRPC.RPCError with GRPC.Status.internal().
+  # Verifies: when Room.Server.set_power_levels/3 returns {:error, :db_error},
+  # upgrade_room/2 raises GRPC.RPCError with Status.internal() (code 13).
 
   describe "AC2 — upgrade_room/2: set_power_levels failure → GRPC.RPCError internal" do
     test "set_power_levels returning {:error, :db_error} raises GRPC.RPCError with internal status" do

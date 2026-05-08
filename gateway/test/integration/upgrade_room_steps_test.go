@@ -453,10 +453,6 @@ func initializeUpgradeRoomSteps(sc *godog.ScenarioContext) {
 		`^kai sends a message to the old room after upgrade$`,
 		kaiSendsMessageToOldRoomAfterUpgrade,
 	)
-	// Generic errcode assertion — matches any .feature that uses this phrase,
-	// including archived_room_send_event.feature. Intentionally cross-feature.
-	sc.Step(
-		`^the response body has errcode "([^"]*)"$`,
-		theResponseHasErrcodeIs,
-	)
+	// ^the response body has errcode "..."$ is registered in InitializeScenario (steps_test.go)
+	// as a shared step — intentionally cross-feature.
 }
