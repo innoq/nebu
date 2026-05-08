@@ -80,3 +80,4 @@ Die E2EE-Stubs bleiben unverändert in Betrieb. Epic 10 ruht bis zur Wiederaufna
 - Policy-based Encryption at Rest (unabhängig von E2EE) bleibt als eigenständige Option offen
 
 _Entscheidungsdatum: 2026-05-08_
+_Source: `README.md`, §Current Limitations (No End-to-End Encryption); `memory/project_e2ee_direction.md` (Server-side decryption model — Managed E2EE); Story 9-11 Dev Notes_
