@@ -1,6 +1,17 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents.
 # Do not edit manually during an active pipeline run.
 # last_updated: 2026-05-08
+# [11-3] 2026-05-08T15:05Z code-review → CLEAN (0 MAJOR; MINOR-1 fixed inline: total_count lower bound; MINOR-2/3 deferred to 11.5; cycle 0)
+# [11-3] 2026-05-08T14:52Z ci-gate → ✓ unit-go(19/19)+unit-elixir(3 suites, 0 failures); e2e+integration skipped
+# [11-3] 2026-05-08T14:50Z dev-story → done (cycle 0) — SearchMessages gRPC handler + proto + Go mock stubs added
+# [11-3] 2026-05-08T14:25Z test-review → CLEAN (0 MAJOR, 7 INFO cosmetic)
+# [11-3] 2026-05-08T14:20Z atdd → 6 failing ExUnit tests (AC2,AC4,AC2-happy,AC5,AC3,Kassandra LOW-3)
+# [11-3] 2026-05-08T14:10Z oracle-gate → spec context captured (search response format, gRPC→HTTP mapping, pagination)
+# [11-3] 2026-05-08T14:05Z create-story → 11-3-search-messages-grpc-handler.md
+# [11-3] 2026-05-08T14:00Z pipeline started
+# [11-2] 2026-05-08T13:55Z committed ✓ (ATDD+Code CLEAN 2 cycles+Kassandra CLEAN)
+# [11-2] 2026-05-08T13:50Z arc42-update → 05-building-blocks, 10-quality
+# [11-2] 2026-05-08T13:45Z security-review → Kassandra CLEAN (0 CRITICAL/HIGH; 2 MEDIUM fixed inline: state_key NULL + user_id trust boundary docstring)
 # [11-2] 2026-05-08T13:35Z code-review → CLEAN cycle 2 (MAJOR-3 fixed; MAJOR-1/MAJOR-2 accepted with justification)
 # [11-2] 2026-05-08T13:28Z ci-gate → ✓ unit-go(19/19)+unit-elixir(3 suites, 0 failures)
 # [11-2] 2026-05-08T13:25Z dev-story → done (cycle 2) — MAJOR-3: dead skip guard removed, flunk() fast-fail added; MAJOR-1/MAJOR-2 accepted (Elixir int-test infra → follow-up story)
@@ -24,7 +35,7 @@
 # [11-1] 2026-05-08T11:05Z create-story → 11-1-db-migration-search-index.md
 # [11-1] 2026-05-08T11:00Z pipeline started
 # --- pipeline log (newest first) ---
-story: "11-2"
+story: "11-3"
 current_step: "security-review"
 completed:
   - create-story
@@ -33,6 +44,6 @@ completed:
   - dev-story
   - ci-gate
   - code-review
-cycle_count: 2
+cycle_count: 0
 blocked_reason: null
-last_updated: "2026-05-08T12:47Z"
+last_updated: "2026-05-08T13:37Z"

@@ -148,6 +148,11 @@ service CoreService {
   // Returns PERMISSION_DENIED if user is not a room member.
   // Returns NOT_FOUND if the parent event does not exist.
   rpc GetRelations(GetRelationsRequest) returns (GetRelationsResponse);
+
+  // SearchMessages — Story 11.3: Full-text search over rooms the user is a member of.
+  // user_id in the request is for documentation/auditing only — the handler MUST use
+  // x-user-id from gRPC metadata, never from the request body.
+  rpc SearchMessages(SearchMessagesRequest) returns (SearchMessagesResponse);
 }
 
 // Shared event type used across multiple RPCs
@@ -687,4 +692,42 @@ message GetRelationsResponse {
   repeated Event events     = 1;
   string         next_batch = 2;  // empty when no more pages
   string         prev_batch = 3;  // for dir=b pagination (Story 9-29)
+}
+
+// ── Story 11.3: SearchMessages gRPC messages ─────────────────────────────────
+
+// ProfileInfo — one entry in SearchResult.profile_info map (keyed by user_id).
+message ProfileInfo {
+  string displayname = 1;
+  string avatar_url  = 2;
+}
+
+// SearchResult — one hit in a SearchMessagesResponse.
+message SearchResult {
+  float             rank           = 1;  // ts_rank_cd score; higher = more relevant
+  bytes             event          = 2;  // raw event JSON (same encoding as other bytes fields)
+  repeated bytes    events_before  = 3;  // up to 5 events before result event in same room
+  repeated bytes    events_after   = 4;  // up to 5 events after result event in same room
+  map<string, ProfileInfo> profile_info = 5;  // keyed by user_id (sender + context senders)
+}
+
+// SearchMessagesRequest — Story 11.3: SearchMessages gRPC handler.
+// SECURITY: user_id field is IGNORED by the handler — user_id is extracted from
+// x-user-id gRPC metadata (set by Go JWTMiddleware). This field is present only
+// for client auditing/documentation; treating it as authoritative would bypass
+// all membership enforcement.
+message SearchMessagesRequest {
+  string          user_id        = 1;  // IGNORED by handler — use x-user-id metadata
+  string          search_term    = 2;
+  repeated string room_filter    = 3;  // client-requested room filter; intersected with membership
+  repeated string sender_filter  = 4;  // optional sender restriction (not yet enforced at DB layer)
+  int32           limit          = 5;  // 0 = default 10; server clamps to 1–100
+  string          next_batch     = 6;  // opaque pagination token (base64-encoded offset int)
+}
+
+// SearchMessagesResponse — Story 11.3.
+message SearchMessagesResponse {
+  repeated SearchResult results     = 1;
+  string                next_batch  = 2;  // empty when no more results
+  int32                 total_count = 3;  // approximate total matching events (for UI display)
 }

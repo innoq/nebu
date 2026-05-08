@@ -69,6 +69,12 @@ defmodule Nebu.EventDispatcher.Server do
     Application.get_env(:event_dispatcher, :admin_db_module, Nebu.Admin.DB)
   end
 
+  # ─── Configurable search DB module for testability ──────────────────────────
+  # Override via Application.put_env(:event_dispatcher, :search_db_module, FakeSearchDB) in tests.
+  defp search_db_module do
+    Application.get_env(:event_dispatcher, :search_db_module, Nebu.Search.DB)
+  end
+
   def send_event(request, _stream) do
     room_id = request.room_id
     sender_id = request.sender_id
@@ -2598,6 +2604,121 @@ defmodule Nebu.EventDispatcher.Server do
               status: GRPC.Status.internal(),
               message: "Failed to start new room: #{inspect(reason)}"
         end
+    end
+  end
+
+  # ─── SearchMessages — Story 11.3 ────────────────────────────────────────────
+  #
+  # Full-text search over rooms where the authenticated user is an active member.
+  # Delegates to Nebu.Search.DB.search_messages/5 which enforces membership at SQL layer.
+  #
+  # SECURITY: user_id MUST come from gRPC metadata (x-user-id set by Go JWTMiddleware).
+  # The request.user_id field is IGNORED — reading it would bypass membership enforcement
+  # and allow a malicious authenticated user to search any other user's rooms (IDOR).
+  # See Security Trust Boundary section in Story 11.3 for full details.
+
+  def search_messages(request, stream) do
+    # SECURITY: user_id MUST come from gRPC metadata, never from request.user_id
+    {user_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
+
+    if is_nil(user_id) or user_id == "" do
+      raise GRPC.RPCError,
+        status: GRPC.Status.unauthenticated(),
+        message: "missing x-user-id metadata"
+    end
+
+    search_term = request.search_term
+
+    # Kassandra Finding #4: clamp limit to prevent DOS / over-large queries.
+    # limit=0 defaults to 10; clamped to 1–100.
+    raw_limit = if request.limit == 0, do: 10, else: request.limit
+    limit = min(max(raw_limit, 1), 100)
+
+    # Decode next_batch pagination token (base64-encoded integer offset).
+    # Invalid or missing token → default offset 0.
+    offset =
+      case Base.decode64(request.next_batch || "") do
+        {:ok, bin} ->
+          case Integer.parse(bin) do
+            {n, ""} when n >= 0 -> min(n, 10_000)
+            _ -> 0
+          end
+        :error -> 0
+      end
+
+    # room_filter: empty list = no filter; non-empty = intersect with membership at SQL layer.
+    room_filter = request.room_filter || []
+
+    # Delegate to Nebu.Search.DB — user_id enforces membership scoping at SQL layer.
+    case search_db_module().search_messages(user_id, search_term, limit, offset, room_filter) do
+      {:ok, rows} ->
+        results =
+          Enum.map(rows, fn row ->
+            event_id = Map.get(row, "event_id", "")
+            room_id  = Map.get(row, "room_id", "")
+            sender   = Map.get(row, "sender", "")
+
+            # Build event JSON from row fields.
+            content =
+              case Map.get(row, "content") do
+                c when is_map(c) -> c
+                c when is_binary(c) ->
+                  case Jason.decode(c) do
+                    {:ok, m} -> m
+                    _ -> %{}
+                  end
+                _ -> %{}
+              end
+
+            event_json =
+              Jason.encode!(%{
+                "event_id"         => event_id,
+                "room_id"          => room_id,
+                "sender"           => sender,
+                "type"             => Map.get(row, "event_type", "m.room.message"),
+                "content"          => content,
+                "origin_server_ts" => Map.get(row, "origin_server_ts", 0)
+              })
+
+            # rank from ts_rank_cd is a float4 (native Elixir float from Ecto)
+            rank_val = Map.get(row, "rank", 0.0)
+            rank = cond do
+              is_float(rank_val)   -> rank_val
+              is_integer(rank_val) -> rank_val * 1.0
+              true                 -> 0.0
+            end
+
+            %Core.SearchResult{
+              rank:          rank,
+              event:         event_json,
+              events_before: [],   # MVP: empty — Story 11.6 Godog scenarios do not test context events
+              events_after:  [],   # MVP: empty
+              profile_info:  %{}   # MVP: empty — get_profile/1 not yet in Nebu.Profile.DB
+            }
+          end)
+
+        # Build next_batch token: if we got `limit` results, there may be more pages.
+        next_batch =
+          if length(results) == limit do
+            Base.encode64(Integer.to_string(offset + limit))
+          else
+            ""
+          end
+
+        %Core.SearchMessagesResponse{
+          results:     results,
+          next_batch:  next_batch,
+          total_count: offset + length(results)  # lower bound — exact COUNT(*) deferred to Story 11.5
+        }
+
+      {:error, reason} ->
+        # Kassandra Finding LOW-3: log full reason server-side, return sanitized error to client.
+        # NEVER expose DB error details (schema names, table names, postgres messages) to caller.
+        Logger.error("search_messages failed", user_id: user_id, error: inspect(reason))
+
+        raise GRPC.RPCError,
+          status: GRPC.Status.internal(),
+          message: "search failed"
     end
   end
 

@@ -1,5 +1,7 @@
 # generated: 2026-03-20
 # last_updated: 2026-05-08
+# story 11-3 done (pipeline: ATDD+Dev+Code CLEAN; Kassandra CLEAN (MEDIUM offset-cap fixed inline)): 2026-05-08
+# story 11-3 created: 11-3 → ready-for-dev: 2026-05-08 (SearchMessages gRPC Handler — proto SearchMessages RPC + SearchResult + ProfileInfo, server.ex handler, user_id from metadata (Kassandra M-2), FakeSearchDB injection, 6 acceptance tests; security_review required)
 # story 11-2 done (pipeline: ATDD+Code CLEAN 2 cycles+Kassandra CLEAN (2 MEDIUM fixed inline: state_key NULL + IDOR docstring)): 2026-05-08
 # story 11-2 created: 11-2 → ready-for-dev: 2026-05-08 (Search Membership Enforcement — Nebu.Search.DB + canonical SQL contract; security_review required)
 # story 9-30 done (pipeline: ATDD+Code CLEAN 2 cycles+Kassandra CLEAN): 2026-05-08
@@ -788,7 +790,7 @@ development_status:
   epic-11: in-progress
   11-1-db-migration-search-index: done
   11-2-search-membership-enforcement: done
-  11-3-elixir-core-searchmessages-grpc-handler: backlog
+  11-3-elixir-core-searchmessages-grpc-handler: done
   11-4-gateway-post-search-handler: backlog
   11-5-search-rate-limiting: backlog
   11-6-gherkin-e2e-search-flow: backlog

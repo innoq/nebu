@@ -42,6 +42,9 @@ defmodule Core.CoreService.Service do
   rpc :GetAdminRoom, Core.GetAdminRoomRequest, Core.GetAdminRoomResponse
   rpc :GetServerConfig, Core.GetServerConfigRequest, Core.GetServerConfigResponse
   rpc :UpdateServerConfig, Core.UpdateServerConfigRequest, Core.UpdateServerConfigResponse
+  rpc :UpgradeRoom, Core.UpgradeRoomRequest, Core.UpgradeRoomResponse
+  rpc :ListAdminRoomMembers, Core.ListAdminRoomMembersRequest, Core.ListAdminRoomMembersResponse
+  rpc :SearchMessages, Core.SearchMessagesRequest, Core.SearchMessagesResponse
 end
 
 defmodule Core.CoreService.Stub do

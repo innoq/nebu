@@ -119,6 +119,12 @@ core/apps/
 │       │                      calls count_thread_children/2 + fetch latest reply, encodes
 │       │                      JSON {"m.thread":{count,latest_event,current_user_participated}}
 │       │                      into Event.unsigned_relations field (Story 9-28)
+│       │                      on failure (Story 9-27);
+│       │                      search_messages/2 executes FTS via Nebu.Search.DB.search_messages/5;
+│       │                      user_id sourced exclusively from trusted_identity(stream) metadata
+│       │                      (NEVER from request.user_id — security invariant); offset capped at
+│       │                      10_000 to prevent expensive deep-page queries; next_batch is
+│       │                      Base64(offset+limit) for cursor pagination (Story 11-3)
 │       ├── dispatcher.ex   ← Routes events to rooms + subscribers
 │       ├── bus.ex          ← gRPC ServerStream to Go Gateway
 │       └── lib/nebu/search/
@@ -211,6 +217,8 @@ Key gRPC services: `SendEvent`, `CreateRoom`, `JoinRoom`, `GetMessages`, `GetRoo
 `GetSyncDelta` (incremental sync with per-device `device_id` field, Story 9-22),
 `InvalidateUserSessions` (per-device or full-user session cleanup, Story 9-22),
 `GetRelations` (thread relation events for a parent event_id, Story 9-28).
+`InvalidateUserSessions` (per-device or full-user session cleanup, Story 9-22),
+`SearchMessages` (full-text search with membership enforcement, Story 11-3).
 
 **`GetSyncDeltaRequest` fields (Story 9-22):**
 
@@ -280,4 +288,17 @@ Response: `repeated Event events` + `string next_batch` (empty when no more page
 
 > **Integration test infrastructure (Story 11-2):** `Makefile` gains a `test-integration-elixir` target that runs ExUnit tests tagged `@tag :integration` against a live PostgreSQL instance (`NEBU_TEST_DB_URL`). The 6 search integration tests (AC1 cross-room scope, AC2 structural SQL shape, AC3 kicked-user exclusion, zero-membership guard, encrypted-room exclusion, multi-room inclusion) are excluded from the `test-unit-elixir` target via `ExUnit.configure(exclude: [:integration])` in `event_dispatcher/test/test_helper.exs`.
 
-_Source: `_bmad-output/planning-artifacts/architecture.md`, §Project Structure & Boundaries, §Complete Project Directory Structure; Story 9-19 (room_moderation.go, sync.go, event_dispatcher/server.ex, forgotten_rooms migration); Story 9-22 (per-device sync tokens, device_id in proto); Story 9-24 (GlobalAccountDataDB interface, ListGlobalAccountData, top-level account_data in syncResponse); Story 9-25 (syntheticNextBatch helper, syntheticBatchSeq atomic counter, sinceToken param removed from buildResponseFromBufferedEvents); Story 9-27 (upgrade_room/2 full Matrix §11.35.1 flow, GRPC.RPCError error handling, archive_room_atomic, terminate_child, try/rescue failure audit); Story 9-28 (GetRelations RPC, unsigned_relations field on Event, attach_thread_aggregations, fetch_events_by_relation, count_thread_children, event_in_room?, migration 000042); Story 9-29 (base /relations/{eventId} route, three-segment /{relType}/{eventType} route, dir/event_type/recurse/from query params, prev_batch in response, fetch_events_by_relation/5 dynamic WHERE builder)_
+> **SearchMessages gRPC handler (Story 11-3):** `Nebu.EventDispatcher.Server.search_messages/2` is the
+> gRPC entry point for `POST /_matrix/client/v3/search` (implemented in Story 11-4). Key design decisions:
+>
+> 1. **Delegated search module** — the handler delegates to `search_db_module()` (runtime-swappable via `Application.get_env(:event_dispatcher, :search_db_module, Nebu.Search.DB)`) to keep SQL logic in `Nebu.Search.DB` and make the handler unit-testable with a fake via `FakeSearchDB`.
+>
+> 2. **`user_id` from trusted metadata only** — `{user_id, _} = Nebu.Grpc.Metadata.trusted_identity(stream)`. The `request.user_id` field is intentionally ignored. This enforces the Story 11-2 security invariant at the transport layer.
+>
+> 3. **Pagination** — `next_batch` is `Base64(Integer.to_string(offset + limit))`. An empty string signals no more pages. The handler caps `offset` at `10_000` to prevent unbounded deep-paging queries (Kassandra MEDIUM finding, fixed inline).
+>
+> 4. **Limit clamping** — `limit` is clamped to `[1, 100]`; zero defaults to 10.
+>
+> 5. **Proto additions** — `core.proto` gains `ProfileInfo`, `SearchResult`, `SearchMessagesRequest`, `SearchMessagesResponse` message types and the `SearchMessages` RPC. Go stubs auto-regenerated via `make proto`; Elixir `core_grpc.pb.ex` service stub updated manually (protoc-gen-elixir does not auto-update the service module).
+
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Project Structure & Boundaries, §Complete Project Directory Structure; Story 9-19 (room_moderation.go, sync.go, event_dispatcher/server.ex, forgotten_rooms migration); Story 9-22 (per-device sync tokens, device_id in proto); Story 9-24 (GlobalAccountDataDB interface, ListGlobalAccountData, top-level account_data in syncResponse); Story 9-25 (syntheticNextBatch helper, syntheticBatchSeq atomic counter, sinceToken param removed from buildResponseFromBufferedEvents); Story 9-27 (upgrade_room/2 full Matrix §11.35.1 flow, GRPC.RPCError error handling, archive_room_atomic, terminate_child, try/rescue failure audit); Story 9-28 (GetRelations RPC, unsigned_relations field on Event, attach_thread_aggregations, fetch_events_by_relation, count_thread_children, event_in_room?, migration 000042); Story 9-29 (base /relations/{eventId} route, three-segment /{relType}/{eventType} route, dir/event_type/recurse/from query params, prev_batch in response, fetch_events_by_relation/5 dynamic WHERE builder); Story 11-3 (SearchMessages gRPC handler, proto extension, delegated search_db_module pattern, offset-cap security fix)_

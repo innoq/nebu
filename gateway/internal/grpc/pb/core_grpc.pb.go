@@ -63,6 +63,7 @@ const (
 	CoreService_UpgradeRoom_FullMethodName                = "/core.CoreService/UpgradeRoom"
 	CoreService_ListAdminRoomMembers_FullMethodName       = "/core.CoreService/ListAdminRoomMembers"
 	CoreService_GetRelations_FullMethodName               = "/core.CoreService/GetRelations"
+	CoreService_SearchMessages_FullMethodName             = "/core.CoreService/SearchMessages"
 )
 
 // CoreServiceClient is the client API for CoreService service.
@@ -178,6 +179,10 @@ type CoreServiceClient interface {
 	// Returns PERMISSION_DENIED if user is not a room member.
 	// Returns NOT_FOUND if the parent event does not exist.
 	GetRelations(ctx context.Context, in *GetRelationsRequest, opts ...grpc.CallOption) (*GetRelationsResponse, error)
+	// SearchMessages — Story 11.3: Full-text search over rooms the user is a member of.
+	// user_id in the request is for documentation/auditing only — the handler MUST use
+	// x-user-id from gRPC metadata, never from the request body.
+	SearchMessages(ctx context.Context, in *SearchMessagesRequest, opts ...grpc.CallOption) (*SearchMessagesResponse, error)
 }
 
 type coreServiceClient struct {
@@ -637,6 +642,16 @@ func (c *coreServiceClient) GetRelations(ctx context.Context, in *GetRelationsRe
 	return out, nil
 }
 
+func (c *coreServiceClient) SearchMessages(ctx context.Context, in *SearchMessagesRequest, opts ...grpc.CallOption) (*SearchMessagesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SearchMessagesResponse)
+	err := c.cc.Invoke(ctx, CoreService_SearchMessages_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CoreServiceServer is the server API for CoreService service.
 // All implementations must embed UnimplementedCoreServiceServer
 // for forward compatibility.
@@ -750,6 +765,10 @@ type CoreServiceServer interface {
 	// Returns PERMISSION_DENIED if user is not a room member.
 	// Returns NOT_FOUND if the parent event does not exist.
 	GetRelations(context.Context, *GetRelationsRequest) (*GetRelationsResponse, error)
+	// SearchMessages — Story 11.3: Full-text search over rooms the user is a member of.
+	// user_id in the request is for documentation/auditing only — the handler MUST use
+	// x-user-id from gRPC metadata, never from the request body.
+	SearchMessages(context.Context, *SearchMessagesRequest) (*SearchMessagesResponse, error)
 	mustEmbedUnimplementedCoreServiceServer()
 }
 
@@ -891,6 +910,9 @@ func (UnimplementedCoreServiceServer) ListAdminRoomMembers(context.Context, *Lis
 }
 func (UnimplementedCoreServiceServer) GetRelations(context.Context, *GetRelationsRequest) (*GetRelationsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetRelations not implemented")
+}
+func (UnimplementedCoreServiceServer) SearchMessages(context.Context, *SearchMessagesRequest) (*SearchMessagesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SearchMessages not implemented")
 }
 func (UnimplementedCoreServiceServer) mustEmbedUnimplementedCoreServiceServer() {}
 func (UnimplementedCoreServiceServer) testEmbeddedByValue()                     {}
@@ -1698,6 +1720,24 @@ func _CoreService_GetRelations_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_SearchMessages_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SearchMessagesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).SearchMessages(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_SearchMessages_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).SearchMessages(ctx, req.(*SearchMessagesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CoreService_ServiceDesc is the grpc.ServiceDesc for CoreService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1876,6 +1916,10 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetRelations",
 			Handler:    _CoreService_GetRelations_Handler,
+		},
+		{
+			MethodName: "SearchMessages",
+			Handler:    _CoreService_SearchMessages_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

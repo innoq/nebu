@@ -16,6 +16,7 @@ import (
 	josejwt "github.com/go-jose/go-jose/v4/jwt"
 	"github.com/nebu/nebu/internal/auth"
 	pb "github.com/nebu/nebu/internal/grpc/pb"
+	"google.golang.org/grpc"
 )
 
 type mockCoreClient struct {
@@ -25,6 +26,11 @@ type mockCoreClient struct {
 
 func (m *mockCoreClient) ValidateToken(ctx context.Context, req *pb.ValidateTokenRequest) (*pb.ValidateTokenResponse, error) {
 	return m.validateResp, m.validateErr
+}
+
+// Story 11.3: SearchMessages stub.
+func (m *mockCoreClient) SearchMessages(_ context.Context, _ *pb.SearchMessagesRequest, _ ...grpc.CallOption) (*pb.SearchMessagesResponse, error) {
+	return &pb.SearchMessagesResponse{}, nil
 }
 
 func setupOIDCServer(t *testing.T) (*httptest.Server, *rsa.PrivateKey) {

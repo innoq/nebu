@@ -196,6 +196,11 @@ func (m *mockCoreClient) GetRelations(_ context.Context, _ *pb.GetRelationsReque
 	panic("unexpected call: GetRelations")
 }
 
+// Story 11.3: SearchMessages stub.
+func (m *mockCoreClient) SearchMessages(_ context.Context, _ *pb.SearchMessagesRequest, _ ...grpc.CallOption) (*pb.SearchMessagesResponse, error) {
+	return &pb.SearchMessagesResponse{}, nil
+}
+
 // ─── Mock server-streaming client ────────────────────────────────────────────
 
 // mockEventStream is a fake grpc.ServerStreamingClient[pb.Event].

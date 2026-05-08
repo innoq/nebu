@@ -1187,3 +1187,77 @@ defmodule Core.GetRelationsResponse do
   field :next_batch, 2, type: :string, json_name: "nextBatch"
   field :prev_batch, 3, type: :string, json_name: "prevBatch"
 end
+
+defmodule Core.ProfileInfo do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.ProfileInfo",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :displayname, 1, type: :string
+  field :avatar_url, 2, type: :string, json_name: "avatarUrl"
+end
+
+defmodule Core.SearchResult.ProfileInfoEntry do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.SearchResult.ProfileInfoEntry",
+    map: true,
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :key, 1, type: :string
+  field :value, 2, type: Core.ProfileInfo
+end
+
+defmodule Core.SearchResult do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.SearchResult",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :rank, 1, type: :float
+  field :event, 2, type: :bytes
+  field :events_before, 3, repeated: true, type: :bytes, json_name: "eventsBefore"
+  field :events_after, 4, repeated: true, type: :bytes, json_name: "eventsAfter"
+
+  field :profile_info, 5,
+    repeated: true,
+    type: Core.SearchResult.ProfileInfoEntry,
+    json_name: "profileInfo",
+    map: true
+end
+
+defmodule Core.SearchMessagesRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.SearchMessagesRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :user_id, 1, type: :string, json_name: "userId"
+  field :search_term, 2, type: :string, json_name: "searchTerm"
+  field :room_filter, 3, repeated: true, type: :string, json_name: "roomFilter"
+  field :sender_filter, 4, repeated: true, type: :string, json_name: "senderFilter"
+  field :limit, 5, type: :int32
+  field :next_batch, 6, type: :string, json_name: "nextBatch"
+end
+
+defmodule Core.SearchMessagesResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.SearchMessagesResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :results, 1, repeated: true, type: Core.SearchResult
+  field :next_batch, 2, type: :string, json_name: "nextBatch"
+  field :total_count, 3, type: :int32, json_name: "totalCount"
+end
