@@ -1,6 +1,7 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-08
+# [9-30] 2026-05-08T12:35Z committed ✓ (ATDD+Code CLEAN 2 cycles+Kassandra CLEAN)
 # [9-30] 2026-05-08T12:30Z arc42-update → done (08-concepts: JSONB normalisation contract)
 # [9-30] 2026-05-08T12:25Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW)
 # [9-30] 2026-05-08T12:20Z code-review → CLEAN cycle 2 (0 MAJOR, 7 MINOR fixed)
@@ -82,16 +83,9 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: "9-30"
-current_step: "commit"
-completed:
-  - atdd
-  - test-review
-  - dev-story
-  - ci-gate
-  - code-review
-  - security-review
-  - arc42-update
-cycle_count: 2
+story: null
+current_step: null
+completed: []
+cycle_count: 0
 blocked_reason: null
 last_updated: "2026-05-08T12:08Z"
