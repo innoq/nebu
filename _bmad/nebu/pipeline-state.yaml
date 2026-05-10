@@ -1,6 +1,15 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents.
 # Do not edit manually during an active pipeline run.
 # last_updated: 2026-05-10
+# [11-6] 2026-05-11T10:47Z arc42-update → no arch changes (test-only story)
+# [11-6] 2026-05-11T10:46Z security-review → skipped (not-needed)
+# [11-6] 2026-05-11T10:45Z code-review → CLEAN after M1-verified+M2+m1 fixed (cycle 0)
+# [11-6] 2026-05-11T10:32Z ci-gate → ✓ build+unit-go
+# [11-6] 2026-05-11T10:30Z dev-story → done (cycle 0)
+# [11-6] 2026-05-11T10:15Z test-review → CLEAN after MAJOR-1+MAJOR-2 fixed (header assert + isolation doc)
+# [11-6] 2026-05-11T10:00Z atdd → 8 failing tests (5 Godog + 3 Playwright)
+# [11-6] 2026-05-11T12:05Z create-story → 11-6-e2e-search-flow.md
+# [11-5] 2026-05-11T12:00Z committed ✓ (ATDD+Code CLEAN; Kassandra CLEAN)
 # [11-5] 2026-05-11T11:55Z arc42-update → NewUserRateLimiter in middleware building block
 # [11-5] 2026-05-11T11:50Z security-review → Kassandra CLEAN (0 findings)
 # [11-5] 2026-05-11T11:40Z code-review → CLEAN (cycle 0; 3 MINOR cosmetic)
@@ -56,7 +65,7 @@
 # [11-1] 2026-05-08T11:05Z create-story → 11-1-db-migration-search-index.md
 # [11-1] 2026-05-08T11:00Z pipeline started
 # --- pipeline log (newest first) ---
-story: "11-5"
+story: "11-6"
 current_step: "commit"
 completed:
   - create-story
@@ -69,4 +78,4 @@ completed:
   - arc42-update
 cycle_count: 0
 blocked_reason: null
-last_updated: "2026-05-10T22:50Z"
+last_updated: "2026-05-10T23:20Z"
