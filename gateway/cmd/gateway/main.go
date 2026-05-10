@@ -750,6 +750,15 @@ func main() {
 	mux.Handle("GET /_matrix/client/v1/rooms/{roomId}/relations/{eventId}/{relType}/{eventType}",
 		jwtWithStatusCheck(http.HandlerFunc(relationsHandler.GetRelations)))
 
+	// Story 11-4: Full-text search — POST /_matrix/client/v3/search.
+	// JWT required. Delegates to Elixir Core SearchMessages gRPC (Story 11-3).
+	// user_id sourced from JWT context; never from request body.
+	searchHandler := matrix.NewSearchHandler(matrix.SearchConfig{
+		CoreClient: coreClient,
+	})
+	mux.Handle("POST /_matrix/client/v3/search",
+		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(searchHandler.PostSearch))))
+
 	// Story 7-29: Notifications API — GET /_matrix/client/v3/notifications.
 	// Reads from the notifications table (migration 000031) with cursor-based pagination.
 	// JWT required (jwtMiddleware). Query params: from (cursor), limit (default 50, max 200), only.

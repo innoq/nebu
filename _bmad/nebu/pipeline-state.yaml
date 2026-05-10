@@ -1,6 +1,18 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents.
 # Do not edit manually during an active pipeline run.
-# last_updated: 2026-05-08
+# last_updated: 2026-05-10
+# [11-4] 2026-05-11T10:35Z arc42-update → search.go in building blocks + SearchMessages RPC ref updated
+# [11-4] 2026-05-11T10:30Z security-review → Kassandra CLEAN (0 CRITICAL/HIGH/MEDIUM; 2 LOW non-blocking)
+# [11-4] 2026-05-11T10:20Z code-review → CLEAN (cycle 1; 2 MINOR fixed)
+# [11-4] 2026-05-11T10:15Z code-review → 2 MINOR → cycle 1 (sender_filter forwarded, _ = json.Encode)
+# [11-4] 2026-05-11T10:05Z ci-gate → ✓ build+unit-go+unit-elixir (e2e+integration: env-startup skip)
+# [11-4] 2026-05-11T10:00Z dev-story → done (cycle 0)
+# [11-4] 2026-05-11T09:45Z test-review → CLEAN (0 MAJOR, 3 MINOR: highlights assertion, context sub-fields, next_batch omitempty)
+# [11-4] 2026-05-11T09:30Z atdd → 13 failing acceptance tests (search_test.go)
+# [11-4] 2026-05-08T15:30Z create-story → 11-4-search-gateway-handler.md
+# [11-3] 2026-05-08T15:27Z committed ✓ (ATDD+Code CLEAN; Kassandra CLEAN; MEDIUM offset-cap fixed)
+# [11-3] 2026-05-08T15:25Z arc42-update → server.ex search_messages/2 + SearchMessages RPC documented
+# [11-3] 2026-05-08T15:15Z security-review → Kassandra CLEAN (0 CRITICAL/HIGH; MEDIUM fixed inline: offset clamped to 10_000)
 # [11-3] 2026-05-08T15:05Z code-review → CLEAN (0 MAJOR; MINOR-1 fixed inline: total_count lower bound; MINOR-2/3 deferred to 11.5; cycle 0)
 # [11-3] 2026-05-08T14:52Z ci-gate → ✓ unit-go(19/19)+unit-elixir(3 suites, 0 failures); e2e+integration skipped
 # [11-3] 2026-05-08T14:50Z dev-story → done (cycle 0) — SearchMessages gRPC handler + proto + Go mock stubs added
@@ -35,8 +47,8 @@
 # [11-1] 2026-05-08T11:05Z create-story → 11-1-db-migration-search-index.md
 # [11-1] 2026-05-08T11:00Z pipeline started
 # --- pipeline log (newest first) ---
-story: "11-3"
-current_step: "security-review"
+story: "11-4"
+current_step: "commit"
 completed:
   - create-story
   - atdd
@@ -44,6 +56,8 @@ completed:
   - dev-story
   - ci-gate
   - code-review
-cycle_count: 0
+  - security-review
+  - arc42-update
+cycle_count: 1
 blocked_reason: null
-last_updated: "2026-05-08T13:37Z"
+last_updated: "2026-05-10T22:26Z"

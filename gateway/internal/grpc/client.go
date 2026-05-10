@@ -360,6 +360,13 @@ func (c *Client) GetRelations(ctx context.Context, req *pb.GetRelationsRequest) 
 	return c.core.GetRelations(ctx, req)
 }
 
+// SearchMessages calls the Elixir core to execute a membership-scoped full-text search.
+// Story 11-4: backing RPC for POST /_matrix/client/v3/search.
+// user_id is sourced from x-user-id gRPC metadata — never from req.UserId.
+func (c *Client) SearchMessages(ctx context.Context, req *pb.SearchMessagesRequest) (*pb.SearchMessagesResponse, error) {
+	return c.core.SearchMessages(ctx, req)
+}
+
 // CoreServiceClient returns the underlying generated gRPC client stub.
 // Used by EventBusStream (Story 4-16) which requires the raw pb.CoreServiceClient.
 func (c *Client) CoreServiceClient() pb.CoreServiceClient {
