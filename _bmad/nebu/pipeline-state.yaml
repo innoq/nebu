@@ -1,6 +1,15 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents.
 # Do not edit manually during an active pipeline run.
 # last_updated: 2026-05-10
+# [11-5] 2026-05-11T11:55Z arc42-update → NewUserRateLimiter in middleware building block
+# [11-5] 2026-05-11T11:50Z security-review → Kassandra CLEAN (0 findings)
+# [11-5] 2026-05-11T11:40Z code-review → CLEAN (cycle 0; 3 MINOR cosmetic)
+# [11-5] 2026-05-11T11:30Z ci-gate → ✓ build+unit-go+unit-elixir (e2e+integration: env-startup skip)
+# [11-5] 2026-05-11T11:25Z dev-story → done (cycle 0)
+# [11-5] 2026-05-11T11:20Z test-review → 2 MAJOR fixed (retry_after_ms>=1000, Disabled_NoOp added), 2 MINOR fixed
+# [11-5] 2026-05-11T11:00Z atdd → 5 failing acceptance tests (ratelimit_test.go AC1-AC5)
+# [11-5] 2026-05-11T10:45Z create-story → 11-5-search-rate-limiting.md
+# [11-4] 2026-05-11T10:40Z committed ✓ (ATDD+Code CLEAN 1 cycle; Kassandra CLEAN)
 # [11-4] 2026-05-11T10:35Z arc42-update → search.go in building blocks + SearchMessages RPC ref updated
 # [11-4] 2026-05-11T10:30Z security-review → Kassandra CLEAN (0 CRITICAL/HIGH/MEDIUM; 2 LOW non-blocking)
 # [11-4] 2026-05-11T10:20Z code-review → CLEAN (cycle 1; 2 MINOR fixed)
@@ -47,7 +56,7 @@
 # [11-1] 2026-05-08T11:05Z create-story → 11-1-db-migration-search-index.md
 # [11-1] 2026-05-08T11:00Z pipeline started
 # --- pipeline log (newest first) ---
-story: "11-4"
+story: "11-5"
 current_step: "commit"
 completed:
   - create-story
@@ -58,6 +67,6 @@ completed:
   - code-review
   - security-review
   - arc42-update
-cycle_count: 1
+cycle_count: 0
 blocked_reason: null
-last_updated: "2026-05-10T22:26Z"
+last_updated: "2026-05-10T22:50Z"

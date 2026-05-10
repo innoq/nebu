@@ -232,6 +232,9 @@ func main() {
 	mediumRL := middleware.NewIPRateLimiter(middleware.RateLimitConfig{Rate: rate.Limit(30.0 / 60.0), Burst: 10}, trustedProxy, "medium")
 	// looseRL: remaining unauthenticated public endpoints — 300 req/min, burst 100.
 	looseRL := middleware.NewIPRateLimiter(middleware.RateLimitConfig{Rate: rate.Limit(300.0 / 60.0), Burst: 100}, trustedProxy, "loose")
+	// searchRL: POST /_matrix/client/v3/search — 10 req/min per authenticated user (Story 11-5).
+	// Per-user bucket (keyed on user_id from JWT context, not IP). Must be placed INSIDE jwtWithStatusCheck.
+	searchRL := middleware.NewUserRateLimiter(middleware.RateLimitConfig{Rate: rate.Limit(10.0 / 60.0), Burst: 10}, "search")
 	reg := registry.New()
 	regHandler := registry.NewHandler(reg)
 	pskHandler := middleware.PSKMiddleware(internalSecret)(regHandler)
@@ -750,14 +753,15 @@ func main() {
 	mux.Handle("GET /_matrix/client/v1/rooms/{roomId}/relations/{eventId}/{relType}/{eventType}",
 		jwtWithStatusCheck(http.HandlerFunc(relationsHandler.GetRelations)))
 
-	// Story 11-4: Full-text search — POST /_matrix/client/v3/search.
-	// JWT required. Delegates to Elixir Core SearchMessages gRPC (Story 11-3).
+	// Story 11-4/11-5: Full-text search — POST /_matrix/client/v3/search.
+	// JWT required. 10 req/min per user (searchRL, Story 11-5). Delegates to Elixir Core SearchMessages gRPC.
 	// user_id sourced from JWT context; never from request body.
+	// Chain: bodyLimit → jwtWithStatusCheck → searchRL (inside JWT so ContextKeyUserID is set).
 	searchHandler := matrix.NewSearchHandler(matrix.SearchConfig{
 		CoreClient: coreClient,
 	})
 	mux.Handle("POST /_matrix/client/v3/search",
-		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(searchHandler.PostSearch))))
+		bodyLimit1MiB(jwtWithStatusCheck(searchRL(http.HandlerFunc(searchHandler.PostSearch)))))
 
 	// Story 7-29: Notifications API — GET /_matrix/client/v3/notifications.
 	// Reads from the notifications table (migration 000031) with cursor-based pagination.

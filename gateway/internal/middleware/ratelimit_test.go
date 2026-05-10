@@ -10,10 +10,12 @@ package middleware_test
 //   AC 7 — Unit tests
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -338,5 +340,197 @@ func TestRateLimit_PrometheusCounters(t *testing.T) {
 	}
 	if denyCount < 1 {
 		t.Errorf("nebu_rate_limit_total{tier=%q,decision=deny}: got %.0f, want >= 1", testTier, denyCount)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Story 11-5 — Per-User Search Rate Limiting
+//
+// AC1 — 11th request from the same user returns 429 M_LIMIT_EXCEEDED
+// AC2 — Different users have independent rate-limit buckets
+// AC3 — 429 response body contains retry_after_ms field (milliseconds)
+// AC4 — No user_id in context → falls back to IP (no panic)
+// AC5 — NEBU_RATE_LIMIT_DISABLED=true → middleware is a no-op
+// ---------------------------------------------------------------------------
+
+// contextWithUserID injects a user_id into the request context to simulate
+// jwtMiddleware having already run. Uses the same key as the real middleware.
+func contextWithUserID(r *http.Request, userID string) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), middleware.ContextKeyUserID, userID))
+}
+
+// TestUserRateLimit_BlocksAfter10 verifies that the 11th request from the same
+// user is rejected with 429 M_LIMIT_EXCEEDED (AC1).
+func TestUserRateLimit_BlocksAfter10(t *testing.T) {
+	t.Parallel()
+
+	cfg := middleware.RateLimitConfig{
+		Rate:  rate.Limit(10.0 / 60.0),
+		Burst: 10,
+	}
+	handler := middleware.NewUserRateLimiter(cfg, "search")(okHandler)
+
+	// First 10 requests must pass.
+	for i := 1; i <= 10; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/_matrix/client/v3/search", nil)
+		req = contextWithUserID(req, "@alice:test.local")
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("AC1: request %d expected 200, got %d", i, rr.Code)
+		}
+	}
+
+	// 11th request must be blocked.
+	req := httptest.NewRequest(http.MethodPost, "/_matrix/client/v3/search", nil)
+	req = contextWithUserID(req, "@alice:test.local")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusTooManyRequests {
+		t.Fatalf("AC1: 11th request expected 429, got %d; body: %s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "M_LIMIT_EXCEEDED") {
+		t.Errorf("AC1: expected M_LIMIT_EXCEEDED in body, got: %s", rr.Body.String())
+	}
+	// MINOR-4 fix: Retry-After header must be present (Story spec AC1, last bullet).
+	if rr.Header().Get("Retry-After") == "" {
+		t.Error("AC1: Retry-After header must be present on 429 response")
+	}
+}
+
+// TestUserRateLimit_DifferentUsers_IndependentBuckets verifies that different
+// users have independent token buckets (AC2).
+func TestUserRateLimit_DifferentUsers_IndependentBuckets(t *testing.T) {
+	t.Parallel()
+
+	cfg := middleware.RateLimitConfig{
+		Rate:  rate.Limit(10.0 / 60.0),
+		Burst: 10,
+	}
+	handler := middleware.NewUserRateLimiter(cfg, "search")(okHandler)
+
+	// Alice consumes all 10 tokens.
+	for i := 1; i <= 10; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/search", nil)
+		req = contextWithUserID(req, "@alice:test.local")
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+	}
+
+	// Verify Alice is actually blocked (MINOR-2 fix: confirm pre-condition holds).
+	aliceExtra := httptest.NewRequest(http.MethodPost, "/search", nil)
+	aliceExtra = contextWithUserID(aliceExtra, "@alice:test.local")
+	aliceRR := httptest.NewRecorder()
+	handler.ServeHTTP(aliceRR, aliceExtra)
+	if aliceRR.Code != http.StatusTooManyRequests {
+		t.Fatalf("AC2 pre-condition: Alice's 11th request should be 429, got %d", aliceRR.Code)
+	}
+
+	// Bob's bucket is independent — his first request must pass.
+	bobReq := httptest.NewRequest(http.MethodPost, "/search", nil)
+	bobReq = contextWithUserID(bobReq, "@bob:test.local")
+	bobRR := httptest.NewRecorder()
+	handler.ServeHTTP(bobRR, bobReq)
+
+	if bobRR.Code != http.StatusOK {
+		t.Fatalf("AC2: Bob's bucket should be independent of Alice's; got %d: %s", bobRR.Code, bobRR.Body.String())
+	}
+}
+
+// TestUserRateLimit_RetryAfterMs_InBody verifies that the 429 response body
+// contains a retry_after_ms field with a positive integer value (AC3).
+func TestUserRateLimit_RetryAfterMs_InBody(t *testing.T) {
+	t.Parallel()
+
+	cfg := middleware.RateLimitConfig{
+		Rate:  rate.Limit(10.0 / 60.0),
+		Burst: 1,
+	}
+	handler := middleware.NewUserRateLimiter(cfg, "search")(okHandler)
+
+	// Exhaust the single-token burst.
+	req := httptest.NewRequest(http.MethodPost, "/search", nil)
+	req = contextWithUserID(req, "@user:test.local")
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+
+	// 2nd request must be rate-limited.
+	req2 := httptest.NewRequest(http.MethodPost, "/search", nil)
+	req2 = contextWithUserID(req2, "@user:test.local")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req2)
+
+	if rr.Code != http.StatusTooManyRequests {
+		t.Fatalf("AC2: expected 429, got %d", rr.Code)
+	}
+
+	var body map[string]interface{}
+	if err := json.NewDecoder(rr.Body).Decode(&body); err != nil {
+		t.Fatalf("AC2: invalid JSON in 429 body: %v", err)
+	}
+	retryAfterMs, ok := body["retry_after_ms"]
+	if !ok {
+		t.Fatal("AC2: 429 body must contain 'retry_after_ms' field")
+	}
+	v, ok := retryAfterMs.(float64)
+	// MAJOR-1 fix: must be >= 1000 ms (not just > 0) to verify unit is milliseconds, not seconds.
+	// With rate=10/60 and burst=1, delay is ~6 s → retry_after_ms >= 6000. Minimum valid value is 1000.
+	if !ok || v < 1000 {
+		t.Errorf("AC2: retry_after_ms must be >= 1000 (milliseconds), got %v", retryAfterMs)
+	}
+
+	// Retry-After header must also be present (MINOR-4 fix).
+	retryAfterHeader := rr.Header().Get("Retry-After")
+	if retryAfterHeader == "" {
+		t.Error("AC2: Retry-After header must be present on 429 response")
+	}
+}
+
+// TestUserRateLimit_NoUserID_FallsBackToIP verifies that a request without a
+// user_id in context does not panic and the middleware applies a bucket keyed
+// on the request IP instead (AC4).
+func TestUserRateLimit_NoUserID_FallsBackToIP(t *testing.T) {
+	t.Parallel()
+
+	cfg := middleware.RateLimitConfig{
+		Rate:  rate.Limit(10.0 / 60.0),
+		Burst: 10,
+	}
+	handler := middleware.NewUserRateLimiter(cfg, "search")(okHandler)
+
+	// No user_id injected — must not panic, must return 200.
+	req := httptest.NewRequest(http.MethodPost, "/search", nil)
+	req.RemoteAddr = "10.0.0.99:55555"
+	rr := httptest.NewRecorder()
+
+	// Must not panic.
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("AC4: expected 200 (fallback to IP), got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+// TestUserRateLimit_Disabled_NoOp verifies that when NEBU_RATE_LIMIT_DISABLED=true
+// the middleware is a no-op and all requests pass through without rate limiting (AC5/AC7).
+func TestUserRateLimit_Disabled_NoOp(t *testing.T) {
+	t.Setenv("NEBU_RATE_LIMIT_DISABLED", "true")
+
+	cfg := middleware.RateLimitConfig{
+		Rate:  rate.Limit(10.0 / 60.0),
+		Burst: 1, // burst=1 so without no-op, only 1 request would pass
+	}
+	handler := middleware.NewUserRateLimiter(cfg, "search")(okHandler)
+
+	// All 20 requests must pass — the limiter must be a no-op.
+	for i := 1; i <= 20; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/search", nil)
+		req = contextWithUserID(req, "@alice:test.local")
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("AC7 (NEBU_RATE_LIMIT_DISABLED=true): request %d expected 200 (no-op), got %d: %s",
+				i, rr.Code, rr.Body.String())
+		}
 	}
 }
