@@ -34,6 +34,11 @@ func (m *mockCoreClient) SearchMessages(_ context.Context, _ *pb.SearchMessagesR
 	return &pb.SearchMessagesResponse{}, nil
 }
 
+// Story 11-8: GetEvent stub — not called in login tests.
+func (m *mockCoreClient) GetEvent(_ context.Context, _ *pb.GetEventRequest, _ ...grpc.CallOption) (*pb.GetEventResponse, error) {
+	panic("unexpected call: GetEvent")
+}
+
 func setupOIDCServer(t *testing.T) (*httptest.Server, *rsa.PrivateKey) {
 	t.Helper()
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)

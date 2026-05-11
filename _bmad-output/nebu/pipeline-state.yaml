@@ -1,6 +1,19 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-11
+# [11-8] 2026-05-11T11:30Z arc42-update → done (05-building-blocks, 06-runtime, matrix-api-scope)
+# [11-8] 2026-05-11T11:15Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 2 LOW advisory)
+# [11-8] 2026-05-11T11:05Z code-review → CLEAN (cycle 2) — 0 MAJOR, 7 MINOR accepted (consistent with SearchMessages pattern)
+# [11-8] 2026-05-11T10:55Z dev-story → done (cycle 2) — ExUnit tests for get_event + fetch_event, db_behaviour updated, fetch_event stubs in all @behaviour FakeDbs
+# [11-8] 2026-05-11T10:40Z dev-story → done (cycle 1) — MAJOR-1 staged pb/proto, MAJOR-2 trusted_identity, MAJOR-3 lookup_room pattern
+# [11-8] 2026-05-11T10:30Z ci-gate → ✓ build+unit-go+unit-elixir; e2e+integration skipped (env startup)
+# [11-8] 2026-05-11T10:20Z dev-story → done (cycle 0)
+# [11-8] 2026-05-11T10:10Z test-review → CLEAN (0 MAJOR, 3 MINOR fixed)
+# [11-8] 2026-05-11T10:00Z atdd → 5 green unit tests + 5 failing integration tests (get_room_event + relations regression)
+# [11-8] 2026-05-11T12:10Z atdd → 6 failing tests (GetEvent: unit x4 + Godog x1, relations regression: unit x1)
+# [11-8] 2026-05-11T12:05Z oracle-gate → spec context captured (event/{eventId} 404+forbidden, /relations all 3 path variants, dir/recurse/pagination, recursion_depth)
+# [11-8] 2026-05-11T12:00Z pipeline started (--bug: event/{eventId} 404 + /relations 500 in thread loading)
+# [11-7] 2026-05-11T11:55Z committed ✓ (ATDD+Code CLEAN 2 cycles+Kassandra CLEAN)
 # [11-7] 2026-05-11T11:50Z arc42-update → done (06-runtime: SSO nonce flow, 08-concepts: nonce+denylist, 11-risks: Safari resolved)
 # [11-7] 2026-05-11T11:40Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW)
 # [11-7] 2026-05-11T11:30Z code-review → CLEAN cycle 2 (MIN-7 naming, MIN-8 doc — fixed inline)
@@ -95,10 +108,9 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: "11-7"
+story: "11-8"
 current_step: "commit"
 completed:
-  - create-story
   - atdd
   - test-review
   - dev-story
@@ -108,4 +120,4 @@ completed:
   - arc42-update
 cycle_count: 2
 blocked_reason: null
-last_updated: "2026-05-11T09:06Z"
+last_updated: "2026-05-11T10:45Z"

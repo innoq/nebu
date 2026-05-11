@@ -65,3 +65,13 @@ Feature: Thread Relations API — GET /rooms/{roomId}/relations/{eventId}/m.thre
     When alex calls GET /rooms/{roomId}/relations/$unknown_thread_root_9_28/m.thread
     Then the response status is 404
     And the response body contains "M_NOT_FOUND"
+
+  # Regression 11-8 — ?dir=b&recurse=true must not return 500
+  # Root cause: rpc :GetRelations was missing from core_grpc.pb.ex, so Core
+  # returned UNIMPLEMENTED (code 12) which the gateway mapped to 500.
+  Scenario: ThreadRelations_RecurseParam — ?dir=b&recurse=true returns 200, not 500
+    Given kai has sent a message in the room
+    And alex sends a thread reply to kai's message
+    When alex calls GET /rooms/{roomId}/relations/{eventId}/m.thread?dir=b&recurse=true
+    Then the response status is 200
+    And the relations response contains the thread reply event

@@ -57,6 +57,11 @@ gateway/
     │   │                          consumer interface; user_id from JWT context only (never body);
     │   │                          forwards to gRPC SearchMessages with x-user-id metadata;
     │   │                          builds §11.14.1 response with groups-by-room_id + highlights
+    │   ├── event.go            ← GET /_matrix/client/v3/rooms/{roomId}/event/{eventId} (Story 11-8);
+    │   │                          GetEventCoreClient consumer interface; validates roomId + eventId format;
+    │   │                          maps gRPC PERMISSION_DENIED → 403 M_FORBIDDEN (non-member),
+    │   │                          NOT_FOUND → 404 M_NOT_FOUND; returns Matrix event JSON via
+    │   │                          protoEventToMatrix (shared with other event handlers)
     │   └── ...                 ← typing, receipts, messages, keys
     ├── admin/                  ← Admin UI (Go Templates + SSR) + Admin API
     │   ├── api.go              ← /api/v1/* Router (oapi-codegen StrictHandler)
@@ -97,7 +102,10 @@ core/apps/
 │       │                      rel_type filter — empty = all types; opts: event_type filter, dir for
 │       │                      ORDER BY ASC/DESC; dynamic WHERE builder — Story 9-28/9-29);
 │       │                      count_thread_children/2 (reply count for thread root);
-│       │                      event_in_room?/2 (membership guard) added (Story 9-28)
+│       │                      event_in_room?/2 (membership guard) added (Story 9-28);
+│       │                      fetch_event/2 (single event by event_id scoped to room_id —
+│       │                      SELECT … WHERE event_id=$1 AND room_id=$2; returns {:ok, map} |
+│       │                      {:error, :not_found} | {:error, reason} — Story 11-8)
 │       ├── db_behaviour.ex ← @callback contract for db.ex (mockable in tests);
 │       │                      corresponding callbacks for Story 9-28/9-29 DB functions
 │       └── power_level.ex  ← Room policy enforcement
@@ -123,6 +131,10 @@ core/apps/
 │       │                      proto request; validates membership + event_in_room?; delegates to
 │       │                      fetch_events_by_relation/5 with opts map; returns
 │       │                      Core.GetRelationsResponse (Story 9-28/9-29);
+│       │                      get_event/2 gRPC handler (Story 11-8): looks up room via
+│       │                      Horde registry, enforces MapSet membership guard, delegates to
+│       │                      messages_db_module().fetch_event/2, attaches thread aggregations
+│       │                      via attach_thread_aggregations/3, returns Core.GetEventResponse;
 │       │                      attach_thread_aggregations/3 private fn: for each timeline event
 │       │                      calls count_thread_children/2 + fetch latest reply, encodes
 │       │                      JSON {"m.thread":{count,latest_event,current_user_participated}}
@@ -224,9 +236,9 @@ Key gRPC services: `SendEvent`, `CreateRoom`, `JoinRoom`, `GetMessages`, `GetRoo
 `SetTyping`, `ValidateToken`, `GetPendingEvents` (fallback), `EventBus` (streaming),
 `GetSyncDelta` (incremental sync with per-device `device_id` field, Story 9-22),
 `InvalidateUserSessions` (per-device or full-user session cleanup, Story 9-22),
-`GetRelations` (thread relation events for a parent event_id, Story 9-28).
-`InvalidateUserSessions` (per-device or full-user session cleanup, Story 9-22),
-`SearchMessages` (full-text search with membership enforcement, Story 11-3).
+`GetRelations` (thread relation events for a parent event_id, Story 9-28/9-29),
+`SearchMessages` (full-text search with membership enforcement, Story 11-3),
+`GetEvent` (single event fetch by event_id scoped to a room, membership-enforced, Story 11-8).
 
 **`GetSyncDeltaRequest` fields (Story 9-22):**
 
@@ -309,4 +321,24 @@ Response: `repeated Event events` + `string next_batch` (empty when no more page
 >
 > 5. **Proto additions** — `core.proto` gains `ProfileInfo`, `SearchResult`, `SearchMessagesRequest`, `SearchMessagesResponse` message types and the `SearchMessages` RPC. Go stubs auto-regenerated via `make proto`; Elixir `core_grpc.pb.ex` service stub updated manually (protoc-gen-elixir does not auto-update the service module).
 
-_Source: `_bmad-output/planning-artifacts/architecture.md`, §Project Structure & Boundaries, §Complete Project Directory Structure; Story 9-19 (room_moderation.go, sync.go, event_dispatcher/server.ex, forgotten_rooms migration); Story 9-22 (per-device sync tokens, device_id in proto); Story 9-24 (GlobalAccountDataDB interface, ListGlobalAccountData, top-level account_data in syncResponse); Story 9-25 (syntheticNextBatch helper, syntheticBatchSeq atomic counter, sinceToken param removed from buildResponseFromBufferedEvents); Story 9-27 (upgrade_room/2 full Matrix §11.35.1 flow, GRPC.RPCError error handling, archive_room_atomic, terminate_child, try/rescue failure audit); Story 9-28 (GetRelations RPC, unsigned_relations field on Event, attach_thread_aggregations, fetch_events_by_relation, count_thread_children, event_in_room?, migration 000042); Story 9-29 (base /relations/{eventId} route, three-segment /{relType}/{eventType} route, dir/event_type/recurse/from query params, prev_batch in response, fetch_events_by_relation/5 dynamic WHERE builder); Story 11-3 (SearchMessages gRPC handler, proto extension, delegated search_db_module pattern, offset-cap security fix); Story 11-4 (search.go Gateway handler, SearchCoreClient consumer interface, §11.14.1 response shape, gRPC error mapping); Story 11-5 (NewUserRateLimiter middleware, per-user 10 req/min for /search, retry_after_ms in body)_
+**`GetEventRequest` / `GetEventResponse` fields (Story 11-8):**
+
+| Field | Type | Description |
+|---|---|---|
+| `room_id` | string | Room that owns the event; scopes the DB query |
+| `event_id` | string | Unique event ID to fetch |
+| `user_id` | string | Caller; Elixir enforces joined-member check via Horde room state |
+
+Response: `Event event` — the full event proto (same `Event` message used by sync and relations endpoints).
+
+> **`GetEvent` gRPC handler design (Story 11-8):** `Nebu.EventDispatcher.Server.get_event/2` looks up
+> the room via `Nebu.Room.RoomSupervisor.lookup_room/1` (Horde registry). If the room is unknown, it
+> raises `GRPC.RPCError` with `NOT_FOUND`. It then calls `room_registry_module().get_state/1` and checks
+> `MapSet.member?(state.members, user_id)` — non-members receive `PERMISSION_DENIED`. On success it
+> delegates to `messages_db_module().fetch_event/2` (SQL: `SELECT … WHERE event_id=$1 AND room_id=$2 LIMIT 1`)
+> and calls `attach_thread_aggregations/3` so the returned event already carries bundled `m.thread`
+> aggregation data (same as sync responses). The `GetEvent` RPC and its message types were added to
+> `core.proto`; the Elixir `core_grpc.pb.ex` service stub was updated manually (`rpc :GetEvent` entry
+> added alongside the pre-existing `rpc :GetRelations` fix).
+
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Project Structure & Boundaries, §Complete Project Directory Structure; Story 9-19 (room_moderation.go, sync.go, event_dispatcher/server.ex, forgotten_rooms migration); Story 9-22 (per-device sync tokens, device_id in proto); Story 9-24 (GlobalAccountDataDB interface, ListGlobalAccountData, top-level account_data in syncResponse); Story 9-25 (syntheticNextBatch helper, syntheticBatchSeq atomic counter, sinceToken param removed from buildResponseFromBufferedEvents); Story 9-27 (upgrade_room/2 full Matrix §11.35.1 flow, GRPC.RPCError error handling, archive_room_atomic, terminate_child, try/rescue failure audit); Story 9-28 (GetRelations RPC, unsigned_relations field on Event, attach_thread_aggregations, fetch_events_by_relation, count_thread_children, event_in_room?, migration 000042); Story 9-29 (base /relations/{eventId} route, three-segment /{relType}/{eventType} route, dir/event_type/recurse/from query params, prev_batch in response, fetch_events_by_relation/5 dynamic WHERE builder); Story 11-3 (SearchMessages gRPC handler, proto extension, delegated search_db_module pattern, offset-cap security fix); Story 11-4 (search.go Gateway handler, SearchCoreClient consumer interface, §11.14.1 response shape, gRPC error mapping); Story 11-5 (NewUserRateLimiter middleware, per-user 10 req/min for /search, retry_after_ms in body); Story 11-8 (GetEvent RPC, event.go Go handler, fetch_event/2 DB function, core_grpc.pb.ex rpc :GetEvent + rpc :GetRelations bug fix)_

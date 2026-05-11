@@ -174,6 +174,7 @@ defmodule Nebu.EventDispatcher.UpgradeRoomTest do
     def fetch_events_by_relation(_room_id, _event_id, _rel_type, _limit, _opts), do: {:ok, []}
     def count_thread_children(_room_id, _event_id), do: {:ok, 0}
     def event_in_room?(_event_id, _room_id), do: true
+    def fetch_event(_event_id, _room_id), do: {:error, :not_found}
   end
 
   # ─── FakeInviteDB ─────────────────────────────────────────────────────────────
@@ -799,6 +800,7 @@ defmodule Nebu.EventDispatcher.UpgradeRoomTest do
         def fetch_events_by_relation(_room_id, _event_id, _rel_type, _limit, _opts), do: {:ok, []}
         def count_thread_children(_room_id, _event_id), do: {:ok, 0}
         def event_in_room?(_event_id, _room_id), do: true
+        def fetch_event(_event_id, _room_id), do: {:error, :not_found}
       end
 
       Application.put_env(:event_dispatcher, :messages_db_module, FakeDBWithName)

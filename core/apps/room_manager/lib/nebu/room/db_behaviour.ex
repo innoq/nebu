@@ -273,4 +273,16 @@ defmodule Nebu.Room.DBBehaviour do
   cross-room event-existence probing by room members.
   """
   @callback event_in_room?(event_id :: String.t(), room_id :: String.t()) :: boolean()
+
+  @doc """
+  Fetches a single event by `event_id` scoped to `room_id`.
+
+  Returns `{:ok, event_map}` on success.
+  Returns `{:error, :not_found}` if the event does not exist in this room.
+  Returns `{:error, reason}` on DB error.
+
+  Story 11-8: used by GetEvent gRPC handler (GET /rooms/{roomId}/event/{eventId}).
+  """
+  @callback fetch_event(event_id :: String.t(), room_id :: String.t()) ::
+              {:ok, map()} | {:error, :not_found | term()}
 end

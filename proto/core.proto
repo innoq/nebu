@@ -149,6 +149,12 @@ service CoreService {
   // Returns NOT_FOUND if the parent event does not exist.
   rpc GetRelations(GetRelationsRequest) returns (GetRelationsResponse);
 
+  // GetEvent — Story 11-8: fetches a single event by ID, scoped to a room.
+  // Implements GET /_matrix/client/v3/rooms/{roomId}/event/{eventId}.
+  // Returns PERMISSION_DENIED if user is not a room member.
+  // Returns NOT_FOUND if the event does not exist in the room.
+  rpc GetEvent(GetEventRequest) returns (GetEventResponse);
+
   // SearchMessages — Story 11.3: Full-text search over rooms the user is a member of.
   // user_id in the request is for documentation/auditing only — the handler MUST use
   // x-user-id from gRPC metadata, never from the request body.
@@ -692,6 +698,25 @@ message GetRelationsResponse {
   repeated Event events     = 1;
   string         next_batch = 2;  // empty when no more pages
   string         prev_batch = 3;  // for dir=b pagination (Story 9-29)
+}
+
+// ── Story 11-8: GetEvent messages ────────────────────────────────────────────
+
+// GetEventRequest — Story 11-8: fetch a single event by ID, scoped to a room.
+// Caller identity is sourced from gRPC metadata (x-user-id), not from user_id field.
+message GetEventRequest {
+  string room_id  = 1;
+  string event_id = 2;
+  // user_id is documentation/auditing only — the handler MUST use x-user-id
+  // from gRPC metadata (Nebu.Grpc.Metadata.trusted_identity), never from this field.
+  string user_id  = 3;
+}
+
+// GetEventResponse — Story 11-8: the target event, fully serialized.
+// Returns NOT_FOUND if event does not exist in room.
+// Returns PERMISSION_DENIED if user is not a room member.
+message GetEventResponse {
+  Event event = 1;
 }
 
 // ── Story 11.3: SearchMessages gRPC messages ─────────────────────────────────

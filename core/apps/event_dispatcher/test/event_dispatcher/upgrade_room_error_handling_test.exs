@@ -152,6 +152,7 @@ defmodule Nebu.EventDispatcher.UpgradeRoomErrorHandlingTest do
     def fetch_events_by_relation(_room_id, _event_id, _rel_type, _limit, _opts), do: {:ok, []}
     def count_thread_children(_room_id, _event_id), do: {:ok, 0}
     def event_in_room?(_event_id, _room_id), do: true
+    def fetch_event(_event_id, _room_id), do: {:error, :not_found}
   end
 
   # ─── DBJoinError ──────────────────────────────────────────────────────────────
@@ -210,6 +211,7 @@ defmodule Nebu.EventDispatcher.UpgradeRoomErrorHandlingTest do
     def fetch_events_by_relation(_room_id, _event_id, _rel_type, _limit, _opts), do: {:ok, []}
     def count_thread_children(_room_id, _event_id), do: {:ok, 0}
     def event_in_room?(_event_id, _room_id), do: true
+    def fetch_event(_event_id, _room_id), do: {:error, :not_found}
   end
 
   # ─── DBSetPowerLevelsError ────────────────────────────────────────────────────
@@ -262,6 +264,7 @@ defmodule Nebu.EventDispatcher.UpgradeRoomErrorHandlingTest do
     def fetch_events_by_relation(_room_id, _event_id, _rel_type, _limit, _opts), do: {:ok, []}
     def count_thread_children(_room_id, _event_id), do: {:ok, 0}
     def event_in_room?(_event_id, _room_id), do: true
+    def fetch_event(_event_id, _room_id), do: {:error, :not_found}
   end
 
   # ─── MessagesDBCreateEventError ───────────────────────────────────────────────
@@ -315,6 +318,7 @@ defmodule Nebu.EventDispatcher.UpgradeRoomErrorHandlingTest do
     def fetch_events_by_relation(_room_id, _event_id, _rel_type, _limit, _opts), do: {:ok, []}
     def count_thread_children(_room_id, _event_id), do: {:ok, 0}
     def event_in_room?(_event_id, _room_id), do: true
+    def fetch_event(_event_id, _room_id), do: {:error, :not_found}
   end
 
   # ─── FakeInviteDB ─────────────────────────────────────────────────────────────

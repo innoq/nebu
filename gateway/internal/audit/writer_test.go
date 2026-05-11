@@ -186,6 +186,11 @@ func (m *mockCoreClient) SearchMessages(_ context.Context, _ *pb.SearchMessagesR
 	return &pb.SearchMessagesResponse{}, nil
 }
 
+// Story 11-8: GetEvent stub — not called in audit tests.
+func (m *mockCoreClient) GetEvent(_ context.Context, _ *pb.GetEventRequest, _ ...grpc.CallOption) (*pb.GetEventResponse, error) {
+	panic("unexpected call: GetEvent")
+}
+
 // ─── AC11 Test 5: LogEvent_Success ───────────────────────────────────────────
 //
 // Given: Mock CoreServiceClient.WriteAuditLog returns {Ok: true}, nil

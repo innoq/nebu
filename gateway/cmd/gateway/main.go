@@ -738,6 +738,14 @@ func main() {
 	mux.Handle("GET /_matrix/client/v3/rooms/{roomId}/context/{eventId}",
 		jwtWithStatusCheck(http.HandlerFunc(eventContextHandler.GetEventContext)))
 
+	// Story 11-8: Single event fetch — GET /_matrix/client/v3/rooms/{roomId}/event/{eventId}.
+	// JWT required. Element Web calls this from thread.ts fetchRootEvent() to load thread roots.
+	eventHandler := matrix.NewGetEventHandler(matrix.GetEventConfig{
+		CoreClient: coreClient,
+	})
+	mux.Handle("GET /_matrix/client/v3/rooms/{roomId}/event/{eventId}",
+		jwtWithStatusCheck(http.HandlerFunc(eventHandler.GetEvent)))
+
 	// Story 9-28 / 9-29: Thread Relations — all three /relations route variants.
 	// Matrix CS API v1 requires all three to be registered:
 	//   1. /relations/{eventId}                       — base route (fixes Element Web 404, Story 9-29)

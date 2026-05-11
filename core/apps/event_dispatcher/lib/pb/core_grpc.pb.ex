@@ -45,6 +45,8 @@ defmodule Core.CoreService.Service do
   rpc :UpgradeRoom, Core.UpgradeRoomRequest, Core.UpgradeRoomResponse
   rpc :ListAdminRoomMembers, Core.ListAdminRoomMembersRequest, Core.ListAdminRoomMembersResponse
   rpc :SearchMessages, Core.SearchMessagesRequest, Core.SearchMessagesResponse
+  rpc :GetRelations, Core.GetRelationsRequest, Core.GetRelationsResponse
+  rpc :GetEvent, Core.GetEventRequest, Core.GetEventResponse
 end
 
 defmodule Core.CoreService.Stub do

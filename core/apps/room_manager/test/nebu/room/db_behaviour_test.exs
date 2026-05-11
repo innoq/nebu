@@ -56,7 +56,9 @@ defmodule Nebu.Room.DBBehaviourTest do
         # Story 6.9: get_room_status/1 callback for archived room guard in init/1.
         {:get_room_status, 1},
         # Story 9-9: check_room_status_for_update/1 — SELECT FOR UPDATE TOCTOU fix.
-        {:check_room_status_for_update, 1}
+        {:check_room_status_for_update, 1},
+        # Story 11-8: fetch_event/2 — single-event lookup by (event_id, room_id).
+        {:fetch_event, 2}
       ]
 
       for {fun, arity} <- required do

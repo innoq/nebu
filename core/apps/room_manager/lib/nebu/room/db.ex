@@ -301,6 +301,34 @@ defmodule Nebu.Room.DB do
     end
   end
 
+  @sql_fetch_event """
+  SELECT event_id, room_id, sender, event_type, content, origin_server_ts, state_key
+  FROM events
+  WHERE event_id = $1 AND room_id = $2
+  LIMIT 1
+  """
+
+  @doc """
+  Fetches a single event by `event_id` scoped to `room_id`.
+
+  Returns `{:ok, event_map}` on success.
+  Returns `{:error, :not_found}` if the event does not exist in this room.
+  Returns `{:error, reason}` on DB error.
+  """
+  @spec fetch_event(String.t(), String.t()) :: {:ok, map()} | {:error, :not_found | term()}
+  def fetch_event(event_id, room_id) do
+    case Ecto.Adapters.SQL.query(Nebu.Repo, @sql_fetch_event, [event_id, room_id]) do
+      {:ok, %{columns: cols, rows: [row]}} ->
+        {:ok, cols |> Enum.zip(row) |> Map.new()}
+
+      {:ok, %{rows: []}} ->
+        {:error, :not_found}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
   @sql_event_in_room "SELECT 1 FROM events WHERE event_id = $1 AND room_id = $2 LIMIT 1"
 
   @doc """

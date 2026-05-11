@@ -237,6 +237,23 @@ func theSyncIncludesMThreadBundledAggregation() error {
 	return fmt.Errorf("parent event %s not found in sync timeline for room %s", lastEventID, lastRoomID)
 }
 
+// alexCallsGetThreadRelationsWithRecurse calls GET /_matrix/client/v1/rooms/{roomId}/relations/{eventId}/m.thread?dir=b&recurse=true.
+// Regression test for Story 11-8: missing rpc :GetRelations in core_grpc.pb.ex caused 500.
+func alexCallsGetThreadRelationsWithRecurse() error {
+	url := fmt.Sprintf("%s/_matrix/client/v1/rooms/%s/relations/%s/m.thread?dir=b&recurse=true",
+		matrixURL, lastRoomID, lastEventID)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+alexAccessToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("GET /relations?dir=b&recurse=true: %w", err)
+	}
+	return captureResponse(resp)
+}
+
 func initializeThreadRelationsSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^kai has sent a message in the room$`, func() error {
 		return kaiSendsMessage("Hello from kai")
@@ -250,4 +267,5 @@ func initializeThreadRelationsSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the relations response contains the thread reply event$`, theRelationsResponseContainsThreadReply)
 	sc.Step(`^the relations response chunk is empty$`, theRelationsResponseChunkIsEmpty)
 	sc.Step(`^the sync response includes m\.thread bundled aggregation on the parent event$`, theSyncIncludesMThreadBundledAggregation)
+	sc.Step(`^alex calls GET /rooms/\{roomId\}/relations/\{eventId\}/m\.thread\?dir=b&recurse=true$`, alexCallsGetThreadRelationsWithRecurse)
 }

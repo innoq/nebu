@@ -118,4 +118,5 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	initializeThreadRelationsSteps(sc)          // thread relations steps (Story 9-28)
 	initializeMessagesThreadSteps(sc)           // thread message relations steps (Story 9-29)
 	initializeSearchSteps(sc)                  // search Gherkin E2E step definitions (Story 11.6)
+	initializeGetRoomEventSteps(sc)            // GET /rooms/{roomId}/event/{eventId} step definitions (Story 11-8)
 }

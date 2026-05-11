@@ -1188,6 +1188,30 @@ defmodule Core.GetRelationsResponse do
   field :prev_batch, 3, type: :string, json_name: "prevBatch"
 end
 
+defmodule Core.GetEventRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.GetEventRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :room_id, 1, type: :string, json_name: "roomId"
+  field :event_id, 2, type: :string, json_name: "eventId"
+  field :user_id, 3, type: :string, json_name: "userId"
+end
+
+defmodule Core.GetEventResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.GetEventResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :event, 1, type: Core.Event
+end
+
 defmodule Core.ProfileInfo do
   @moduledoc false
 

@@ -201,6 +201,11 @@ func (m *mockCoreClient) SearchMessages(_ context.Context, _ *pb.SearchMessagesR
 	return &pb.SearchMessagesResponse{}, nil
 }
 
+// Story 11-8: GetEvent stub.
+func (m *mockCoreClient) GetEvent(_ context.Context, _ *pb.GetEventRequest, _ ...grpc.CallOption) (*pb.GetEventResponse, error) {
+	panic("unexpected call: GetEvent")
+}
+
 // ─── Mock server-streaming client ────────────────────────────────────────────
 
 // mockEventStream is a fake grpc.ServerStreamingClient[pb.Event].

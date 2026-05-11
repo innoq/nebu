@@ -360,6 +360,14 @@ func (c *Client) GetRelations(ctx context.Context, req *pb.GetRelationsRequest) 
 	return c.core.GetRelations(ctx, req)
 }
 
+// GetEvent calls the Elixir core to fetch a single event by ID, scoped to a room.
+// Story 11-8: backing RPC for GET /_matrix/client/v3/rooms/{roomId}/event/{eventId}.
+// Returns NOT_FOUND if the event does not exist in this room.
+// Returns PERMISSION_DENIED if the user is not a room member.
+func (c *Client) GetEvent(ctx context.Context, req *pb.GetEventRequest) (*pb.GetEventResponse, error) {
+	return c.core.GetEvent(ctx, req)
+}
+
 // SearchMessages calls the Elixir core to execute a membership-scoped full-text search.
 // Story 11-4: backing RPC for POST /_matrix/client/v3/search.
 // user_id is sourced from x-user-id gRPC metadata — never from req.UserId.

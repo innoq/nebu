@@ -109,6 +109,11 @@ func (m *mockCoreClient) SearchMessages(_ context.Context, _ *pb.SearchMessagesR
 	return &pb.SearchMessagesResponse{}, nil
 }
 
+// Story 11-8: GetEvent stub — not called in users handler tests.
+func (m *mockCoreClient) GetEvent(_ context.Context, _ *pb.GetEventRequest, _ ...grpc.CallOption) (*pb.GetEventResponse, error) {
+	panic("unexpected call: GetEvent")
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 // noopJWTMiddlewareForUsers injects an instance_admin role and a test actor

@@ -499,6 +499,69 @@ JSON field. Element Web reads this to show reply count badges on parent messages
 The Go gateway sets `MRelations` only when `len(te.GetUnsignedRelations()) > 0`, so `m.relations` is
 entirely omitted from the `unsigned` JSON object for non-thread events (`omitempty` on the struct field).
 
+## Scenario 3k: Single Event Fetch — GET /rooms/{roomId}/event/{eventId} (Story 11-8)
+
+`GET /_matrix/client/v3/rooms/{roomId}/event/{eventId}` was previously unregistered. Element Web's
+`thread.ts` calls `fetchRootEvent()` on this endpoint to load the parent event of a thread before
+rendering replies. Without the route, all thread views returned 404 or a 405 Method Not Allowed.
+
+```
+Matrix Client      Go Gateway (event.go)        Elixir Core                  PostgreSQL
+     │                     │                          │                           │
+     │  GET /rooms/        │                          │                           │
+     │  {roomId}/event/    │                          │                           │
+     │  {eventId}          │                          │                           │
+     │────────────────────►│                          │                           │
+     │                     │  validate roomId format  │                           │
+     │                     │  validate eventId format │                           │
+     │                     │  extract userID from JWT │                           │
+     │                     │  gRPC GetEvent           │                           │
+     │                     │  (room_id, event_id,     │                           │
+     │                     │   user_id)               │                           │
+     │                     │─────────────────────────►│                           │
+     │                     │                          │  lookup_room(room_id)     │
+     │                     │                          │  → {:ok, pid} | NOT_FOUND │
+     │                     │                          │  get_state(room_id)       │
+     │                     │                          │  MapSet.member?(members,  │
+     │                     │                          │    user_id)               │
+     │                     │                          │  → false: PERMISSION_DENIED
+     │                     │                          │  fetch_event(event_id,    │
+     │                     │                          │    room_id)               │
+     │                     │                          │──────────────────────────►│
+     │                     │                          │  SELECT event_id, room_id,│
+     │                     │                          │    sender, event_type,    │
+     │                     │                          │    content,               │
+     │                     │                          │    origin_server_ts,      │
+     │                     │                          │    state_key FROM events  │
+     │                     │                          │    WHERE event_id=$1      │
+     │                     │                          │    AND room_id=$2 LIMIT 1 │
+     │                     │                          │◄──────────────────────────│
+     │                     │                          │  attach_thread_           │
+     │                     │                          │  aggregations/3           │
+     │                     │  GetEventResponse{event} │                           │
+     │                     │◄─────────────────────────│                           │
+     │                     │  protoEventToMatrix(event)                           │
+     │  200 {event JSON}   │                          │                           │
+     │◄────────────────────│                          │                           │
+```
+
+**Error cases:**
+
+| Condition | gRPC code | HTTP response |
+|---|---|---|
+| Room not found in Horde registry | `NOT_FOUND` | `404 M_NOT_FOUND` |
+| User not in room's members MapSet | `PERMISSION_DENIED` | `403 M_FORBIDDEN` |
+| Event not found in DB | `NOT_FOUND` | `404 M_NOT_FOUND` |
+| DB error | `INTERNAL` | `500 M_UNKNOWN` |
+| Invalid roomId format | (client-side) | `400 M_INVALID_PARAM` |
+| Invalid eventId format | (client-side) | `400 M_INVALID_PARAM` |
+
+**Also fixed in Story 11-8:** `core/apps/event_dispatcher/lib/pb/core_grpc.pb.ex` was missing both
+`rpc :GetRelations` and `rpc :GetEvent` entries. The absence of `rpc :GetRelations` caused
+`GET /relations?dir=b&recurse=true` calls to return `500` from Elixir instead of the expected
+`GetRelationsResponse`. Both stubs were added manually (protoc-gen-elixir does not auto-update the
+service module when `.proto` changes).
+
 ## Scenario 4: Compliance Four-Eyes Export Flow
 
 ```
@@ -586,4 +649,4 @@ This prevents unbounded memory growth from unauthenticated flood attacks.
 a denylist, test setups), the denylist check in PostLogin is skipped. This preserves
 backwards compatibility.
 
-_Source: `_bmad-output/planning-artifacts/architecture.md`, §Implementation Patterns, §API & Kommunikation, §Resilienz & Selbst-Heilung; Story 9-19 (GAP-JOIN-PUBLIC, GAP-LEAVE-ONCE, GAP-FORGET); Story 9-22 (GAP-SINCE-IGNORED — per-device sync tokens, per-device logout cleanup); Story 9-23 (GAP-INVITE-STATE — invite_state stripped state enrichment: join_rules, avatar, create); Story 9-24 (GAP-GLOBAL-ACCOUNT-DATA — top-level account_data delivery in all 4 sync paths, RLS-aware ListGlobalAccountData); Story 9-25 (GAP-BUFFER-NEXT-BATCH — synthetic buf_<ms>_<seq> next_batch token on buffer fast-path, replaces echoed since= token); Story 9-27 (Scenario 3i — full Matrix §11.35.1 room upgrade flow, GRPC.RPCError error handling, archive_room_atomic idempotency, terminate_child, try/rescue failure audit); Story 9-28 (Scenario 3j — GetRelations RPC + bundled m.thread aggregations in sync unsigned field, attach_thread_aggregations, fetch_events_by_relation, count_thread_children, migration 000042); Story 9-29 (Scenario 3j-1 expanded — base route + three-segment route, dir/event_type/recurse/from params, prev_batch response field, fetch_events_by_relation/5 dynamic WHERE builder, 400 validation for invalid dir/recurse); Story 11-7 (Scenario 6 — SSO nonce generation + verification, Cache-Control: no-store on 302, denylist check in PostLogin, ssoStateStore capacity cap at 10,000)_
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Implementation Patterns, §API & Kommunikation, §Resilienz & Selbst-Heilung; Story 9-19 (GAP-JOIN-PUBLIC, GAP-LEAVE-ONCE, GAP-FORGET); Story 9-22 (GAP-SINCE-IGNORED — per-device sync tokens, per-device logout cleanup); Story 9-23 (GAP-INVITE-STATE — invite_state stripped state enrichment: join_rules, avatar, create); Story 9-24 (GAP-GLOBAL-ACCOUNT-DATA — top-level account_data delivery in all 4 sync paths, RLS-aware ListGlobalAccountData); Story 9-25 (GAP-BUFFER-NEXT-BATCH — synthetic buf_<ms>_<seq> next_batch token on buffer fast-path, replaces echoed since= token); Story 9-27 (Scenario 3i — full Matrix §11.35.1 room upgrade flow, GRPC.RPCError error handling, archive_room_atomic idempotency, terminate_child, try/rescue failure audit); Story 9-28 (Scenario 3j — GetRelations RPC + bundled m.thread aggregations in sync unsigned field, attach_thread_aggregations, fetch_events_by_relation, count_thread_children, migration 000042); Story 9-29 (Scenario 3j-1 expanded — base route + three-segment route, dir/event_type/recurse/from params, prev_batch response field, fetch_events_by_relation/5 dynamic WHERE builder, 400 validation for invalid dir/recurse); Story 11-7 (Scenario 6 — SSO nonce generation + verification, Cache-Control: no-store on 302, denylist check in PostLogin, ssoStateStore capacity cap at 10,000); Story 11-8 (Scenario 3k — GET /rooms/{roomId}/event/{eventId} new route + GetEvent gRPC RPC, Horde membership guard, fetch_event/2 DB query, attach_thread_aggregations, core_grpc.pb.ex rpc :GetRelations + rpc :GetEvent bug fix)_

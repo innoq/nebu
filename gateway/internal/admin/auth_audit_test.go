@@ -224,6 +224,11 @@ func (m *mockCoreClient) SearchMessages(_ context.Context, _ *pb.SearchMessagesR
 	return &pb.SearchMessagesResponse{}, nil
 }
 
+// Story 11-8: GetEvent stub — not called in admin auth tests.
+func (m *mockCoreClient) GetEvent(_ context.Context, _ *pb.GetEventRequest, _ ...grpc.CallOption) (*pb.GetEventResponse, error) {
+	panic("unexpected call: GetEvent")
+}
+
 // lastReceived returns the most recently recorded request (nil if none).
 func (m *mockCoreClient) lastReceived() *pb.WriteAuditLogRequest {
 	m.mu.Lock()

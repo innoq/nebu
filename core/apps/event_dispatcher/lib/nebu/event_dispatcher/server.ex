@@ -2897,6 +2897,49 @@ defmodule Nebu.EventDispatcher.Server do
     end
   end
 
+  # ─── get_event — Story 11-8 ────────────────────────────────────────────────────
+  #
+  # Returns a single event by ID, scoped to a room.
+  # The calling user must be a joined member of the room.
+  # Used by Element Web's thread.ts fetchRootEvent() to load thread roots.
+
+  def get_event(request, stream) do
+    {user_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
+    room_id  = request.room_id
+    event_id = request.event_id
+
+    case Nebu.Room.RoomSupervisor.lookup_room(room_id) do
+      {:error, :not_found} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "room not found: #{room_id}"
+
+      {:ok, _pid} ->
+        state = room_registry_module().get_state(room_id)
+
+        unless MapSet.member?(state.members, user_id) do
+          raise GRPC.RPCError,
+            status: GRPC.Status.permission_denied(),
+            message: "#{user_id} is not a member of #{room_id}"
+        end
+
+        case messages_db_module().fetch_event(event_id, room_id) do
+          {:ok, event_map} ->
+            %Core.GetEventResponse{event: event_map_to_proto(event_map)}
+
+          {:error, :not_found} ->
+            raise GRPC.RPCError,
+              status: GRPC.Status.not_found(),
+              message: "event not found: #{event_id}"
+
+          {:error, reason} ->
+            raise GRPC.RPCError,
+              status: GRPC.Status.internal(),
+              message: "fetch_event failed: #{inspect(reason)}"
+        end
+    end
+  end
+
   # ─── attach_thread_aggregations — Story 9-28 ──────────────────────────────────
   #
   # For each timeline event that has thread children, attach bundled aggregations

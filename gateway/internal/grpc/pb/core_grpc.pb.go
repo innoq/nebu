@@ -63,6 +63,7 @@ const (
 	CoreService_UpgradeRoom_FullMethodName                = "/core.CoreService/UpgradeRoom"
 	CoreService_ListAdminRoomMembers_FullMethodName       = "/core.CoreService/ListAdminRoomMembers"
 	CoreService_GetRelations_FullMethodName               = "/core.CoreService/GetRelations"
+	CoreService_GetEvent_FullMethodName                   = "/core.CoreService/GetEvent"
 	CoreService_SearchMessages_FullMethodName             = "/core.CoreService/SearchMessages"
 )
 
@@ -179,6 +180,11 @@ type CoreServiceClient interface {
 	// Returns PERMISSION_DENIED if user is not a room member.
 	// Returns NOT_FOUND if the parent event does not exist.
 	GetRelations(ctx context.Context, in *GetRelationsRequest, opts ...grpc.CallOption) (*GetRelationsResponse, error)
+	// GetEvent — Story 11-8: fetches a single event by ID, scoped to a room.
+	// Implements GET /_matrix/client/v3/rooms/{roomId}/event/{eventId}.
+	// Returns PERMISSION_DENIED if user is not a room member.
+	// Returns NOT_FOUND if the event does not exist in the room.
+	GetEvent(ctx context.Context, in *GetEventRequest, opts ...grpc.CallOption) (*GetEventResponse, error)
 	// SearchMessages — Story 11.3: Full-text search over rooms the user is a member of.
 	// user_id in the request is for documentation/auditing only — the handler MUST use
 	// x-user-id from gRPC metadata, never from the request body.
@@ -642,6 +648,16 @@ func (c *coreServiceClient) GetRelations(ctx context.Context, in *GetRelationsRe
 	return out, nil
 }
 
+func (c *coreServiceClient) GetEvent(ctx context.Context, in *GetEventRequest, opts ...grpc.CallOption) (*GetEventResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetEventResponse)
+	err := c.cc.Invoke(ctx, CoreService_GetEvent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *coreServiceClient) SearchMessages(ctx context.Context, in *SearchMessagesRequest, opts ...grpc.CallOption) (*SearchMessagesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SearchMessagesResponse)
@@ -765,6 +781,11 @@ type CoreServiceServer interface {
 	// Returns PERMISSION_DENIED if user is not a room member.
 	// Returns NOT_FOUND if the parent event does not exist.
 	GetRelations(context.Context, *GetRelationsRequest) (*GetRelationsResponse, error)
+	// GetEvent — Story 11-8: fetches a single event by ID, scoped to a room.
+	// Implements GET /_matrix/client/v3/rooms/{roomId}/event/{eventId}.
+	// Returns PERMISSION_DENIED if user is not a room member.
+	// Returns NOT_FOUND if the event does not exist in the room.
+	GetEvent(context.Context, *GetEventRequest) (*GetEventResponse, error)
 	// SearchMessages — Story 11.3: Full-text search over rooms the user is a member of.
 	// user_id in the request is for documentation/auditing only — the handler MUST use
 	// x-user-id from gRPC metadata, never from the request body.
@@ -910,6 +931,9 @@ func (UnimplementedCoreServiceServer) ListAdminRoomMembers(context.Context, *Lis
 }
 func (UnimplementedCoreServiceServer) GetRelations(context.Context, *GetRelationsRequest) (*GetRelationsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetRelations not implemented")
+}
+func (UnimplementedCoreServiceServer) GetEvent(context.Context, *GetEventRequest) (*GetEventResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetEvent not implemented")
 }
 func (UnimplementedCoreServiceServer) SearchMessages(context.Context, *SearchMessagesRequest) (*SearchMessagesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SearchMessages not implemented")
@@ -1720,6 +1744,24 @@ func _CoreService_GetRelations_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_GetEvent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetEventRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).GetEvent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_GetEvent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).GetEvent(ctx, req.(*GetEventRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _CoreService_SearchMessages_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SearchMessagesRequest)
 	if err := dec(in); err != nil {
@@ -1916,6 +1958,10 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetRelations",
 			Handler:    _CoreService_GetRelations_Handler,
+		},
+		{
+			MethodName: "GetEvent",
+			Handler:    _CoreService_GetEvent_Handler,
 		},
 		{
 			MethodName: "SearchMessages",
