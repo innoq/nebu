@@ -1,6 +1,7 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents.
 # Do not edit manually during an active pipeline run.
 # last_updated: 2026-05-10
+# [11-6] 2026-05-11T10:50Z committed ✓ (ATDD+Code CLEAN, 1 review cycle)
 # [11-6] 2026-05-11T10:47Z arc42-update → no arch changes (test-only story)
 # [11-6] 2026-05-11T10:46Z security-review → skipped (not-needed)
 # [11-6] 2026-05-11T10:45Z code-review → CLEAN after M1-verified+M2+m1 fixed (cycle 0)
@@ -65,17 +66,9 @@
 # [11-1] 2026-05-08T11:05Z create-story → 11-1-db-migration-search-index.md
 # [11-1] 2026-05-08T11:00Z pipeline started
 # --- pipeline log (newest first) ---
-story: "11-6"
-current_step: "commit"
-completed:
-  - create-story
-  - atdd
-  - test-review
-  - dev-story
-  - ci-gate
-  - code-review
-  - security-review
-  - arc42-update
+story: null
+current_step: null
+completed: []
 cycle_count: 0
 blocked_reason: null
-last_updated: "2026-05-10T23:20Z"
+last_updated: "2026-05-10T23:21Z"
