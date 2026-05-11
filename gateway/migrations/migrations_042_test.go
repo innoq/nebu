@@ -6,7 +6,7 @@ package migrations_test
 // files are created and applied.
 //
 // Failing reasons (before implementation):
-//   - 000042_search_vector.up.sql does not exist yet (AC1 FS test fails)
+//   - 000043_search_vector.up.sql does not exist yet (AC1 FS test fails)
 //   - search_vector column does not exist in events table (AC1 schema test fails)
 //   - events_search_vector_gin_idx index does not exist (AC1 index test fails)
 //   - events_search_vector_trigger trigger does not exist (AC2 trigger test fails)
@@ -39,14 +39,14 @@ import (
 // the embedded FS and are non-empty.
 //
 // AC1 coverage:
-//   - 000042_search_vector.up.sql present and non-empty
-//   - 000042_search_vector.down.sql present and non-empty
+//   - 000043_search_vector.up.sql present and non-empty
+//   - 000043_search_vector.down.sql present and non-empty
 //
 // RED PHASE: fails immediately because the SQL files do not exist yet.
 func TestMigration042_FilesExist(t *testing.T) {
 	files := []string{
-		"000042_search_vector.up.sql",
-		"000042_search_vector.down.sql",
+		"000043_search_vector.up.sql",
+		"000043_search_vector.down.sql",
 	}
 
 	for _, name := range files {

@@ -1,4 +1,4 @@
--- gateway/migrations/000042_search_vector.down.sql
+-- gateway/migrations/000043_search_vector.down.sql
 -- Rollback Story 11.1: remove search_vector column, GIN index, and trigger from events.
 
 DROP TRIGGER IF EXISTS events_search_vector_trigger ON events;

@@ -43,8 +43,8 @@ func TestFS_ContainsExpectedMigrationFiles(t *testing.T) {
 		"000023_media_files_deleted.up.sql",
 		"000023_media_files_deleted.down.sql",
 		// Story 11.1: search_vector tsvector column + GIN index + trigger on events
-		"000042_search_vector.up.sql",
-		"000042_search_vector.down.sql",
+		"000043_search_vector.up.sql",
+		"000043_search_vector.down.sql",
 	}
 
 	for _, name := range files {

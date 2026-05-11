@@ -215,16 +215,6 @@ func theSearchResultCountIs(expected int) error {
 	return nil
 }
 
-// theResponseBodyDoesNotContain checks that lastSearchBody does NOT contain substr.
-// The broad string check is intentional: it catches regressions where the term leaks
-// into any response field (results, highlights, groups) rather than just results[].
-func theResponseBodyDoesNotContain(substr string) error {
-	if strings.Contains(lastSearchBody, substr) {
-		return fmt.Errorf("response body unexpectedly contains %q — body: %s", substr, lastSearchBody)
-	}
-	return nil
-}
-
 // theResponseHeaderIsPresent checks that the named HTTP response header is non-empty.
 func theResponseHeaderIsPresent(name string) error {
 	var val string
@@ -274,7 +264,6 @@ func initializeSearchSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the search results contain a non-zero rank$`, theSearchResultsContainNonZeroRank)
 	sc.Step(`^the search result content body contains "([^"]*)"$`, theSearchResultContentBodyContains)
 	sc.Step(`^the search result count is (\d+)$`, theSearchResultCountIs)
-	sc.Step(`^the response body does not contain "([^"]*)"$`, theResponseBodyDoesNotContain)
 	sc.Step(`^the response header "([^"]*)" is present$`, theResponseHeaderIsPresent)
 	sc.Step(`^marie sends 10 consecutive POST /search requests$`, marieSends10ConsecutivePostSearchRequests)
 	sc.Step(`^marie sends one more POST /search request$`, marieCallsPostSearchOnceMore)

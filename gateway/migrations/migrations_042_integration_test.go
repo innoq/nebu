@@ -83,7 +83,7 @@ func newMigrate042(t *testing.T, dbURL string) *migrate.Migrate {
 //   - events.search_vector tsvector column exists
 //   - events_search_vector_gin_idx GIN index exists
 //
-// RED PHASE: fails because 000042_search_vector.up.sql has not been created and applied.
+// RED PHASE: fails because 000043_search_vector.up.sql has not been created and applied.
 func TestMigration042_ColumnAndIndexExist(t *testing.T) {
 	dbURL := testDB042URL()
 	db, err := sql.Open("pgx", dbURL)
@@ -128,7 +128,7 @@ func TestMigration042_ColumnAndIndexExist(t *testing.T) {
 	`).Scan(&colDataType)
 	if err == sql.ErrNoRows {
 		t.Fatal("AC1 FAIL: column events.search_vector is missing — " +
-			"run migration 000042_search_vector.up.sql (Story 11.1 AC1 not implemented)")
+			"run migration 000043_search_vector.up.sql (Story 11.1 AC1 not implemented)")
 	}
 	if err != nil {
 		t.Fatalf("querying events.search_vector column: %v", err)
@@ -154,7 +154,7 @@ func TestMigration042_ColumnAndIndexExist(t *testing.T) {
 	`).Scan(&indexName)
 	if err == sql.ErrNoRows {
 		t.Fatal("AC1 FAIL: GIN index events_search_vector_gin_idx is missing — " +
-			"migration 000042_search_vector.up.sql must CREATE INDEX ... USING GIN (search_vector)")
+			"migration 000043_search_vector.up.sql must CREATE INDEX ... USING GIN (search_vector)")
 	}
 	if err != nil {
 		t.Fatalf("querying pg_indexes for events_search_vector_gin_idx: %v", err)
@@ -453,11 +453,11 @@ func TestMigration042_BackfillPopulatesExistingRows(t *testing.T) {
 
 	// ── Step 4: Apply migration 000042 ────────────────────────────────────────
 	//
-	// RED PHASE: this fails because 000042_search_vector.up.sql does not exist yet.
+	// RED PHASE: this fails because 000043_search_vector.up.sql does not exist yet.
 
 	if err := m.Migrate(42); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		t.Fatalf("AC3 FAIL: applying migration 000042: %v — "+
-			"000042_search_vector.up.sql does not exist yet (Story 11.1 AC3 not implemented)", err)
+			"000043_search_vector.up.sql does not exist yet (Story 11.1 AC3 not implemented)", err)
 	}
 
 	// ── Step 5: Assert backfill populated search_vector on seed events ────────
@@ -521,11 +521,11 @@ func TestMigration042_BackfillPopulatesExistingRows(t *testing.T) {
 //   - events_search_vector_trigger trigger
 //   - events_search_vector_update() trigger function
 //
-// RED PHASE: fails because 000042_search_vector.down.sql does not exist yet, OR
+// RED PHASE: fails because 000043_search_vector.down.sql does not exist yet, OR
 // because the down migration does not DROP all objects cleanly.
 //
 // AC4 acceptance criterion:
-//   Given migration 000042_search_vector.down.sql runs,
+//   Given migration 000043_search_vector.down.sql runs,
 //   When it completes,
 //   Then the search_vector column, GIN index, trigger, and trigger function are gone.
 func TestMigration042_DownMigration(t *testing.T) {
@@ -550,7 +550,7 @@ func TestMigration042_DownMigration(t *testing.T) {
 	// Ensure migration 000042 is applied first.
 	if applyErr := m.Migrate(42); applyErr != nil && !errors.Is(applyErr, migrate.ErrNoChange) {
 		t.Fatalf("applying migration 000042 before down-migration test: %v — "+
-			"000042_search_vector.up.sql does not exist yet (Story 11.1 AC4 not implemented)", applyErr)
+			"000043_search_vector.up.sql does not exist yet (Story 11.1 AC4 not implemented)", applyErr)
 	}
 	// Always re-apply up migration on cleanup so the DB is left in a forward state.
 	t.Cleanup(func() {
@@ -564,7 +564,7 @@ func TestMigration042_DownMigration(t *testing.T) {
 	// Apply down migration: roll back from version 42 to version 41.
 	if downErr := m.Migrate(41); downErr != nil && !errors.Is(downErr, migrate.ErrNoChange) {
 		t.Fatalf("AC4 FAIL: running down migration 000042: %v — "+
-			"000042_search_vector.down.sql does not exist yet (Story 11.1 AC4 not implemented)", downErr)
+			"000043_search_vector.down.sql does not exist yet (Story 11.1 AC4 not implemented)", downErr)
 	}
 
 	// ── 1. search_vector column must be gone ─────────────────────────────────
@@ -580,7 +580,7 @@ func TestMigration042_DownMigration(t *testing.T) {
 	`).Scan(&colExists)
 	if colExists {
 		t.Error("AC4 FAIL: events.search_vector column still exists after down migration — " +
-			"000042_search_vector.down.sql must DROP COLUMN search_vector")
+			"000043_search_vector.down.sql must DROP COLUMN search_vector")
 	}
 
 	// ── 2. GIN index must be gone ─────────────────────────────────────────────
@@ -596,7 +596,7 @@ func TestMigration042_DownMigration(t *testing.T) {
 	`).Scan(&indexExists)
 	if indexExists {
 		t.Error("AC4 FAIL: GIN index events_search_vector_gin_idx still exists after down migration — " +
-			"000042_search_vector.down.sql must DROP INDEX events_search_vector_gin_idx")
+			"000043_search_vector.down.sql must DROP INDEX events_search_vector_gin_idx")
 	}
 
 	// ── 3. Trigger must be gone ───────────────────────────────────────────────
@@ -612,7 +612,7 @@ func TestMigration042_DownMigration(t *testing.T) {
 	`).Scan(&triggerExists)
 	if triggerExists {
 		t.Error("AC4 FAIL: trigger events_search_vector_trigger still exists after down migration — " +
-			"000042_search_vector.down.sql must DROP TRIGGER events_search_vector_trigger ON events")
+			"000043_search_vector.down.sql must DROP TRIGGER events_search_vector_trigger ON events")
 	}
 
 	// ── 4. Trigger function must be gone ─────────────────────────────────────
@@ -627,6 +627,6 @@ func TestMigration042_DownMigration(t *testing.T) {
 	`).Scan(&funcExists)
 	if funcExists {
 		t.Error("AC4 FAIL: trigger function events_search_vector_update() still exists after down migration — " +
-			"000042_search_vector.down.sql must DROP FUNCTION events_search_vector_update()")
+			"000043_search_vector.down.sql must DROP FUNCTION events_search_vector_update()")
 	}
 }

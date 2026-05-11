@@ -1,4 +1,4 @@
--- gateway/migrations/000042_search_vector.up.sql
+-- gateway/migrations/000043_search_vector.up.sql
 -- Story 11.1: Add tsvector FTS column + GIN index + trigger to events table.
 -- ADR-010: PostgreSQL native tsvector/tsquery approach selected (accepted 2026-05-08).
 -- Configuration: pg_catalog.simple — language-agnostic, no stemming, multilingual-safe.

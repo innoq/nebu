@@ -226,32 +226,29 @@ defmodule Nebu.Room.DB do
     # (MAJOR-2 fix, code review story 9-7 — removing the erroneous "" -> nil branch)
     state_key = Map.get(event, "state_key")
 
-    with {:ok, content_json} <- Jason.encode(event["content"]),
-         {:ok, sigs_json} <- encode_nullable(event["signatures"]) do
-      case Ecto.Adapters.SQL.query(
-             Nebu.Repo,
-             @sql_insert_event,
-             [
-               event["event_id"],
-               event["room_id"],
-               event["sender"],
-               event["type"],
-               content_json,
-               event["origin_server_ts"],
-               sigs_json,
-               state_key
-             ]
-           ) do
-        {:ok, _} -> :ok
-        {:error, reason} -> {:error, reason}
-      end
+    # Pass maps directly to Postgrex — Ecto+Postgrex encodes Elixir maps as JSONB
+    # objects. Pre-encoding to a JSON string then passing to Postgrex causes double-
+    # encoding: Postgrex treats the string as a JSON string literal (adds outer
+    # quotes), so the DB stores a JSONB string instead of a JSONB object. That breaks
+    # any JSONB path query (content->'m.relates_to'->>'event_id' etc.).
+    case Ecto.Adapters.SQL.query(
+           Nebu.Repo,
+           @sql_insert_event,
+           [
+             event["event_id"],
+             event["room_id"],
+             event["sender"],
+             event["type"],
+             event["content"],
+             event["origin_server_ts"],
+             event["signatures"],
+             state_key
+           ]
+         ) do
+      {:ok, _} -> :ok
+      {:error, reason} -> {:error, reason}
     end
   end
-
-  # Encodes a value to JSON string, or passes nil through unchanged.
-  # Used for optional JSONB columns like `signatures`.
-  defp encode_nullable(nil), do: {:ok, nil}
-  defp encode_nullable(value), do: Jason.encode(value)
 
   @sql_fetch_events_since """
   SELECT event_id, room_id, sender, event_type, content, origin_server_ts, state_key
