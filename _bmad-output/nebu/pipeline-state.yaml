@@ -1,6 +1,7 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-11
+# [bug] 2026-05-11T15:30Z committed ✓ (thread-root-redeliver: server.ex thread_root_updates + sync_test regression)
 # [11-8] 2026-05-11T11:35Z committed ✓ (ATDD+Code CLEAN 2 cycles+Kassandra CLEAN)
 # [11-8] 2026-05-11T11:30Z arc42-update → done (05-building-blocks, 06-runtime, matrix-api-scope)
 # [11-8] 2026-05-11T11:15Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 2 LOW advisory)
@@ -114,4 +115,4 @@ current_step: null
 completed: []
 cycle_count: 0
 blocked_reason: null
-last_updated: "2026-05-11T10:46Z"
+last_updated: "2026-05-11T15:25Z"

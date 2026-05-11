@@ -1321,7 +1321,9 @@ defmodule Nebu.EventDispatcher.Server do
           try do
             state = room_registry_module().get_state(room_id)
             raw_timeline_events = Enum.map(events, &event_map_to_proto/1)
+            thread_roots = thread_root_updates(events, room_id, user_id)
             timeline_events = attach_thread_aggregations(raw_timeline_events, room_id, user_id)
+            timeline_events = thread_roots ++ timeline_events
             limited = length(events) >= 20
             # When limited, the oldest event's event_id is the backward-pagination
             # cursor (Spec §6.3.3). Client passes this to GET /messages?from=<token>&dir=b.
@@ -2983,6 +2985,53 @@ defmodule Nebu.EventDispatcher.Server do
         ev
       end
     end)
+  end
+
+  # For each thread reply in the raw DB event batch, fetches the corresponding
+  # root event from DB (if not already in the delta) and returns those root events
+  # as proto Events with m.thread aggregations attached.
+  # Prepended to the timeline so Element Web creates Thread objects in real-time
+  # rather than only after a full page reload (initial sync).
+  defp thread_root_updates(db_events, room_id, user_id) do
+    delta_ids = MapSet.new(db_events, fn ev -> ev["event_id"] end)
+
+    db_events
+    |> Enum.flat_map(fn ev ->
+      content = normalise_db_content(ev["content"])
+
+      case content do
+        %{"m.relates_to" => %{"rel_type" => "m.thread", "event_id" => root_id}}
+            when is_binary(root_id) and byte_size(root_id) > 0 ->
+          if MapSet.member?(delta_ids, root_id) do
+            []
+          else
+            case messages_db_module().fetch_event(root_id, room_id) do
+              {:ok, root_ev} -> [event_map_to_proto(root_ev)]
+              _ -> []
+            end
+          end
+
+        _ ->
+          []
+      end
+    end)
+    |> Enum.uniq_by(fn ev -> ev.event_id end)
+    |> attach_thread_aggregations(room_id, user_id)
+  end
+
+  # Normalises a DB content value to a plain Elixir map.
+  # Handles Postgrex.JSONB structs (shape-matched), plain maps, and JSON strings.
+  defp normalise_db_content(raw) do
+    cond do
+      is_struct(raw) and Map.has_key?(raw, :decoded) and is_map(raw.decoded) -> raw.decoded
+      is_map(raw) -> raw
+      is_binary(raw) ->
+        case Jason.decode(raw) do
+          {:ok, map} when is_map(map) -> map
+          _ -> %{}
+        end
+      true -> %{}
+    end
   end
 
   # Normalises a content value from the DB (map or JSON string) to a plain map.

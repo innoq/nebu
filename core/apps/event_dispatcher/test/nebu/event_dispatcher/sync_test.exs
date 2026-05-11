@@ -215,6 +215,12 @@ defmodule Nebu.EventDispatcher.SyncTest do
     # Story 9-28: no thread children in sync unit tests — return 0.
     def count_thread_children(_room_id, _event_id), do: {:ok, 0}
     def event_in_room?(_event_id, _room_id), do: true
+    def fetch_event(event_id, room_id) do
+      case :ets.lookup(:sync_test_db, {:event, event_id}) do
+        [{_, ev}] -> if ev["room_id"] == room_id, do: {:ok, ev}, else: {:error, :not_found}
+        [] -> {:error, :not_found}
+      end
+    end
   end
 
   # ─── SyncTestFakeInviteDB ────────────────────────────────────────────────────
@@ -848,6 +854,80 @@ defmodule Nebu.EventDispatcher.SyncTest do
     def fetch_events_by_relation(_room_id, _event_id, _rel_type, _limit, _opts), do: {:ok, []}
     def count_thread_children(_room_id, _event_id), do: {:ok, 0}
     def event_in_room?(_event_id, _room_id), do: true
+    def check_room_status_for_update(_room_id), do: {:ok, "active"}
+    defdelegate fetch_event(event_id, room_id), to: SyncTestFakeDB
+  end
+
+  # ─── SyncDeltaThreadFakeDB ────────────────────────────────────────────────────
+  #
+  # Extends SyncDeltaFakeDB with thread-aware behaviour for Story N-N:
+  #   - fetch_event/2: returns the root event from ETS by event_id + room_id
+  #   - fetch_events_by_relation/5: returns thread replies for a given root event
+  #   - count_thread_children/2: counts thread replies in ETS for a given root event
+  #
+  # Used by the "thread root re-delivered in delta" regression test.
+
+  defmodule SyncDeltaThreadFakeDB do
+    defdelegate load_members(room_id), to: SyncTestFakeDB
+    defdelegate insert_room(room_id), to: SyncTestFakeDB
+    defdelegate insert_member(room_id, user_id), to: SyncTestFakeDB
+    defdelegate delete_member(room_id, user_id), to: SyncTestFakeDB
+    defdelegate insert_event(event), to: SyncTestFakeDB
+    defdelegate set_power_levels(room_id, power_levels_json), to: SyncTestFakeDB
+    defdelegate get_rooms_for_user(user_id), to: SyncTestFakeDB
+    defdelegate get_recently_left_rooms_for_user(user_id), to: SyncTestFakeDB
+    defdelegate fetch_events(room_id, direction, limit, from_token), to: SyncTestFakeDB
+    defdelegate get_room_name(room_id), to: SyncTestFakeDB
+    defdelegate load_room_settings(room_id), to: SyncTestFakeDB
+    defdelegate get_room_status(room_id), to: SyncTestFakeDB
+    defdelegate check_room_status_for_update(room_id), to: SyncDeltaFakeDB
+    defdelegate get_room_creator(room_id), to: SyncTestFakeDB
+    defdelegate get_generic_state_events(room_id), to: SyncTestFakeDB
+    defdelegate get_room_create_event(room_id), to: SyncTestFakeDB
+    defdelegate fetch_events_since(room_id, last_event_id, limit), to: SyncDeltaFakeDB
+    defdelegate get_event_timestamp(event_id), to: SyncDeltaFakeDB
+    def event_in_room?(_event_id, _room_id), do: true
+
+    def fetch_event(event_id, room_id) do
+      case :ets.lookup(:sync_test_db, {:event, event_id}) do
+        [{_, ev}] ->
+          if ev["room_id"] == room_id, do: {:ok, ev}, else: {:error, :not_found}
+
+        [] ->
+          {:error, :not_found}
+      end
+    end
+
+    def fetch_events_by_relation(room_id, root_event_id, "m.thread", _limit, _opts) do
+      replies =
+        :ets.match(:sync_test_db, {{:event, :"$1"}, :"$2"})
+        |> Enum.map(fn [_id, ev] -> ev end)
+        |> Enum.filter(fn ev ->
+          ev["room_id"] == room_id and
+            is_map(ev["content"]) and
+            get_in(ev, ["content", "m.relates_to", "rel_type"]) == "m.thread" and
+            get_in(ev, ["content", "m.relates_to", "event_id"]) == root_event_id
+        end)
+        |> Enum.sort_by(fn ev -> ev["origin_server_ts"] end, :desc)
+
+      {:ok, replies}
+    end
+
+    def fetch_events_by_relation(_room_id, _event_id, _rel_type, _limit, _opts), do: {:ok, []}
+
+    def count_thread_children(room_id, root_event_id) do
+      count =
+        :ets.match(:sync_test_db, {{:event, :"$1"}, :"$2"})
+        |> Enum.map(fn [_id, ev] -> ev end)
+        |> Enum.count(fn ev ->
+          ev["room_id"] == room_id and
+            is_map(ev["content"]) and
+            get_in(ev, ["content", "m.relates_to", "rel_type"]) == "m.thread" and
+            get_in(ev, ["content", "m.relates_to", "event_id"]) == root_event_id
+        end)
+
+      {:ok, count}
+    end
   end
 
   # ─── Story 4-15 AT #1: get_sync_delta — pending events returned immediately ───
@@ -2040,6 +2120,131 @@ defmodule Nebu.EventDispatcher.SyncTest do
 
       assert three_arity_calls == [],
              "expected no 3-arity persist_since_token call when device_id is set, got: #{inspect(three_arity_calls)}"
+    end
+  end
+
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # Bug fix: thread root re-delivered with m.thread aggregation on incremental sync
+  # ═══════════════════════════════════════════════════════════════════════════════
+  #
+  # Bug: when a thread reply arrives in the incremental sync delta, the root event
+  # (which predates the since_token) is NOT re-delivered. Element Web never creates
+  # or updates the Thread object in real-time — the thread indicator only appears
+  # after a full page reload (which triggers an initial sync that includes the root
+  # event with updated unsigned.m.relations.m.thread).
+  #
+  # Root cause: fetch_delta_rooms calls attach_thread_aggregations only on the delta
+  # events. The root event is not in the delta, so it never gets updated aggregations.
+  #
+  # Fix: in fetch_delta_rooms, detect thread replies in the delta, fetch their root
+  # events from DB via fetch_event/2, attach m.thread aggregations to them, and
+  # prepend them to the timeline (de-duplicated).
+  #
+  # Given: !thread_root_redeliver:test.local has root event $root (ts=1_700_000_000_000)
+  #        and thread reply $reply (ts=1_700_000_001_000); since_token points to $root;
+  # When:  Server.get_sync_delta/2 is called (only $reply is in the delta)
+  # Then:  response.rooms[room].timeline_events contains BOTH $root and $reply;
+  #        $root has unsigned_relations with m.thread.count >= 1
+
+  describe "Server.get_sync_delta/2 — thread root re-delivered with m.thread aggregation" do
+    test "root event appears in delta timeline with m.thread aggregation when thread reply arrives" do
+      alice = "@alice_thread_redeliver:test.local"
+      kai   = "@kai_thread_redeliver:test.local"
+      room_id = "!thread_root_redeliver:test.local"
+
+      :ets.new(:sync_delta_pg_store_config, [:named_table, :public, :set])
+
+      on_exit(fn ->
+        if :ets.info(:sync_delta_pg_store_config) != :undefined do
+          :ets.delete(:sync_delta_pg_store_config)
+        end
+      end)
+
+      Application.put_env(:event_dispatcher, :pg_store_module, SyncDeltaFakePgStore)
+      Application.put_env(:event_dispatcher, :messages_db_module, SyncDeltaThreadFakeDB)
+      Application.put_env(:event_dispatcher, :rooms_db_module, SyncDeltaThreadFakeDB)
+
+      on_exit(fn ->
+        Application.delete_env(:event_dispatcher, :pg_store_module)
+        Application.delete_env(:event_dispatcher, :messages_db_module)
+        Application.delete_env(:event_dispatcher, :rooms_db_module)
+      end)
+
+      :ok = setup_room_with_member(room_id, alice)
+      :ok = Nebu.Room.Server.join(room_id, kai)
+
+      root_event = %{
+        "event_id"         => "$root_redeliver:test.local",
+        "room_id"          => room_id,
+        "sender"           => kai,
+        "event_type"       => "m.room.message",
+        "content"          => %{"msgtype" => "m.text", "body" => "Hello from kai"},
+        "origin_server_ts" => 1_700_000_000_000
+      }
+
+      thread_reply = %{
+        "event_id"         => "$reply_redeliver:test.local",
+        "room_id"          => room_id,
+        "sender"           => alice,
+        "event_type"       => "m.room.message",
+        "content"          => %{
+          "msgtype"      => "m.text",
+          "body"         => "First thread reply",
+          "m.relates_to" => %{
+            "rel_type" => "m.thread",
+            "event_id" => "$root_redeliver:test.local"
+          }
+        },
+        "origin_server_ts" => 1_700_000_001_000
+      }
+
+      SyncDeltaThreadFakeDB.insert_event(root_event)
+      SyncDeltaThreadFakeDB.insert_event(thread_reply)
+
+      # since_token points to the root event — client has seen root but not the reply
+      :ets.insert(
+        :sync_delta_pg_store_config,
+        {:get_since_token_response,
+         {:ok, %{since_token: "s_at_root_redeliver", last_event_id: "$root_redeliver:test.local"}}}
+      )
+
+      request = %Core.GetSyncDeltaRequest{
+        user_id:    alice,
+        since_token: "s_at_root_redeliver",
+        timeout_ms: 5000
+      }
+
+      response = Server.get_sync_delta(request, build_stream())
+
+      assert %Core.GetSyncDeltaResponse{} = response,
+             "expected GetSyncDeltaResponse, got: #{inspect(response)}"
+
+      delta_room = Enum.find(response.rooms, fn r -> r.room_id == room_id end)
+      assert delta_room != nil,
+             "expected room #{room_id} in response, got: #{inspect(Enum.map(response.rooms, & &1.room_id))}"
+
+      timeline_event_ids = Enum.map(delta_room.timeline_events, & &1.event_id)
+
+      assert "$reply_redeliver:test.local" in timeline_event_ids,
+             "expected thread reply in delta timeline, got: #{inspect(timeline_event_ids)}"
+
+      assert "$root_redeliver:test.local" in timeline_event_ids,
+             "expected root event to be re-delivered in delta (with m.thread aggregation), got: #{inspect(timeline_event_ids)}"
+
+      root_proto = Enum.find(delta_room.timeline_events, fn ev ->
+        ev.event_id == "$root_redeliver:test.local"
+      end)
+
+      assert is_binary(root_proto.unsigned_relations) and root_proto.unsigned_relations != "",
+             "expected root event unsigned_relations to be set, got: #{inspect(root_proto.unsigned_relations)}"
+
+      {:ok, relations} = Jason.decode(root_proto.unsigned_relations)
+
+      assert is_map(relations["m.thread"]),
+             "expected unsigned_relations[m.thread] to be a map, got: #{inspect(relations)}"
+
+      assert relations["m.thread"]["count"] >= 1,
+             "expected m.thread.count >= 1, got: #{inspect(relations["m.thread"]["count"])}"
     end
   end
 end
