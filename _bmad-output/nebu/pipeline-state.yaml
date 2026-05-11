@@ -1,6 +1,18 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
-# last_updated: 2026-05-08
+# last_updated: 2026-05-11
+# [11-7] 2026-05-11T11:50Z arc42-update → done (06-runtime: SSO nonce flow, 08-concepts: nonce+denylist, 11-risks: Safari resolved)
+# [11-7] 2026-05-11T11:40Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW)
+# [11-7] 2026-05-11T11:30Z code-review → CLEAN cycle 2 (MIN-7 naming, MIN-8 doc — fixed inline)
+# [11-7] 2026-05-11T11:15Z code-review → 0 MAJOR, 6 MINOR → cycle 2
+# [11-7] 2026-05-11T11:00Z code-review → 0 MAJOR, 5 MINOR → cycle 1
+# [11-7] 2026-05-11T10:55Z ci-gate → ✓ build+unit-go+unit-elixir (217 Elixir, 18 Go packages green)
+# [11-7] 2026-05-11T10:45Z dev-story → done (cycle 0) — 2 MINOR fixed; all 43.881s unit tests green
+# [11-7] 2026-05-11T10:35Z test-review → CLEAN (0 MAJOR, 2 MINOR)
+# [11-7] 2026-05-11T10:30Z atdd → 2 tests (TestSSOCallback_NonceMismatch + @ac6-safari-relogin Playwright)
+# [11-7] 2026-05-11T10:20Z oracle-gate → spec context captured (SSO nonce mismatch, denylist POST /login, Cache-Control, state-cap)
+# [11-7] 2026-05-11T10:15Z create-story → 11-7-safari-relogin-fix.md (3-layer SSO fix: nonce+Cache-Control+denylist; missing AC3+AC6 tests; security_review: required)
+# [11-7] 2026-05-11T10:00Z pipeline started
 # [9-30] 2026-05-08T12:35Z committed ✓ (ATDD+Code CLEAN 2 cycles+Kassandra CLEAN)
 # [9-30] 2026-05-08T12:30Z arc42-update → done (08-concepts: JSONB normalisation contract)
 # [9-30] 2026-05-08T12:25Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW)
@@ -83,9 +95,17 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: null
-current_step: null
-completed: []
-cycle_count: 0
+story: "11-7"
+current_step: "commit"
+completed:
+  - create-story
+  - atdd
+  - test-review
+  - dev-story
+  - ci-gate
+  - code-review
+  - security-review
+  - arc42-update
+cycle_count: 2
 blocked_reason: null
-last_updated: "2026-05-08T12:08Z"
+last_updated: "2026-05-11T09:06Z"

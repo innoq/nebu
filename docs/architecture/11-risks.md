@@ -25,6 +25,7 @@
 | Token invalidation gap — short-lived tokens not revoked until OIDC expiry | Accepted risk (MVP) | Story 7-26 |
 | Compliance session revoke CSRF (fixed) | Resolved | Story 7-16b, Kassandra HIGH-1 |
 | Moderation caller_id from request body (fixed) | Resolved | Story 7-32, SEC Gate 2 HIGH |
+| Safari re-login lands on #/welcome (Dex cached id_token + Safari 302 cache) | Resolved | Story 11-7 |
 
 ## Technical Debt
 
@@ -64,4 +65,4 @@ Items that should be set up before production:
 - Alert on `message_dead_letter` table non-zero count
 - Audit log retention cron alert if purge job fails
 
-_Source: `_bmad-output/implementation-artifacts/sprint-status.yaml`, deferred items and security findings; `_bmad-output/planning-artifacts/prd.md`, §Risk Mitigations_
+_Source: `_bmad-output/implementation-artifacts/sprint-status.yaml`, deferred items and security findings; `_bmad-output/planning-artifacts/prd.md`, §Risk Mitigations; Story 11-7 (Safari re-login bug resolved: nonce replay prevention, Cache-Control: no-store, denylist check at login)_

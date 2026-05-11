@@ -449,10 +449,19 @@ func main() {
 		fmt.Fprintf(w, `{"m.homeserver":{"base_url":%q}}`, baseURL)
 	})))
 
+	tokenDB, err := sql.Open("pgx", cfg.DBURL)
+	if err != nil {
+		slog.Error("failed to open DB for token store", "err", err)
+		os.Exit(1)
+	}
+	defer tokenDB.Close()
+	tokenStore := db.NewPostgresTokenStore(tokenDB)
+
 	loginHandler := matrix.NewLoginHandler(matrix.LoginConfig{
 		DisplayName:        cfg.OIDCDisplayName,
 		Provider:           oidcProvider,
 		CoreClient:         coreClient,
+		Store:              tokenStore,
 		ServerName:         serverName,
 		ClientID:           cfg.OIDCClientID,
 		ClientSecret:       cfg.OIDCClientSecret,
@@ -466,14 +475,6 @@ func main() {
 	// /_matrix/client/v3/login/sso/redirect/oidc is registered in Dex redirectURIs.
 	mux.Handle("GET /_matrix/client/v3/login/sso/redirect", mediumRL(http.HandlerFunc(loginHandler.GetSSORedirect)))
 	mux.Handle("GET /_matrix/client/v3/login/sso/redirect/oidc", mediumRL(http.HandlerFunc(loginHandler.GetSSOCallback)))
-
-	tokenDB, err := sql.Open("pgx", cfg.DBURL)
-	if err != nil {
-		slog.Error("failed to open DB for token store", "err", err)
-		os.Exit(1)
-	}
-	defer tokenDB.Close()
-	tokenStore := db.NewPostgresTokenStore(tokenDB)
 	// AC4 (Story 9-22): wire Core gRPC client to logout handler for per-device sync-token cleanup.
 	logoutHandler := matrix.NewLogoutHandlerWithCore(matrix.LogoutConfig{
 		Store:      tokenStore,

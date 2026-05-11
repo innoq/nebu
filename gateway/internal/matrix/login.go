@@ -12,6 +12,7 @@ import (
 	"github.com/nebu/nebu/internal/auth"
 	coregrpc "github.com/nebu/nebu/internal/grpc"
 	pb "github.com/nebu/nebu/internal/grpc/pb"
+	"github.com/nebu/nebu/internal/middleware"
 	"github.com/nebu/nebu/internal/validate"
 )
 
@@ -70,6 +71,7 @@ type LoginHandler struct {
 	displayName        string
 	provider           *auth.Provider
 	coreClient         CoreClient
+	store              middleware.TokenStore // optional; nil = skip denylist check in PostLogin
 	serverName         string
 	clientID           string
 	clientSecret       string
@@ -81,6 +83,7 @@ type LoginConfig struct {
 	DisplayName        string
 	Provider           *auth.Provider
 	CoreClient         CoreClient
+	Store              middleware.TokenStore // optional; when set, PostLogin rejects invalidated JWTs
 	ServerName         string
 	ClientID           string
 	ClientSecret       string
@@ -89,10 +92,14 @@ type LoginConfig struct {
 }
 
 func NewLoginHandler(cfg LoginConfig) *LoginHandler {
+	if cfg.Store == nil {
+		slog.Warn("LoginHandler: no TokenStore configured — denylist check disabled; PostLogin will not reject invalidated JWTs")
+	}
 	return &LoginHandler{
 		displayName:        cfg.DisplayName,
 		provider:           cfg.Provider,
 		coreClient:         cfg.CoreClient,
+		store:              cfg.Store,
 		serverName:         cfg.ServerName,
 		clientID:           cfg.ClientID,
 		clientSecret:       cfg.ClientSecret,
@@ -134,6 +141,21 @@ func (h *LoginHandler) PostLogin(w http.ResponseWriter, r *http.Request) {
 	idToken, err := verifier.Verify(r.Context(), rawJWT)
 	if err != nil {
 		writeMatrixError(w, http.StatusForbidden, "M_FORBIDDEN", "Invalid or expired token")
+		return
+	}
+
+	// Denylist check: reject JWTs that were previously invalidated on logout.
+	// This guards against two scenarios:
+	//   1. Dex returned a cached id_token despite prompt=login (nonce mismatch already
+	//      caught in GetSSOCallback, but defense-in-depth for direct POST /login calls).
+	//   2. A client submitting a raw JWT directly (fallback path) that was already logged out.
+	//
+	// 403 M_FORBIDDEN (not 401 M_UNKNOWN_TOKEN) is intentional here: POST /login is an
+	// authentication attempt, not a session validation. 403 signals the credential is
+	// forbidden; JWTMiddleware returns 401 M_UNKNOWN_TOKEN for invalidated session tokens.
+	if h.store != nil && h.store.IsInvalidated(rawJWT) {
+		slog.Warn("PostLogin: rejected invalidated JWT — token is in the denylist", "event", "denylist_hit_login")
+		writeMatrixError(w, http.StatusForbidden, "M_FORBIDDEN", "Token has been logged out — please log in again")
 		return
 	}
 

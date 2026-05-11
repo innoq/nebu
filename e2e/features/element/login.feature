@@ -31,3 +31,11 @@ Feature: Element Web Login
     Given alex is logged in via Element Web
     When alex reloads Element Web
     Then the room list is visible without a Dex redirect
+
+  @ac6-safari-relogin
+  Scenario: Safari re-login — logout then immediate SSO login lands on room list
+    Given alex is logged in via Element Web
+    When alex opens the user menu and clicks "Sign out"
+    And alex immediately logs back in via SSO as "alex@example.com" without clearing browser storage
+    Then the room list is visible
+    And the URL does not contain "#/welcome"

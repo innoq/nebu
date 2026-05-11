@@ -1,5 +1,6 @@
 # generated: 2026-03-20
 # last_updated: 2026-05-11
+# story 11-7 done (pipeline: ATDD+Code CLEAN 2 cycles+Kassandra CLEAN): 2026-05-11
 # story 11-6 done (pipeline: ATDD+Code CLEAN — 5 Godog + 3 Playwright E2E search tests): 2026-05-11
 # story 11-6 created: 11-6 → ready-for-dev: 2026-05-11 (Gherkin E2E Search Flow — 5 Godog scenarios + 3 Playwright+Cucumber scenarios; security_review not-needed)
 # story 11-5 done (pipeline: ATDD+Dev+Code CLEAN; Kassandra CLEAN (0 findings)): 2026-05-11
@@ -811,6 +812,7 @@ development_status:
   11-4-gateway-post-search-handler: ready-for-dev  # story 11-4 created: 2026-05-08 (Gateway POST /search Handler — SearchHandler, SearchCoreClient interface, grpc.Client.SearchMessages, main.go registration; security_review: required)
   11-5-search-rate-limiting: ready-for-dev  # story 11-5 created: 2026-05-11 (Search Rate-Limiting — NewUserRateLimiter per user_id, 10 req/min burst 10, retry_after_ms, middleware chain inside jwtWithStatusCheck; security_review: required)
   11-6-gherkin-e2e-search-flow: ready-for-dev  # story 11-6 created: 2026-05-11 (Gherkin E2E Search Flow — 5 Godog scenarios (happy path, 401, membership-zero, 400, rate-limit 429) + 3 Playwright+Cucumber scenarios (Element Web search find/navigate/empty-state); security_review: not-needed)
+  11-7-safari-relogin-fix: ready-for-dev  # story 11-7 created: 2026-05-11 (Safari SSO Re-Login Bugfix — nonce+Cache-Control+denylist 3-layer fix; missing: TestSSOCallback_NonceMismatch + Playwright @ac6-safari-relogin; security_review: required)
   epic-11-retrospective: optional
 
   # ─────────────────────────────────────────────────────────────────────────

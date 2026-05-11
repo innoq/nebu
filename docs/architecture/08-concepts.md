@@ -23,6 +23,31 @@ Auth token never forwarded to Elixir — only user_id + system_role
 **Bootstrap mode:** First OIDC login automatically receives `instance_admin`. Bootstrap mode is
 permanently disabled after the first admin setup. No default password, no insecure fallback.
 
+**SSO Nonce-Based Replay Prevention (Story 11-7):**
+
+`GetSSORedirect` generates a 16-byte cryptographically random nonce (32 hex chars) per SSO
+flow. The nonce is stored in `globalSSOState` alongside the PKCE verifier and forwarded to
+Dex via `oauth2.SetAuthURLParam("nonce", nonce)`. In `GetSSOCallback`, the `nonce` claim is
+extracted from the returned id_token and compared against the stored nonce. A mismatch results
+in `403 M_FORBIDDEN "SSO nonce mismatch"` — no loginToken is issued. This prevents Dex's
+server-side token caching from replaying a previously invalidated JWT as a new access_token.
+
+**Denylist Check at Login (Story 11-7):**
+
+`PostLogin` calls `h.store.IsInvalidated(rawJWT)` before issuing an access_token. If the
+submitted JWT is in the denylist, it returns `403 M_FORBIDDEN "Token has been logged out"`.
+This is defence-in-depth against direct `POST /login` calls that submit a previously
+invalidated JWT (bypassing the SSO nonce check). Status `403 M_FORBIDDEN` (not `401`) is
+intentional: `POST /login` is an authentication *attempt*, not a session validation request.
+`LoginHandler.store` is nil-safe — deployments without a denylist skip the check.
+
+**Cache-Control: no-store on SSO Redirect (Story 11-7):**
+
+`GetSSORedirect` sets `Cache-Control: no-store` before the `http.Redirect` call. This
+prevents Safari (and any intermediate cache) from storing the 302 redirect response. Without
+this header, Safari can replay a cached redirect on re-login, causing the already-consumed
+state parameter to be rejected (`400 M_UNKNOWN "Invalid or expired SSO state"`).
+
 **Rate limiting (per IP):**
 
 | Tier | Rate | Endpoints |
@@ -316,4 +341,4 @@ native Elixir terms, not ETF-deserialised arbitrary structs).
 `GetRelations` (Story 9-29) and `GetMessages`. No new endpoints, migrations, gRPC handlers, or
 schema changes were introduced.
 
-_Source: `_bmad-output/planning-artifacts/architecture.md`, §Cross-Cutting Concerns, §Auth-Token-Flow, §Enforcement; `_bmad-output/planning-artifacts/prd.md`, §Cryptographic Identity Architecture; Story 9-22 (per-device sync token isolation, logout cleanup); Story 9-26 (Browser-First E2E layer, playwright-bdd, token sidecar pattern); Story 9-27 (gRPC error surface rule — GRPC.RPCError vs MatchError; failure audit trail pattern for multi-step operations); Story 9-28 (Thread aggregations in sync, bundled m.thread via unsigned_relations, GetRelations RPC, migration 000042 expression index); Story 9-29 (Relations API query params: dir, recurse, from; base and three-segment routes; prev_batch response field; fetch_events_by_relation/5 dynamic WHERE builder with rel_type + event_type + dir opts); Story 9-30 (JSONB content normalisation bug fix — %Postgrex.JSONB{decoded} struct guard in event_map_to_proto/1; resolves /relations HTTP 500 on JSONB-typed content columns)_
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Cross-Cutting Concerns, §Auth-Token-Flow, §Enforcement; `_bmad-output/planning-artifacts/prd.md`, §Cryptographic Identity Architecture; Story 9-22 (per-device sync token isolation, logout cleanup); Story 9-26 (Browser-First E2E layer, playwright-bdd, token sidecar pattern); Story 9-27 (gRPC error surface rule — GRPC.RPCError vs MatchError; failure audit trail pattern for multi-step operations); Story 9-28 (Thread aggregations in sync, bundled m.thread via unsigned_relations, GetRelations RPC, migration 000042 expression index); Story 9-29 (Relations API query params: dir, recurse, from; base and three-segment routes; prev_batch response field; fetch_events_by_relation/5 dynamic WHERE builder with rel_type + event_type + dir opts); Story 9-30 (JSONB content normalisation bug fix — %Postgrex.JSONB{decoded} struct guard in event_map_to_proto/1; resolves /relations HTTP 500 on JSONB-typed content columns); Story 11-7 (SSO nonce-based replay prevention; Cache-Control: no-store on SSO 302 redirect; denylist check in PostLogin with 403 M_FORBIDDEN; ssoStateStore capacity cap at 10,000; Safari re-login bugfix)_

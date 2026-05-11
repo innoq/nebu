@@ -516,4 +516,74 @@ On restart, Horde re-discovers Room GenServers across the cluster via CRDT regis
 Session Manager GenServer reads since-token checkpoints from PostgreSQL (no cold-sync forced on clients).
 EventBus stream re-connects to Go Gateway after exponential backoff (max 30s + jitter).
 
-_Source: `_bmad-output/planning-artifacts/architecture.md`, §Implementation Patterns, §API & Kommunikation, §Resilienz & Selbst-Heilung; Story 9-19 (GAP-JOIN-PUBLIC, GAP-LEAVE-ONCE, GAP-FORGET); Story 9-22 (GAP-SINCE-IGNORED — per-device sync tokens, per-device logout cleanup); Story 9-23 (GAP-INVITE-STATE — invite_state stripped state enrichment: join_rules, avatar, create); Story 9-24 (GAP-GLOBAL-ACCOUNT-DATA — top-level account_data delivery in all 4 sync paths, RLS-aware ListGlobalAccountData); Story 9-25 (GAP-BUFFER-NEXT-BATCH — synthetic buf_<ms>_<seq> next_batch token on buffer fast-path, replaces echoed since= token); Story 9-27 (Scenario 3i — full Matrix §11.35.1 room upgrade flow, GRPC.RPCError error handling, archive_room_atomic idempotency, terminate_child, try/rescue failure audit); Story 9-28 (Scenario 3j — GetRelations RPC + bundled m.thread aggregations in sync unsigned field, attach_thread_aggregations, fetch_events_by_relation, count_thread_children, migration 000042); Story 9-29 (Scenario 3j-1 expanded — base route + three-segment route, dir/event_type/recurse/from params, prev_batch response field, fetch_events_by_relation/5 dynamic WHERE builder, 400 validation for invalid dir/recurse)_
+## Scenario 6: SSO Login Flow with Nonce and Denylist Verification (Story 11-7)
+
+The SSO flow now enforces a three-layer security mechanism to prevent the Safari re-login bug
+where a cached id_token or a cached 302 redirect caused Element Web to land on `#/welcome`.
+
+```
+Matrix Client      Go Gateway (sso.go)        Dex OIDC              PostgreSQL (token_denylist)
+     │                   │                       │                           │
+     │  GET /sso/redirect │                       │                           │
+     │  ?redirectUrl=...  │                       │                           │
+     │──────────────────►│                       │                           │
+     │                   │  generate 16-byte nonce (hex encoded)             │
+     │                   │  generate 16-byte state                            │
+     │                   │  globalSSOState.save(state, verifier,             │
+     │                   │    redirectURL, nonce, 10min)                     │
+     │                   │  -- capacity check: reject at 10,000 entries     │
+     │  302 Location:    │                       │                           │
+     │  Cache-Control:   │                       │                           │
+     │    no-store       │                       │                           │
+     │◄──────────────────│                       │                           │
+     │  (browser follows redirect to Dex)        │                           │
+     │──────────────────────────────────────────►│                           │
+     │                   │                       │  auth code issued          │
+     │  GET /sso/callback?code=...&state=...     │                           │
+     │──────────────────►│                       │                           │
+     │                   │  globalSSOState.pop(state) → {verifier, nonce}   │
+     │                   │  oauth2.Exchange(code, verifier)                  │
+     │                   │──────────────────────►│                           │
+     │                   │  id_token             │                           │
+     │                   │◄──────────────────────│                           │
+     │                   │  verify id_token (callbackVerifier)               │
+     │                   │  extract nonce claim                              │
+     │                   │  if nonce mismatch → 403 M_FORBIDDEN             │
+     │                   │    "SSO nonce mismatch"                           │
+     │                   │  globalLoginTokens.save(opaqueToken, idToken, 30s)│
+     │  302 Location:    │                       │                           │
+     │  redirectUrl?     │                       │                           │
+     │  loginToken=xxx   │                       │                           │
+     │◄──────────────────│                       │                           │
+     │                   │                       │                           │
+     │  POST /login      │                       │                           │
+     │  {type:m.login.   │                       │                           │
+     │   token, token:xx}│                       │                           │
+     │──────────────────►│                       │                           │
+     │                   │  globalLoginTokens.pop(opaqueToken) → rawJWT     │
+     │                   │  oidc.Verify(rawJWT)  │                           │
+     │                   │  h.store.IsInvalidated(rawJWT)?                  │
+     │                   │──────────────────────────────────────────────────►│
+     │                   │  if invalidated → 403 M_FORBIDDEN                 │
+     │                   │    "Token has been logged out"                    │
+     │  200 {access_token}│                      │                           │
+     │◄──────────────────│                       │                           │
+```
+
+**Three failure paths mitigated:**
+
+| Path | Root Cause | Fix |
+|---|---|---|
+| Path A — cached id_token | Dex reuses a 24h-cached JWT (nonce not required) | Nonce generated per request in GetSSORedirect; nonce claim verified in GetSSOCallback — stale JWTs rejected before loginToken is issued |
+| Path B — Safari cached 302 | Safari replays cached redirect with a consumed state | `Cache-Control: no-store` on the SSO 302 response prevents the redirect from being cached |
+| Path C — direct POST /login with invalidated JWT | PostLogin did not consult the denylist | `h.store.IsInvalidated(rawJWT)` called in PostLogin before issuing access_token; returns `403 M_FORBIDDEN` (not 401, as this is an auth *attempt*) |
+
+**State store capacity cap:** `globalSSOState.save` rejects any entry when the store already
+holds ≥ 10,000 non-expired entries. `GetSSORedirect` returns `429 M_LIMIT_EXCEEDED`.
+This prevents unbounded memory growth from unauthenticated flood attacks.
+
+**LoginHandler.store nil-safety:** When `LoginConfig.Store` is `nil` (deployments without
+a denylist, test setups), the denylist check in PostLogin is skipped. This preserves
+backwards compatibility.
+
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Implementation Patterns, §API & Kommunikation, §Resilienz & Selbst-Heilung; Story 9-19 (GAP-JOIN-PUBLIC, GAP-LEAVE-ONCE, GAP-FORGET); Story 9-22 (GAP-SINCE-IGNORED — per-device sync tokens, per-device logout cleanup); Story 9-23 (GAP-INVITE-STATE — invite_state stripped state enrichment: join_rules, avatar, create); Story 9-24 (GAP-GLOBAL-ACCOUNT-DATA — top-level account_data delivery in all 4 sync paths, RLS-aware ListGlobalAccountData); Story 9-25 (GAP-BUFFER-NEXT-BATCH — synthetic buf_<ms>_<seq> next_batch token on buffer fast-path, replaces echoed since= token); Story 9-27 (Scenario 3i — full Matrix §11.35.1 room upgrade flow, GRPC.RPCError error handling, archive_room_atomic idempotency, terminate_child, try/rescue failure audit); Story 9-28 (Scenario 3j — GetRelations RPC + bundled m.thread aggregations in sync unsigned field, attach_thread_aggregations, fetch_events_by_relation, count_thread_children, migration 000042); Story 9-29 (Scenario 3j-1 expanded — base route + three-segment route, dir/event_type/recurse/from params, prev_batch response field, fetch_events_by_relation/5 dynamic WHERE builder, 400 validation for invalid dir/recurse); Story 11-7 (Scenario 6 — SSO nonce generation + verification, Cache-Control: no-store on 302, denylist check in PostLogin, ssoStateStore capacity cap at 10,000)_

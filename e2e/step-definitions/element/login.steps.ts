@@ -207,3 +207,99 @@ Then('the room list is visible without a Dex redirect', async ({ page }: { page:
   // Assert room list is visible
   await expect(page.locator('.mx_LeftPanel')).toBeVisible({ timeout: 20_000 });
 });
+
+// ---------------------------------------------------------------------------
+// AC6-safari-relogin steps
+// Story 11.7 — Safari logout → immediate SSO re-login lands on room list
+// ---------------------------------------------------------------------------
+
+/**
+ * "When alex immediately logs back in via SSO as {string} without clearing browser storage"
+ *
+ * This is the critical path for the Safari re-login bug:
+ *   - The user is already on the post-logout screen (/#/login or /#/welcome).
+ *   - Browser storage (localStorage / IndexedDB / cookies) is NOT cleared.
+ *     This replicates the Safari scenario where old state is still present.
+ *   - The user initiates a fresh SSO login by clicking the SSO button.
+ *   - Dex will be reached via a full Authorization Code + PKCE flow.
+ *   - The nonce generated in GetSSORedirect is new, so Dex cannot replay a cached JWT.
+ *   - On success, Element Web should show the room list, NOT #/welcome.
+ *
+ * Per CLAUDE.md: OIDC tests MUST use Authorization Code + PKCE. Never use ROPC
+ * (grant_type=password) shortcuts. This step drives real browser SSO navigation.
+ */
+When(
+  '{word} immediately logs back in via SSO as {string} without clearing browser storage',
+  async ({ page }: { page: Page }, _userName: string, email: string) => {
+    // IMPORTANT: do NOT clear browser storage here.
+    // The bug (Safari re-login failure) was triggered precisely because the browser
+    // retained state from the previous session. Clearing storage would mask the bug.
+
+    // Wait for the post-logout login page (Element Web 1.12.15 redirects to /#/login).
+    // We accept /#/login, /#/welcome, or the bare root since Element versions differ.
+    await page.waitForURL(/\/(#\/(login|welcome|home))?$/, { timeout: 15_000 }).catch((e: Error) => {
+      if (!e.message?.includes('Timeout')) throw e;
+      // timeout is acceptable — page may already be on the right URL
+    });
+
+    // Locate the SSO / "Continue with SSO" button. After logout, Element shows the
+    // login page directly with the SSO button (no intermediate "Sign in" link needed).
+    // Try SSO button first; fall back to "Sign in" link → SSO button flow.
+    const ssoBtn = page.getByRole('button', { name: /continue with sso|mit sso|weiter mit sso/i });
+    const signInLink = page.getByRole('link', { name: /sign in|anmelden/i });
+
+    const ssoBtnVisible = await ssoBtn.isVisible({ timeout: 6_000 }).catch(() => false);
+    if (!ssoBtnVisible) {
+      // May need to click "Sign in" first (some Element versions show welcome before login form)
+      const signInVisible = await signInLink.isVisible({ timeout: 5_000 }).catch(() => false);
+      if (signInVisible) {
+        await signInLink.click();
+        await ssoBtn.waitFor({ state: 'visible', timeout: 10_000 });
+      }
+    }
+
+    await ssoBtn.waitFor({ state: 'visible', timeout: 10_000 });
+    await ssoBtn.click();
+
+    // Dex login page — full Authorization Code + PKCE flow (CLAUDE.md: no ROPC).
+    await page.waitForURL(/dex.*\/auth/i, { timeout: 20_000 });
+    await page.locator('input[name="login"]').fill(email);
+    await page.locator('input[name="password"]').fill(DEX_TEST_PASSWORD);
+    await page.locator('button[type="submit"]').click();
+
+    // Dex consent screen (may appear if Dex session expired or if prompt=login triggered re-auth)
+    const consentBtn = page.getByRole('button', { name: /grant access|allow|approve|confirm/i });
+    if (await consentBtn.isVisible({ timeout: 6_000 }).catch(() => false)) {
+      await consentBtn.click();
+    }
+
+    // Wait for redirect back to Element Web
+    await page.waitForURL(/localhost:7070/, { timeout: 30_000 });
+
+    // Element may show a key-setup / encryption dialog — dismiss it so the
+    // room list can appear. This mirrors the loginViaOidcBrowser() helper.
+    await Promise.race([
+      page.locator('.mx_LeftPanel').waitFor({ state: 'visible', timeout: 25_000 }),
+      page.getByRole('button', { name: /cancel|abbrechen/i })
+        .waitFor({ state: 'visible', timeout: 25_000 }),
+    ]).catch((e: Error) => {
+      throw new Error(`@ac6-safari-relogin: post-login state not reached — ${e.message}`);
+    });
+
+    const cancelBtn = page.getByRole('button', { name: /cancel|abbrechen/i });
+    if (await cancelBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
+      await cancelBtn.click();
+    }
+  }
+);
+
+/**
+ * "Then the URL does not contain {string}"
+ *
+ * Verifies the current page URL does not include the given substring.
+ * Used by @ac6-safari-relogin to assert the user did NOT land on #/welcome.
+ */
+Then('the URL does not contain {string}', async ({ page }: { page: Page }, fragment: string) => {
+  const currentUrl = page.url();
+  expect(currentUrl).not.toContain(fragment);
+});
