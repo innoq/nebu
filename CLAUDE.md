@@ -94,7 +94,14 @@ make proto                        # buf generate (in container)
 make dev                          # docker compose up (gateway, core, postgres, keycloak)
 make setup                        # first-time setup: generate .secrets/internal_secret + test keys
 make test-integration             # full stack + Godog Gherkin tests
+make redeploy                     # rebuild gateway + core Docker images and restart containers
 ```
+
+**After committing code changes, always use `make redeploy`** — not `make build-gateway` or `make build-core`.
+
+- `make build-gateway` builds `nebu-gateway:dev` — a different tag than what docker compose uses (`nebu-gateway:latest`).
+- `make build-core` only runs `mix compile` inside a throw-away container — it does NOT build a Docker image at all.
+- `make redeploy` runs `docker compose build --no-cache gateway core && docker compose up -d --force-recreate gateway core`, which correctly rebuilds the images docker compose uses and restarts the containers.
 
 Environment variables for gateway (prefix: `NEBU_`):
 - `NEBU_CORE_GRPC_ADDR` — gRPC address of the Elixir core (default: `core:9000`)

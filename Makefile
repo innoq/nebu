@@ -7,7 +7,7 @@ DOCKER_ELIXIR = docker run --rm -v $(PWD):/workspace -w /workspace elixir:1.19-a
 DOCKER_BUF    = docker run --rm -v $(PWD):/workspace -w /workspace bufbuild/buf
 DOCKER_NODE   = docker run --rm -v $(PWD):/workspace -w /workspace node:22-alpine
 
-.PHONY: build-gateway build-core build-admin-css download-fonts download-vendor dev setup test-unit-go test-unit-elixir test-integration test-integration-elixir test-integration-ci test-e2e test-matrix-compat test-load-silber build-element-e2e test-e2e-element build-fluffychat-e2e test-e2e-fluffychat proto gen-api test-compose-ports
+.PHONY: build-gateway build-core redeploy build-admin-css download-fonts download-vendor dev setup test-unit-go test-unit-elixir test-integration test-integration-elixir test-integration-ci test-e2e test-matrix-compat test-load-silber build-element-e2e test-e2e-element build-fluffychat-e2e test-e2e-fluffychat proto gen-api test-compose-ports
 
 ## download-fonts: Download Inter + JetBrains Mono WOFF2 fonts (run once; commit results)
 download-fonts:
@@ -47,9 +47,16 @@ build-admin-css:
 build-gateway: gen-api build-admin-css download-vendor
 	docker build -t nebu-gateway:dev ./gateway
 
-## build-core: Compile the Elixir/OTP Core inside container (mix compile)
+## build-core: Compile the Elixir/OTP Core inside container (mix compile — does NOT rebuild the Docker image)
 build-core:
 	$(DOCKER_ELIXIR) sh -c "cd core && mix local.hex --force && mix deps.get && mix compile"
+
+## redeploy: Rebuild gateway + core Docker images (via docker compose) and restart containers.
+## Use this after committing code changes — make build-gateway / make build-core do NOT update
+## the images used by docker compose. Always use --no-cache to avoid stale layer reuse.
+redeploy:
+	docker compose build --no-cache gateway core
+	docker compose up -d --force-recreate gateway core
 
 ## dev: Start the full local development stack (gateway, core, postgres, dex)
 dev:
