@@ -33,8 +33,11 @@ func (h *AuditLogHandler) ListHandler(w http.ResponseWriter, r *http.Request) {
 	entries := filterAuditLog(stubAuditLog, from, to)
 	enrichedEntries := enrichAuditEntries(entries)
 
+	auditPD := newPageData()
+	auditPD.ActiveNav = "audit-log"
+	auditPD.CSRFToken = CSRFTokenFromContext(r.Context())
 	data := AuditLogPageData{
-		PageData:   PageData{ActiveNav: "audit-log", CSRFToken: CSRFTokenFromContext(r.Context())},
+		PageData:   auditPD,
 		Entries:    enrichedEntries,
 		From:       from,
 		To:         to,

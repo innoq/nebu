@@ -304,6 +304,51 @@ treats it the same as `dir=b`; true recursive relation traversal is deferred to 
 (no prev-page cursor implemented in MVP); the field is present in the proto contract for
 forward compatibility.
 
+## Build Metadata Injection (Story 11-9)
+
+Nebu exposes build metadata (`version`, `git_commit`, `build_time`) via two dedicated `GET /info`
+endpoints — one on the Go Gateway public mux (port 8080) and one on the Elixir Core health server
+(port 4000). Both endpoints require no authentication and return JSON:
+
+```json
+{"component": "gateway", "version": "0.1.0", "git_commit": "abc1234", "build_time": "2026-05-11T10:00:00Z"}
+```
+
+**Two injection mechanisms — one per runtime:**
+
+| Component | Mechanism | Fallback |
+|---|---|---|
+| Go Gateway | `-ldflags "-X main.buildVersion=… -X main.gitCommit=… -X main.buildTime=…"` at `go build` | `"unknown"` (package-level `var` defaults) |
+| Elixir Core | `ARG → ENV` in Dockerfile; `System.get_env/2` at call time in `Nebu.BuildInfo.get/0` | `"unknown"` (default arg to `System.get_env/2`) |
+
+**Gateway — static handler pattern:** `NewInfoHandler` in `gateway/internal/health/info.go`
+pre-marshals the JSON body at handler construction time (called once during startup). Each
+request writes the same pre-computed byte slice — zero allocations per request. The handler
+is registered on `pubMux` (port 8080) alongside `/health` and `/ready`, NOT on the
+authenticated main mux.
+
+**Core — runtime ENV reads:** `Nebu.BuildInfo.get/0` reads `System.get_env/2` at call time.
+Both the builder and runtime Dockerfile stages carry the three `ENV` vars so the values are
+available regardless of whether they are baked into the release BEAM files or read at
+process start.
+
+**Admin UI footer:** The build vars are threaded into every authenticated admin page render
+via `admin.SetBuildInfo(buildVersion, gitCommit, buildTime)` (called once from `main.go`)
+and `admin.newPageData()` (called by each authenticated handler). The base template renders:
+
+```
+nebu gateway v{{.BuildVersion}} · {{.GitCommit}} · built {{.BuildTime}}
+```
+
+The footer is suppressed on the login page (`LoginMode: true`) and on error pages
+(`ErrorMode: true`) — both guards use `{{ if not }}` in `layouts/base.html`.
+
+**`make redeploy` integration:** The `redeploy` Makefile target now exports `GIT_COMMIT`
+(from `git rev-parse --short HEAD`) and `BUILD_TIME` (from `date -u`) before calling
+`docker compose build`. When these are unset (e.g. plain `make redeploy` without env
+exports), `docker-compose.yml` passes `${GIT_COMMIT:-unknown}` — images build successfully
+and `GET /info` returns `"unknown"` values per AC3.
+
 ## Relations API — JSONB Content Normalisation (Story 9-30)
 
 **Bug fix:** Postgrex returns JSONB columns as a `%Postgrex.JSONB{decoded: map}` struct when the
@@ -341,4 +386,4 @@ native Elixir terms, not ETF-deserialised arbitrary structs).
 `GetRelations` (Story 9-29) and `GetMessages`. No new endpoints, migrations, gRPC handlers, or
 schema changes were introduced.
 
-_Source: `_bmad-output/planning-artifacts/architecture.md`, §Cross-Cutting Concerns, §Auth-Token-Flow, §Enforcement; `_bmad-output/planning-artifacts/prd.md`, §Cryptographic Identity Architecture; Story 9-22 (per-device sync token isolation, logout cleanup); Story 9-26 (Browser-First E2E layer, playwright-bdd, token sidecar pattern); Story 9-27 (gRPC error surface rule — GRPC.RPCError vs MatchError; failure audit trail pattern for multi-step operations); Story 9-28 (Thread aggregations in sync, bundled m.thread via unsigned_relations, GetRelations RPC, migration 000042 expression index); Story 9-29 (Relations API query params: dir, recurse, from; base and three-segment routes; prev_batch response field; fetch_events_by_relation/5 dynamic WHERE builder with rel_type + event_type + dir opts); Story 9-30 (JSONB content normalisation bug fix — %Postgrex.JSONB{decoded} struct guard in event_map_to_proto/1; resolves /relations HTTP 500 on JSONB-typed content columns); Story 11-7 (SSO nonce-based replay prevention; Cache-Control: no-store on SSO 302 redirect; denylist check in PostLogin with 403 M_FORBIDDEN; ssoStateStore capacity cap at 10,000; Safari re-login bugfix)_
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Cross-Cutting Concerns, §Auth-Token-Flow, §Enforcement; `_bmad-output/planning-artifacts/prd.md`, §Cryptographic Identity Architecture; Story 9-22 (per-device sync token isolation, logout cleanup); Story 9-26 (Browser-First E2E layer, playwright-bdd, token sidecar pattern); Story 9-27 (gRPC error surface rule — GRPC.RPCError vs MatchError; failure audit trail pattern for multi-step operations); Story 9-28 (Thread aggregations in sync, bundled m.thread via unsigned_relations, GetRelations RPC, migration 000042 expression index); Story 9-29 (Relations API query params: dir, recurse, from; base and three-segment routes; prev_batch response field; fetch_events_by_relation/5 dynamic WHERE builder with rel_type + event_type + dir opts); Story 9-30 (JSONB content normalisation bug fix — %Postgrex.JSONB{decoded} struct guard in event_map_to_proto/1; resolves /relations HTTP 500 on JSONB-typed content columns); Story 11-7 (SSO nonce-based replay prevention; Cache-Control: no-store on SSO 302 redirect; denylist check in PostLogin with 403 M_FORBIDDEN; ssoStateStore capacity cap at 10,000; Safari re-login bugfix); Story 11-9 (build metadata injection — ldflags for Go, ARG→ENV for Elixir; NewInfoHandler static pre-marshalled response; Nebu.BuildInfo.get/0; Admin UI footer via SetBuildInfo/newPageData/ErrorMode; make redeploy GIT_COMMIT/BUILD_TIME exports)_

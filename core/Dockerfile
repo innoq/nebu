@@ -11,9 +11,21 @@ COPY apps/signature/mix.exs apps/signature/
 COPY apps/permissions/mix.exs apps/permissions/
 RUN mix deps.get --only prod
 COPY . .
+ARG GIT_COMMIT=unknown
+ARG BUILD_TIME=unknown
+ARG RELEASE_VERSION=unknown
+ENV GIT_COMMIT=${GIT_COMMIT}
+ENV BUILD_TIME=${BUILD_TIME}
+ENV RELEASE_VERSION=${RELEASE_VERSION}
 RUN MIX_ENV=prod mix release
 
 FROM alpine:3.23 AS runtime
 RUN apk add --no-cache libstdc++ openssl ncurses curl
+ARG GIT_COMMIT=unknown
+ARG BUILD_TIME=unknown
+ARG RELEASE_VERSION=unknown
+ENV GIT_COMMIT=${GIT_COMMIT}
+ENV BUILD_TIME=${BUILD_TIME}
+ENV RELEASE_VERSION=${RELEASE_VERSION}
 COPY --from=builder /app/_build/prod/rel/nebu ./
 ENTRYPOINT ["./bin/nebu", "start"]

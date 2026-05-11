@@ -1,0 +1,199 @@
+==> permissions
+
+15:20:13.585 [error] Gateway registration failed: NEBU_INTERNAL_SECRET_FILE not set
+Running ExUnit with seed: 593445, max_cases: 28
+
+.
+Finished in 0.01 seconds (0.00s async, 0.01s sync)
+1 test, 0 failures
+==> signature
+Running ExUnit with seed: 593445, max_cases: 28
+
+.....................
+Finished in 0.04 seconds (0.04s async, 0.00s sync)
+21 tests, 0 failures
+==> nebu_db
+There are no tests to run
+==> room_manager
+Running ExUnit with seed: 593445, max_cases: 28
+
+...................................................................................
+Finished in 0.8 seconds (0.2s async, 0.6s sync)
+83 tests, 0 failures
+==> session_manager
+Running ExUnit with seed: 593445, max_cases: 28
+
+.............................................
+Finished in 0.1 seconds (0.00s async, 0.1s sync)
+45 tests, 0 failures
+==> compliance
+Running ExUnit with seed: 593445, max_cases: 28
+
+
+15:20:14.816 [error] AuditWriter: refused to write audit log — validation failed
+..
+15:20:14.816 [error] AuditWriter: rejected unknown audit action
+.
+15:20:14.817 [error] AuditWriter: failed to write audit log
+..
+15:20:14.817 [error] AuditWriter: refused to write audit log — validation failed
+.
+15:20:14.817 [error] AuditWriter: refused to write audit log — validation failed
+................
+Finished in 0.1 seconds (0.1s async, 0.03s sync)
+22 tests, 0 failures
+==> presence
+Running ExUnit with seed: 593445, max_cases: 28
+
+...............
+Finished in 0.1 seconds (0.00s async, 0.1s sync)
+15 tests, 0 failures
+==> event_dispatcher
+Running ExUnit with seed: 593445, max_cases: 28
+Excluding tags: [:integration]
+
+..........................
+15:20:15.969 [warning] Nebu.Grpc.AuthInterceptor: no internal secret configured; rejecting all gRPC calls
+........................*........*....................
+15:20:16.087 [error] AuditWriter: refused to write audit log — validation failed
+.
+15:20:16.087 [error] AuditWriter: refused to write audit log — validation failed
+.
+15:20:16.087 [error] AuditWriter: refused to write audit log — validation failed
+
+15:20:16.087 [error] AuditWriter: refused to write audit log — validation failed
+.
+15:20:16.087 [error] AuditWriter: refused to write audit log — validation failed
+...........
+15:20:16.193 [error] validate_token failed
+..
+15:20:16.193 [warning] validate_token: profile upsert failed for @kai:nebu.local: :db_error
+........
+15:20:16.195 [error] Gateway registration failed: NEBU_INTERNAL_SECRET_FILE not set
+.
+15:20:16.245 [error] Gateway registration failed after retries: {:failed_connect, [{:to_address, {~c"127.0.0.1", 19999}}, {:inet, [:inet], :econnrefused}]}
+.
+15:20:16.245 [error] Gateway registration failed: cannot read PSK file: enoent
+........................................
+15:20:16.580 [error] search_messages failed
+.............................thread_root_updates: {:debug_thread_root_updates, "$dev_new",
+ %{"body" => "new", "msgtype" => "m.text"}}
+no_match: {:no_match, %{"body" => "new", "msgtype" => "m.text"}}
+thread_roots: {:thread_roots_count, 0}
+...thread_root_updates: {:debug_thread_root_updates, "$sp4_bob_join", %{"membership" => "join"}}
+no_match: {:no_match, %{"membership" => "join"}}
+thread_roots: {:thread_roots_count, 0}
+.......thread_root_updates: {:debug_thread_root_updates, "$pb_new1",
+ %{"body" => "msg 1", "msgtype" => "m.text"}}
+no_match: {:no_match, %{"body" => "msg 1", "msgtype" => "m.text"}}
+thread_root_updates: {:debug_thread_root_updates, "$pb_new2",
+ %{"body" => "msg 2", "msgtype" => "m.text"}}
+no_match: {:no_match, %{"body" => "msg 2", "msgtype" => "m.text"}}
+thread_root_updates: {:debug_thread_root_updates, "$pb_new3",
+ %{"body" => "msg 3", "msgtype" => "m.text"}}
+no_match: {:no_match, %{"body" => "msg 3", "msgtype" => "m.text"}}
+thread_root_updates: {:debug_thread_root_updates, "$pb_new4",
+ %{"body" => "msg 4", "msgtype" => "m.text"}}
+no_match: {:no_match, %{"body" => "msg 4", "msgtype" => "m.text"}}
+thread_root_updates: {:debug_thread_root_updates, "$pb_new5",
+ %{"body" => "msg 5", "msgtype" => "m.text"}}
+no_match: {:no_match, %{"body" => "msg 5", "msgtype" => "m.text"}}
+thread_root_updates: {:debug_thread_root_updates, "$pb_new6",
+ %{"body" => "msg 6", "msgtype" => "m.text"}}
+no_match: {:no_match, %{"body" => "msg 6", "msgtype" => "m.text"}}
+thread_root_updates: {:debug_thread_root_updates, "$pb_new7",
+ %{"body" => "msg 7", "msgtype" => "m.text"}}
+no_match: {:no_match, %{"body" => "msg 7", "msgtype" => "m.text"}}
+thread_root_updates: {:debug_thread_root_updates, "$pb_new8",
+ %{"body" => "msg 8", "msgtype" => "m.text"}}
+no_match: {:no_match, %{"body" => "msg 8", "msgtype" => "m.text"}}
+thread_root_updates: {:debug_thread_root_updates, "$pb_new9",
+ %{"body" => "msg 9", "msgtype" => "m.text"}}
+no_match: {:no_match, %{"body" => "msg 9", "msgtype" => "m.text"}}
+thread_root_updates: {:debug_thread_root_updates, "$pb_new10",
+ %{"body" => "msg 10", "msgtype" => "m.text"}}
+no_match: {:no_match, %{"body" => "msg 10", "msgtype" => "m.text"}}
+thread_root_updates: {:debug_thread_root_updates, "$pb_new11",
+ %{"body" => "msg 11", "msgtype" => "m.text"}}
+no_match: {:no_match, %{"body" => "msg 11", "msgtype" => "m.text"}}
+thread_root_updates: {:debug_thread_root_updates, "$pb_new12",
+ %{"body" => "msg 12", "msgtype" => "m.text"}}
+no_match: {:no_match, %{"body" => "msg 12", "msgtype" => "m.text"}}
+thread_root_updates: {:debug_thread_root_updates, "$pb_new13",
+ %{"body" => "msg 13", "msgtype" => "m.text"}}
+no_match: {:no_match, %{"body" => "msg 13", "msgtype" => "m.text"}}
+thread_root_updates: {:debug_thread_root_updates, "$pb_new14",
+ %{"body" => "msg 14", "msgtype" => "m.text"}}
+no_match: {:no_match, %{"body" => "msg 14", "msgtype" => "m.text"}}
+thread_root_updates: {:debug_thread_root_updates, "$pb_new15",
+ %{"body" => "msg 15", "msgtype" => "m.text"}}
+no_match: {:no_match, %{"body" => "msg 15", "msgtype" => "m.text"}}
+thread_root_updates: {:debug_thread_root_updates, "$pb_new16",
+ %{"body" => "msg 16", "msgtype" => "m.text"}}
+no_match: {:no_match, %{"body" => "msg 16", "msgtype" => "m.text"}}
+thread_root_updates: {:debug_thread_root_updates, "$pb_new17",
+ %{"body" => "msg 17", "msgtype" => "m.text"}}
+no_match: {:no_match, %{"body" => "msg 17", "msgtype" => "m.text"}}
+thread_root_updates: {:debug_thread_root_updates, "$pb_new18",
+ %{"body" => "msg 18", "msgtype" => "m.text"}}
+no_match: {:no_match, %{"body" => "msg 18", "msgtype" => "m.text"}}
+thread_root_updates: {:debug_thread_root_updates, "$pb_new19",
+ %{"body" => "msg 19", "msgtype" => "m.text"}}
+no_match: {:no_match, %{"body" => "msg 19", "msgtype" => "m.text"}}
+thread_root_updates: {:debug_thread_root_updates, "$pb_new20",
+ %{"body" => "msg 20", "msgtype" => "m.text"}}
+no_match: {:no_match, %{"body" => "msg 20", "msgtype" => "m.text"}}
+thread_roots: {:thread_roots_count, 0}
+.thread_root_updates: {:debug_thread_root_updates, "$sp1_pl_change", %{"users_default" => 0}}
+no_match: {:no_match, %{"users_default" => 0}}
+thread_roots: {:thread_roots_count, 0}
+..thread_root_updates: {:debug_thread_root_updates, "$pb2_ev1",
+ %{"body" => "msg 1", "msgtype" => "m.text"}}
+no_match: {:no_match, %{"body" => "msg 1", "msgtype" => "m.text"}}
+thread_root_updates: {:debug_thread_root_updates, "$pb2_ev2",
+ %{"body" => "msg 2", "msgtype" => "m.text"}}
+no_match: {:no_match, %{"body" => "msg 2", "msgtype" => "m.text"}}
+thread_root_updates: {:debug_thread_root_updates, "$pb2_ev3",
+ %{"body" => "msg 3", "msgtype" => "m.text"}}
+no_match: {:no_match, %{"body" => "msg 3", "msgtype" => "m.text"}}
+thread_root_updates: {:debug_thread_root_updates, "$pb2_ev4",
+ %{"body" => "msg 4", "msgtype" => "m.text"}}
+no_match: {:no_match, %{"body" => "msg 4", "msgtype" => "m.text"}}
+thread_root_updates: {:debug_thread_root_updates, "$pb2_ev5",
+ %{"body" => "msg 5", "msgtype" => "m.text"}}
+no_match: {:no_match, %{"body" => "msg 5", "msgtype" => "m.text"}}
+thread_roots: {:thread_roots_count, 0}
+..thread_root_updates: {:debug_thread_root_updates, "$sp3_pl_change", %{"users_default" => 0}}
+no_match: {:no_match, %{"users_default" => 0}}
+thread_roots: {:thread_roots_count, 0}
+.thread_root_updates: {:debug_thread_root_updates, "$reply_redeliver:test.local",
+ %{
+   "body" => "First thread reply",
+   "m.relates_to" => %{
+     "event_id" => "$root_redeliver:test.local",
+     "rel_type" => "m.thread"
+   },
+   "msgtype" => "m.text"
+ }}
+pattern_matched: {:matched_thread_reply, "$root_redeliver:test.local", false}
+fetch_event: {:fetch_event_result, "$root_redeliver:test.local",
+ {:ok,
+  %{
+    "content" => %{"body" => "Hello from kai", "msgtype" => "m.text"},
+    "event_id" => "$root_redeliver:test.local",
+    "event_type" => "m.room.message",
+    "origin_server_ts" => 1700000000000,
+    "room_id" => "!thread_root_redeliver:test.local",
+    "sender" => "@kai_thread_redeliver:test.local"
+  }}}
+thread_roots: {:thread_roots_count, 1}
+..thread_root_updates: {:debug_thread_root_updates, "$ev_new_delta1",
+ %{"body" => "new", "msgtype" => "m.text"}}
+no_match: {:no_match, %{"body" => "new", "msgtype" => "m.text"}}
+thread_roots: {:thread_roots_count, 0}
+.thread_root_updates: {:debug_thread_root_updates, "$sp2_name_change", %{"name" => "New Room Name"}}
+no_match: {:no_match, %{"name" => "New Room Name"}}
+thread_roots: {:thread_roots_count, 0}
+.............................
+Finished in 2.6 seconds (0.8s async, 1.7s sync)
+223 tests, 0 failures, 2 skipped (6 excluded)

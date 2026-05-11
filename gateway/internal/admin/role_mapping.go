@@ -33,8 +33,11 @@ func (h *RoleMappingHandler) Handler(w http.ResponseWriter, r *http.Request) {
 	if msg := sanitizeFlash(r.URL.Query().Get("flash")); msg != "" {
 		flash = AlertBannerData{Severity: "success", Message: msg, Dismissible: true}
 	}
+	roleMappingPD := newPageData()
+	roleMappingPD.ActiveNav = "role-mapping"
+	roleMappingPD.CSRFToken = CSRFTokenFromContext(r.Context())
 	data := RoleMappingPageData{
-		PageData: PageData{ActiveNav: "role-mapping", CSRFToken: CSRFTokenFromContext(r.Context())},
+		PageData: roleMappingPD,
 		Config:   stubRoleMappingConfig,
 		Flash:    flash,
 	}
@@ -92,8 +95,11 @@ func (h *RoleMappingHandler) UpdateHandler(w http.ResponseWriter, r *http.Reques
 	}
 
 	if len(errors) > 0 {
+		roleMappingErrPD := newPageData()
+		roleMappingErrPD.ActiveNav = "role-mapping"
+		roleMappingErrPD.CSRFToken = CSRFTokenFromContext(r.Context())
 		data := RoleMappingPageData{
-			PageData: PageData{ActiveNav: "role-mapping", CSRFToken: CSRFTokenFromContext(r.Context())},
+			PageData: roleMappingErrPD,
 			Config: StubRoleMappingConfig{
 				OIDCGroupClaim:      oidcGroupClaim,
 				InstanceAdminGroup:  instanceAdminGroup,

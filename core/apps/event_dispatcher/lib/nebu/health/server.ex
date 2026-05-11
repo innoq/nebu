@@ -7,6 +7,7 @@ defmodule Nebu.Health.Server do
 
   Routes:
     GET /health → 200 (UP/DEGRADED) or 503 (DOWN) with JSON body
+    GET /info   → 200 with build metadata JSON (Story 11-9)
     *           → 404 Not Found
   """
 
@@ -61,6 +62,17 @@ defmodule Nebu.Health.Server do
             "Connection: close\r\n\r\n" <>
             body
 
+        :gen_tcp.send(socket, response)
+
+      {:ok, {:http_request, :GET, {:abs_path, "/info"}, _}} ->
+        drain_headers(socket)
+        body = Jason.encode!(Nebu.BuildInfo.get())
+        response =
+          "HTTP/1.1 200 OK\r\n" <>
+            "Content-Type: application/json\r\n" <>
+            "Content-Length: #{byte_size(body)}\r\n" <>
+            "Connection: close\r\n\r\n" <>
+            body
         :gen_tcp.send(socket, response)
 
       {:ok, {:http_request, _, _, _}} ->

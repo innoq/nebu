@@ -279,8 +279,11 @@ func (h *ComplianceHandler) ListHandler(w http.ResponseWriter, r *http.Request) 
 		filtered = filterComplianceRequests(stubComplianceRequests, statusFilter)
 	}
 
+	compliancePD := newPageData()
+	compliancePD.ActiveNav = "compliance"
+	compliancePD.CSRFToken = CSRFTokenFromContext(r.Context())
 	data := CompliancePageData{
-		PageData:     PageData{ActiveNav: "compliance", CSRFToken: CSRFTokenFromContext(r.Context())},
+		PageData:     compliancePD,
 		Requests:     filtered,
 		StatusFilter: statusFilter,
 		Flash:        flash,

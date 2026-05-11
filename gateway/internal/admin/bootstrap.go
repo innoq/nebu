@@ -91,13 +91,13 @@ func NewBootstrapHandler(checker BootstrapStatusChecker, tmpl *TemplateHandler, 
 
 // Handler responds with the Bootstrap Wizard HTML page (step 1).
 func (h *BootstrapHandler) Handler(w http.ResponseWriter, r *http.Request) {
+	bootstrapPD := newPageData()
+	bootstrapPD.BootstrapMode = true
+	bootstrapPD.ActiveNav = "bootstrap"
+	bootstrapPD.CSRFToken = CSRFTokenFromContext(r.Context())
 	data := BootstrapPageData{
-		PageData: PageData{
-			BootstrapMode: true,
-			ActiveNav:     "bootstrap",
-			CSRFToken:     CSRFTokenFromContext(r.Context()),
-		},
-		Step: 1,
+		PageData: bootstrapPD,
+		Step:     1,
 	}
 	h.tmpl.render(w, "bootstrap", data)
 }
@@ -113,12 +113,12 @@ func (h *BootstrapHandler) StepHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Collect accumulated state from form
+	bootstrapStepPD := newPageData()
+	bootstrapStepPD.BootstrapMode = true
+	bootstrapStepPD.ActiveNav = "bootstrap"
+	bootstrapStepPD.CSRFToken = CSRFTokenFromContext(r.Context())
 	data := BootstrapPageData{
-		PageData: PageData{
-			BootstrapMode: true,
-			ActiveNav:     "bootstrap",
-			CSRFToken:     CSRFTokenFromContext(r.Context()),
-		},
+		PageData:     bootstrapStepPD,
 		InstanceName: r.FormValue("instance_name"),
 		OIDCIssuer:   r.FormValue("oidc_issuer"),
 		OIDCClientID: r.FormValue("oidc_client_id"),

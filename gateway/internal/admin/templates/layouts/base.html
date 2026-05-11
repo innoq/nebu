@@ -143,5 +143,10 @@
   </div>
 
   {{ block "scripts" . }}{{ end }}
+  {{ if not .BootstrapMode }}{{ if not .LoginMode }}{{ if not .ErrorMode }}
+  <footer class="footer footer-center p-2 bg-base-200 text-base-content text-xs opacity-60 shrink-0">
+    <p>nebu gateway v{{.BuildVersion}} · {{.GitCommit}} · built {{.BuildTime}}</p>
+  </footer>
+  {{ end }}{{ end }}{{ end }}
 </body>
 </html>{{ end }}

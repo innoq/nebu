@@ -158,8 +158,11 @@ func (h *UsersHandler) ListHandler(w http.ResponseWriter, r *http.Request) {
 		rows[i] = toUserRowData(u)
 	}
 
+	usersListPD := newPageData()
+	usersListPD.ActiveNav = "users"
+	usersListPD.CSRFToken = CSRFTokenFromContext(r.Context())
 	data := UsersPageData{
-		PageData: PageData{ActiveNav: "users", CSRFToken: CSRFTokenFromContext(r.Context())},
+		PageData: usersListPD,
 		Users:    rows,
 		SearchInput: SearchInputData{
 			Placeholder: "Search users…",
@@ -280,8 +283,11 @@ func (h *UsersHandler) DetailHandler(w http.ResponseWriter, r *http.Request) {
 		CSRFToken:    csrfToken,
 	}
 
+	usersDetailPD := newPageData()
+	usersDetailPD.ActiveNav = "users"
+	usersDetailPD.CSRFToken = csrfToken
 	data := UsersPageData{
-		PageData:                PageData{ActiveNav: "users", CSRFToken: csrfToken},
+		PageData:                usersDetailPD,
 		Users:                   rows,
 		ActiveItemID:            userID,
 		ActiveUser:              user,

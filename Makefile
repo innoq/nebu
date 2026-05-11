@@ -54,7 +54,11 @@ build-core:
 ## redeploy: Rebuild gateway + core Docker images (via docker compose) and restart containers.
 ## Use this after committing code changes — make build-gateway / make build-core do NOT update
 ## the images used by docker compose. Always use --no-cache to avoid stale layer reuse.
+## Build args are computed here so deployed images always carry real version metadata.
 redeploy:
+	GIT_COMMIT=$$(git rev-parse --short HEAD) \
+	BUILD_TIME=$$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+	RELEASE_VERSION=$$(git describe --tags --always 2>/dev/null || echo dev) \
 	docker compose build --no-cache gateway core
 	docker compose up -d --force-recreate gateway core
 

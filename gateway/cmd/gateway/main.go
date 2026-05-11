@@ -42,6 +42,14 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// Build-time metadata — injected via -ldflags at Docker build time.
+// Fallback to "unknown" when built locally without ldflags.
+var (
+	buildVersion = "unknown"
+	gitCommit    = "unknown"
+	buildTime    = "unknown"
+)
+
 // coreMetricsAdapter adapts *coregrpc.Client to satisfy the admin.MetricsReader interface.
 type coreMetricsAdapter struct {
 	client *coregrpc.Client
@@ -171,6 +179,7 @@ func main() {
 	healthHandler := health.NewHandler(cfg.DBURL, coreClient)
 	pubMux.HandleFunc("GET /health", healthHandler.Health)
 	pubMux.HandleFunc("GET /ready", healthHandler.Ready)
+	pubMux.HandleFunc("GET /info", health.NewInfoHandler("gateway", buildVersion, gitCommit, buildTime))
 	pubMux.Handle("GET /metrics", promhttp.Handler())
 
 	go func() {
@@ -253,6 +262,8 @@ func main() {
 		slog.Error("failed to initialize template handler", "err", err)
 		os.Exit(1)
 	}
+	// Story 11-9: inject build metadata into admin template footer.
+	admin.SetBuildInfo(buildVersion, gitCommit, buildTime)
 
 	adminAuth := admin.NewAdminAuth(oidcProvider, cfg.OIDCClientID, cfg.OIDCClientSecret, cfg.OIDCClaimRole, []byte(internalSecret), bootstrapDB, tmplHandler)
 	sessionStore := db.NewPostgresAdminSessionStore(bootstrapDB)

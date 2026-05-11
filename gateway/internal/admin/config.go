@@ -77,8 +77,11 @@ func (h *ConfigHandler) Handler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	configPD := newPageData()
+	configPD.ActiveNav = "config"
+	configPD.CSRFToken = CSRFTokenFromContext(r.Context())
 	data := ConfigPageData{
-		PageData: PageData{ActiveNav: "config", CSRFToken: CSRFTokenFromContext(r.Context())},
+		PageData: configPD,
 		Config:   cfg,
 		Flash:    flash,
 	}

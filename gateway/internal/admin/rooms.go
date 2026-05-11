@@ -168,8 +168,11 @@ func (h *RoomsHandler) ListHandler(w http.ResponseWriter, r *http.Request) {
 		rows[i] = toRoomRowData(room)
 	}
 
+	roomsListPD := newPageData()
+	roomsListPD.ActiveNav = "rooms"
+	roomsListPD.CSRFToken = CSRFTokenFromContext(r.Context())
 	data := RoomsPageData{
-		PageData: PageData{ActiveNav: "rooms", CSRFToken: CSRFTokenFromContext(r.Context())},
+		PageData: roomsListPD,
 		Rooms:    rows,
 		SearchInput: SearchInputData{
 			Placeholder: "Search rooms…",
@@ -308,8 +311,11 @@ func (h *RoomsHandler) DetailHandler(w http.ResponseWriter, r *http.Request) {
 		initial = string(runes[0:1])
 	}
 
+	roomsDetailPD := newPageData()
+	roomsDetailPD.ActiveNav = "rooms"
+	roomsDetailPD.CSRFToken = csrfToken
 	data := RoomsPageData{
-		PageData:                PageData{ActiveNav: "rooms", CSRFToken: csrfToken},
+		PageData:                roomsDetailPD,
 		Rooms:                   toRoomRowDataSlice(sidebarRooms),
 		ActiveItemID:            roomID,
 		ActiveRoom:              room,

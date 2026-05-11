@@ -68,7 +68,15 @@ gateway/
     │   ├── users.go            ← User CRUD UI + API
     │   ├── rooms.go            ← Room Management UI + API
     │   ├── compliance.go       ← Four-eyes compliance UI
-    │   └── templates/          ← Embedded HTML templates (go:embed)
+    │   ├── page_data.go        ← PageData struct + newPageData() helper + SetBuildInfo();
+    │   │                          BuildVersion/GitCommit/BuildTime fields on PageData; SetBuildInfo
+    │   │                          called once from main.go; newPageData() used by all authenticated
+    │   │                          handlers to pre-populate build info for the footer (Story 11-9);
+    │   │                          ErrorMode bool suppresses footer on error pages
+    │   └── templates/          ← Embedded HTML templates (go:embed);
+    │       └── layouts/base.html ← DaisyUI footer rendered on every authenticated page (Story 11-9):
+    │                              `nebu gateway v{{.BuildVersion}} · {{.GitCommit}} · built {{.BuildTime}}`
+    │                              guarded by `{{ if not .LoginMode }}{{ if not .ErrorMode }}`
     ├── grpc/                   ← gRPC CoreService client
     │   ├── client.go           ← gRPC connection, CoreService stub
     │   ├── stream.go           ← EventBus server-streaming + exponential backoff
@@ -84,7 +92,10 @@ gateway/
     │                              NEBU_RATE_LIMIT_DISABLED=true no-op; retry_after_ms in 429 body)
     ├── registry/               ← Elixir node registry (/internal/nodes/*)
     ├── compliance/             ← Compliance API handlers (four-eyes, export, anonymize)
-    ├── health/                 ← /health + /ready handlers
+    ├── health/                 ← /health + /ready handlers; info.go adds GET /info
+    │   │                          (NewInfoHandler — static JSON, no DB/gRPC, zero allocs per request;
+    │   │                          component/version/gitCommit/buildTime set via ldflags at Docker build
+    │   │                          time; fallback "unknown" when built locally without ldflags — Story 11-9)
     └── config/                 ← NEBU_* env-var configuration
 ```
 
@@ -118,44 +129,54 @@ core/apps/
 │       └── session_supervisor.ex ← destroy_session/1 (all devices) + /2 (per-device)
 ├── presence/         ← FR15: Presence status (online/offline/unavailable)
 ├── event_dispatcher/ ← EventBus gRPC streaming + pg Process Groups fanout + FTS search layer
-│   └── lib/nebu/event_dispatcher/
-│       ├── server.ex       ← gRPC handlers: join_room/2 broadcasts {:new_join} to user :pg group;
-│       │                      leave_room/2 broadcasts {:new_leave}; do_incremental_sync handles
-│       │                      {:new_join}/{:new_leave} to wake long-poll sync Tasks (GAP-JOIN-PUBLIC);
-│       │                      upgrade_room/2 implements full Matrix §11.35.1 flow: tombstone →
-│       │                      create → join → set_power_levels → copy_state → invite → archive_old
-│       │                      → terminate_old_genserver; uses GRPC.RPCError instead of bare `:ok =`
-│       │                      pattern matches; wraps entire body in try/rescue with audit-trail
-│       │                      on failure (Story 9-27);
-│       │                      get_relations/2 gRPC handler reads event_type, dir, recurse from
-│       │                      proto request; validates membership + event_in_room?; delegates to
-│       │                      fetch_events_by_relation/5 with opts map; returns
-│       │                      Core.GetRelationsResponse (Story 9-28/9-29);
-│       │                      get_event/2 gRPC handler (Story 11-8): looks up room via
-│       │                      Horde registry, enforces MapSet membership guard, delegates to
-│       │                      messages_db_module().fetch_event/2, attaches thread aggregations
-│       │                      via attach_thread_aggregations/3, returns Core.GetEventResponse;
-│       │                      attach_thread_aggregations/3 private fn: for each timeline event
-│       │                      calls count_thread_children/2 + fetch latest reply, encodes
-│       │                      JSON {"m.thread":{count,latest_event,current_user_participated}}
-│       │                      into Event.unsigned_relations field (Story 9-28)
-│       │                      on failure (Story 9-27);
-│       │                      search_messages/2 executes FTS via Nebu.Search.DB.search_messages/5;
-│       │                      user_id sourced exclusively from trusted_identity(stream) metadata
-│       │                      (NEVER from request.user_id — security invariant); offset capped at
-│       │                      10_000 to prevent expensive deep-page queries; next_batch is
-│       │                      Base64(offset+limit) for cursor pagination (Story 11-3)
-│       ├── dispatcher.ex   ← Routes events to rooms + subscribers
-│       ├── bus.ex          ← gRPC ServerStream to Go Gateway
-│       └── lib/nebu/search/
-│           └── db.ex       ← Nebu.Search.DB — membership-scoped full-text search SQL layer (Story 11-2);
-│                              search_messages/4 (user_id, term, limit, offset) executes canonical SQL
-│                              against the events.search_vector GIN index (migration 000042); membership
-│                              filter enforced at SQL layer via subquery on room_members WHERE left_at IS NULL
-│                              (NOT application-layer post-filter); encrypted rooms excluded via NOT EXISTS
-│                              on m.room.encryption state events; sql_search_messages/0 exposes the SQL
-│                              constant for structural testing (AC2); Story 11.3 wires this module to the
-│                              SearchMessages gRPC handler
+│   └── lib/nebu/
+│       ├── build_info.ex   ← Nebu.BuildInfo.get/0 — returns component/version/git_commit/build_time;
+│       │                      reads Application.get_env(:event_dispatcher, :build_info, %{}) with
+│       │                      System.get_env("RELEASE_VERSION"/"GIT_COMMIT"/"BUILD_TIME", "unknown")
+│       │                      as fallback; used by health/server.ex GET /info route (Story 11-9)
+│       ├── health/
+│       │   ├── health.ex   ← Nebu.Health module (existing)
+│       │   └── server.ex   ← existing health server extended with GET /info route (Story 11-9):
+│       │                      new `handle_connection/1` clause delegates to Nebu.BuildInfo.get/0
+│       │                      and returns JSON; inserted before the 404 catch-all clause
+│       └── event_dispatcher/
+│           ├── server.ex       ← gRPC handlers: join_room/2 broadcasts {:new_join} to user :pg group;
+│           │                      leave_room/2 broadcasts {:new_leave}; do_incremental_sync handles
+│           │                      {:new_join}/{:new_leave} to wake long-poll sync Tasks (GAP-JOIN-PUBLIC);
+│           │                      upgrade_room/2 implements full Matrix §11.35.1 flow: tombstone →
+│           │                      create → join → set_power_levels → copy_state → invite → archive_old
+│           │                      → terminate_old_genserver; uses GRPC.RPCError instead of bare `:ok =`
+│           │                      pattern matches; wraps entire body in try/rescue with audit-trail
+│           │                      on failure (Story 9-27);
+│           │                      get_relations/2 gRPC handler reads event_type, dir, recurse from
+│           │                      proto request; validates membership + event_in_room?; delegates to
+│           │                      fetch_events_by_relation/5 with opts map; returns
+│           │                      Core.GetRelationsResponse (Story 9-28/9-29);
+│           │                      get_event/2 gRPC handler (Story 11-8): looks up room via
+│           │                      Horde registry, enforces MapSet membership guard, delegates to
+│           │                      messages_db_module().fetch_event/2, attaches thread aggregations
+│           │                      via attach_thread_aggregations/3, returns Core.GetEventResponse;
+│           │                      attach_thread_aggregations/3 private fn: for each timeline event
+│           │                      calls count_thread_children/2 + fetch latest reply, encodes
+│           │                      JSON {"m.thread":{count,latest_event,current_user_participated}}
+│           │                      into Event.unsigned_relations field (Story 9-28)
+│           │                      on failure (Story 9-27);
+│           │                      search_messages/2 executes FTS via Nebu.Search.DB.search_messages/5;
+│           │                      user_id sourced exclusively from trusted_identity(stream) metadata
+│           │                      (NEVER from request.user_id — security invariant); offset capped at
+│           │                      10_000 to prevent expensive deep-page queries; next_batch is
+│           │                      Base64(offset+limit) for cursor pagination (Story 11-3)
+│           ├── dispatcher.ex   ← Routes events to rooms + subscribers
+│           ├── bus.ex          ← gRPC ServerStream to Go Gateway
+│           └── search/
+│               └── db.ex       ← Nebu.Search.DB — membership-scoped full-text search SQL layer (Story 11-2);
+│                                  search_messages/4 (user_id, term, limit, offset) executes canonical SQL
+│                                  against the events.search_vector GIN index (migration 000042); membership
+│                                  filter enforced at SQL layer via subquery on room_members WHERE left_at IS NULL
+│                                  (NOT application-layer post-filter); encrypted rooms excluded via NOT EXISTS
+│                                  on m.room.encryption state events; sql_search_messages/0 exposes the SQL
+│                                  constant for structural testing (AC2); Story 11.3 wires this module to the
+│                                  SearchMessages gRPC handler
 ├── signature/        ← FR25–29: Ed25519 signing + Canonical JSON + Event-ID
 │   └── lib/nebu/
 │       ├── signature.ex         ← :crypto.sign/4 with eddsa
@@ -341,4 +362,4 @@ Response: `Event event` — the full event proto (same `Event` message used by s
 > `core.proto`; the Elixir `core_grpc.pb.ex` service stub was updated manually (`rpc :GetEvent` entry
 > added alongside the pre-existing `rpc :GetRelations` fix).
 
-_Source: `_bmad-output/planning-artifacts/architecture.md`, §Project Structure & Boundaries, §Complete Project Directory Structure; Story 9-19 (room_moderation.go, sync.go, event_dispatcher/server.ex, forgotten_rooms migration); Story 9-22 (per-device sync tokens, device_id in proto); Story 9-24 (GlobalAccountDataDB interface, ListGlobalAccountData, top-level account_data in syncResponse); Story 9-25 (syntheticNextBatch helper, syntheticBatchSeq atomic counter, sinceToken param removed from buildResponseFromBufferedEvents); Story 9-27 (upgrade_room/2 full Matrix §11.35.1 flow, GRPC.RPCError error handling, archive_room_atomic, terminate_child, try/rescue failure audit); Story 9-28 (GetRelations RPC, unsigned_relations field on Event, attach_thread_aggregations, fetch_events_by_relation, count_thread_children, event_in_room?, migration 000042); Story 9-29 (base /relations/{eventId} route, three-segment /{relType}/{eventType} route, dir/event_type/recurse/from query params, prev_batch in response, fetch_events_by_relation/5 dynamic WHERE builder); Story 11-3 (SearchMessages gRPC handler, proto extension, delegated search_db_module pattern, offset-cap security fix); Story 11-4 (search.go Gateway handler, SearchCoreClient consumer interface, §11.14.1 response shape, gRPC error mapping); Story 11-5 (NewUserRateLimiter middleware, per-user 10 req/min for /search, retry_after_ms in body); Story 11-8 (GetEvent RPC, event.go Go handler, fetch_event/2 DB function, core_grpc.pb.ex rpc :GetEvent + rpc :GetRelations bug fix)_
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Project Structure & Boundaries, §Complete Project Directory Structure; Story 9-19 (room_moderation.go, sync.go, event_dispatcher/server.ex, forgotten_rooms migration); Story 9-22 (per-device sync tokens, device_id in proto); Story 9-24 (GlobalAccountDataDB interface, ListGlobalAccountData, top-level account_data in syncResponse); Story 9-25 (syntheticNextBatch helper, syntheticBatchSeq atomic counter, sinceToken param removed from buildResponseFromBufferedEvents); Story 9-27 (upgrade_room/2 full Matrix §11.35.1 flow, GRPC.RPCError error handling, archive_room_atomic, terminate_child, try/rescue failure audit); Story 9-28 (GetRelations RPC, unsigned_relations field on Event, attach_thread_aggregations, fetch_events_by_relation, count_thread_children, event_in_room?, migration 000042); Story 9-29 (base /relations/{eventId} route, three-segment /{relType}/{eventType} route, dir/event_type/recurse/from query params, prev_batch in response, fetch_events_by_relation/5 dynamic WHERE builder); Story 11-3 (SearchMessages gRPC handler, proto extension, delegated search_db_module pattern, offset-cap security fix); Story 11-4 (search.go Gateway handler, SearchCoreClient consumer interface, §11.14.1 response shape, gRPC error mapping); Story 11-5 (NewUserRateLimiter middleware, per-user 10 req/min for /search, retry_after_ms in body); Story 11-8 (GetEvent RPC, event.go Go handler, fetch_event/2 DB function, core_grpc.pb.ex rpc :GetEvent + rpc :GetRelations bug fix); Story 11-9 (health/info.go NewInfoHandler, Nebu.BuildInfo module, GET /info on pubMux + health server, Admin UI footer via page_data.go SetBuildInfo/newPageData, ErrorMode on PageData, Dockerfile ARG/ldflags injection, docker-compose.yml build args)_

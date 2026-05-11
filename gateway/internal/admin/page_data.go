@@ -1,5 +1,33 @@
 package admin
 
+// gBuildVersion, gGitCommit, gBuildTime hold gateway build metadata set by main.go
+// via SetBuildInfo. All authenticated admin handlers read these to populate
+// PageData.BuildVersion / .GitCommit / .BuildTime for the footer template (Story 11-9).
+var (
+	gBuildVersion = "unknown"
+	gGitCommit    = "unknown"
+	gBuildTime    = "unknown"
+)
+
+// SetBuildInfo stores gateway build metadata for injection into admin page templates.
+// Called once from main.go after the build-time ldflag vars are set.
+func SetBuildInfo(version, commit, btime string) {
+	gBuildVersion = version
+	gGitCommit = commit
+	gBuildTime = btime
+}
+
+// newPageData returns a PageData pre-populated with the global build info.
+// All authenticated admin handlers should use this instead of constructing
+// PageData literals with empty build fields.
+func newPageData() PageData {
+	return PageData{
+		BuildVersion: gBuildVersion,
+		GitCommit:    gGitCommit,
+		BuildTime:    gBuildTime,
+	}
+}
+
 // PageData holds template data passed to all Admin UI page renders.
 // BootstrapMode controls sidebar Bootstrap nav item visibility.
 // LoginMode suppresses authenticated navigation on the login page (Story 9.13 AC2).
@@ -11,6 +39,10 @@ type PageData struct {
 	// LoginMode suppresses the authenticated sidebar nav and topbar status on the login page.
 	// Set to true only by LoginPageHandler. All other handlers leave it false (zero value).
 	LoginMode bool
+	// ErrorMode suppresses the build-info footer on error pages (401, 403, 404, 500).
+	// Error pages are not authenticated admin pages — they do not show the footer.
+	// Set to true only by the error handlers in errors.go. All other handlers leave it false.
+	ErrorMode bool
 	ActiveNav string
 	// TopbarStatus is a DaisyUI semantic color name ("success", "warning", "error").
 	// Empty string → base.html renders the default "Connecting..." placeholder.
@@ -24,6 +56,12 @@ type PageData struct {
 	// Only DashboardHandler populates this; all other handlers leave it at 0 (badge hidden).
 	// Placed on PageData (not DashboardPageData) so base.html can access it on all pages.
 	CompliancePendingCount int
+	// BuildVersion, GitCommit, BuildTime hold gateway build metadata (Story 11-9).
+	// Populated by all authenticated admin handlers from the package-level ldflags vars in main.go.
+	// Rendered in the footer of every authenticated page; not shown on the login page (LoginMode guard).
+	BuildVersion string
+	GitCommit    string
+	BuildTime    string
 }
 
 // DashboardPageData holds data for the Dashboard page.
