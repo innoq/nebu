@@ -160,25 +160,7 @@ When(
   }
 );
 
-/**
- * "Then the message {string} is visible in the timeline"
- *
- * After clicking a search result, Element Web navigates to the room and the
- * message should appear in the timeline (room view, not search panel).
- */
-Then(
-  'the message {string} is visible in the timeline',
-  async ({ page }: { page: Page }, text: string) => {
-    // Wait for the search panel to close and the room timeline to show
-    await page.waitForSelector('.mx_RoomView_timeline, [data-testid="roomTimeline"]', { timeout: 15_000 });
-
-    const msg = page
-      .locator('.mx_EventTile_body, .mx_MTextBody, [data-testid="messageBody"]')
-      .filter({ hasText: text })
-      .first();
-    await expect(msg).toBeVisible({ timeout: 15_000 });
-  }
-);
+// "Then the message {string} is visible in the timeline" is defined in messages.steps.ts
 
 /**
  * "Then an empty state indicator is visible"
@@ -201,17 +183,7 @@ Then('an empty state indicator is visible', async ({ page }: { page: Page }) => 
   // (some versions show a "No results found" banner — we don't require it but accept it)
 });
 
-/**
- * "Then no error dialog appears"
- */
-Then('no error dialog appears', async ({ page }: { page: Page }) => {
-  // Error dialogs in Element Web use .mx_Dialog or .mx_QuestionDialog
-  const dialog = page.locator('.mx_Dialog, .mx_QuestionDialog').first();
-  await expect(dialog).not.toBeVisible({ timeout: 3_000 }).catch(() => {
-    // If a dialog appeared, fail with detail
-    throw new Error('Unexpected error dialog appeared after search');
-  });
-});
+// "Then no error dialog appears" is defined in common/assertions.steps.ts
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 

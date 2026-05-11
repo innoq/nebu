@@ -27,9 +27,14 @@
 
 import { Given, When, Then } from '../../fixtures/nebu-fixtures';
 import { expect } from '@playwright/test';
-import type { Page } from '@playwright/test';
-import { getActualRoomName } from '../common/room-setup.steps';
+import type { Page, APIRequestContext, Browser } from '@playwright/test';
+import { getActualRoomName, roomIdByScenario } from '../common/room-setup.steps';
+import { getApiSession } from '../../fixtures/dex-auth';
+import { NEBU_USERS } from '../../fixtures/users';
 import type { Response } from '@playwright/test';
+
+
+const MATRIX_BASE = process.env.NEBU_MATRIX_BASE ?? 'http://localhost:8008';
 
 // Module-level promise for the /relations capture pattern.
 // Registered BEFORE the panel-open action via "alex captures the next /relations response",
@@ -106,14 +111,21 @@ When(
       await byText.first().click();
     }
 
-    // Accept invite if shown
+    // Accept invite if shown — dialog can take several seconds to render after tile click
     const acceptBtn = secondPage.getByRole('button', { name: /^accept$|^join/i });
-    if (await acceptBtn.first().isVisible({ timeout: 3_000 }).catch(() => false)) {
+    const roomView = secondPage.locator('.mx_RoomView_body, .mx_BasicMessageComposer_input').first();
+
+    // Wait for either the room view (already joined) or the accept button (invitation)
+    await Promise.race([
+      roomView.waitFor({ state: 'visible', timeout: 10_000 }).catch(() => null),
+      acceptBtn.first().waitFor({ state: 'visible', timeout: 10_000 }).catch(() => null),
+    ]);
+
+    if (await acceptBtn.first().isVisible({ timeout: 500 }).catch(() => false)) {
       await acceptBtn.first().click();
     }
 
-    await secondPage.locator('.mx_RoomView_body, .mx_BasicMessageComposer_input').first()
-      .waitFor({ state: 'visible', timeout: 20_000 });
+    await roomView.waitFor({ state: 'visible', timeout: 20_000 });
   }
 );
 
@@ -229,23 +241,48 @@ When(
 );
 
 /**
+ * "When alex closes the thread panel"
+ *
+ * Closes the thread panel by clicking the X / close button.
+ * Needed in AC3 to reset state before clicking the thread indicator,
+ * which is what reliably triggers GET /relations (fetching an existing thread).
+ */
+When(
+  'alex closes the thread panel',
+  async ({ page }: { page: Page }) => {
+    // Use getByRole which matches accessible name "Close" reliably
+    const closeBtn = page.getByRole('button', { name: 'Close', exact: true }).first();
+
+    if (await closeBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
+      await closeBtn.click();
+    } else {
+      await page.keyboard.press('Escape');
+    }
+
+    // Use a specific selector (not the broad .mx_RightPanel .mx_BaseCard)
+    await expect(page.locator('.mx_ThreadPanel, .mx_ThreadView').first())
+      .toBeHidden({ timeout: 8_000 });
+  }
+);
+
+/**
  * "When alex captures the next /relations response"
  *
  * Registers a Playwright waitForResponse promise BEFORE the triggering action
- * (alex sends the thread reply) to avoid the race where the response arrives
+ * (alex clicks the thread indicator) to avoid the race where the response arrives
  * before the Then step registers its listener.
  *
  * The URL filter matches all Matrix CS API v1 /relations variants:
  *   /_matrix/client/v1/rooms/{roomId}/relations/{eventId}[/{relType}[/{eventType}]]
  */
 When(
-  'alex captures the next /relations response',
+  'alex captures the next \\/relations response',
   async ({ page }: { page: Page }) => {
     capturedRelationsPromise = page.waitForResponse(
       (resp) =>
         /\/_matrix\/client\/v[13]\/rooms\/[^/]+\/relations\//.test(resp.url()) &&
         resp.request().method() === 'GET',
-      { timeout: 20_000 }
+      { timeout: 45_000 }
     );
   }
 );
@@ -356,7 +393,7 @@ Then(
  * Asserts HTTP 200 — before the Postgrex.JSONB fix this was 500.
  */
 Then(
-  'the /relations request returns 200',
+  'the \\/relations request returns 200',
   async () => {
     if (!capturedRelationsPromise) {
       throw new Error(
@@ -367,5 +404,73 @@ Then(
     const resp = await capturedRelationsPromise;
     capturedRelationsPromise = null;
     expect(resp.status()).toBe(200);
+  }
+);
+
+/**
+ * "Then GET /relations for {string} returns 200"
+ *
+ * AC3 regression guard (JSONB bug). Element Web may not call GET /relations
+ * when there is only one reply (bundled aggregation from /sync suffices).
+ * This step makes the call directly via the Matrix API to guarantee coverage.
+ *
+ * Uses page.evaluate() to extract the current token from Element Web's active
+ * MatrixClient (avoids OIDC re-auth overhead of getApiSession in this context).
+ */
+Then(
+  'GET \\/relations for {string} returns 200',
+  async ({ page }: { page: Page }, roomName: string) => {
+    const roomEntry = roomIdByScenario.get(roomName);
+    if (!roomEntry) {
+      throw new Error(`Room "${roomName}" not found in roomIdByScenario — ensure Background ran`);
+    }
+
+    // Extract the Bearer token from Element Web's active MatrixClient.
+    // page.evaluate() runs in the browser; the token is then used via page.request
+    // (Node.js side) to bypass CORS restrictions on cross-origin API calls.
+    const token = await page.evaluate((): string | null => {
+      const w = window as unknown as Record<string, unknown>;
+      const peg = w['mxMatrixClientPeg'] as
+        | { get?: () => { getAccessToken: () => string } }
+        | undefined;
+      return (
+        peg?.get?.()?.getAccessToken() ??
+        (localStorage.getItem('mx_access_token')) ??
+        null
+      );
+    });
+
+    if (!token) {
+      throw new Error('GET /relations step: no token available from Element Web page context');
+    }
+
+    const { roomId } = roomEntry;
+    const headers = { Authorization: `Bearer ${token}` };
+
+    // Find the root event via GET /messages
+    const msgsResp = await page.request.get(
+      `${MATRIX_BASE}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/messages?dir=b&limit=20`,
+      { headers }
+    );
+    if (!msgsResp.ok()) {
+      throw new Error(`GET /messages failed: ${msgsResp.status()} ${await msgsResp.text()}`);
+    }
+    const msgsBody = await msgsResp.json() as {
+      chunk?: Array<{ type: string; content?: { body?: string }; event_id: string }>;
+    };
+    const rootEvent = (msgsBody.chunk ?? []).find(
+      (ev) => ev.type === 'm.room.message' && ev.content?.body === 'Message to verify relations endpoint'
+    );
+    if (!rootEvent) {
+      throw new Error('Root message event not found — ensure "alex sends" step ran first');
+    }
+
+    // Call GET /relations — was returning 500 before the Postgrex.JSONB fix
+    const relResp = await page.request.get(
+      `${MATRIX_BASE}/_matrix/client/v1/rooms/${encodeURIComponent(roomId)}/relations/${encodeURIComponent(rootEvent.event_id)}`,
+      { headers }
+    );
+    const relBody = await relResp.text();
+    expect(relResp.status(), `GET /relations returned ${relResp.status()}: ${relBody}`).toBe(200);
   }
 );

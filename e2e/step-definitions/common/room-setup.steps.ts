@@ -19,7 +19,7 @@
 
 import { Given } from '../../fixtures/nebu-fixtures';
 import { NEBU_USERS } from '../../fixtures/users';
-import { getApiSession, createRoom, inviteUser } from '../../fixtures/dex-auth';
+import { getApiSession, createRoom, inviteUser, joinRoom } from '../../fixtures/dex-auth';
 import type { APIRequestContext, Browser } from '@playwright/test';
 
 /**
@@ -70,6 +70,10 @@ Given(
 
     // Invite target user (idempotent: already-member 403 is narrowly swallowed)
     await inviteUser(request, kaiSession.token, room_id, target.matrixId);
+
+    // Pre-join via direct API so Element Web shows the room immediately (no invite-accept dance)
+    const targetSession = await getApiSession(request, target, browser);
+    await joinRoom(request, targetSession.token, room_id);
 
     // Store mapping: template name → { roomId, actualName }
     roomIdByScenario.set(roomName, { roomId: room_id, actualName });

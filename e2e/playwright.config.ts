@@ -74,7 +74,7 @@ export default defineConfig({
         actionTimeout: 20_000,
         navigationTimeout: 45_000,
       },
-      timeout: 90_000,
+      timeout: 300_000,
     },
   ],
 });

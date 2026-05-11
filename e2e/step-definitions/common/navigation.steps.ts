@@ -7,7 +7,7 @@
 
 import { When } from '../../fixtures/nebu-fixtures';
 import type { Page } from '@playwright/test';
-import { getActualRoomName } from './room-setup.steps';
+import { getActualRoomName, roomIdByScenario } from './room-setup.steps';
 
 const ELEMENT_URL = process.env.NEBU_ELEMENT_URL ?? 'http://localhost:7070';
 
@@ -36,6 +36,27 @@ When(
     // M-1: use the actual (suffixed) room name for UI lookup
     const actualName = getActualRoomName(roomName);
 
+    // Strategy 0: direct URL navigation when roomId is known from Background setup.
+    // Bypasses the /sync-based sidebar (which can take 30-60s to deliver new rooms
+    // due to Matrix long-poll cycles). Handles both joined and invited states.
+    const knownRoom = roomIdByScenario.get(roomName);
+    if (knownRoom) {
+      const joinBtn = page.getByRole('button', { name: /^accept$|^join the discussion$/i });
+      const roomBody = page.locator('.mx_RoomView_body, .mx_BasicMessageComposer_input').first();
+      await page.goto(`${ELEMENT_URL}/#/room/${encodeURIComponent(knownRoom.roomId)}`);
+      await Promise.race([
+        roomBody.waitFor({ state: 'visible', timeout: 30_000 }).catch(() => null),
+        joinBtn.first().waitFor({ state: 'visible', timeout: 30_000 }).catch(() => null),
+      ]);
+      if (await joinBtn.first().isVisible({ timeout: 500 }).catch(() => false)) {
+        await joinBtn.first().click();
+        await roomBody.waitFor({ state: 'visible', timeout: 20_000 });
+      } else {
+        await roomBody.waitFor({ state: 'visible', timeout: 20_000 });
+      }
+      return;
+    }
+
     // Strategy 1 (Element Web 1.12.15+): aria-label="Open room {name}" (joined rooms)
     // Also check "Open room {name} invitation." for rooms where user has a pending invite
     const byAriaLabel = page.locator(
@@ -50,17 +71,21 @@ When(
     const byText = page.locator('.mx_LeftPanel').getByTitle(actualName)
       .or(page.locator('.mx_LeftPanel').getByText(actualName, { exact: true }));
 
-    if (await byAriaLabel.first().waitFor({ state: 'attached', timeout: 10_000 }).then(() => true).catch(() => false)) {
+    if (await byAriaLabel.first().waitFor({ state: 'attached', timeout: 90_000 }).then(() => true).catch(() => false)) {
       await byAriaLabel.first().scrollIntoViewIfNeeded().catch(() => {});
       await byAriaLabel.first().click();
       // If clicking an invite entry shows "Do you want to join?" panel, accept it automatically.
-      // Wait for the Accept/Join button or the room body to appear (deterministic).
+      // Wait for the Accept/Join button OR the room body to appear (whichever comes first).
       const joinBtn = page.getByRole('button', { name: /^accept$|^join the discussion$/i });
-      if (await joinBtn.first().isVisible({ timeout: 2_000 }).catch(() => false)) {
+      const roomBody = page.locator('.mx_RoomView_body, .mx_BasicMessageComposer_input').first();
+      await Promise.race([
+        joinBtn.first().waitFor({ state: 'visible', timeout: 8_000 }).catch(() => null),
+        roomBody.waitFor({ state: 'visible', timeout: 8_000 }).catch(() => null),
+      ]);
+      if (await joinBtn.first().isVisible({ timeout: 500 }).catch(() => false)) {
         await joinBtn.first().click();
         // Wait for room view to load after joining
-        await page.locator('.mx_RoomView_body, .mx_BasicMessageComposer_input').first()
-          .waitFor({ state: 'visible', timeout: 20_000 });
+        await roomBody.waitFor({ state: 'visible', timeout: 20_000 });
       }
     } else if (await roomEntry.first().isVisible({ timeout: 5_000 }).catch(() => false)) {
       await roomEntry.first().click();

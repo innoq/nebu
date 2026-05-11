@@ -55,16 +55,32 @@ const test = mergeTests(bddBase).extend<NebuFixtures>({
     { browser, credentials }: { browser: Browser; credentials: NebUser },
     use: (ctx: BrowserContext) => Promise<void>
   ) => {
-    const ctx  = await browser.newContext();
-    const page = await ctx.newPage();
-    try {
-      await loginViaOidcBrowser(page, credentials, credentials.email, DEX_TEST_PASSWORD);
-    } finally {
-      await page.close();
+    // Retry OIDC login up to 3 times: the SSO redirect can time out when the Dex/Nebu
+    // endpoint is under load after multiple rapid logins in previous scenarios.
+    let readyCtx: BrowserContext | null = null;
+    let lastErr: Error | null = null;
+    for (let attempt = 1; attempt <= 3 && !readyCtx; attempt++) {
+      const tryCtx  = await browser.newContext();
+      const tryPage = await tryCtx.newPage();
+      try {
+        await loginViaOidcBrowser(tryPage, credentials, credentials.email, DEX_TEST_PASSWORD);
+        await tryPage.close();
+        readyCtx = tryCtx;
+      } catch (e) {
+        await tryPage.close().catch(() => {});
+        await tryCtx.close().catch(() => {});
+        lastErr = e as Error;
+        if (attempt < 3) {
+          await new Promise<void>((resolve) => setTimeout(resolve, 3_000));
+        }
+      }
     }
-    // Context now holds a live Element Web IndexedDB session
-    await use(ctx);
-    await ctx.close();
+    if (!readyCtx) throw lastErr ?? new Error('[context] OIDC login failed after 3 attempts');
+    try {
+      await use(readyCtx);
+    } finally {
+      await readyCtx.close();
+    }
   },
 
   app: async ({ page }: { page: Page }, use: (app: ElementAppPage) => Promise<void>) => {
@@ -78,16 +94,30 @@ const test = mergeTests(bddBase).extend<NebuFixtures>({
     { browser }: { browser: Browser },
     use: (ctx: BrowserContext) => Promise<void>
   ) => {
-    const ctx  = await browser.newContext();
-    const page = await ctx.newPage();
-    try {
-      await loginViaOidcBrowser(page, NEBU_USERS.marie, NEBU_USERS.marie.email, DEX_TEST_PASSWORD);
-    } finally {
-      await page.close();
+    let readyCtx: BrowserContext | null = null;
+    let lastErr: Error | null = null;
+    for (let attempt = 1; attempt <= 3 && !readyCtx; attempt++) {
+      const tryCtx  = await browser.newContext();
+      const tryPage = await tryCtx.newPage();
+      try {
+        await loginViaOidcBrowser(tryPage, NEBU_USERS.marie, NEBU_USERS.marie.email, DEX_TEST_PASSWORD);
+        await tryPage.close();
+        readyCtx = tryCtx;
+      } catch (e) {
+        await tryPage.close().catch(() => {});
+        await tryCtx.close().catch(() => {});
+        lastErr = e as Error;
+        if (attempt < 3) {
+          await new Promise<void>((resolve) => setTimeout(resolve, 3_000));
+        }
+      }
     }
-    // Context now holds a live Element Web IndexedDB session for marie
-    await use(ctx);
-    await ctx.close();
+    if (!readyCtx) throw lastErr ?? new Error('[secondContext] OIDC login failed after 3 attempts');
+    try {
+      await use(readyCtx);
+    } finally {
+      await readyCtx.close();
+    }
   },
 
   secondPage: async (

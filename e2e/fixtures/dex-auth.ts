@@ -130,8 +130,8 @@ export async function loginViaOidcBrowser(
       .waitFor({ state: 'visible', timeout: 15_000 });
     await page.getByRole('button', { name: /continue with sso|mit sso|weiter mit sso/i }).click();
 
-    // Dex login page
-    await page.waitForURL(/dex.*\/auth/i, { timeout: 20_000 });
+    // Dex login page (give Dex extra time under load — 4+ rapid OIDC logins can saturate it)
+    await page.waitForURL(/dex.*\/auth/i, { timeout: 45_000 });
     await page.locator('input[name="login"]').fill(email);
     await page.locator('input[name="password"]').fill(password);
     await page.locator('button[type="submit"]').click();
@@ -575,5 +575,47 @@ export async function inviteUser(
       `[inviteUser] Failed to invite "${userId}" to "${roomId}": ` +
       `${resp.status()} ${JSON.stringify(body)}`
     );
+  }
+}
+
+/**
+ * Join a room using the user's own access token.
+ * Idempotent: 403 "already a member" is swallowed.
+ * Used in room-setup.steps.ts to pre-join users so they appear in the
+ * Element Web room list without requiring an in-browser invite accept.
+ */
+export async function joinRoom(
+  request: APIRequestContext,
+  token: string,
+  roomId: string,
+): Promise<void> {
+  if (!token) {
+    throw new Error('[joinRoom] 401 M_MISSING_TOKEN: no token provided.');
+  }
+
+  const resp = await retryOnRateLimit(() =>
+    request.post(`${MATRIX_BASE}/_matrix/client/v3/join/${encodeURIComponent(roomId)}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      data: {},
+    })
+  );
+
+  if (resp.status() === 403) {
+    const body = await resp.json() as Record<string, unknown>;
+    const alreadyMember = /already (in|a member|joined)|user already in room/i.test(
+      String(body.error ?? '')
+    );
+    if (alreadyMember) {
+      return;
+    }
+    throw new Error(`[joinRoom] 403 joining "${roomId}": ${JSON.stringify(body)}`);
+  }
+
+  if (!resp.ok()) {
+    const body = await resp.json() as Record<string, unknown>;
+    throw new Error(`[joinRoom] Failed to join "${roomId}": ${resp.status()} ${JSON.stringify(body)}`);
   }
 }

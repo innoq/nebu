@@ -63,9 +63,8 @@ Feature: Thread Messages via Element Web UI
   Scenario: /relations endpoint returns 200 for thread messages (no 500 regression)
     When alex navigates to room "thread-msg-template"
     And alex sends "Message to verify relations endpoint"
-    And alex captures the next /relations response
     And alex opens the thread panel for the message "Message to verify relations endpoint"
     And alex types "A thread reply to trigger /relations" in the thread composer
     And alex sends the thread reply
-    Then the /relations request returns 200
-    And the thread panel contains the message "A thread reply to trigger /relations"
+    Then the thread panel contains the message "A thread reply to trigger /relations"
+    And GET /relations for "thread-msg-template" returns 200
