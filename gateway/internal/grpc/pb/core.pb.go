@@ -5514,7 +5514,7 @@ type ProfileInfo struct {
 
 func (x *ProfileInfo) Reset() {
 	*x = ProfileInfo{}
-	mi := &file_core_proto_msgTypes[95]
+	mi := &file_core_proto_msgTypes[97]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5526,7 +5526,7 @@ func (x *ProfileInfo) String() string {
 func (*ProfileInfo) ProtoMessage() {}
 
 func (x *ProfileInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[95]
+	mi := &file_core_proto_msgTypes[97]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5539,7 +5539,7 @@ func (x *ProfileInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProfileInfo.ProtoReflect.Descriptor instead.
 func (*ProfileInfo) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{95}
+	return file_core_proto_rawDescGZIP(), []int{97}
 }
 
 func (x *ProfileInfo) GetDisplayname() string {
@@ -5570,7 +5570,7 @@ type SearchResult struct {
 
 func (x *SearchResult) Reset() {
 	*x = SearchResult{}
-	mi := &file_core_proto_msgTypes[96]
+	mi := &file_core_proto_msgTypes[98]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5582,7 +5582,7 @@ func (x *SearchResult) String() string {
 func (*SearchResult) ProtoMessage() {}
 
 func (x *SearchResult) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[96]
+	mi := &file_core_proto_msgTypes[98]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5595,7 +5595,7 @@ func (x *SearchResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchResult.ProtoReflect.Descriptor instead.
 func (*SearchResult) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{96}
+	return file_core_proto_rawDescGZIP(), []int{98}
 }
 
 func (x *SearchResult) GetRank() float32 {
@@ -5652,7 +5652,7 @@ type SearchMessagesRequest struct {
 
 func (x *SearchMessagesRequest) Reset() {
 	*x = SearchMessagesRequest{}
-	mi := &file_core_proto_msgTypes[97]
+	mi := &file_core_proto_msgTypes[99]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5664,7 +5664,7 @@ func (x *SearchMessagesRequest) String() string {
 func (*SearchMessagesRequest) ProtoMessage() {}
 
 func (x *SearchMessagesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[97]
+	mi := &file_core_proto_msgTypes[99]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5677,7 +5677,7 @@ func (x *SearchMessagesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchMessagesRequest.ProtoReflect.Descriptor instead.
 func (*SearchMessagesRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{97}
+	return file_core_proto_rawDescGZIP(), []int{99}
 }
 
 func (x *SearchMessagesRequest) GetUserId() string {
@@ -5734,7 +5734,7 @@ type SearchMessagesResponse struct {
 
 func (x *SearchMessagesResponse) Reset() {
 	*x = SearchMessagesResponse{}
-	mi := &file_core_proto_msgTypes[98]
+	mi := &file_core_proto_msgTypes[100]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5746,7 +5746,7 @@ func (x *SearchMessagesResponse) String() string {
 func (*SearchMessagesResponse) ProtoMessage() {}
 
 func (x *SearchMessagesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[98]
+	mi := &file_core_proto_msgTypes[100]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5759,7 +5759,7 @@ func (x *SearchMessagesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchMessagesResponse.ProtoReflect.Descriptor instead.
 func (*SearchMessagesResponse) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{98}
+	return file_core_proto_rawDescGZIP(), []int{100}
 }
 
 func (x *SearchMessagesResponse) GetResults() []*SearchResult {
@@ -6172,8 +6172,7 @@ const file_core_proto_rawDesc = "" +
 	"\n" +
 	"next_batch\x18\x02 \x01(\tR\tnextBatch\x12\x1d\n" +
 	"\n" +
-	"prev_batch\x18\x03 \x01(\tR\tprevBatch2\x9e\x19\n" +
-	"\amembers\x18\x01 \x03(\v2\x1a.core.AdminRoomMemberProtoR\amembers\"N\n" +
+	"prev_batch\x18\x03 \x01(\tR\tprevBatch\"N\n" +
 	"\vProfileInfo\x12 \n" +
 	"\vdisplayname\x18\x01 \x01(\tR\vdisplayname\x12\x1d\n" +
 	"\n" +
@@ -6202,7 +6201,7 @@ const file_core_proto_rawDesc = "" +
 	"\n" +
 	"next_batch\x18\x02 \x01(\tR\tnextBatch\x12\x1f\n" +
 	"\vtotal_count\x18\x03 \x01(\x05R\n" +
-	"totalCount2\xa4\x19\n" +
+	"totalCount2\xeb\x19\n" +
 	"\vCoreService\x12<\n" +
 	"\tSendEvent\x12\x16.core.SendEventRequest\x1a\x17.core.SendEventResponse\x12?\n" +
 	"\n" +
@@ -6251,8 +6250,7 @@ const file_core_proto_rawDesc = "" +
 	"\x12UpdateServerConfig\x12\x1f.core.UpdateServerConfigRequest\x1a .core.UpdateServerConfigResponse\x12B\n" +
 	"\vUpgradeRoom\x12\x18.core.UpgradeRoomRequest\x1a\x19.core.UpgradeRoomResponse\x12]\n" +
 	"\x14ListAdminRoomMembers\x12!.core.ListAdminRoomMembersRequest\x1a\".core.ListAdminRoomMembersResponse\x12E\n" +
-	"\fGetRelations\x12\x19.core.GetRelationsRequest\x1a\x1a.core.GetRelationsResponseB'Z%github.com/nebu/nebu/internal/grpc/pbb\x06proto3"
-	"\x14ListAdminRoomMembers\x12!.core.ListAdminRoomMembersRequest\x1a\".core.ListAdminRoomMembersResponse\x12K\n" +
+	"\fGetRelations\x12\x19.core.GetRelationsRequest\x1a\x1a.core.GetRelationsResponse\x12K\n" +
 	"\x0eSearchMessages\x12\x1b.core.SearchMessagesRequest\x1a\x1c.core.SearchMessagesResponseB'Z%github.com/nebu/nebu/internal/grpc/pbb\x06proto3"
 
 var (
@@ -6267,7 +6265,7 @@ func file_core_proto_rawDescGZIP() []byte {
 	return file_core_proto_rawDescData
 }
 
-var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 100)
+var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 102)
 var file_core_proto_goTypes = []any{
 	(*Event)(nil),                              // 0: core.Event
 	(*SendEventRequest)(nil),                   // 1: core.SendEventRequest
@@ -6365,222 +6363,131 @@ var file_core_proto_goTypes = []any{
 	(*ListAdminRoomMembersRequest)(nil),        // 93: core.ListAdminRoomMembersRequest
 	(*ListAdminRoomMembersResponse)(nil),       // 94: core.ListAdminRoomMembersResponse
 	(*GetRelationsRequest)(nil),                // 95: core.GetRelationsRequest
-	(*ProfileInfo)(nil),                        // 95: core.ProfileInfo
-	(*SearchResult)(nil),                       // 96: core.SearchResult
-	(*SearchMessagesRequest)(nil),              // 97: core.SearchMessagesRequest
-	(*SearchMessagesResponse)(nil),             // 98: core.SearchMessagesResponse
-	nil,                                        // 99: core.SearchResult.ProfileInfoEntry
 	(*GetRelationsResponse)(nil),               // 96: core.GetRelationsResponse
+	(*ProfileInfo)(nil),                        // 97: core.ProfileInfo
+	(*SearchResult)(nil),                       // 98: core.SearchResult
+	(*SearchMessagesRequest)(nil),              // 99: core.SearchMessagesRequest
+	(*SearchMessagesResponse)(nil),             // 100: core.SearchMessagesResponse
+	nil,                                        // 101: core.SearchResult.ProfileInfoEntry
 }
 var file_core_proto_depIdxs = []int32{
-	0,  // 0: core.GetMessagesResponse.events:type_name -> core.Event
-	0,  // 1: core.GetPendingEventsResponse.events:type_name -> core.Event
-	32, // 2: core.GetRoomStateResponse.state_events:type_name -> core.SyncRoomStateEvent
-	35, // 3: core.GetInitialSyncResponse.rooms:type_name -> core.SyncRoom
-	35, // 4: core.GetSyncDeltaResponse.rooms:type_name -> core.SyncRoom
-	32, // 5: core.SyncRoom.state_events:type_name -> core.SyncRoomStateEvent
-	0,  // 6: core.SyncRoom.timeline_events:type_name -> core.Event
-	53, // 7: core.ListPublicRoomsResponse.rooms:type_name -> core.RoomSummary
-	0,  // 8: core.GetEventContextResponse.event:type_name -> core.Event
-	0,  // 9: core.GetEventContextResponse.events_before:type_name -> core.Event
-	0,  // 10: core.GetEventContextResponse.events_after:type_name -> core.Event
-	56, // 11: core.GetEventContextResponse.state:type_name -> core.ContextStateEvent
-	68, // 12: core.ListAdminUsersResponse.users:type_name -> core.AdminUserProto
-	68, // 13: core.GetAdminUserResponse.user:type_name -> core.AdminUserProto
-	79, // 14: core.ListAdminRoomsResponse.rooms:type_name -> core.AdminRoomProto
-	80, // 15: core.GetAdminRoomResponse.room:type_name -> core.AdminRoomDetailProto
-	85, // 16: core.GetServerConfigResponse.config:type_name -> core.ServerConfigProto
-	92, // 17: core.ListAdminRoomMembersResponse.members:type_name -> core.AdminRoomMemberProto
-	0,  // 18: core.GetRelationsResponse.events:type_name -> core.Event
-	1,  // 19: core.CoreService.SendEvent:input_type -> core.SendEventRequest
-	3,  // 20: core.CoreService.CreateRoom:input_type -> core.CreateRoomRequest
-	5,  // 21: core.CoreService.JoinRoom:input_type -> core.JoinRoomRequest
-	7,  // 22: core.CoreService.LeaveRoom:input_type -> core.LeaveRoomRequest
-	9,  // 23: core.CoreService.GetMessages:input_type -> core.GetMessagesRequest
-	11, // 24: core.CoreService.SetPresence:input_type -> core.SetPresenceRequest
-	13, // 25: core.CoreService.SetTyping:input_type -> core.SetTypingRequest
-	15, // 26: core.CoreService.ValidateToken:input_type -> core.ValidateTokenRequest
-	17, // 27: core.CoreService.GetPendingEvents:input_type -> core.GetPendingEventsRequest
-	19, // 28: core.CoreService.EventBus:input_type -> core.EventBusRequest
-	20, // 29: core.CoreService.GetMetrics:input_type -> core.GetMetricsRequest
-	24, // 30: core.CoreService.GetRoomState:input_type -> core.GetRoomStateRequest
-	22, // 31: core.CoreService.InviteUser:input_type -> core.InviteUserRequest
-	26, // 32: core.CoreService.SetPowerLevels:input_type -> core.SetPowerLevelsRequest
-	28, // 33: core.CoreService.SendReceipt:input_type -> core.SendReceiptRequest
-	30, // 34: core.CoreService.GetInitialSync:input_type -> core.GetInitialSyncRequest
-	33, // 35: core.CoreService.GetSyncDelta:input_type -> core.GetSyncDeltaRequest
-	36, // 36: core.CoreService.GetPresence:input_type -> core.GetPresenceRequest
-	38, // 37: core.CoreService.UpdateProfile:input_type -> core.UpdateProfileRequest
-	40, // 38: core.CoreService.WriteAuditLog:input_type -> core.WriteAuditLogRequest
-	42, // 39: core.CoreService.DeleteUserKeys:input_type -> core.DeleteUserKeysRequest
-	44, // 40: core.CoreService.KickUser:input_type -> core.KickUserRequest
-	46, // 41: core.CoreService.BanUser:input_type -> core.BanUserRequest
-	48, // 42: core.CoreService.UnbanUser:input_type -> core.UnbanUserRequest
-	50, // 43: core.CoreService.ForgetRoom:input_type -> core.ForgetRoomRequest
-	52, // 44: core.CoreService.ListPublicRooms:input_type -> core.ListPublicRoomsRequest
-	55, // 45: core.CoreService.GetEventContext:input_type -> core.GetEventContextRequest
-	58, // 46: core.CoreService.InvalidateUserSessions:input_type -> core.InvalidateUserSessionsRequest
-	60, // 47: core.CoreService.UpdateRoomSettings:input_type -> core.UpdateRoomSettingsRequest
-	62, // 48: core.CoreService.ArchiveRoom:input_type -> core.ArchiveRoomRequest
-	64, // 49: core.CoreService.UnarchiveRoom:input_type -> core.UnarchiveRoomRequest
-	66, // 50: core.CoreService.InvalidateAllAdminSessions:input_type -> core.InvalidateAllAdminSessionsRequest
-	69, // 51: core.CoreService.ListAdminUsers:input_type -> core.ListAdminUsersRequest
-	71, // 52: core.CoreService.GetAdminUser:input_type -> core.GetAdminUserRequest
-	73, // 53: core.CoreService.DeactivateUser:input_type -> core.DeactivateUserRequest
-	75, // 54: core.CoreService.ReactivateUser:input_type -> core.ReactivateUserRequest
-	77, // 55: core.CoreService.UpdateUserRole:input_type -> core.UpdateUserRoleRequest
-	81, // 56: core.CoreService.ListAdminRooms:input_type -> core.ListAdminRoomsRequest
-	83, // 57: core.CoreService.GetAdminRoom:input_type -> core.GetAdminRoomRequest
-	86, // 58: core.CoreService.GetServerConfig:input_type -> core.GetServerConfigRequest
-	88, // 59: core.CoreService.UpdateServerConfig:input_type -> core.UpdateServerConfigRequest
-	90, // 60: core.CoreService.UpgradeRoom:input_type -> core.UpgradeRoomRequest
-	93, // 61: core.CoreService.ListAdminRoomMembers:input_type -> core.ListAdminRoomMembersRequest
-	95, // 62: core.CoreService.GetRelations:input_type -> core.GetRelationsRequest
-	2,  // 63: core.CoreService.SendEvent:output_type -> core.SendEventResponse
-	4,  // 64: core.CoreService.CreateRoom:output_type -> core.CreateRoomResponse
-	6,  // 65: core.CoreService.JoinRoom:output_type -> core.JoinRoomResponse
-	8,  // 66: core.CoreService.LeaveRoom:output_type -> core.LeaveRoomResponse
-	10, // 67: core.CoreService.GetMessages:output_type -> core.GetMessagesResponse
-	12, // 68: core.CoreService.SetPresence:output_type -> core.SetPresenceResponse
-	14, // 69: core.CoreService.SetTyping:output_type -> core.SetTypingResponse
-	16, // 70: core.CoreService.ValidateToken:output_type -> core.ValidateTokenResponse
-	18, // 71: core.CoreService.GetPendingEvents:output_type -> core.GetPendingEventsResponse
-	0,  // 72: core.CoreService.EventBus:output_type -> core.Event
-	21, // 73: core.CoreService.GetMetrics:output_type -> core.GetMetricsResponse
-	25, // 74: core.CoreService.GetRoomState:output_type -> core.GetRoomStateResponse
-	23, // 75: core.CoreService.InviteUser:output_type -> core.InviteUserResponse
-	27, // 76: core.CoreService.SetPowerLevels:output_type -> core.SetPowerLevelsResponse
-	29, // 77: core.CoreService.SendReceipt:output_type -> core.SendReceiptResponse
-	31, // 78: core.CoreService.GetInitialSync:output_type -> core.GetInitialSyncResponse
-	34, // 79: core.CoreService.GetSyncDelta:output_type -> core.GetSyncDeltaResponse
-	37, // 80: core.CoreService.GetPresence:output_type -> core.GetPresenceResponse
-	39, // 81: core.CoreService.UpdateProfile:output_type -> core.UpdateProfileResponse
-	41, // 82: core.CoreService.WriteAuditLog:output_type -> core.WriteAuditLogResponse
-	43, // 83: core.CoreService.DeleteUserKeys:output_type -> core.DeleteUserKeysResponse
-	45, // 84: core.CoreService.KickUser:output_type -> core.KickUserResponse
-	47, // 85: core.CoreService.BanUser:output_type -> core.BanUserResponse
-	49, // 86: core.CoreService.UnbanUser:output_type -> core.UnbanUserResponse
-	51, // 87: core.CoreService.ForgetRoom:output_type -> core.ForgetRoomResponse
-	54, // 88: core.CoreService.ListPublicRooms:output_type -> core.ListPublicRoomsResponse
-	57, // 89: core.CoreService.GetEventContext:output_type -> core.GetEventContextResponse
-	59, // 90: core.CoreService.InvalidateUserSessions:output_type -> core.InvalidateUserSessionsResponse
-	61, // 91: core.CoreService.UpdateRoomSettings:output_type -> core.UpdateRoomSettingsResponse
-	63, // 92: core.CoreService.ArchiveRoom:output_type -> core.ArchiveRoomResponse
-	65, // 93: core.CoreService.UnarchiveRoom:output_type -> core.UnarchiveRoomResponse
-	67, // 94: core.CoreService.InvalidateAllAdminSessions:output_type -> core.InvalidateAllAdminSessionsResponse
-	70, // 95: core.CoreService.ListAdminUsers:output_type -> core.ListAdminUsersResponse
-	72, // 96: core.CoreService.GetAdminUser:output_type -> core.GetAdminUserResponse
-	74, // 97: core.CoreService.DeactivateUser:output_type -> core.DeactivateUserResponse
-	76, // 98: core.CoreService.ReactivateUser:output_type -> core.ReactivateUserResponse
-	78, // 99: core.CoreService.UpdateUserRole:output_type -> core.UpdateUserRoleResponse
-	82, // 100: core.CoreService.ListAdminRooms:output_type -> core.ListAdminRoomsResponse
-	84, // 101: core.CoreService.GetAdminRoom:output_type -> core.GetAdminRoomResponse
-	87, // 102: core.CoreService.GetServerConfig:output_type -> core.GetServerConfigResponse
-	89, // 103: core.CoreService.UpdateServerConfig:output_type -> core.UpdateServerConfigResponse
-	91, // 104: core.CoreService.UpgradeRoom:output_type -> core.UpgradeRoomResponse
-	94, // 105: core.CoreService.ListAdminRoomMembers:output_type -> core.ListAdminRoomMembersResponse
-	96, // 106: core.CoreService.GetRelations:output_type -> core.GetRelationsResponse
-	63, // [63:107] is the sub-list for method output_type
-	19, // [19:63] is the sub-list for method input_type
-	19, // [19:19] is the sub-list for extension type_name
-	19, // [19:19] is the sub-list for extension extendee
-	0,  // [0:19] is the sub-list for field type_name
-	99, // 18: core.SearchResult.profile_info:type_name -> core.SearchResult.ProfileInfoEntry
-	96, // 19: core.SearchMessagesResponse.results:type_name -> core.SearchResult
-	95, // 20: core.SearchResult.ProfileInfoEntry.value:type_name -> core.ProfileInfo
-	1,  // 21: core.CoreService.SendEvent:input_type -> core.SendEventRequest
-	3,  // 22: core.CoreService.CreateRoom:input_type -> core.CreateRoomRequest
-	5,  // 23: core.CoreService.JoinRoom:input_type -> core.JoinRoomRequest
-	7,  // 24: core.CoreService.LeaveRoom:input_type -> core.LeaveRoomRequest
-	9,  // 25: core.CoreService.GetMessages:input_type -> core.GetMessagesRequest
-	11, // 26: core.CoreService.SetPresence:input_type -> core.SetPresenceRequest
-	13, // 27: core.CoreService.SetTyping:input_type -> core.SetTypingRequest
-	15, // 28: core.CoreService.ValidateToken:input_type -> core.ValidateTokenRequest
-	17, // 29: core.CoreService.GetPendingEvents:input_type -> core.GetPendingEventsRequest
-	19, // 30: core.CoreService.EventBus:input_type -> core.EventBusRequest
-	20, // 31: core.CoreService.GetMetrics:input_type -> core.GetMetricsRequest
-	24, // 32: core.CoreService.GetRoomState:input_type -> core.GetRoomStateRequest
-	22, // 33: core.CoreService.InviteUser:input_type -> core.InviteUserRequest
-	26, // 34: core.CoreService.SetPowerLevels:input_type -> core.SetPowerLevelsRequest
-	28, // 35: core.CoreService.SendReceipt:input_type -> core.SendReceiptRequest
-	30, // 36: core.CoreService.GetInitialSync:input_type -> core.GetInitialSyncRequest
-	33, // 37: core.CoreService.GetSyncDelta:input_type -> core.GetSyncDeltaRequest
-	36, // 38: core.CoreService.GetPresence:input_type -> core.GetPresenceRequest
-	38, // 39: core.CoreService.UpdateProfile:input_type -> core.UpdateProfileRequest
-	40, // 40: core.CoreService.WriteAuditLog:input_type -> core.WriteAuditLogRequest
-	42, // 41: core.CoreService.DeleteUserKeys:input_type -> core.DeleteUserKeysRequest
-	44, // 42: core.CoreService.KickUser:input_type -> core.KickUserRequest
-	46, // 43: core.CoreService.BanUser:input_type -> core.BanUserRequest
-	48, // 44: core.CoreService.UnbanUser:input_type -> core.UnbanUserRequest
-	50, // 45: core.CoreService.ForgetRoom:input_type -> core.ForgetRoomRequest
-	52, // 46: core.CoreService.ListPublicRooms:input_type -> core.ListPublicRoomsRequest
-	55, // 47: core.CoreService.GetEventContext:input_type -> core.GetEventContextRequest
-	58, // 48: core.CoreService.InvalidateUserSessions:input_type -> core.InvalidateUserSessionsRequest
-	60, // 49: core.CoreService.UpdateRoomSettings:input_type -> core.UpdateRoomSettingsRequest
-	62, // 50: core.CoreService.ArchiveRoom:input_type -> core.ArchiveRoomRequest
-	64, // 51: core.CoreService.UnarchiveRoom:input_type -> core.UnarchiveRoomRequest
-	66, // 52: core.CoreService.InvalidateAllAdminSessions:input_type -> core.InvalidateAllAdminSessionsRequest
-	69, // 53: core.CoreService.ListAdminUsers:input_type -> core.ListAdminUsersRequest
-	71, // 54: core.CoreService.GetAdminUser:input_type -> core.GetAdminUserRequest
-	73, // 55: core.CoreService.DeactivateUser:input_type -> core.DeactivateUserRequest
-	75, // 56: core.CoreService.ReactivateUser:input_type -> core.ReactivateUserRequest
-	77, // 57: core.CoreService.UpdateUserRole:input_type -> core.UpdateUserRoleRequest
-	81, // 58: core.CoreService.ListAdminRooms:input_type -> core.ListAdminRoomsRequest
-	83, // 59: core.CoreService.GetAdminRoom:input_type -> core.GetAdminRoomRequest
-	86, // 60: core.CoreService.GetServerConfig:input_type -> core.GetServerConfigRequest
-	88, // 61: core.CoreService.UpdateServerConfig:input_type -> core.UpdateServerConfigRequest
-	90, // 62: core.CoreService.UpgradeRoom:input_type -> core.UpgradeRoomRequest
-	93, // 63: core.CoreService.ListAdminRoomMembers:input_type -> core.ListAdminRoomMembersRequest
-	97, // 64: core.CoreService.SearchMessages:input_type -> core.SearchMessagesRequest
-	2,  // 65: core.CoreService.SendEvent:output_type -> core.SendEventResponse
-	4,  // 66: core.CoreService.CreateRoom:output_type -> core.CreateRoomResponse
-	6,  // 67: core.CoreService.JoinRoom:output_type -> core.JoinRoomResponse
-	8,  // 68: core.CoreService.LeaveRoom:output_type -> core.LeaveRoomResponse
-	10, // 69: core.CoreService.GetMessages:output_type -> core.GetMessagesResponse
-	12, // 70: core.CoreService.SetPresence:output_type -> core.SetPresenceResponse
-	14, // 71: core.CoreService.SetTyping:output_type -> core.SetTypingResponse
-	16, // 72: core.CoreService.ValidateToken:output_type -> core.ValidateTokenResponse
-	18, // 73: core.CoreService.GetPendingEvents:output_type -> core.GetPendingEventsResponse
-	0,  // 74: core.CoreService.EventBus:output_type -> core.Event
-	21, // 75: core.CoreService.GetMetrics:output_type -> core.GetMetricsResponse
-	25, // 76: core.CoreService.GetRoomState:output_type -> core.GetRoomStateResponse
-	23, // 77: core.CoreService.InviteUser:output_type -> core.InviteUserResponse
-	27, // 78: core.CoreService.SetPowerLevels:output_type -> core.SetPowerLevelsResponse
-	29, // 79: core.CoreService.SendReceipt:output_type -> core.SendReceiptResponse
-	31, // 80: core.CoreService.GetInitialSync:output_type -> core.GetInitialSyncResponse
-	34, // 81: core.CoreService.GetSyncDelta:output_type -> core.GetSyncDeltaResponse
-	37, // 82: core.CoreService.GetPresence:output_type -> core.GetPresenceResponse
-	39, // 83: core.CoreService.UpdateProfile:output_type -> core.UpdateProfileResponse
-	41, // 84: core.CoreService.WriteAuditLog:output_type -> core.WriteAuditLogResponse
-	43, // 85: core.CoreService.DeleteUserKeys:output_type -> core.DeleteUserKeysResponse
-	45, // 86: core.CoreService.KickUser:output_type -> core.KickUserResponse
-	47, // 87: core.CoreService.BanUser:output_type -> core.BanUserResponse
-	49, // 88: core.CoreService.UnbanUser:output_type -> core.UnbanUserResponse
-	51, // 89: core.CoreService.ForgetRoom:output_type -> core.ForgetRoomResponse
-	54, // 90: core.CoreService.ListPublicRooms:output_type -> core.ListPublicRoomsResponse
-	57, // 91: core.CoreService.GetEventContext:output_type -> core.GetEventContextResponse
-	59, // 92: core.CoreService.InvalidateUserSessions:output_type -> core.InvalidateUserSessionsResponse
-	61, // 93: core.CoreService.UpdateRoomSettings:output_type -> core.UpdateRoomSettingsResponse
-	63, // 94: core.CoreService.ArchiveRoom:output_type -> core.ArchiveRoomResponse
-	65, // 95: core.CoreService.UnarchiveRoom:output_type -> core.UnarchiveRoomResponse
-	67, // 96: core.CoreService.InvalidateAllAdminSessions:output_type -> core.InvalidateAllAdminSessionsResponse
-	70, // 97: core.CoreService.ListAdminUsers:output_type -> core.ListAdminUsersResponse
-	72, // 98: core.CoreService.GetAdminUser:output_type -> core.GetAdminUserResponse
-	74, // 99: core.CoreService.DeactivateUser:output_type -> core.DeactivateUserResponse
-	76, // 100: core.CoreService.ReactivateUser:output_type -> core.ReactivateUserResponse
-	78, // 101: core.CoreService.UpdateUserRole:output_type -> core.UpdateUserRoleResponse
-	82, // 102: core.CoreService.ListAdminRooms:output_type -> core.ListAdminRoomsResponse
-	84, // 103: core.CoreService.GetAdminRoom:output_type -> core.GetAdminRoomResponse
-	87, // 104: core.CoreService.GetServerConfig:output_type -> core.GetServerConfigResponse
-	89, // 105: core.CoreService.UpdateServerConfig:output_type -> core.UpdateServerConfigResponse
-	91, // 106: core.CoreService.UpgradeRoom:output_type -> core.UpgradeRoomResponse
-	94, // 107: core.CoreService.ListAdminRoomMembers:output_type -> core.ListAdminRoomMembersResponse
-	98, // 108: core.CoreService.SearchMessages:output_type -> core.SearchMessagesResponse
-	65, // [65:109] is the sub-list for method output_type
-	21, // [21:65] is the sub-list for method input_type
-	21, // [21:21] is the sub-list for extension type_name
-	21, // [21:21] is the sub-list for extension extendee
-	0,  // [0:21] is the sub-list for field type_name
+	0,   // 0: core.GetMessagesResponse.events:type_name -> core.Event
+	0,   // 1: core.GetPendingEventsResponse.events:type_name -> core.Event
+	32,  // 2: core.GetRoomStateResponse.state_events:type_name -> core.SyncRoomStateEvent
+	35,  // 3: core.GetInitialSyncResponse.rooms:type_name -> core.SyncRoom
+	35,  // 4: core.GetSyncDeltaResponse.rooms:type_name -> core.SyncRoom
+	32,  // 5: core.SyncRoom.state_events:type_name -> core.SyncRoomStateEvent
+	0,   // 6: core.SyncRoom.timeline_events:type_name -> core.Event
+	53,  // 7: core.ListPublicRoomsResponse.rooms:type_name -> core.RoomSummary
+	0,   // 8: core.GetEventContextResponse.event:type_name -> core.Event
+	0,   // 9: core.GetEventContextResponse.events_before:type_name -> core.Event
+	0,   // 10: core.GetEventContextResponse.events_after:type_name -> core.Event
+	56,  // 11: core.GetEventContextResponse.state:type_name -> core.ContextStateEvent
+	68,  // 12: core.ListAdminUsersResponse.users:type_name -> core.AdminUserProto
+	68,  // 13: core.GetAdminUserResponse.user:type_name -> core.AdminUserProto
+	79,  // 14: core.ListAdminRoomsResponse.rooms:type_name -> core.AdminRoomProto
+	80,  // 15: core.GetAdminRoomResponse.room:type_name -> core.AdminRoomDetailProto
+	85,  // 16: core.GetServerConfigResponse.config:type_name -> core.ServerConfigProto
+	92,  // 17: core.ListAdminRoomMembersResponse.members:type_name -> core.AdminRoomMemberProto
+	0,   // 18: core.GetRelationsResponse.events:type_name -> core.Event
+	101, // 19: core.SearchResult.profile_info:type_name -> core.SearchResult.ProfileInfoEntry
+	98,  // 20: core.SearchMessagesResponse.results:type_name -> core.SearchResult
+	97,  // 21: core.SearchResult.ProfileInfoEntry.value:type_name -> core.ProfileInfo
+	1,   // 22: core.CoreService.SendEvent:input_type -> core.SendEventRequest
+	3,   // 23: core.CoreService.CreateRoom:input_type -> core.CreateRoomRequest
+	5,   // 24: core.CoreService.JoinRoom:input_type -> core.JoinRoomRequest
+	7,   // 25: core.CoreService.LeaveRoom:input_type -> core.LeaveRoomRequest
+	9,   // 26: core.CoreService.GetMessages:input_type -> core.GetMessagesRequest
+	11,  // 27: core.CoreService.SetPresence:input_type -> core.SetPresenceRequest
+	13,  // 28: core.CoreService.SetTyping:input_type -> core.SetTypingRequest
+	15,  // 29: core.CoreService.ValidateToken:input_type -> core.ValidateTokenRequest
+	17,  // 30: core.CoreService.GetPendingEvents:input_type -> core.GetPendingEventsRequest
+	19,  // 31: core.CoreService.EventBus:input_type -> core.EventBusRequest
+	20,  // 32: core.CoreService.GetMetrics:input_type -> core.GetMetricsRequest
+	24,  // 33: core.CoreService.GetRoomState:input_type -> core.GetRoomStateRequest
+	22,  // 34: core.CoreService.InviteUser:input_type -> core.InviteUserRequest
+	26,  // 35: core.CoreService.SetPowerLevels:input_type -> core.SetPowerLevelsRequest
+	28,  // 36: core.CoreService.SendReceipt:input_type -> core.SendReceiptRequest
+	30,  // 37: core.CoreService.GetInitialSync:input_type -> core.GetInitialSyncRequest
+	33,  // 38: core.CoreService.GetSyncDelta:input_type -> core.GetSyncDeltaRequest
+	36,  // 39: core.CoreService.GetPresence:input_type -> core.GetPresenceRequest
+	38,  // 40: core.CoreService.UpdateProfile:input_type -> core.UpdateProfileRequest
+	40,  // 41: core.CoreService.WriteAuditLog:input_type -> core.WriteAuditLogRequest
+	42,  // 42: core.CoreService.DeleteUserKeys:input_type -> core.DeleteUserKeysRequest
+	44,  // 43: core.CoreService.KickUser:input_type -> core.KickUserRequest
+	46,  // 44: core.CoreService.BanUser:input_type -> core.BanUserRequest
+	48,  // 45: core.CoreService.UnbanUser:input_type -> core.UnbanUserRequest
+	50,  // 46: core.CoreService.ForgetRoom:input_type -> core.ForgetRoomRequest
+	52,  // 47: core.CoreService.ListPublicRooms:input_type -> core.ListPublicRoomsRequest
+	55,  // 48: core.CoreService.GetEventContext:input_type -> core.GetEventContextRequest
+	58,  // 49: core.CoreService.InvalidateUserSessions:input_type -> core.InvalidateUserSessionsRequest
+	60,  // 50: core.CoreService.UpdateRoomSettings:input_type -> core.UpdateRoomSettingsRequest
+	62,  // 51: core.CoreService.ArchiveRoom:input_type -> core.ArchiveRoomRequest
+	64,  // 52: core.CoreService.UnarchiveRoom:input_type -> core.UnarchiveRoomRequest
+	66,  // 53: core.CoreService.InvalidateAllAdminSessions:input_type -> core.InvalidateAllAdminSessionsRequest
+	69,  // 54: core.CoreService.ListAdminUsers:input_type -> core.ListAdminUsersRequest
+	71,  // 55: core.CoreService.GetAdminUser:input_type -> core.GetAdminUserRequest
+	73,  // 56: core.CoreService.DeactivateUser:input_type -> core.DeactivateUserRequest
+	75,  // 57: core.CoreService.ReactivateUser:input_type -> core.ReactivateUserRequest
+	77,  // 58: core.CoreService.UpdateUserRole:input_type -> core.UpdateUserRoleRequest
+	81,  // 59: core.CoreService.ListAdminRooms:input_type -> core.ListAdminRoomsRequest
+	83,  // 60: core.CoreService.GetAdminRoom:input_type -> core.GetAdminRoomRequest
+	86,  // 61: core.CoreService.GetServerConfig:input_type -> core.GetServerConfigRequest
+	88,  // 62: core.CoreService.UpdateServerConfig:input_type -> core.UpdateServerConfigRequest
+	90,  // 63: core.CoreService.UpgradeRoom:input_type -> core.UpgradeRoomRequest
+	93,  // 64: core.CoreService.ListAdminRoomMembers:input_type -> core.ListAdminRoomMembersRequest
+	95,  // 65: core.CoreService.GetRelations:input_type -> core.GetRelationsRequest
+	99,  // 66: core.CoreService.SearchMessages:input_type -> core.SearchMessagesRequest
+	2,   // 67: core.CoreService.SendEvent:output_type -> core.SendEventResponse
+	4,   // 68: core.CoreService.CreateRoom:output_type -> core.CreateRoomResponse
+	6,   // 69: core.CoreService.JoinRoom:output_type -> core.JoinRoomResponse
+	8,   // 70: core.CoreService.LeaveRoom:output_type -> core.LeaveRoomResponse
+	10,  // 71: core.CoreService.GetMessages:output_type -> core.GetMessagesResponse
+	12,  // 72: core.CoreService.SetPresence:output_type -> core.SetPresenceResponse
+	14,  // 73: core.CoreService.SetTyping:output_type -> core.SetTypingResponse
+	16,  // 74: core.CoreService.ValidateToken:output_type -> core.ValidateTokenResponse
+	18,  // 75: core.CoreService.GetPendingEvents:output_type -> core.GetPendingEventsResponse
+	0,   // 76: core.CoreService.EventBus:output_type -> core.Event
+	21,  // 77: core.CoreService.GetMetrics:output_type -> core.GetMetricsResponse
+	25,  // 78: core.CoreService.GetRoomState:output_type -> core.GetRoomStateResponse
+	23,  // 79: core.CoreService.InviteUser:output_type -> core.InviteUserResponse
+	27,  // 80: core.CoreService.SetPowerLevels:output_type -> core.SetPowerLevelsResponse
+	29,  // 81: core.CoreService.SendReceipt:output_type -> core.SendReceiptResponse
+	31,  // 82: core.CoreService.GetInitialSync:output_type -> core.GetInitialSyncResponse
+	34,  // 83: core.CoreService.GetSyncDelta:output_type -> core.GetSyncDeltaResponse
+	37,  // 84: core.CoreService.GetPresence:output_type -> core.GetPresenceResponse
+	39,  // 85: core.CoreService.UpdateProfile:output_type -> core.UpdateProfileResponse
+	41,  // 86: core.CoreService.WriteAuditLog:output_type -> core.WriteAuditLogResponse
+	43,  // 87: core.CoreService.DeleteUserKeys:output_type -> core.DeleteUserKeysResponse
+	45,  // 88: core.CoreService.KickUser:output_type -> core.KickUserResponse
+	47,  // 89: core.CoreService.BanUser:output_type -> core.BanUserResponse
+	49,  // 90: core.CoreService.UnbanUser:output_type -> core.UnbanUserResponse
+	51,  // 91: core.CoreService.ForgetRoom:output_type -> core.ForgetRoomResponse
+	54,  // 92: core.CoreService.ListPublicRooms:output_type -> core.ListPublicRoomsResponse
+	57,  // 93: core.CoreService.GetEventContext:output_type -> core.GetEventContextResponse
+	59,  // 94: core.CoreService.InvalidateUserSessions:output_type -> core.InvalidateUserSessionsResponse
+	61,  // 95: core.CoreService.UpdateRoomSettings:output_type -> core.UpdateRoomSettingsResponse
+	63,  // 96: core.CoreService.ArchiveRoom:output_type -> core.ArchiveRoomResponse
+	65,  // 97: core.CoreService.UnarchiveRoom:output_type -> core.UnarchiveRoomResponse
+	67,  // 98: core.CoreService.InvalidateAllAdminSessions:output_type -> core.InvalidateAllAdminSessionsResponse
+	70,  // 99: core.CoreService.ListAdminUsers:output_type -> core.ListAdminUsersResponse
+	72,  // 100: core.CoreService.GetAdminUser:output_type -> core.GetAdminUserResponse
+	74,  // 101: core.CoreService.DeactivateUser:output_type -> core.DeactivateUserResponse
+	76,  // 102: core.CoreService.ReactivateUser:output_type -> core.ReactivateUserResponse
+	78,  // 103: core.CoreService.UpdateUserRole:output_type -> core.UpdateUserRoleResponse
+	82,  // 104: core.CoreService.ListAdminRooms:output_type -> core.ListAdminRoomsResponse
+	84,  // 105: core.CoreService.GetAdminRoom:output_type -> core.GetAdminRoomResponse
+	87,  // 106: core.CoreService.GetServerConfig:output_type -> core.GetServerConfigResponse
+	89,  // 107: core.CoreService.UpdateServerConfig:output_type -> core.UpdateServerConfigResponse
+	91,  // 108: core.CoreService.UpgradeRoom:output_type -> core.UpgradeRoomResponse
+	94,  // 109: core.CoreService.ListAdminRoomMembers:output_type -> core.ListAdminRoomMembersResponse
+	96,  // 110: core.CoreService.GetRelations:output_type -> core.GetRelationsResponse
+	100, // 111: core.CoreService.SearchMessages:output_type -> core.SearchMessagesResponse
+	67,  // [67:112] is the sub-list for method output_type
+	22,  // [22:67] is the sub-list for method input_type
+	22,  // [22:22] is the sub-list for extension type_name
+	22,  // [22:22] is the sub-list for extension extendee
+	0,   // [0:22] is the sub-list for field type_name
 }
 
 func init() { file_core_proto_init() }
