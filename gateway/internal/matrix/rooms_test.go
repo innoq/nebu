@@ -1917,3 +1917,163 @@ func TestPutSendEvent_OtherErrors_NotAffectedByFailedPreconditionFix(t *testing.
 		})
 	}
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Story 12.6: Blurhash Pass-Through Tests
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// AC1 + AC2: The gateway MUST NOT strip or modify content.info.blurhash.
+// The content is decoded from JSON → re-encoded → passed to gRPC as bytes.
+// This round-trip must preserve all fields in content.info, including blurhash.
+//
+// Matrix spec: content.info is an opaque object — the server MUST NOT modify it.
+// blurhash is a de-facto client extension field (not in spec v1.18 ImageInfo,
+// but universally used by Element clients).
+//
+// Oracle context: content.info is MUST NOT be modified by the server.
+// The pass-through architecture (map[string]any → json.Marshal) already handles this,
+// but these tests provide explicit traceability to AC1+AC2.
+
+// ─── AT-5: Blurhash in content.info is passed to gRPC unchanged ───────────────
+//
+// AC1: blurhash field persisted as part of content.info (client-provided, not stripped).
+//
+// This test verifies: PutSendEvent passes content as-is to gRPC SendEvent.
+// If blurhash is in the input JSON, it MUST appear in SendEventRequest.Content.
+
+func TestSendEvent_BlurhashInContentInfo_PassedToGRPC(t *testing.T) {
+	mock := &mockSendEventCoreClient{
+		resp: &pb.SendEventResponse{EventId: "$blurhash-test-1"},
+	}
+
+	mux, makeToken := buildAuthedSendEventHandler(t, mock)
+
+	// m.image event with blurhash in content.info (Element Web standard format)
+	body := `{
+		"msgtype": "m.image",
+		"body": "cat.jpg",
+		"url": "mxc://test.local/abc123",
+		"info": {
+			"w": 800,
+			"h": 600,
+			"mimetype": "image/jpeg",
+			"size": 12345,
+			"blurhash": "LEHV6nWB2yk8pyo0adR*.7kCMdnj"
+		}
+	}`
+
+	req := httptest.NewRequest(http.MethodPut,
+		"/_matrix/client/v3/rooms/!room1:test.local/send/m.room.message/txn-bh-1",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("AT-5: expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	if mock.capturedReq == nil {
+		t.Fatal("AT-5: gRPC SendEvent was not called")
+	}
+
+	// Unmarshal the content bytes that were passed to gRPC.
+	var content map[string]any
+	if err := json.Unmarshal(mock.capturedReq.Content, &content); err != nil {
+		t.Fatalf("AT-5: cannot unmarshal gRPC Content bytes: %v", err)
+	}
+
+	// content["info"] must be a map.
+	infoRaw, ok := content["info"]
+	if !ok {
+		t.Fatal("AT-5: gRPC Content missing 'info' key — gateway stripped content.info")
+	}
+	info, ok := infoRaw.(map[string]any)
+	if !ok {
+		t.Fatalf("AT-5: gRPC Content 'info' is not a map (got %T)", infoRaw)
+	}
+
+	// blurhash must be present and equal to the client-provided value.
+	blurhash, ok := info["blurhash"]
+	if !ok {
+		t.Fatal("AT-5: gRPC Content 'info.blurhash' is missing — gateway stripped blurhash field")
+	}
+	if blurhash != "LEHV6nWB2yk8pyo0adR*.7kCMdnj" {
+		t.Errorf("AT-5: expected info.blurhash = %q, got %q", "LEHV6nWB2yk8pyo0adR*.7kCMdnj", blurhash)
+	}
+}
+
+// ─── AT-6: content.info preserved when blurhash is absent ────────────────────
+//
+// AC1: When no blurhash is sent, content.info fields are still preserved unchanged.
+// The gateway must not add or remove any fields from content.info.
+
+func TestSendEvent_BlurhashAbsent_ContentInfoPreserved(t *testing.T) {
+	mock := &mockSendEventCoreClient{
+		resp: &pb.SendEventResponse{EventId: "$no-blurhash-1"},
+	}
+
+	mux, makeToken := buildAuthedSendEventHandler(t, mock)
+
+	// m.image event WITHOUT blurhash — only standard info fields
+	body := `{
+		"msgtype": "m.image",
+		"body": "photo.jpg",
+		"url": "mxc://test.local/xyz789",
+		"info": {
+			"w": 1920,
+			"h": 1080,
+			"mimetype": "image/jpeg",
+			"size": 98765
+		}
+	}`
+
+	req := httptest.NewRequest(http.MethodPut,
+		"/_matrix/client/v3/rooms/!room1:test.local/send/m.room.message/txn-bh-2",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("AT-6: expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	if mock.capturedReq == nil {
+		t.Fatal("AT-6: gRPC SendEvent was not called")
+	}
+
+	var content map[string]any
+	if err := json.Unmarshal(mock.capturedReq.Content, &content); err != nil {
+		t.Fatalf("AT-6: cannot unmarshal gRPC Content bytes: %v", err)
+	}
+
+	// content["info"] must be present.
+	infoRaw, ok := content["info"]
+	if !ok {
+		t.Fatal("AT-6: gRPC Content missing 'info' key — gateway stripped content.info")
+	}
+	info, ok := infoRaw.(map[string]any)
+	if !ok {
+		t.Fatalf("AT-6: gRPC Content 'info' is not a map (got %T)", infoRaw)
+	}
+
+	// All original fields must still be present.
+	if fmt.Sprintf("%v", info["mimetype"]) != "image/jpeg" {
+		t.Errorf("AT-6: info.mimetype should be %q, got %v", "image/jpeg", info["mimetype"])
+	}
+
+	// blurhash should NOT be present (the gateway must not inject it).
+	if _, hasBlurhash := info["blurhash"]; hasBlurhash {
+		t.Error("AT-6: gateway must not inject blurhash — it was not in the original request")
+	}
+
+	// Standard info fields must be preserved.
+	if info["w"] == nil || info["h"] == nil || info["size"] == nil {
+		t.Errorf("AT-6: content.info fields stripped: w=%v, h=%v, size=%v", info["w"], info["h"], info["size"])
+	}
+}

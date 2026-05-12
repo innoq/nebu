@@ -1,6 +1,14 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-12
+# [12-6] 2026-05-12T23:28Z ci-gate → ✓ build+unit-go (matrix+media all green)+unit-elixir (227 actual pass); e2e+integration skipped (minio/mc image unavailable — pre-existing)
+# [12-6] 2026-05-12T23:16Z dev-story → done (cycle 0) — all tests pass: AT-2 sync blurhash, AT-5+AT-6 send-event blurhash; AT-3+AT-4 animated regression guards pass; no implementation changes needed (pass-through already correct)
+# [12-6] 2026-05-12T23:14Z test-review → CLEAN (0 MAJOR, 0 MINOR — all ACs covered, gRPC mock pattern, deterministic)
+# [12-6] 2026-05-12T23:12Z atdd → 5 tests (AT-2 gRPC sync blurhash, AT-5+AT-6 send-event blurhash — all pass immediately: pass-through already correct; AT-3+AT-4 are 12.5 regression guards — pass)
+# [12-6] 2026-05-12T23:07Z oracle-gate → spec context captured (content.info MUST pass-through unchanged; animated=false MUST NOT return animated; width+height REQUIRED; 400 for non-integer/negative)
+# [12-6] 2026-05-12T23:05Z create-story → 12-6-blurhash-pass-through-animated-thumbnail-correctness.md
+# [12-6] 2026-05-12T23:00Z pipeline started
+# [12-5] 2026-05-12T19:14Z epic-loop → story done
 # [12-5] 2026-05-12T22:35Z committed ✓ (ATDD+Code CLEAN 0 cycles+Kassandra CLEAN 2 LOW advisory)
 # [12-5] 2026-05-12T22:30Z arc42-update → done (05-building-blocks: thumbnail package + pgThumbnailStore adapter; 08-concepts: thumbnail generation table — library/MIME/methods/headers)
 # [12-5] 2026-05-12T22:25Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW advisory — serverName pre-existing, large-GIF bounded by upload MaxBytes)
@@ -209,9 +217,14 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: null
-current_step: null
-completed: []
+story: "12-6"
+current_step: "code-review"
+completed:
+  - create-story
+  - atdd
+  - test-review
+  - dev-story
+  - ci-gate
 cycle_count: 0
 blocked_reason: null
-last_updated: "2026-05-12T17:14Z"
+last_updated: "2026-05-12T17:28Z"
