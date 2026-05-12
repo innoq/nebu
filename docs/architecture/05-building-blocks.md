@@ -68,19 +68,43 @@ gateway/
     │   ├── users.go            ← User CRUD UI + API
     │   ├── rooms.go            ← Room Management UI + API
     │   ├── compliance.go       ← Four-eyes compliance UI
+    │   ├── claim_mapping.go    ← ClaimMappingHandler (Story 11-10): GET/POST /admin/config/claim-mapping;
+    │   │                          reads oidc_user_id_claim, oidc_displayname_claim, oidc_email_claim from
+    │   │                          server_config via ServerConfigReader.LoadClaimMapping (Nebu defaults:
+    │   │                          sub/name/email if keys absent); validates claim names against
+    │   │                          oidcClaimNameRe (^[a-zA-Z0-9:_\-.]+$, 1-50 chars); persists via
+    │   │                          SaveClaimMapping with PRG redirect (?flash=...); audit log includes
+    │   │                          previous_oidc_* before-values; displays identity-stability warning banner
+    │   ├── auth.go             ← ClaimSelectionHandler extended (Story 11-10): atomically persists
+    │   │                          oidc_user_id_claim, oidc_displayname_claim, oidc_email_claim inside the
+    │   │                          same runInTx as admin_group_claim + bootstrap_completed (AC2);
+    │   │                          ServerConfigReader interface extended with LoadClaimMapping +
+    │   │                          SaveClaimMapping methods on postgresServerConfigReader
     │   ├── page_data.go        ← PageData struct + newPageData() helper + SetBuildInfo();
     │   │                          BuildVersion/GitCommit/BuildTime fields on PageData; SetBuildInfo
     │   │                          called once from main.go; newPageData() used by all authenticated
     │   │                          handlers to pre-populate build info for the footer (Story 11-9);
-    │   │                          ErrorMode bool suppresses footer on error pages
+    │   │                          ErrorMode bool suppresses footer on error pages;
+    │   │                          ClaimMappingPageData (Story 11-10): OIDCUserIDClaim,
+    │   │                          OIDCDisplaynameClaim, OIDCEmailClaim + per-field validation errors
     │   └── templates/          ← Embedded HTML templates (go:embed);
+    │       ├── claim-mapping.html ← Admin UI Claim Mapping settings page (Story 11-10):
+    │       │                        DaisyUI form with datalist suggestions (sub/preferred_username/email)
+    │       │                        for oidc_user_id_claim; PRG flash pattern; per-field 422 errors;
+    │       │                        identity-stability warning banner
     │       └── layouts/base.html ← DaisyUI footer rendered on every authenticated page (Story 11-9):
     │                              `nebu gateway v{{.BuildVersion}} · {{.GitCommit}} · built {{.BuildTime}}`
-    │                              guarded by `{{ if not .LoginMode }}{{ if not .ErrorMode }}`
+    │                              guarded by `{{ if not .LoginMode }}{{ if not .ErrorMode }}`;
+    │                              sidebar gains "Claim Mapping" nav link (Story 11-10)
     ├── grpc/                   ← gRPC CoreService client
     │   ├── client.go           ← gRPC connection, CoreService stub
     │   ├── stream.go           ← EventBus server-streaming + exponential backoff
-    │   └── fallback.go         ← Unary GetPendingEvents (GELB status)
+    │   ├── fallback.go         ← Unary GetPendingEvents (GELB status)
+    │   └── metadata.go         ← FormatUserIDFromClaims refactored (Story 11-10):
+    │                              new signature (claimName string, claims map[string]interface{},
+    │                              serverName string); extracts claims[claimName], sanitises via
+    │                              sanitiseLocalpart, falls back to FormatUserID(sub, serverName)
+    │                              (SHA-256 path) when claim is absent or invalid
     ├── buffer/                 ← message_buffer for ROT-status writes
     │   ├── buffer.go           ← In-memory ring buffer per user
     │   ├── drain.go            ← Drain worker + DrainStrategy interface
@@ -89,7 +113,10 @@ gateway/
     │                              NewIPRateLimiter (per-IP token-bucket, Stories 5.21/5.29a);
     │                              NewUserRateLimiter (per-user token-bucket keyed on ContextKeyUserID,
     │                              Story 11-5: 10 req/min for POST /search; IP fallback for defense-in-depth;
-    │                              NEBU_RATE_LIMIT_DISABLED=true no-op; retry_after_ms in 429 body)
+    │                              NEBU_RATE_LIMIT_DISABLED=true no-op; retry_after_ms in 429 body);
+    │                              JWTMiddleware gains 5th parameter userIDClaimLoader func(ctx context.Context)
+    │                              string (Story 11-10): per-request DB lookup for oidc_user_id_claim;
+    │                              nil loader falls back to "name" claim (backward-compat)
     ├── registry/               ← Elixir node registry (/internal/nodes/*)
     ├── compliance/             ← Compliance API handlers (four-eyes, export, anonymize)
     ├── health/                 ← /health + /ready handlers; info.go adds GET /info
@@ -278,7 +305,7 @@ Key gRPC services: `SendEvent`, `CreateRoom`, `JoinRoom`, `GetMessages`, `GetRoo
 | `device_id` | string | When set, only invalidates this device; when empty, invalidates all user sessions |
 
 
-_Source: `_bmad-output/planning-artifacts/architecture.md`, §Project Structure & Boundaries, §Complete Project Directory Structure; Story 9-19 (room_moderation.go, sync.go, event_dispatcher/server.ex, forgotten_rooms migration); Story 9-22 (per-device sync tokens, device_id in proto); Story 9-24 (GlobalAccountDataDB interface, ListGlobalAccountData, top-level account_data in syncResponse); Story 9-25 (syntheticNextBatch helper, syntheticBatchSeq atomic counter, sinceToken param removed from buildResponseFromBufferedEvents); Story 9-27 (upgrade_room/2 full Matrix §11.35.1 flow, GRPC.RPCError error handling, archive_room_atomic, terminate_child, try/rescue failure audit); Story 11-2 (Nebu.Search.DB, membership-scoped FTS SQL contract, encrypted-room exclusion, integration test infrastructure)_
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Project Structure & Boundaries, §Complete Project Directory Structure; Story 9-19 (room_moderation.go, sync.go, event_dispatcher/server.ex, forgotten_rooms migration); Story 9-22 (per-device sync tokens, device_id in proto); Story 9-24 (GlobalAccountDataDB interface, ListGlobalAccountData, top-level account_data in syncResponse); Story 9-25 (syntheticNextBatch helper, syntheticBatchSeq atomic counter, sinceToken param removed from buildResponseFromBufferedEvents); Story 9-27 (upgrade_room/2 full Matrix §11.35.1 flow, GRPC.RPCError error handling, archive_room_atomic, terminate_child, try/rescue failure audit); Story 11-2 (Nebu.Search.DB, membership-scoped FTS SQL contract, encrypted-room exclusion, integration test infrastructure); Story 11-10 (ClaimMappingHandler admin settings page, ClaimSelectionHandler bootstrap extension, ServerConfigReader interface with LoadClaimMapping/SaveClaimMapping, FormatUserIDFromClaims refactored signature, JWTMiddleware userIDClaimLoader param, migration 000044 default claim mapping seed)_
 **`Event` message — `unsigned_relations` field (Story 9-28):**
 
 The shared `Event` proto message gained field 9:
@@ -362,4 +389,4 @@ Response: `Event event` — the full event proto (same `Event` message used by s
 > `core.proto`; the Elixir `core_grpc.pb.ex` service stub was updated manually (`rpc :GetEvent` entry
 > added alongside the pre-existing `rpc :GetRelations` fix).
 
-_Source: `_bmad-output/planning-artifacts/architecture.md`, §Project Structure & Boundaries, §Complete Project Directory Structure; Story 9-19 (room_moderation.go, sync.go, event_dispatcher/server.ex, forgotten_rooms migration); Story 9-22 (per-device sync tokens, device_id in proto); Story 9-24 (GlobalAccountDataDB interface, ListGlobalAccountData, top-level account_data in syncResponse); Story 9-25 (syntheticNextBatch helper, syntheticBatchSeq atomic counter, sinceToken param removed from buildResponseFromBufferedEvents); Story 9-27 (upgrade_room/2 full Matrix §11.35.1 flow, GRPC.RPCError error handling, archive_room_atomic, terminate_child, try/rescue failure audit); Story 9-28 (GetRelations RPC, unsigned_relations field on Event, attach_thread_aggregations, fetch_events_by_relation, count_thread_children, event_in_room?, migration 000042); Story 9-29 (base /relations/{eventId} route, three-segment /{relType}/{eventType} route, dir/event_type/recurse/from query params, prev_batch in response, fetch_events_by_relation/5 dynamic WHERE builder); Story 11-3 (SearchMessages gRPC handler, proto extension, delegated search_db_module pattern, offset-cap security fix); Story 11-4 (search.go Gateway handler, SearchCoreClient consumer interface, §11.14.1 response shape, gRPC error mapping); Story 11-5 (NewUserRateLimiter middleware, per-user 10 req/min for /search, retry_after_ms in body); Story 11-8 (GetEvent RPC, event.go Go handler, fetch_event/2 DB function, core_grpc.pb.ex rpc :GetEvent + rpc :GetRelations bug fix); Story 11-9 (health/info.go NewInfoHandler, Nebu.BuildInfo module, GET /info on pubMux + health server, Admin UI footer via page_data.go SetBuildInfo/newPageData, ErrorMode on PageData, Dockerfile ARG/ldflags injection, docker-compose.yml build args)_
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Project Structure & Boundaries, §Complete Project Directory Structure; Story 9-19 (room_moderation.go, sync.go, event_dispatcher/server.ex, forgotten_rooms migration); Story 9-22 (per-device sync tokens, device_id in proto); Story 9-24 (GlobalAccountDataDB interface, ListGlobalAccountData, top-level account_data in syncResponse); Story 9-25 (syntheticNextBatch helper, syntheticBatchSeq atomic counter, sinceToken param removed from buildResponseFromBufferedEvents); Story 9-27 (upgrade_room/2 full Matrix §11.35.1 flow, GRPC.RPCError error handling, archive_room_atomic, terminate_child, try/rescue failure audit); Story 9-28 (GetRelations RPC, unsigned_relations field on Event, attach_thread_aggregations, fetch_events_by_relation, count_thread_children, event_in_room?, migration 000042); Story 9-29 (base /relations/{eventId} route, three-segment /{relType}/{eventType} route, dir/event_type/recurse/from query params, prev_batch in response, fetch_events_by_relation/5 dynamic WHERE builder); Story 11-3 (SearchMessages gRPC handler, proto extension, delegated search_db_module pattern, offset-cap security fix); Story 11-4 (search.go Gateway handler, SearchCoreClient consumer interface, §11.14.1 response shape, gRPC error mapping); Story 11-5 (NewUserRateLimiter middleware, per-user 10 req/min for /search, retry_after_ms in body); Story 11-8 (GetEvent RPC, event.go Go handler, fetch_event/2 DB function, core_grpc.pb.ex rpc :GetEvent + rpc :GetRelations bug fix); Story 11-9 (health/info.go NewInfoHandler, Nebu.BuildInfo module, GET /info on pubMux + health server, Admin UI footer via page_data.go SetBuildInfo/newPageData, ErrorMode on PageData, Dockerfile ARG/ldflags injection, docker-compose.yml build args); Story 11-10 (ClaimMappingHandler + ClaimMappingPageData + ClaimMappingConfig in claim_mapping.go, claim-mapping.html template, ClaimSelectionHandler atomic claim persistence in auth.go, ServerConfigReader LoadClaimMapping/SaveClaimMapping extension, FormatUserIDFromClaims signature refactor in grpc/metadata.go, JWTMiddleware userIDClaimLoader param, LoginHandler per-request claim resolution, migration 000044 claim mapping defaults seed)_

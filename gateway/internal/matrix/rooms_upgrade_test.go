@@ -82,7 +82,7 @@ func buildAuthedUpgradeRoomHandler(t *testing.T) (http.Handler, func() string) {
 		ServerName: "test.local",
 	})
 
-	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
 		http.HandlerFunc(handler.PostUpgradeRoom),
 	)
 

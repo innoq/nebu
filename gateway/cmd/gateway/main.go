@@ -18,6 +18,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -81,6 +82,54 @@ func (a *coreMetricsAdapter) GetMetrics(ctx context.Context) (float64, int, int,
 		return 0, 0, 0, fmt.Errorf("core unavailable")
 	}
 	return float64(resp.MsgPerSec), int(resp.ActiveSessions), int(resp.RoomCount), nil
+}
+
+// claimLoader is a TTL-cached loader for server_config claim values (MAJOR-3 fix, Story 11-10).
+// It reduces per-request DB queries (oidc_user_id_claim etc.) from 1-per-request to at most
+// 1-per-ttl, while still allowing live updates without a gateway restart.
+// On load failure the stale value is returned (fail-open) to avoid blocking all auth.
+type claimLoader struct {
+	mu       sync.Mutex
+	value    string
+	loadedAt time.Time
+	ttl      time.Duration
+	loadFn   func(ctx context.Context) (string, error)
+}
+
+// get returns the cached claim value, refreshing from DB if the TTL has expired.
+// On DB error the stale cached value is returned (fail-open) and the error is logged internally.
+// Callers receive only the string value — the fail-open contract means callers do not
+// need to handle errors; a transient DB failure silently returns the stale value.
+func (c *claimLoader) get(ctx context.Context) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if time.Since(c.loadedAt) < c.ttl {
+		return c.value
+	}
+	v, err := c.loadFn(ctx)
+	if err != nil {
+		slog.Warn("claimLoader: DB refresh failed, returning stale value", "err", err)
+		return c.value // return stale on error (fail-open)
+	}
+	c.value = v
+	c.loadedAt = time.Now()
+	return c.value
+}
+
+// newServerConfigClaimLoader returns a claimLoader that reads the given key from
+// server_config via the ServerConfigReader interface with a 60s TTL.
+// The envOverride (if non-empty) bypasses the DB entirely (backward-compat escape hatch).
+// Using ServerConfigReader avoids embedding raw SQL outside the admin package (MINOR-5).
+func newServerConfigClaimLoader(reader admin.ServerConfigReader, key, envOverride string) *claimLoader {
+	return &claimLoader{
+		ttl: 60 * time.Second,
+		loadFn: func(ctx context.Context) (string, error) {
+			if envOverride != "" {
+				return envOverride, nil
+			}
+			return reader.LoadServerConfigKey(ctx, key)
+		},
+	}
 }
 
 func main() {
@@ -371,6 +420,13 @@ func main() {
 	mux.Handle("GET /admin/config/role-mapping", csrf(sessionGuard(http.HandlerFunc(roleMappingHandler.Handler))))
 	mux.Handle("POST /admin/config/role-mapping", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(roleMappingHandler.UpdateHandler)))))
 
+	// Story 11-10: Claim Mapping configuration page.
+	// Reads/writes oidc_user_id_claim, oidc_displayname_claim, oidc_email_claim in server_config.
+	claimMappingHandler := admin.NewClaimMappingHandler(tmplHandler, adminAuth.ConfigReader())
+	claimMappingHandler.SetCoreClient(coreClient.CoreServiceClient())
+	mux.Handle("GET /admin/config/claim-mapping", csrf(sessionGuard(http.HandlerFunc(claimMappingHandler.Handler))))
+	mux.Handle("POST /admin/config/claim-mapping", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(claimMappingHandler.UpdateHandler)))))
+
 	// Story 7.11: Compliance Access Requests page (four-eyes approval UI).
 	// Story 9.5: wire real compliance DB so approve/reject persist via PostgreSQL.
 	adminComplianceDB, adminComplianceDBErr := sql.Open("pgx", cfg.DBURL)
@@ -468,16 +524,37 @@ func main() {
 	defer tokenDB.Close()
 	tokenStore := db.NewPostgresTokenStore(tokenDB)
 
+	// Story 11-10 (AC5, AC7, MAJOR-3 fix): TTL-cached loaders for OIDC claim mapping.
+	// Each loader reads from server_config at most once per 60s — no per-request DB hit.
+	// Stale value is returned on DB error (fail-open) so auth is never blocked by a transient
+	// DB issue. NEBU_OIDC_USER_ID_CLAIM env var overrides DB for backward compat (AC7).
+	uidClaimCached := newServerConfigClaimLoader(adminAuth.ConfigReader(), "oidc_user_id_claim", os.Getenv("NEBU_OIDC_USER_ID_CLAIM"))
+	dnClaimCached := newServerConfigClaimLoader(adminAuth.ConfigReader(), "oidc_displayname_claim", "")
+	emailClaimCached := newServerConfigClaimLoader(adminAuth.ConfigReader(), "oidc_email_claim", "")
+
+	userIDClaimLoader := func(ctx context.Context) string {
+		return uidClaimCached.get(ctx)
+	}
+	displaynameClaimLoader := func(ctx context.Context) string {
+		return dnClaimCached.get(ctx)
+	}
+	emailClaimLoader := func(ctx context.Context) string {
+		return emailClaimCached.get(ctx)
+	}
+
 	loginHandler := matrix.NewLoginHandler(matrix.LoginConfig{
-		DisplayName:        cfg.OIDCDisplayName,
-		Provider:           oidcProvider,
-		CoreClient:         coreClient,
-		Store:              tokenStore,
-		ServerName:         serverName,
-		ClientID:           cfg.OIDCClientID,
-		ClientSecret:       cfg.OIDCClientSecret,
-		RoleClaimName:      cfg.OIDCClaimRole,
-		SSORedirectSchemes: cfg.SSORedirectSchemes,
+		DisplayName:            cfg.OIDCDisplayName,
+		Provider:               oidcProvider,
+		CoreClient:             coreClient,
+		Store:                  tokenStore,
+		ServerName:             serverName,
+		ClientID:               cfg.OIDCClientID,
+		ClientSecret:           cfg.OIDCClientSecret,
+		RoleClaimName:          cfg.OIDCClaimRole,
+		SSORedirectSchemes:     cfg.SSORedirectSchemes,
+		UserIDClaimLoader:      userIDClaimLoader,
+		DisplaynameClaimLoader: displaynameClaimLoader,
+		EmailClaimLoader:       emailClaimLoader,
 	})
 	mux.Handle("GET /_matrix/client/v3/login", looseRL(http.HandlerFunc(loginHandler.GetLogin)))
 	mux.Handle("POST /_matrix/client/v3/login", strictRL(bodyLimit1MiB(http.HandlerFunc(loginHandler.PostLogin))))
@@ -491,7 +568,7 @@ func main() {
 		Store:      tokenStore,
 		CoreClient: coreClient.CoreServiceClient(),
 	})
-	jwtMiddleware := middleware.JWTMiddleware(oidcProvider, cfg.OIDCClientID, cfg.OIDCClaimRole, tokenStore, serverName)
+	jwtMiddleware := middleware.JWTMiddleware(oidcProvider, cfg.OIDCClientID, cfg.OIDCClaimRole, tokenStore, userIDClaimLoader, serverName)
 	// Story 6.5 (HIGH-1 fix): wrap jwtMiddleware with is_active check so ALL authenticated
 	// routes (Matrix, admin, compliance) reject tokens for deactivated users.
 	// 60s TTL cache per user; fail-open on DB error to avoid blocking on transient DB issues.

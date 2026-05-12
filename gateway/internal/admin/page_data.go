@@ -98,7 +98,8 @@ type LoginPageData struct {
 }
 
 // BootstrapPageData holds data for the Bootstrap Wizard page.
-// Step is 1–2 (OIDC connect replaces steps 3+4). All field values carry accumulated state.
+// Step is 1–3 (Steps 1-2: Instance + OIDC; Step 3: Claim Mapping; then OIDC redirect).
+// All field values carry accumulated state.
 type BootstrapPageData struct {
 	PageData     // embed for BootstrapMode + ActiveNav
 	Step         int
@@ -112,6 +113,10 @@ type BootstrapPageData struct {
 	Errors map[string]string
 	// Warnings carries per-field non-blocking warnings (e.g. HTTP issuer in dev)
 	Warnings map[string]string
+	// Claim Mapping fields for Step 3 (Story 11-10).
+	OIDCUserIDClaim      string
+	OIDCDisplaynameClaim string
+	OIDCEmailClaim       string
 }
 
 // DiscoveredClaim is a single claim key+values pair extracted from an OIDC token
@@ -287,6 +292,21 @@ type RoleMappingPageData struct {
 	Config StubRoleMappingConfig
 	Errors map[string]string
 	Flash  AlertBannerData
+}
+
+// ClaimMappingPageData holds data for the OIDC Claim Mapping configuration page (Story 11-10).
+// Embeds PageData for ActiveNav, topbar status, and CSRF token.
+// UserIDClaim, DisplaynameClaim, EmailClaim hold the current or submitted values.
+// Defaults (sub, name, email) are pre-filled by ClaimMappingHandler.Handler when keys are absent.
+// Errors carries per-field validation error messages (only on POST re-render, HTTP 422).
+// Flash is populated when ?flash= query param is present (PRG pattern).
+type ClaimMappingPageData struct {
+	PageData
+	UserIDClaim      string
+	DisplaynameClaim string
+	EmailClaim       string
+	Errors           map[string]string
+	Flash            AlertBannerData
 }
 
 // CompliancePageData holds data for the Compliance Access Requests page (Story 7.11).

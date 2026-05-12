@@ -8,6 +8,7 @@
   <ul class="steps steps-horizontal w-full mb-8">
     <li class="step {{ if ge .Step 1 }}step-primary{{ end }}">Instance</li>
     <li class="step {{ if ge .Step 2 }}step-primary{{ end }}">OIDC</li>
+    <li class="step {{ if ge .Step 3 }}step-primary{{ end }}">Claims</li>
     <li class="step">Connect</li>
   </ul>
 
@@ -122,12 +123,112 @@
           {{ end }}{{ end }}
         </div>
 
-        <div class="alert alert-info mb-4">
+        <div class="card-actions justify-between">
+          <button type="submit" name="go_back" formnovalidate value="1" class="btn btn-outline">Back</button>
+          <button type="submit" class="btn btn-primary">Next</button>
+        </div>
+      </form>
+      {{ end }}
+
+      {{ if eq .Step 3 }}
+      <!-- Step 3: Claim Mapping -->
+      <h2 class="card-title">Step 3: Claim Mapping</h2>
+      <form method="POST" action="/admin/bootstrap">
+        <input type="hidden" name="_csrf" value="{{ .CSRFToken }}">
+        <input type="hidden" name="step" value="3">
+        <input type="hidden" name="instance_name" value="{{ .InstanceName }}">
+        <input type="hidden" name="oidc_issuer" value="{{ .OIDCIssuer }}">
+        <input type="hidden" name="oidc_client_id" value="{{ .OIDCClientID }}">
+
+        <div role="note" class="alert alert-info mb-4">
+          <span class="text-sm">Configure which OIDC claims to use for user identity. The defaults work with most providers (Keycloak, Dex, Okta).</span>
+        </div>
+
+        <div role="note" class="alert alert-info mb-4 text-sm">
+          <span>💡 Choose carefully — the Matrix User ID Source Claim is hard to change after your first users log in.</span>
+        </div>
+
+        <div class="form-control mb-4">
+          <label class="label" for="oidc_user_id_claim">
+            <span class="label-text">Matrix User ID Source Claim</span>
+          </label>
+          <input
+            type="text"
+            id="oidc_user_id_claim"
+            name="oidc_user_id_claim"
+            class="input input-bordered"
+            required
+            maxlength="50"
+            placeholder="sub"
+            value="{{ .OIDCUserIDClaim }}"
+            list="bs-user-id-claim-options"
+            data-field="oidc_user_id_claim"
+            {{ if and .Errors (index .Errors "oidc_user_id_claim") }}aria-describedby="err-bs-oidc_user_id_claim" aria-invalid="true"{{ end }}
+          >
+          <datalist id="bs-user-id-claim-options">
+            <option value="sub">sub (recommended — stable opaque ID)</option>
+            <option value="preferred_username">preferred_username (human-readable)</option>
+            <option value="email">email (use if preferred_username absent)</option>
+          </datalist>
+          {{ if .Errors }}{{ if index .Errors "oidc_user_id_claim" }}
+          <div role="alert" class="alert alert-error mt-2" id="err-bs-oidc_user_id_claim" data-field="oidc_user_id_claim">
+            <span>{{ index .Errors "oidc_user_id_claim" }}</span>
+          </div>
+          {{ end }}{{ end }}
+        </div>
+
+        <div class="form-control mb-4">
+          <label class="label" for="oidc_displayname_claim">
+            <span class="label-text">Display Name Source Claim</span>
+          </label>
+          <input
+            type="text"
+            id="oidc_displayname_claim"
+            name="oidc_displayname_claim"
+            class="input input-bordered"
+            required
+            maxlength="50"
+            placeholder="name"
+            value="{{ .OIDCDisplaynameClaim }}"
+            data-field="oidc_displayname_claim"
+            {{ if and .Errors (index .Errors "oidc_displayname_claim") }}aria-describedby="err-bs-oidc_displayname_claim" aria-invalid="true"{{ end }}
+          >
+          {{ if .Errors }}{{ if index .Errors "oidc_displayname_claim" }}
+          <div role="alert" class="alert alert-error mt-2" id="err-bs-oidc_displayname_claim" data-field="oidc_displayname_claim">
+            <span>{{ index .Errors "oidc_displayname_claim" }}</span>
+          </div>
+          {{ end }}{{ end }}
+        </div>
+
+        <div class="form-control mb-4">
+          <label class="label" for="oidc_email_claim">
+            <span class="label-text">Email Profile Field Claim</span>
+          </label>
+          <input
+            type="text"
+            id="oidc_email_claim"
+            name="oidc_email_claim"
+            class="input input-bordered"
+            required
+            maxlength="50"
+            placeholder="email"
+            value="{{ .OIDCEmailClaim }}"
+            data-field="oidc_email_claim"
+            {{ if and .Errors (index .Errors "oidc_email_claim") }}aria-describedby="err-bs-oidc_email_claim" aria-invalid="true"{{ end }}
+          >
+          {{ if .Errors }}{{ if index .Errors "oidc_email_claim" }}
+          <div role="alert" class="alert alert-error mt-2" id="err-bs-oidc_email_claim" data-field="oidc_email_claim">
+            <span>{{ index .Errors "oidc_email_claim" }}</span>
+          </div>
+          {{ end }}{{ end }}
+        </div>
+
+        <div role="note" class="alert alert-info mb-4">
           <span class="text-sm">Clicking <strong>Connect with OIDC</strong> will redirect you to your OIDC provider to verify the configuration and discover your admin group claim.</span>
         </div>
 
         <div class="card-actions justify-between">
-          <button type="submit" name="go_back" formnovalidate value="1" class="btn btn-outline">Back</button>
+          <button type="submit" name="go_back" formnovalidate value="2" class="btn btn-outline">Back</button>
           <button type="submit" class="btn btn-primary">Connect with OIDC</button>
         </div>
       </form>

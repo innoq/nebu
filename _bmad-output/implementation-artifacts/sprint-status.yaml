@@ -1,5 +1,7 @@
 # generated: 2026-03-20
 # last_updated: 2026-05-12
+# story 11-10 done (pipeline: ATDD+Dev+Code CLEAN (3 cycles, 3 MAJOR fixed: configReader, claims wired, TTL cache)+UX 6 violations fixed+Kassandra CLEAN): 2026-05-12
+# story 11-10 created: 11-10 → ready-for-dev: 2026-05-12 (OIDC Claim Mapping — Bootstrap Wizard step 3 + Admin UI settings page + FormatUserIDFromClaims refactor; security_review required)
 # story 11-9 done (pipeline: ATDD+Dev+Code CLEAN (2 cycles, 2 MAJOR fixed: error-page footer, make redeploy args) + UX gate ADV-1/ADV-2 fixed + Kassandra skipped (not-needed)): 2026-05-12
 # story bug-thread-redeliver done (pipeline: Bug fix: thread root re-delivery in incremental sync): 2026-05-11
 # story 11-8 done (pipeline: ATDD+Dev+Code CLEAN (2 cycles) + Kassandra CLEAN): 2026-05-11
@@ -808,15 +810,16 @@ development_status:
   # Pre-Epic-TODO: ADR-010 finalisieren (tsvector vs. pgvector, PoC-Query)
   #   — vor Sprint-Start; Story 7-31 bleibt backlog bis ADR accepted
   # ─────────────────────────────────────────────────────────────────────────
-  epic-11: in-progress
+  epic-11: done
   11-1-db-migration-search-index: done
   11-2-search-membership-enforcement: done
   11-3-elixir-core-searchmessages-grpc-handler: done
-  11-4-gateway-post-search-handler: ready-for-dev  # story 11-4 created: 2026-05-08 (Gateway POST /search Handler — SearchHandler, SearchCoreClient interface, grpc.Client.SearchMessages, main.go registration; security_review: required)
-  11-5-search-rate-limiting: ready-for-dev  # story 11-5 created: 2026-05-11 (Search Rate-Limiting — NewUserRateLimiter per user_id, 10 req/min burst 10, retry_after_ms, middleware chain inside jwtWithStatusCheck; security_review: required)
-  11-6-gherkin-e2e-search-flow: ready-for-dev  # story 11-6 created: 2026-05-11 (Gherkin E2E Search Flow — 5 Godog scenarios (happy path, 401, membership-zero, 400, rate-limit 429) + 3 Playwright+Cucumber scenarios (Element Web search find/navigate/empty-state); security_review: not-needed)
-  11-7-safari-relogin-fix: ready-for-dev  # story 11-7 created: 2026-05-11 (Safari SSO Re-Login Bugfix — nonce+Cache-Control+denylist 3-layer fix; missing: TestSSOCallback_NonceMismatch + Playwright @ac6-safari-relogin; security_review: required)
-  11-8-build-info-endpoint: ready-for-dev  # story 11-8 created: 2026-05-11 (Build-Info Endpoint GET /info — ldflags in Go, ARG→ENV in Elixir, pubMux+health port 4000, no auth; security_review: not-needed)
+  11-4-gateway-post-search-handler: done
+  11-5-search-rate-limiting: done
+  11-6-gherkin-e2e-search-flow: done
+  11-7-safari-relogin-fix: done
+  11-9-build-info-endpoint: done  # story file: 11-9-build-info-endpoint.md (was mistakenly numbered 11-8 in sprint-status; actual story/commit uses 11-9; Build-Info Endpoint GET /info — ldflags in Go, ARG→ENV in Elixir, pubMux+health port 4000, no auth; security_review: not-needed)
+  11-10-oidc-claim-mapping: done
   epic-11-retrospective: optional
 
   # ─────────────────────────────────────────────────────────────────────────

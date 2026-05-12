@@ -304,6 +304,60 @@ treats it the same as `dir=b`; true recursive relation traversal is deferred to 
 (no prev-page cursor implemented in MVP); the field is present in the proto contract for
 forward compatibility.
 
+## Configurable OIDC Claim Mapping (Story 11-10)
+
+Nebu operators can configure which OIDC claims map to Matrix user identity and profile fields
+via the Admin UI settings page (`GET/POST /admin/config/claim-mapping`) or during the Bootstrap
+Wizard (Step 3). Three keys are stored in `server_config`:
+
+| Key | Default | Purpose |
+|---|---|---|
+| `oidc_user_id_claim` | `sub` | Claim used as the source for Matrix localpart derivation |
+| `oidc_displayname_claim` | `name` | Claim used as the user's display name in Matrix profiles |
+| `oidc_email_claim` | `email` | Claim used to populate the user's email profile field |
+
+**Migration 000044** seeds these defaults into `server_config` using `INSERT … ON CONFLICT DO NOTHING`.
+Existing deployments that already have these keys set manually are unaffected; new installs receive
+the Nebu defaults automatically.
+
+**`FormatUserIDFromClaims` refactored signature (AC6):**
+
+```go
+// Old: FormatUserIDFromClaims(sub, name, serverName string) string
+// New:
+func FormatUserIDFromClaims(claimName string, claims map[string]interface{}, serverName string) string
+```
+
+The function extracts `claims[claimName]` as a string, sanitises it via `sanitiseLocalpart`, and
+returns `"@" + sanitised + ":" + serverName`. If the result is empty (claim absent, non-string, or
+invalid characters), it falls back to `FormatUserID(sub, serverName)` — the SHA-256 opaque localpart
+path — using `claims["sub"]` as input.
+
+**Fallback chain (backward compatibility, AC7):**
+
+1. `NEBU_OIDC_USER_ID_CLAIM` env var (if set) overrides the DB value.
+2. `server_config.oidc_user_id_claim` loaded via 60-second TTL cache (`claimLoader` in `main.go`).
+3. If missing or empty: fall back to `"name"` claim — identical to the pre-11-10 `FormatUserIDFromClaims(sub, name, serverName)` behavior.
+4. If `name` claim also absent: `FormatUserID(sub, serverName)` SHA-256 path.
+
+**TTL cache pattern:** `claimLoader` is constructed in `main.go` as a closure wrapping
+`loadServerConfigKey(db, "oidc_user_id_claim")` with a 60-second expiry. The loader is injected into
+`JWTMiddleware` (5th parameter) and `LoginHandler`. This avoids a DB round-trip on every request while
+keeping the mapping live-updatable without a gateway restart (updated value visible within 60 s).
+
+**Claim name validation:** `oidcClaimNameRe` (`^[a-zA-Z0-9:_\-.]+$`, 1–50 chars) is applied to all
+three claim fields on both the Admin UI POST handler and the Bootstrap Wizard Step 3. Invalid inputs
+return HTTP 422 with per-field error messages.
+
+**Identity stability warning:** The `oidc_user_id_claim` determines the permanent Matrix user ID.
+Changing it post-bootstrap generates different Matrix IDs for existing OIDC principals, breaking all
+their room memberships. The Admin UI settings page and Bootstrap Wizard Step 3 both display a
+prominent warning banner about this consequence.
+
+**Audit logging:** `ClaimMappingHandler.UpdateHandler` reads the previous values via `LoadClaimMapping`
+before persisting and includes `previous_oidc_user_id_claim`, `previous_oidc_displayname_claim`, and
+`previous_oidc_email_claim` in the `audit_logs` entry alongside the new values.
+
 ## Build Metadata Injection (Story 11-9)
 
 Nebu exposes build metadata (`version`, `git_commit`, `build_time`) via two dedicated `GET /info`
@@ -386,4 +440,4 @@ native Elixir terms, not ETF-deserialised arbitrary structs).
 `GetRelations` (Story 9-29) and `GetMessages`. No new endpoints, migrations, gRPC handlers, or
 schema changes were introduced.
 
-_Source: `_bmad-output/planning-artifacts/architecture.md`, §Cross-Cutting Concerns, §Auth-Token-Flow, §Enforcement; `_bmad-output/planning-artifacts/prd.md`, §Cryptographic Identity Architecture; Story 9-22 (per-device sync token isolation, logout cleanup); Story 9-26 (Browser-First E2E layer, playwright-bdd, token sidecar pattern); Story 9-27 (gRPC error surface rule — GRPC.RPCError vs MatchError; failure audit trail pattern for multi-step operations); Story 9-28 (Thread aggregations in sync, bundled m.thread via unsigned_relations, GetRelations RPC, migration 000042 expression index); Story 9-29 (Relations API query params: dir, recurse, from; base and three-segment routes; prev_batch response field; fetch_events_by_relation/5 dynamic WHERE builder with rel_type + event_type + dir opts); Story 9-30 (JSONB content normalisation bug fix — %Postgrex.JSONB{decoded} struct guard in event_map_to_proto/1; resolves /relations HTTP 500 on JSONB-typed content columns); Story 11-7 (SSO nonce-based replay prevention; Cache-Control: no-store on SSO 302 redirect; denylist check in PostLogin with 403 M_FORBIDDEN; ssoStateStore capacity cap at 10,000; Safari re-login bugfix); Story 11-9 (build metadata injection — ldflags for Go, ARG→ENV for Elixir; NewInfoHandler static pre-marshalled response; Nebu.BuildInfo.get/0; Admin UI footer via SetBuildInfo/newPageData/ErrorMode; make redeploy GIT_COMMIT/BUILD_TIME exports)_
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Cross-Cutting Concerns, §Auth-Token-Flow, §Enforcement; `_bmad-output/planning-artifacts/prd.md`, §Cryptographic Identity Architecture; Story 9-22 (per-device sync token isolation, logout cleanup); Story 9-26 (Browser-First E2E layer, playwright-bdd, token sidecar pattern); Story 9-27 (gRPC error surface rule — GRPC.RPCError vs MatchError; failure audit trail pattern for multi-step operations); Story 9-28 (Thread aggregations in sync, bundled m.thread via unsigned_relations, GetRelations RPC, migration 000042 expression index); Story 9-29 (Relations API query params: dir, recurse, from; base and three-segment routes; prev_batch response field; fetch_events_by_relation/5 dynamic WHERE builder with rel_type + event_type + dir opts); Story 9-30 (JSONB content normalisation bug fix — %Postgrex.JSONB{decoded} struct guard in event_map_to_proto/1; resolves /relations HTTP 500 on JSONB-typed content columns); Story 11-7 (SSO nonce-based replay prevention; Cache-Control: no-store on SSO 302 redirect; denylist check in PostLogin with 403 M_FORBIDDEN; ssoStateStore capacity cap at 10,000; Safari re-login bugfix); Story 11-9 (build metadata injection — ldflags for Go, ARG→ENV for Elixir; NewInfoHandler static pre-marshalled response; Nebu.BuildInfo.get/0; Admin UI footer via SetBuildInfo/newPageData/ErrorMode; make redeploy GIT_COMMIT/BUILD_TIME exports); Story 11-10 (configurable OIDC claim mapping — FormatUserIDFromClaims refactored signature, TTL-cached claimLoader, oidcClaimNameRe validation, migration 000044 defaults seed, identity-stability warning, audit log with previous values, Bootstrap Wizard Step 3, ClaimMappingHandler admin settings page)_

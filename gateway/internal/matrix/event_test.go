@@ -54,7 +54,7 @@ func buildAuthedEventHandler(t *testing.T, mock *mockGetEventCoreClient) (http.H
 
 	handler := NewGetEventHandler(GetEventConfig{CoreClient: mock})
 
-	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
 		http.HandlerFunc(handler.GetEvent),
 	)
 

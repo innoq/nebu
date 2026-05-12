@@ -13,6 +13,7 @@ var allowedFlashMessages = map[string]struct{}{
 	"Config updated":        {},
 	"Error updating config": {},
 	"Role mapping updated":  {},
+	"Claim mapping updated": {},
 	"Approved":              {},
 	"Rejected":              {},
 }

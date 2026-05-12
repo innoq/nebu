@@ -104,7 +104,7 @@ func buildAuthedJoinedMembersHandler(
 		ServerName: "test.local",
 	})
 
-	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
 		http.HandlerFunc(handler.GetJoinedMembers),
 	)
 

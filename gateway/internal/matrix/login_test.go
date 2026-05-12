@@ -269,10 +269,10 @@ func TestPostLogin(t *testing.T) {
 				if resp.TokenType != "Bearer" {
 					t.Errorf("expected token_type Bearer, got %s", resp.TokenType)
 				}
-				// login.go resolves displayName from preferred_username first ("kai.mueller"),
-				// then falls back to name claim. FormatUserIDFromClaims → @kai.mueller:localhost.
-				if resp.UserID != "@kai.mueller:localhost" {
-					t.Errorf("expected user_id @kai.mueller:localhost, got %s", resp.UserID)
+				// login.go uses the "name" claim as the oidc_user_id_claim fallback (AC7, Story 11-10).
+				// The test JWT has name="test-sub-123", so FormatUserIDFromClaims("name", ...) → @test-sub-123:localhost.
+				if resp.UserID != "@test-sub-123:localhost" {
+					t.Errorf("expected user_id @test-sub-123:localhost, got %s", resp.UserID)
 				}
 				if len(resp.DeviceID) == 0 {
 					t.Error("device_id should not be empty")

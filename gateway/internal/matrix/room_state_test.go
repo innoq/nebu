@@ -84,10 +84,10 @@ func buildAuthedGetRoomStateHandler(t *testing.T, mock *mockGetRoomStateCoreClie
 		ServerName: "test.local",
 	})
 
-	authedAll := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+	authedAll := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
 		http.HandlerFunc(handler.GetRoomState),
 	)
-	authedSingle := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+	authedSingle := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
 		http.HandlerFunc(handler.GetRoomStateSingleEvent),
 	)
 

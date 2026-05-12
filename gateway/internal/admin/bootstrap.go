@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -127,20 +128,36 @@ func (h *BootstrapHandler) StepHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Back navigation: if go_back is set, re-render the target step without validation.
+	// MINOR-1 fix: when going back to step 2, re-load the masked client secret from draft
+	// so the user can see it was saved (and we avoid losing the encrypted value).
 	if goBack := r.FormValue("go_back"); goBack != "" {
 		var targetStep int
 		fmt.Sscan(goBack, &targetStep)
-		if targetStep >= 1 && targetStep <= 4 {
+		if targetStep >= 1 && targetStep <= 3 {
+			if targetStep == 2 {
+				// Re-read OIDC fields from draft so step 2 re-renders correctly.
+				if encSec, found, _ := h.draftStore.LoadDraft(r.Context(), "oidc_client_secret"); found && encSec != "" {
+					if dec, err := decryptAES256GCM(h.secret, encSec); err == nil {
+						data.MaskedSecret = maskSecret(dec)
+					}
+				}
+				if v, found, _ := h.draftStore.LoadDraft(r.Context(), "oidc_issuer"); found {
+					data.OIDCIssuer = v
+				}
+				if v, found, _ := h.draftStore.LoadDraft(r.Context(), "oidc_client_id"); found {
+					data.OIDCClientID = v
+				}
+			}
 			data.Step = targetStep
 			h.tmpl.render(w, "bootstrap", data)
 			return
 		}
 	}
 
-	// Parse current step
+	// Parse current step (wizard has 3 steps: 1=Instance, 2=OIDC, 3=Claim Mapping).
 	var currentStep int
 	fmt.Sscan(r.FormValue("step"), &currentStep)
-	if currentStep < 1 || currentStep > 4 {
+	if currentStep < 1 || currentStep > 3 {
 		currentStep = 1
 	}
 
@@ -197,6 +214,45 @@ func (h *BootstrapHandler) StepHandler(w http.ResponseWriter, r *http.Request) {
 		for _, f := range draftFields {
 			if err := h.draftStore.SaveDraft(r.Context(), f.key, f.value); err != nil {
 				slog.Error("failed to save draft", "step", 2, "key", f.key, "err", err)
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+		}
+		// Show Step 3: Claim Mapping (pre-filled with Nebu defaults).
+		data.Step = 3
+		data.OIDCUserIDClaim = "sub"
+		data.OIDCDisplaynameClaim = "name"
+		data.OIDCEmailClaim = "email"
+
+	case 3:
+		// Validate claim mapping fields (AC8 / AC1).
+		oidcUserIDClaim := strings.TrimSpace(r.FormValue("oidc_user_id_claim"))
+		oidcDisplaynameClaim := strings.TrimSpace(r.FormValue("oidc_displayname_claim"))
+		oidcEmailClaim := strings.TrimSpace(r.FormValue("oidc_email_claim"))
+
+		// Use the same validation regex as ClaimMappingHandler (defined in claim_mapping.go).
+		validateClaimField(oidcUserIDClaim, "oidc_user_id_claim", data.Errors)
+		validateClaimField(oidcDisplaynameClaim, "oidc_displayname_claim", data.Errors)
+		validateClaimField(oidcEmailClaim, "oidc_email_claim", data.Errors)
+
+		if len(data.Errors) > 0 {
+			data.Step = 3
+			data.OIDCUserIDClaim = oidcUserIDClaim
+			data.OIDCDisplaynameClaim = oidcDisplaynameClaim
+			data.OIDCEmailClaim = oidcEmailClaim
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			h.tmpl.render(w, "bootstrap", data)
+			return
+		}
+		// Save claim mapping to draft so ClaimSelectionHandler can pick it up.
+		claimDraftFields := []struct{ key, value string }{
+			{"oidc_user_id_claim", oidcUserIDClaim},
+			{"oidc_displayname_claim", oidcDisplaynameClaim},
+			{"oidc_email_claim", oidcEmailClaim},
+		}
+		for _, f := range claimDraftFields {
+			if err := h.draftStore.SaveDraft(r.Context(), f.key, f.value); err != nil {
+				slog.Error("failed to save draft", "step", 3, "key", f.key, "err", err)
 				http.Error(w, "internal error", http.StatusInternalServerError)
 				return
 			}

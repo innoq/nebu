@@ -102,7 +102,7 @@ func buildAuthedModerationMux(t *testing.T, mock *mockModerationCoreClient) (htt
 	t.Cleanup(oidcSrv.Close)
 
 	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
-	jwtMW := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")
+	jwtMW := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")
 
 	h := NewModerationHandler(ModerationConfig{
 		CoreClient: mock,

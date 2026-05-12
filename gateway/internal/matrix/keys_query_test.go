@@ -150,7 +150,7 @@ func buildKeysQueryHandler(t *testing.T, checker UserExistenceChecker) (http.Han
 	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
 
 	handler := NewKeysQueryHandler(KeysQueryConfig{UserChecker: checker})
-	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
 		http.HandlerFunc(handler.PostKeysQuery),
 	)
 	mux := http.NewServeMux()

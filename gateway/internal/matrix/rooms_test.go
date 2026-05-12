@@ -74,7 +74,7 @@ func buildAuthedHandler(t *testing.T, mock *mockCreateRoomCoreClient) (http.Hand
 	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
 
 	handler := buildCreateRoomHandler(mock)
-	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
 		http.HandlerFunc(handler.PostCreateRoom),
 	)
 
@@ -380,7 +380,7 @@ func buildAuthedJoinRoomHandler(t *testing.T, mock *mockJoinRoomCoreClient) (htt
 	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
 
 	handler := buildJoinRoomHandler(mock)
-	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
 		http.HandlerFunc(handler.PostJoinRoom),
 	)
 
@@ -409,7 +409,7 @@ func buildAuthedInviteUserHandler(t *testing.T, mock *mockInviteUserCoreClient) 
 		CoreClient: mock,
 		ServerName: "test.local",
 	})
-	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
 		http.HandlerFunc(handler.PostInviteUser),
 	)
 
@@ -748,7 +748,7 @@ func buildAuthedJoinRoomByIdHandler(t *testing.T, mock *mockJoinRoomCoreClient) 
 	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
 
 	handler := buildJoinRoomHandler(mock)
-	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
 		http.HandlerFunc(handler.PostJoinRoomById),
 	)
 
@@ -978,7 +978,7 @@ func buildAuthedSendEventHandler(t *testing.T, mock *mockSendEventCoreClient) (h
 	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
 
 	handler := buildSendEventHandler(mock)
-	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
 		http.HandlerFunc(handler.PutSendEvent),
 	)
 
@@ -1346,7 +1346,7 @@ func buildAuthedSetRoomStateHandler(t *testing.T, mock *mockSetRoomStateCoreClie
 		CoreClient: mock,
 		ServerName: "test.local",
 	})
-	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
 		http.HandlerFunc(handler.PutSetRoomState),
 	)
 
@@ -1565,7 +1565,7 @@ func TestPutSendEvent_ArchivedRoom_Returns403(t *testing.T) {
 	t.Cleanup(oidcSrv.Close)
 
 	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
-	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
 		http.HandlerFunc(handler.PutSendEvent),
 	)
 
@@ -1622,7 +1622,7 @@ func TestPutSendEvent_ActiveRoom_CallsCore(t *testing.T) {
 	t.Cleanup(oidcSrv.Close)
 
 	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
-	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
 		http.HandlerFunc(handler.PutSendEvent),
 	)
 
@@ -1670,7 +1670,7 @@ func TestPutSendEvent_StatusCheckerError_FailOpen(t *testing.T) {
 	t.Cleanup(oidcSrv.Close)
 
 	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
-	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
 		http.HandlerFunc(handler.PutSendEvent),
 	)
 
@@ -1749,7 +1749,7 @@ func TestPutSendEvent_CoreFailedPrecondition_Returns403_MRoomArchived(t *testing
 	t.Cleanup(oidcSrv.Close)
 
 	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
-	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
 		http.HandlerFunc(handler.PutSendEvent),
 	)
 
@@ -1809,7 +1809,7 @@ func TestPutSendEvent_CoreFailedPrecondition_WithNonArchiveMessage_Returns403(t 
 	t.Cleanup(oidcSrv.Close)
 
 	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
-	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
 		http.HandlerFunc(handler.PutSendEvent),
 	)
 
@@ -1882,7 +1882,7 @@ func TestPutSendEvent_OtherErrors_NotAffectedByFailedPreconditionFix(t *testing.
 			t.Cleanup(oidcSrv.Close)
 
 			provider := auth.NewProvider(context.Background(), oidcSrv.URL)
-			authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+			authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
 				http.HandlerFunc(handler.PutSendEvent),
 			)
 

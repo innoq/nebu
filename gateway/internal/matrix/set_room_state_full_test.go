@@ -102,7 +102,7 @@ func buildAuthedSetRoomStateHandlerV2(t *testing.T, mock SetRoomStateCoreClient)
 		CoreClient: mock,
 		ServerName: "test.local",
 	})
-	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
 		http.HandlerFunc(handler.PutSetRoomState),
 	)
 

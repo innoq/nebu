@@ -237,7 +237,7 @@ func TestRoomMessages_InvalidRoomID(t *testing.T) {
 		ServerName: "test.local",
 	})
 
-	jwtMiddleware := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")
+	jwtMiddleware := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")
 
 	mux := http.NewServeMux()
 	mux.Handle("GET /rooms/{roomId}/messages",
@@ -287,7 +287,7 @@ func TestContentType_RejectsFormEncoded(t *testing.T) {
 		ServerName: "test.local",
 	})
 
-	jwtMiddleware := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")
+	jwtMiddleware := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")
 
 	mux := http.NewServeMux()
 	mux.Handle("POST /createRoom",
@@ -340,7 +340,7 @@ func TestUnknownFields_AreIgnored(t *testing.T) {
 		ServerName: "test.local",
 	})
 
-	jwtMiddleware := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")
+	jwtMiddleware := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")
 
 	mux := http.NewServeMux()
 	mux.Handle("POST /createRoom",
@@ -385,7 +385,7 @@ func TestPresence_PUT_RejectsUserMismatch(t *testing.T) {
 		ServerName: "test.local",
 	})
 
-	jwtMiddleware := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")
+	jwtMiddleware := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")
 
 	mux := http.NewServeMux()
 	mux.Handle("PUT /presence/{userId}/status",
@@ -440,7 +440,7 @@ func TestPresence_PUT_HappyPath(t *testing.T) {
 		ServerName: "test.local",
 	})
 
-	jwtMiddleware := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")
+	jwtMiddleware := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")
 
 	mux := http.NewServeMux()
 	mux.Handle("PUT /presence/{userId}/status",
@@ -477,7 +477,7 @@ func TestPresence_PUT_RejectsFormEncoded(t *testing.T) {
 		ServerName: "test.local",
 	})
 
-	jwtMiddleware := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")
+	jwtMiddleware := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")
 
 	mux := http.NewServeMux()
 	mux.Handle("PUT /presence/{userId}/status",
@@ -579,7 +579,7 @@ func TestKeysChanges_RequiresAuth(t *testing.T) {
 	_ = privateKey // only needed for valid-token variant; not used in this subtest
 
 	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
-	jwtMiddleware := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")
+	jwtMiddleware := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")
 
 	keysChangesHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

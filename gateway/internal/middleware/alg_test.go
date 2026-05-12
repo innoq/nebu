@@ -104,7 +104,7 @@ func TestJWTMiddleware_HS256Rejected(t *testing.T) {
 	secret := []byte("super-secret-hmac-key-at-least-32-bytes-long-for-testing")
 	rawToken := buildHS256Token(t, srv.URL, secret)
 
-	handler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil)(
+	handler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil)(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			t.Error("handler must NOT be called for HS256 token — algorithm pinning broken")
 			w.WriteHeader(http.StatusOK)
@@ -137,7 +137,7 @@ func TestJWTMiddleware_RS256StillAcceptedAfterPinning(t *testing.T) {
 	rawToken := signJWT(t, srv.URL, key, time.Now().Add(time.Hour))
 
 	called := false
-	handler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil)(
+	handler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil)(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			called = true
 			w.WriteHeader(http.StatusOK)

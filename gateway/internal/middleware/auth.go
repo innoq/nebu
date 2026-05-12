@@ -163,7 +163,9 @@ func writeMatrixError(w http.ResponseWriter, status int, errcode, message string
 // (ContextKeyTokenExpiry). Pass nil for store to disable invalidation checking.
 // JWTMiddleware validates OIDC JWT bearer tokens.
 // serverName is the Matrix server name (used to pre-compute ContextKeyUserID).
-func JWTMiddleware(provider *auth.Provider, clientID string, claimName string, store TokenStore, serverName ...string) func(http.Handler) http.Handler {
+// userIDClaimLoader is called per-request to retrieve the configured oidc_user_id_claim
+// from server_config. Pass nil to fall back to the legacy "name" claim behavior (AC7).
+func JWTMiddleware(provider *auth.Provider, clientID string, claimName string, store TokenStore, userIDClaimLoader func(ctx context.Context) string, serverName ...string) func(http.Handler) http.Handler {
 	srv := ""
 	if len(serverName) > 0 {
 		srv = serverName[0]
@@ -223,15 +225,21 @@ func JWTMiddleware(provider *auth.Provider, clientID string, claimName string, s
 
 			sub, _ := allClaims["sub"].(string)
 			preferredUsername, _ := allClaims["preferred_username"].(string)
-			name, _ := allClaims["name"].(string)
 			email, _ := allClaims["email"].(string)
 			deviceID, _ := allClaims["did"].(string) // Story 7-26: device_id claim ("did")
 			rawRole := auth.ExtractRoleClaim(allClaims, claimName)
 			systemRole := auth.MapSystemRole(rawRole)
 
-			// Pre-compute Matrix user ID using name claim if available.
-			// This is the canonical user ID for all downstream handlers.
-			userID := coregrpc.FormatUserIDFromClaims(sub, name, srv)
+			// Determine Matrix user ID using DB-loaded oidc_user_id_claim (AC5, Story 11-10).
+			// Per-request DB read (no restart required). Falls back to "name" claim when
+			// oidc_user_id_claim is absent from server_config (AC7 backward compat).
+			uidClaim := "name"
+			if userIDClaimLoader != nil {
+				if loaded := userIDClaimLoader(r.Context()); loaded != "" {
+					uidClaim = loaded
+				}
+			}
+			userID := coregrpc.FormatUserIDFromClaims(uidClaim, allClaims, srv)
 
 			ctx := r.Context()
 			ctx = context.WithValue(ctx, ContextKeySub, sub)

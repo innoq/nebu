@@ -101,7 +101,7 @@ func buildAuthedSyncHandler(t *testing.T, mock *mockGetSyncCoreClient, opts ...t
 	}
 	handler := NewGetSyncHandler(cfg)
 
-	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
 		http.HandlerFunc(handler.GetSync),
 	)
 
@@ -422,7 +422,7 @@ func buildAuthedSyncDeltaHandler(t *testing.T, mock *mockGetSyncDeltaCoreClient,
 	}
 	handler := NewGetSyncHandler(cfg)
 
-	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
 		http.HandlerFunc(handler.GetSync),
 	)
 
@@ -1014,7 +1014,7 @@ func buildAuthedSyncBufferHandler(t *testing.T, mock *mockGetSyncDeltaCoreClient
 	}
 	handler := NewGetSyncHandler(cfg)
 
-	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
 		http.HandlerFunc(handler.GetSync),
 	)
 
@@ -1942,7 +1942,7 @@ func buildAuthedSyncDeltaHandlerWithClaims(t *testing.T, mock *mockGetSyncDeltaC
 	}
 	handler := NewGetSyncHandler(cfg)
 
-	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
 		http.HandlerFunc(handler.GetSync),
 	)
 
@@ -2792,7 +2792,7 @@ func buildAuthedSyncGlobalAccountDataHandler(
 	}
 	handler := NewGetSyncHandler(cfg)
 
-	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
 		http.HandlerFunc(handler.GetSync),
 	)
 
@@ -2825,7 +2825,7 @@ func buildAuthedSyncGlobalAccountDataDeltaHandler(
 	}
 	handler := NewGetSyncHandler(cfg)
 
-	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
 		http.HandlerFunc(handler.GetSync),
 	)
 
@@ -3259,7 +3259,7 @@ func TestGetSync_PerRoomAccountData_NotAffectedByGlobal(t *testing.T) {
 	}
 	handler := NewGetSyncHandler(cfg)
 
-	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
 		http.HandlerFunc(handler.GetSync),
 	)
 	makeToken := func() string {

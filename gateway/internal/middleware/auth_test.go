@@ -86,7 +86,7 @@ func TestJWTMiddleware_MissingToken(t *testing.T) {
 	srv, _ := setupOIDCServer(t)
 	provider := auth.NewProvider(context.Background(), srv.URL)
 
-	handler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("handler should not be called for missing token")
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -114,7 +114,7 @@ func TestJWTMiddleware_ValidToken(t *testing.T) {
 	rawToken := signJWT(t, srv.URL, key, time.Now().Add(time.Hour))
 
 	called := false
-	handler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
 		sub, _ := r.Context().Value(middleware.ContextKeySub).(string)
 		if sub != "test-sub-123" {
@@ -153,7 +153,7 @@ func TestJWTMiddleware_ExpiredToken(t *testing.T) {
 	provider := auth.NewProvider(context.Background(), srv.URL)
 	rawToken := signJWT(t, srv.URL, key, time.Now().Add(-time.Hour))
 
-	handler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("handler should not be called for expired token")
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -190,7 +190,7 @@ func TestJWTMiddleware_InvalidSignature(t *testing.T) {
 	}
 	rawToken := signJWT(t, srv.URL, wrongKey, time.Now().Add(time.Hour))
 
-	handler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("handler should not be called for invalid signature")
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -220,7 +220,7 @@ func TestJWTMiddleware_NilProvider(t *testing.T) {
 	// Port 0 is always closed — provider.Inner() will be nil
 	provider := auth.NewProvider(context.Background(), "http://127.0.0.1:0")
 
-	handler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("handler should not be called when provider is nil")
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -272,7 +272,7 @@ func TestJWTMiddleware_CustomClaimName(t *testing.T) {
 	}
 
 	var capturedRole string
-	handler := middleware.JWTMiddleware(provider, "nebu-gateway", "roles", nil)(
+	handler := middleware.JWTMiddleware(provider, "nebu-gateway", "roles", nil, nil)(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			capturedRole, _ = r.Context().Value(middleware.ContextKeySystemRole).(string)
 			w.WriteHeader(http.StatusOK)
@@ -298,7 +298,7 @@ func TestJWTMiddleware_SystemRoleInContext(t *testing.T) {
 	rawToken := signJWT(t, srv.URL, key, time.Now().Add(time.Hour))
 
 	var capturedSystemRole, capturedRawRole string
-	handler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil)(
+	handler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil)(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			capturedSystemRole, _ = r.Context().Value(middleware.ContextKeySystemRole).(string)
 			capturedRawRole, _ = r.Context().Value(middleware.ContextKeyNebuRole).(string)
@@ -352,7 +352,7 @@ func TestJWTMiddleware_ArrayRoleClaim(t *testing.T) {
 	}
 
 	var capturedSystemRole string
-	handler := middleware.JWTMiddleware(provider, "nebu-gateway", "groups", nil)(
+	handler := middleware.JWTMiddleware(provider, "nebu-gateway", "groups", nil, nil)(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			capturedSystemRole, _ = r.Context().Value(middleware.ContextKeySystemRole).(string)
 			w.WriteHeader(http.StatusOK)
@@ -404,7 +404,7 @@ func TestJWTMiddleware_ArrayRoleClaimAdminNotFirst(t *testing.T) {
 	}
 
 	var capturedSystemRole string
-	handler := middleware.JWTMiddleware(provider, "nebu-gateway", "groups", nil)(
+	handler := middleware.JWTMiddleware(provider, "nebu-gateway", "groups", nil, nil)(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			capturedSystemRole, _ = r.Context().Value(middleware.ContextKeySystemRole).(string)
 			w.WriteHeader(http.StatusOK)
@@ -432,7 +432,7 @@ func TestJWTMiddleware_DenylistedToken(t *testing.T) {
 	denylist := middleware.NewDenylist()
 	_ = denylist.Invalidate(rawToken, time.Now().Add(time.Hour))
 
-	handler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", denylist)(
+	handler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", denylist, nil)(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			t.Error("handler should not be called for denylisted token")
 			w.WriteHeader(http.StatusOK)

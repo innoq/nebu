@@ -1,6 +1,20 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
-# last_updated: 2026-05-11
+# last_updated: 2026-05-12
+# [11-10] 2026-05-12T11:00Z code-review → 0 MAJOR, 11 MINOR → cycle 3 (final)
+# [11-10] 2026-05-12T10:35Z code-review → 0 MAJOR, 9 MINOR → cycle 2
+# [11-10] 2026-05-12T10:15Z code-review → 3 MAJOR + 10 MINOR → cycle 1
+# [11-10] 2026-05-12T10:05Z ux-gate → V1-V6 fixed (role=alert aria-live, aria-describedby, aria-invalid, role=note); 7 advisories non-blocking
+# [11-10] 2026-05-12T10:00Z ci-gate → ✓ build+unit-go+unit-elixir; e2e+integration skipped (env startup)
+# [11-10] 2026-05-12T09:55Z dev-story → done (cycle 0)
+# [11-10] 2026-05-12T09:25Z test-review → 2 MAJOR fixed (AC2 tx test added, restart-steps removed), 4 MINOR
+# [11-10] 2026-05-12T09:15Z atdd → 6 failing tests (Go x3, Godog x1, Playwright+Cucumber x2)
+# [11-10] 2026-05-12T09:05Z create-story → 11-10-oidc-claim-mapping.md
+# [11-10] 2026-05-12T09:00Z pipeline started
+# [11-9] 2026-05-12T08:05Z committed ✓ (ATDD+Code CLEAN 2 cycles+UX fixed+Kassandra skipped)
+# [11-9] 2026-05-12T08:00Z arc42-update → done (05-building-blocks, 08-concepts: build metadata injection)
+# [11-9] 2026-05-11T17:20Z security-review → skipped (not-needed)
+# [11-9] 2026-05-11T17:20Z code-review → CLEAN (cycle 2) — 0 MAJOR, 2 MINOR doc-only accepted
 # [11-9] 2026-05-11T17:10Z code-review → 0 MAJOR, 3 MINOR (m10+m11 fixable, m12 deferred) → cycle 2
 # [11-9] 2026-05-11T17:00Z code-review → 2 MAJOR + 9 MINOR → cycle 1
 # [11-9] 2026-05-11T16:50Z ux-gate → ADV-1 fixed (BootstrapMode guard), ADV-2 fixed (shrink-0), 0 violations
@@ -120,7 +134,7 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: "11-9"
+story: "11-10"
 current_step: "dev-story"
 completed:
   - create-story
@@ -128,6 +142,6 @@ completed:
   - test-review
   - dev-story
   - ci-gate
-cycle_count: 2
+cycle_count: 3
 blocked_reason: null
-last_updated: "2026-05-11T21:51Z"
+last_updated: "2026-05-12T07:47Z"

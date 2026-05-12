@@ -562,6 +562,105 @@ Matrix Client      Go Gateway (event.go)        Elixir Core                  Pos
 `GetRelationsResponse`. Both stubs were added manually (protoc-gen-elixir does not auto-update the
 service module when `.proto` changes).
 
+## Scenario 3l: Matrix Login — Configurable OIDC Claim Mapping (Story 11-10)
+
+When a user authenticates via `POST /_matrix/client/v3/login`, the Matrix user ID is now derived
+from the claim configured in `server_config.oidc_user_id_claim` (loaded with a 60-second TTL cache
+via `claimLoader` in `main.go`) rather than being hardcoded to the `name` claim.
+
+```
+Matrix Client      Go Gateway (login.go + middleware/auth.go)        PostgreSQL (server_config)
+     │                         │                                              │
+     │  POST /login            │                                              │
+     │  {type: m.login.token}  │                                              │
+     │────────────────────────►│                                              │
+     │                         │  claimLoader.get(ctx)                        │
+     │                         │  → cached oidc_user_id_claim (TTL 60s)       │
+     │                         │  or DB read: SELECT value FROM server_config │
+     │                         │    WHERE key='oidc_user_id_claim'            │
+     │                         │─────────────────────────────────────────────►│
+     │                         │  ◄── "preferred_username" (or "sub", etc.)   │
+     │                         │                                              │
+     │                         │  FormatUserIDFromClaims(                     │
+     │                         │    claimName, allClaims, serverName)         │
+     │                         │  → claims[claimName] → sanitiseLocalpart     │
+     │                         │  → "@alice:server" (or SHA-256 fallback)     │
+     │  200 {user_id, token}   │                                              │
+     │◄────────────────────────│                                              │
+```
+
+**Fallback chain:**
+1. `claimLoader` returns the value of `oidc_user_id_claim` from `server_config` (cached 60s).
+2. If the DB key is absent or the loader returns `""`, the gateway falls back to `"name"` — identical
+   to pre-11-10 behavior (AC7 backward compatibility guarantee).
+3. `NEBU_OIDC_USER_ID_CLAIM` env var overrides the DB value as a last-resort escape hatch.
+4. Inside `FormatUserIDFromClaims`: if `claims[claimName]` is empty or fails `sanitiseLocalpart`,
+   the function falls back to `FormatUserID(sub, serverName)` (SHA-256 opaque localpart).
+
+**JWTMiddleware** follows the same loader pattern for the `Authorization: Bearer` path (Matrix API
+requests after login). The `userIDClaimLoader` function is injected as the 5th parameter; `nil`
+activates the backward-compat `"name"` claim path.
+
+**Identity stability warning:** The Matrix user ID is a permanent identifier. Changing
+`oidc_user_id_claim` after users have registered will generate different Matrix user IDs for the
+same OIDC principals, breaking all room memberships. The Admin UI settings page and the Bootstrap
+Wizard Step 3 both display a prominent stability warning.
+
+## Scenario 3m: Bootstrap Wizard — Step 3 Claim Mapping (Story 11-10)
+
+The Bootstrap Wizard now has four steps. Step 3 (Claim Mapping) is inserted between the OIDC
+credentials step and the OIDC redirect:
+
+```
+Admin Browser      Go Gateway (bootstrap.go + auth.go)         PostgreSQL
+     │                          │                                    │
+     │  GET /admin/bootstrap    │                                    │
+     │  (Step 1: Instance name) │                                    │
+     │─────────────────────────►│                                    │
+     │  ... step 1 + 2 completed (existing flow) ...                 │
+     │                          │                                    │
+     │  POST /admin/bootstrap   │                                    │
+     │  (Step 2: OIDC creds)    │                                    │
+     │─────────────────────────►│  validate OIDC creds → save draft │
+     │  200 Step 3 form         │                                    │
+     │◄─────────────────────────│                                    │
+     │                          │                                    │
+     │  POST /admin/bootstrap   │                                    │
+     │  (Step 3: Claim Mapping) │                                    │
+     │  oidc_user_id_claim=sub  │                                    │
+     │  oidc_displayname_claim= │                                    │
+     │    name                  │                                    │
+     │  oidc_email_claim=email  │                                    │
+     │─────────────────────────►│  validate oidcClaimNameRe          │
+     │                          │  SaveDraft(oidc_user_id_claim)     │
+     │                          │  SaveDraft(oidc_displayname_claim) │
+     │                          │  SaveDraft(oidc_email_claim)       │
+     │  302 /admin/login/start  │                                    │
+     │    ?mode=bootstrap        │                                    │
+     │◄─────────────────────────│                                    │
+     │  (OIDC Authorization Code flow with Dex)                      │
+     │                          │                                    │
+     │  GET /admin/sso/callback │                                    │
+     │─────────────────────────►│  ClaimSelectionHandler             │
+     │                          │  runInTx:                          │
+     │                          │    INSERT server_config admin_group_claim
+     │                          │    INSERT server_config bootstrap_completed=true
+     │                          │    INSERT server_config oidc_user_id_claim ─────►│
+     │                          │    INSERT server_config oidc_displayname_claim ──►│
+     │                          │    INSERT server_config oidc_email_claim ─────────►│
+     │                          │    clearDraftTx                    │
+     │  302 /admin/dashboard    │                                    │
+     │◄─────────────────────────│                                    │
+```
+
+**Atomicity guarantee:** All five `server_config` keys (including the three claim mapping keys) are
+written in a single `runInTx` call. If any write fails, the entire bootstrap transaction is rolled
+back — no partial bootstrap state is persisted.
+
+**Defaults:** Step 3 is pre-filled with `sub` / `name` / `email`. Admins may accept the defaults
+without modification. For the `oidc_user_id_claim` field a `<datalist>` provides suggestions
+(`sub`, `preferred_username`, `email`).
+
 ## Scenario 4: Compliance Four-Eyes Export Flow
 
 ```
@@ -649,4 +748,4 @@ This prevents unbounded memory growth from unauthenticated flood attacks.
 a denylist, test setups), the denylist check in PostLogin is skipped. This preserves
 backwards compatibility.
 
-_Source: `_bmad-output/planning-artifacts/architecture.md`, §Implementation Patterns, §API & Kommunikation, §Resilienz & Selbst-Heilung; Story 9-19 (GAP-JOIN-PUBLIC, GAP-LEAVE-ONCE, GAP-FORGET); Story 9-22 (GAP-SINCE-IGNORED — per-device sync tokens, per-device logout cleanup); Story 9-23 (GAP-INVITE-STATE — invite_state stripped state enrichment: join_rules, avatar, create); Story 9-24 (GAP-GLOBAL-ACCOUNT-DATA — top-level account_data delivery in all 4 sync paths, RLS-aware ListGlobalAccountData); Story 9-25 (GAP-BUFFER-NEXT-BATCH — synthetic buf_<ms>_<seq> next_batch token on buffer fast-path, replaces echoed since= token); Story 9-27 (Scenario 3i — full Matrix §11.35.1 room upgrade flow, GRPC.RPCError error handling, archive_room_atomic idempotency, terminate_child, try/rescue failure audit); Story 9-28 (Scenario 3j — GetRelations RPC + bundled m.thread aggregations in sync unsigned field, attach_thread_aggregations, fetch_events_by_relation, count_thread_children, migration 000042); Story 9-29 (Scenario 3j-1 expanded — base route + three-segment route, dir/event_type/recurse/from params, prev_batch response field, fetch_events_by_relation/5 dynamic WHERE builder, 400 validation for invalid dir/recurse); Story 11-7 (Scenario 6 — SSO nonce generation + verification, Cache-Control: no-store on 302, denylist check in PostLogin, ssoStateStore capacity cap at 10,000); Story 11-8 (Scenario 3k — GET /rooms/{roomId}/event/{eventId} new route + GetEvent gRPC RPC, Horde membership guard, fetch_event/2 DB query, attach_thread_aggregations, core_grpc.pb.ex rpc :GetRelations + rpc :GetEvent bug fix)_
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Implementation Patterns, §API & Kommunikation, §Resilienz & Selbst-Heilung; Story 9-19 (GAP-JOIN-PUBLIC, GAP-LEAVE-ONCE, GAP-FORGET); Story 9-22 (GAP-SINCE-IGNORED — per-device sync tokens, per-device logout cleanup); Story 9-23 (GAP-INVITE-STATE — invite_state stripped state enrichment: join_rules, avatar, create); Story 9-24 (GAP-GLOBAL-ACCOUNT-DATA — top-level account_data delivery in all 4 sync paths, RLS-aware ListGlobalAccountData); Story 9-25 (GAP-BUFFER-NEXT-BATCH — synthetic buf_<ms>_<seq> next_batch token on buffer fast-path, replaces echoed since= token); Story 9-27 (Scenario 3i — full Matrix §11.35.1 room upgrade flow, GRPC.RPCError error handling, archive_room_atomic idempotency, terminate_child, try/rescue failure audit); Story 9-28 (Scenario 3j — GetRelations RPC + bundled m.thread aggregations in sync unsigned field, attach_thread_aggregations, fetch_events_by_relation, count_thread_children, migration 000042); Story 9-29 (Scenario 3j-1 expanded — base route + three-segment route, dir/event_type/recurse/from params, prev_batch response field, fetch_events_by_relation/5 dynamic WHERE builder, 400 validation for invalid dir/recurse); Story 11-7 (Scenario 6 — SSO nonce generation + verification, Cache-Control: no-store on 302, denylist check in PostLogin, ssoStateStore capacity cap at 10,000); Story 11-8 (Scenario 3k — GET /rooms/{roomId}/event/{eventId} new route + GetEvent gRPC RPC, Horde membership guard, fetch_event/2 DB query, attach_thread_aggregations, core_grpc.pb.ex rpc :GetRelations + rpc :GetEvent bug fix); Story 11-10 (Scenario 3l — Matrix login claim mapping: claimLoader TTL-cached DB lookup, FormatUserIDFromClaims fallback chain, JWTMiddleware userIDClaimLoader param, NEBU_OIDC_USER_ID_CLAIM env override; Scenario 3m — Bootstrap Wizard Step 3 claim mapping form, draft save, atomic ClaimSelectionHandler transaction, identity-stability warning)_

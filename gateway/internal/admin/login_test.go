@@ -37,6 +37,18 @@ func (f *fakeServerConfigReader) SaveAdminGroupClaim(_ context.Context, _ string
 	return nil
 }
 
+func (f *fakeServerConfigReader) LoadClaimMapping(_ context.Context) (string, string, string, error) {
+	return "sub", "name", "email", nil
+}
+
+func (f *fakeServerConfigReader) SaveClaimMapping(_ context.Context, _, _, _ string) error {
+	return nil
+}
+
+func (f *fakeServerConfigReader) LoadServerConfigKey(_ context.Context, _ string) (string, error) {
+	return "", nil
+}
+
 // newTestAdminAuthWithReader creates an AdminAuth with a fake ServerConfigReader and optional TemplateHandler.
 func newTestAdminAuthWithReader(t *testing.T, reader ServerConfigReader, tmpl *TemplateHandler) *AdminAuth {
 	t.Helper()

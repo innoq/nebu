@@ -81,7 +81,7 @@ func buildAuthedUpgradeRoomFullHandler(t *testing.T, mock *mockUpgradeRoomFullCo
 		CoreClient: mock,
 		ServerName: "test.local",
 	})
-	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+	authedHandler := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
 		http.HandlerFunc(handler.PostUpgradeRoom),
 	)
 

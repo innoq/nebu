@@ -53,6 +53,15 @@ type ServerConfigReader interface {
 	LoadAdminGroupClaim(ctx context.Context) (string, error)
 	// SaveAdminGroupClaim persists the admin group claim value to server_config.
 	SaveAdminGroupClaim(ctx context.Context, claimValue string) error
+	// LoadClaimMapping returns the three OIDC claim mapping values from server_config.
+	// Returns Nebu defaults (sub, name, email) for any key that is absent.
+	LoadClaimMapping(ctx context.Context) (userIDClaim, displaynameClaim, emailClaim string, err error)
+	// SaveClaimMapping persists the three OIDC claim mapping values to server_config.
+	SaveClaimMapping(ctx context.Context, userIDClaim, displaynameClaim, emailClaim string) error
+	// LoadServerConfigKey returns the value of the given server_config key.
+	// Returns ("", sql.ErrNoRows) when the key is absent — callers decide the fallback.
+	// Used by main.go claim loaders to avoid embedding raw SQL outside this package.
+	LoadServerConfigKey(ctx context.Context, key string) (string, error)
 }
 
 // postgresServerConfigReader wraps *sql.DB to implement ServerConfigReader.
@@ -152,6 +161,63 @@ func (r *postgresServerConfigReader) SaveAdminGroupClaim(ctx context.Context, cl
 	return err
 }
 
+// LoadClaimMapping returns oidc_user_id_claim, oidc_displayname_claim, and oidc_email_claim
+// from server_config. Missing keys fall back to Nebu defaults (sub, name, email).
+// On DB error: logs a warning and returns ("", "", "", err) — callers fall back to defaults.
+// Failing open to defaults is the correct behavior; the warning makes the DB issue observable.
+func (r *postgresServerConfigReader) LoadClaimMapping(ctx context.Context) (userIDClaim, displaynameClaim, emailClaim string, err error) {
+	rows, err := r.db.QueryContext(ctx,
+		"SELECT key, value FROM server_config WHERE key IN ('oidc_user_id_claim', 'oidc_displayname_claim', 'oidc_email_claim')")
+	if err != nil {
+		slog.Warn("failed to load claim mapping from DB", "err", err)
+		return "", "", "", err
+	}
+	defer rows.Close()
+	vals := make(map[string]string)
+	for rows.Next() {
+		var k, v string
+		if err := rows.Scan(&k, &v); err != nil {
+			slog.Warn("failed to scan claim mapping row from DB", "err", err)
+			return "", "", "", err
+		}
+		vals[k] = v
+	}
+	if err := rows.Err(); err != nil {
+		slog.Warn("failed to iterate claim mapping rows from DB", "err", err)
+		return "", "", "", err
+	}
+	userIDClaim = vals["oidc_user_id_claim"]
+	if userIDClaim == "" {
+		userIDClaim = "sub"
+	}
+	displaynameClaim = vals["oidc_displayname_claim"]
+	if displaynameClaim == "" {
+		displaynameClaim = "name"
+	}
+	emailClaim = vals["oidc_email_claim"]
+	if emailClaim == "" {
+		emailClaim = "email"
+	}
+	return userIDClaim, displaynameClaim, emailClaim, nil
+}
+
+// SaveClaimMapping persists the three OIDC claim mapping values to server_config.
+func (r *postgresServerConfigReader) SaveClaimMapping(ctx context.Context, userIDClaim, displaynameClaim, emailClaim string) error {
+	return saveClaimMappingTx(ctx, r.db, userIDClaim, displaynameClaim, emailClaim)
+}
+
+// LoadServerConfigKey returns the value for a single key from server_config.
+// Returns ("", sql.ErrNoRows) when the key is absent.
+func (r *postgresServerConfigReader) LoadServerConfigKey(ctx context.Context, key string) (string, error) {
+	var val string
+	err := r.db.QueryRowContext(ctx,
+		"SELECT value FROM server_config WHERE key = $1", key).Scan(&val)
+	if err != nil {
+		return "", err
+	}
+	return val, nil
+}
+
 // CompleteBootstrap writes bootstrap_completed = true to server_config.
 // Returns an error if bootstrap was already completed (0 rows affected) — this
 // prevents privilege escalation via mode=bootstrap replay after initial setup.
@@ -193,6 +259,27 @@ func saveAdminGroupClaimTx(ctx context.Context, q sqlQuerier, claimValue string)
 		 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, set_at = EXCLUDED.set_at`,
 		claimValue, time.Now().UnixMilli())
 	return err
+}
+
+// saveClaimMappingTx persists the three OIDC claim mapping values inside the given sqlQuerier.
+// All three keys are written atomically when called from within a runInTx block (AC2).
+func saveClaimMappingTx(ctx context.Context, q sqlQuerier, userIDClaim, displaynameClaim, emailClaim string) error {
+	nowMs := time.Now().UnixMilli()
+	rows := []struct{ key, value string }{
+		{"oidc_user_id_claim", userIDClaim},
+		{"oidc_displayname_claim", displaynameClaim},
+		{"oidc_email_claim", emailClaim},
+	}
+	for _, row := range rows {
+		if _, err := q.ExecContext(ctx,
+			`INSERT INTO server_config (key, value, set_at) VALUES ($1, $2, $3)
+			 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, set_at = EXCLUDED.set_at`,
+			row.key, row.value, nowMs,
+		); err != nil {
+			return fmt.Errorf("saving %s: %w", row.key, err)
+		}
+	}
+	return nil
 }
 
 // AdminAuth handles PKCE-protected OIDC Authorization Code flow for the Admin UI.
@@ -901,15 +988,34 @@ func (a *AdminAuth) ClaimSelectionHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// AC1: SaveBootstrapConfig, SaveAdminGroupClaim, ClearDraft, and CompleteBootstrap
-	// run inside a single transaction. If any step fails the transaction is rolled back
-	// and no server_config changes persist.
+	// Load claim mapping from draft (set in bootstrap wizard Step 3, AC2).
+	// Fall back to Nebu defaults if the wizard step was skipped or values are absent.
+	oidcUserIDClaim, _, _ := a.draftStore.LoadDraft(r.Context(), "oidc_user_id_claim")
+	if oidcUserIDClaim == "" {
+		oidcUserIDClaim = "sub"
+	}
+	oidcDisplaynameClaim, _, _ := a.draftStore.LoadDraft(r.Context(), "oidc_displayname_claim")
+	if oidcDisplaynameClaim == "" {
+		oidcDisplaynameClaim = "name"
+	}
+	oidcEmailClaim, _, _ := a.draftStore.LoadDraft(r.Context(), "oidc_email_claim")
+	if oidcEmailClaim == "" {
+		oidcEmailClaim = "email"
+	}
+
+	// AC1 + AC2: SaveBootstrapConfig, SaveAdminGroupClaim, SaveClaimMapping, ClearDraft,
+	// and CompleteBootstrap all run inside a single transaction. If any step fails the
+	// transaction is rolled back and no server_config changes persist.
 	txErr := a.runInTx(r.Context(), func(q sqlQuerier) error {
 		if err := saveBootstrapConfigTx(r.Context(), q, instanceName, oidcIssuer, oidcClientID, encryptedSecret); err != nil {
 			return fmt.Errorf("save bootstrap config: %w", err)
 		}
 		if err := saveAdminGroupClaimTx(r.Context(), q, selectedClaim); err != nil {
 			return fmt.Errorf("save admin group claim: %w", err)
+		}
+		// AC2: persist claim mapping atomically in the same TX.
+		if err := saveClaimMappingTx(r.Context(), q, oidcUserIDClaim, oidcDisplaynameClaim, oidcEmailClaim); err != nil {
+			return fmt.Errorf("save claim mapping: %w", err)
 		}
 		// AC4: ClearDraft runs inside the same TX — its failure aborts the transaction.
 		if err := clearDraftTx(r.Context(), q); err != nil {

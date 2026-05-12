@@ -49,10 +49,15 @@ type txAwareConfigStore struct {
 	// committed state — what survives a commit
 	committedIssuer string
 	committedClaim  string
+	// committed is a generic map for all server_config keys written in a TX.
+	// Used by claim_mapping_bootstrap_tx_test.go to check all keys atomically.
+	committed map[string]string
 
 	// staged (pending) state — set during a TX, cleared on rollback
 	pendingIssuer string
 	pendingClaim  string
+	// pending is a generic map tracking all server_config key writes during a TX.
+	pending map[string]string
 
 	// controls whether completeBootstrapTx should fail (0 rows affected) or succeed (1 row)
 	completeBootstrapErr error
@@ -71,6 +76,9 @@ type txAwareConfigStore struct {
 // ExecContext intercepts the SQL calls made by the *Tx helper functions and updates
 // pending state accordingly. It does not execute real SQL.
 func (s *txAwareConfigStore) ExecContext(_ context.Context, query string, args ...any) (sql.Result, error) {
+	if s.pending == nil {
+		s.pending = make(map[string]string)
+	}
 	switch {
 	case strings.Contains(query, "bootstrap_draft"):
 		// clearDraftTx: DELETE FROM bootstrap_draft
@@ -84,6 +92,7 @@ func (s *txAwareConfigStore) ExecContext(_ context.Context, query string, args .
 		// Determine which key is being written.
 		// saveBootstrapConfigTx:   args = (key, value, set_at)
 		// saveAdminGroupClaimTx:   SQL contains literal 'admin_group_claim', args = (value, set_at)
+		// saveClaimMappingTx:      args = (key, value, set_at) for oidc_*_claim keys
 		// completeBootstrapTx:     args = ("bootstrap_completed", "true", set_at)
 		if strings.Contains(query, "bootstrap_completed") || (len(args) >= 1 && args[0] == "bootstrap_completed") {
 			// completeBootstrapTx
@@ -93,6 +102,7 @@ func (s *txAwareConfigStore) ExecContext(_ context.Context, query string, args .
 			if s.bootstrapAlreadyCompleted {
 				return fakeResult{rowsAffected: 0}, nil // ON CONFLICT DO NOTHING → 0 rows
 			}
+			s.pending["bootstrap_completed"] = "true"
 			return fakeResult{rowsAffected: 1}, nil
 		}
 		if strings.Contains(query, "'admin_group_claim'") {
@@ -100,14 +110,16 @@ func (s *txAwareConfigStore) ExecContext(_ context.Context, query string, args .
 			if len(args) >= 1 {
 				if v, ok := args[0].(string); ok {
 					s.pendingClaim = v
+					s.pending["admin_group_claim"] = v
 				}
 			}
 			return fakeResult{rowsAffected: 1}, nil
 		}
-		// saveBootstrapConfigTx: args = (key, value, set_at)
+		// saveBootstrapConfigTx or saveClaimMappingTx: args = (key, value, set_at)
 		if len(args) >= 2 {
 			key, _ := args[0].(string)
 			val, _ := args[1].(string)
+			s.pending[key] = val
 			if key == "oidc_issuer" {
 				s.pendingIssuer = val
 			}
@@ -127,12 +139,21 @@ func (s *txAwareConfigStore) QueryRowContext(_ context.Context, _ string, _ ...a
 func (s *txAwareConfigStore) commit() {
 	s.committedIssuer = s.pendingIssuer
 	s.committedClaim = s.pendingClaim
+	// Promote all generic pending writes to committed map.
+	if s.committed == nil {
+		s.committed = make(map[string]string)
+	}
+	for k, v := range s.pending {
+		s.committed[k] = v
+	}
+	s.pending = make(map[string]string)
 }
 
 // rollback discards all pending (staged) writes.
 func (s *txAwareConfigStore) rollback() {
 	s.pendingIssuer = ""
 	s.pendingClaim = ""
+	s.pending = make(map[string]string)
 }
 
 // --- BootstrapDraftStore interface ---
@@ -180,6 +201,18 @@ func (s *txAwareConfigStore) LoadAdminGroupClaim(_ context.Context) (string, err
 
 func (s *txAwareConfigStore) CompleteBootstrap(_ context.Context) error {
 	return nil
+}
+
+func (s *txAwareConfigStore) LoadClaimMapping(_ context.Context) (string, string, string, error) {
+	return "sub", "name", "email", nil
+}
+
+func (s *txAwareConfigStore) SaveClaimMapping(_ context.Context, _, _, _ string) error {
+	return nil
+}
+
+func (s *txAwareConfigStore) LoadServerConfigKey(_ context.Context, _ string) (string, error) {
+	return "", nil
 }
 
 // newTestAdminAuthForTX builds an AdminAuth wired for ClaimSelectionHandler tests.

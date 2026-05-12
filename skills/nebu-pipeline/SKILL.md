@@ -5,7 +5,7 @@ description: Orchestrates the full Nebu dev lifecycle with TDD-first order, dev�
 
 # Nebu Pipeline
 
-Orchestrates the complete Nebu development lifecycle. Thin and deterministic — owns sequencing and cycle logic only. Domain intelligence lives in the specialized agents it calls.
+Orchestrates the complete Nebu development lifecycle. Thin and deterministic — owns sequencing and cycle logic only. Step agent prompts live in `pipeline-steps-spec.md`; select them with `select_pipeline_step.py`.
 
 ## Core Principles
 
@@ -16,7 +16,7 @@ Orchestrates the complete Nebu development lifecycle. Thin and deterministic —
 
 ## Pipeline State File
 
-`{project-root}/_bmad/nebu/pipeline-state.yaml` — written before and after every step.
+`{project-root}/_bmad-output/nebu/pipeline-state.yaml` — written before and after every step.
 
 ```yaml
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents.
@@ -55,13 +55,11 @@ Flags: `--story ID` · `--step STEP` · `--done STEP` (repeatable) · `--cycles 
 
 ## Pipeline Log
 
-Log entries are **prepended** directly below the `# last_updated:` comment line — newest first, same convention as `sprint-status.yaml`.
+Log entries are **prepended** directly below the `# last_updated:` comment line — newest first.
 
 Format: `# [STORY_ID] YYYY-MM-DDTHH:MMZ step → compact outcome`
 
-The log is **permanent and additive** — every step adds a new line. Lines are never deleted or replaced. Only the YAML fields are zeroed on commit; all comment/log lines stay. Over time the file becomes a full pipeline journal across all stories.
-
-Each step prepends exactly one log line on completion (or skip). The commit step prepends the final `committed ✓` summary line.
+The log is **permanent and additive** — every step adds one line. Lines are never deleted or replaced. Only the YAML fields are zeroed on commit; all comment/log lines stay.
 
 ---
 
@@ -87,24 +85,33 @@ Valid step names: `create-story` `atdd` `test-review` `dev-story` `ci-gate` `cod
 
 ## Story File Location
 
-Story files live under `docs/stories/` organized by phase and epic:
-
 ```
 docs/stories/
   mvp/
     epic-1/   ← epics 1–9
-    epic-2/
     ...
     epic-9/
   phase2/
     epic-10/  ← epics 10+
-    epic-11/
     ...
 ```
 
-**When creating a story** (Step 1): the `bmad-create-story` skill writes the file. After it completes, verify the file landed in `docs/stories/mvp/epic-{N}/` (or `phase2/` for epic 10+). If it was written elsewhere, move it with `git mv` before continuing.
+**When creating a story** (Step 1): verify the file landed in `docs/stories/mvp/epic-{N}/` (or `phase2/` for epic 10+). If it was written elsewhere, move it with `git mv` before continuing.
 
-**When referencing `STORY_FILE`** throughout the pipeline: the path is always `docs/stories/mvp/epic-{N}/[STORY_ID]-slug.md` (or `phase2/`).
+**`STORY_FILE`** throughout the pipeline: `docs/stories/mvp/epic-{N}/[STORY_ID]-slug.md` (or `phase2/`).
+
+---
+
+## How Steps Are Invoked
+
+Each step follows the same pattern:
+
+1. Extract story context with `extract_story_section.py`
+2. Fetch the agent prompt with `select_pipeline_step.py --step <name>`
+3. Inject runtime values into the prompt (substitute `[PLACEHOLDERS]`; drop `[IF X — omit if null]` blocks when the variable is null/empty)
+4. Launch the subagent with the assembled prompt
+5. Save the output as a named variable (carries to subsequent steps)
+6. Update `pipeline-state.yaml`
 
 ---
 
@@ -114,11 +121,11 @@ docs/stories/
 
 **Skill:** `bmad-create-story` | **Model:** sonnet | **Fresh context**
 
+```bash
+STEP_DESC=$(python3 skills/nebu-pipeline/scripts/select_pipeline_step.py --step create-story)
 ```
-Read and follow .claude/skills/bmad-create-story/SKILL.md.
-Feature/Story: [USER_INPUT]
-Work through this completely, then finish.
-```
+
+Inject `[STEP_DESC]` into subagent, substituting `[USER_INPUT]`.
 
 After completion:
 ```bash
@@ -128,6 +135,9 @@ rtk git status
 Note the created story file as `STORY_FILE`.
 
 ```bash
+# Create step-results directory for this story — all step outputs persist here
+mkdir -p _bmad-output/nebu/step-results/[STORY_ID]/
+
 python3 skills/nebu-pipeline/scripts/pipeline_state.py \
   --file _bmad-output/nebu/pipeline-state.yaml \
   --step atdd --done create-story \
@@ -141,6 +151,9 @@ Show: `✓ Step 1: Story created → [STORY_FILE]`
 ### Step 1c: Classify Story
 
 ```bash
+# Ensure step-results directory exists (creation point when story already exists)
+mkdir -p _bmad-output/nebu/step-results/[STORY_ID]/
+
 STORY_FLAGS=$(python3 skills/nebu-pipeline/scripts/classify_story.py --story [STORY_FILE])
 ```
 
@@ -155,20 +168,21 @@ Parse and store: `MATRIX=[.matrix]`, `UI=[.ui]`, `SEC_REVIEW=[.security_review]`
 **If `MATRIX=false`:** `⏭ Step 1b: Oracle Gate skipped — not a Matrix feature.` Set `ORACLE_CONTEXT = null`.
 
 **If `MATRIX=true`:**
-```
-Read and follow skills/nebu-agent-oracle/SKILL.md.
-Load references/spec-lookup.md and references/test-guidance.md.
 
-Story: [STORY_FILE]
+```bash
+ORACLE_INPUT=$(python3 skills/nebu-pipeline/scripts/extract_story_section.py \
+  --story [STORY_FILE] --sections "Story" "Acceptance Criteria")
 
-1. Which Matrix CS API endpoints, event types, and behavioral rules apply?
-   List all MUST requirements.
-2. Which spec-defined error codes, HTTP status codes, and edge cases MUST be test-covered?
-
-Return compact Markdown (max 40 lines). Lists only, no prose. Then finish.
+STEP_DESC=$(python3 skills/nebu-pipeline/scripts/select_pipeline_step.py --step oracle-gate)
 ```
 
-Save output as `ORACLE_CONTEXT`.
+Inject `[STEP_DESC]` into subagent, substituting `[ORACLE_INPUT]`.
+
+Write output to disk (authoritative source for subsequent steps):
+```bash
+# [paste oracle-gate output here — the sub-agent's full response]
+tee _bmad-output/nebu/step-results/[STORY_ID]/oracle-context.md
+```
 
 ```bash
 python3 skills/nebu-pipeline/scripts/pipeline_state.py \
@@ -187,20 +201,17 @@ Show: `✓ Step 1b: Oracle consulted — Matrix spec context captured.`
 
 **Skip if:** Pure infrastructure story (Dockerfile-only, migration-only with no logic). Show: `⏭ Step 2: Infra-only story — ATDD skipped.`
 
-```
-Read and follow .claude/skills/bmad-testarch-atdd/SKILL.md.
-Story: [STORY_FILE]
-Generate failing acceptance tests for all acceptance criteria.
-Tests MUST be failing before any implementation code exists.
+```bash
+ATDD_INPUT=$(python3 skills/nebu-pipeline/scripts/extract_story_section.py \
+  --story [STORY_FILE] --sections "Story" "Acceptance Criteria" "Acceptance Tests")
 
-[IF ORACLE_CONTEXT — otherwise omit this block:]
-Matrix spec requirements (from Oracle):
-[ORACLE_CONTEXT]
-Cover ALL spec-defined error codes, HTTP status codes, and edge cases
-as separate failing tests.
+# Read oracle context from file (written by Step 1b — empty string if gate was skipped)
+ORACLE_CONTEXT=$(cat _bmad-output/nebu/step-results/[STORY_ID]/oracle-context.md 2>/dev/null || echo "")
 
-Finish after generating the tests.
+STEP_DESC=$(python3 skills/nebu-pipeline/scripts/select_pipeline_step.py --step atdd)
 ```
+
+Inject `[STEP_DESC]` into subagent, substituting `[ATDD_INPUT]`; `[ORACLE_CONTEXT]` → value or drop block if empty.
 
 ```bash
 python3 skills/nebu-pipeline/scripts/pipeline_state.py \
@@ -218,29 +229,21 @@ Show: `✓ Step 2: Failing acceptance tests generated.`
 
 **Skill:** `bmad-testarch-test-review` | **Model:** sonnet | **Fresh context** | **Mandatory**
 
-This is the TDD gate. The failing tests are reviewed for quality **before** implementation starts — poor tests produce poor implementations.
+This is the TDD gate. Poor tests produce poor implementations — review before dev starts.
 
-```
-Read and follow .claude/skills/bmad-testarch-test-review/SKILL.md.
-Review all staged test files (git diff --staged).
+```bash
+AC_SECTION=$(python3 skills/nebu-pipeline/scripts/extract_story_section.py \
+  --story [STORY_FILE] --sections "Story" "Acceptance Criteria")
 
-Context: these are FAILING tests from ATDD, not yet validated by a green run.
-
-Check:
-- Does each acceptance criterion have at least one test?
-- Any hard waits, non-deterministic assertions, or brittle selectors?
-- GenServer state stories: is there a crash/restart test?
-- UI stories (ui: true in frontmatter): are Playwright tests present in e2e/tests/ or e2e/features/?
-- Are Matrix spec error codes and HTTP status codes tested (not just the happy path)?
-
-Classify each finding: MAJOR / MINOR / INFO.
-MAJOR = missing AC coverage, missing crash/restart test for GenServer state,
-        missing Playwright tests for a UI story.
-
-Output the full report and finish.
+STEP_DESC=$(python3 skills/nebu-pipeline/scripts/select_pipeline_step.py --step test-review)
 ```
 
-Save output as `TEST_REVIEW_FINDINGS`.
+Inject `[STEP_DESC]` into subagent, substituting `[AC_SECTION]`.
+
+Write output to disk:
+```bash
+tee _bmad-output/nebu/step-results/[STORY_ID]/test-review-findings.md
+```
 
 **If MAJOR findings:**
 ```
@@ -266,27 +269,23 @@ Show: `✓ Step 3: Pre-dev test quality verified.`
 
 **Skill:** `bmad-dev-story` | **Model:** sonnet | **Fresh context**
 
+```bash
+# Read step results from disk — authoritative, survives context compression
+TEST_REVIEW_FINDINGS=$(cat _bmad-output/nebu/step-results/[STORY_ID]/test-review-findings.md 2>/dev/null || echo "")
+ORACLE_CONTEXT=$(cat _bmad-output/nebu/step-results/[STORY_ID]/oracle-context.md 2>/dev/null || echo "")
+CODE_REVIEW_FINDINGS=$(cat _bmad-output/nebu/step-results/[STORY_ID]/code-review-findings.md 2>/dev/null || echo "")
+
+STEP_DESC=$(python3 skills/nebu-pipeline/scripts/select_pipeline_step.py --step dev-story)
 ```
-Read and follow .claude/skills/bmad-dev-story/SKILL.md.
-Implement the story at [STORY_FILE] completely.
-The failing acceptance tests from ATDD are already staged —
-implement until they are green.
 
-Test quality notes (from pre-dev review):
-[TEST_REVIEW_FINDINGS]
+Inject `[STEP_DESC]` into subagent, substituting:
+- `[STORY_FILE]` → path
+- `[TEST_REVIEW_FINDINGS]` → value or drop block if empty
+- `[ORACLE_CONTEXT]` → value or drop block if empty
+- `[CODE_REVIEW_FINDINGS]` → value or drop block if empty (cycle 0)
+- `[CYCLE_COUNT]` → current cycle number
 
-[IF ORACLE_CONTEXT — otherwise omit this block:]
-Matrix spec requirements (from Oracle):
-[ORACLE_CONTEXT]
-The implementation must satisfy ALL MUST requirements above.
-
-[IF CODE_REVIEW_FINDINGS (cycle > 0) — otherwise omit this block:]
-This is review cycle [CYCLE_COUNT]. Issues to fix from the previous code-review:
-[CODE_REVIEW_FINDINGS]
-Fix all listed issues. Then finish.
-
-Finish after completing the implementation.
-```
+**Context fallback (cycle > 0):** If the previous cycle's issues suggest the agent misunderstood story intent, replace `[STORY_FILE]` with full story content — see **Context Fallback Rule**.
 
 After completion:
 ```bash
@@ -307,15 +306,18 @@ Show: `✓ Step 4: Implementation complete. Cycle: [CYCLE_COUNT]`
 
 ### Step 5: ci-gate — CI Verification
 
-**Agent:** `nebu-agent-testing` | **Model:** sonnet | **Fresh context**
+**Agent:** `nebu-agent-testing` | **Model:** haiku | **Fresh context**
 
+Primary path — run the CI script directly:
 ```bash
 python3 skills/nebu-agent-testing/scripts/ci_gate.py --story [STORY_ID]
 ```
 
-Read the JSON output. If Tank agent is available, pass the output to it for interpretation and memory update. If unavailable, parse the JSON directly.
-
-**Fallback if script is unavailable:** invoke `nebu-agent-testing` with `references/ci-gate.md`.
+Parse the JSON output. **Fallback if script unavailable:**
+```bash
+STEP_DESC=$(python3 skills/nebu-pipeline/scripts/select_pipeline_step.py --step ci-gate)
+```
+Inject `[STEP_DESC]` into subagent (no substitutions needed).
 
 **If CI fails:**
 ```
@@ -349,21 +351,15 @@ rtk git diff --staged --name-only | grep "gateway/internal/admin/"
 **If `UI=false` and no admin/ files staged:** `⏭ Step 5b: UX Gate skipped — not a UI story.`
 
 **If UI story detected:**
+
+```bash
+STORY_SECTIONS=$(python3 skills/nebu-pipeline/scripts/extract_story_section.py \
+  --story [STORY_FILE] --sections "Story" "Acceptance Criteria")
+
+STEP_DESC=$(python3 skills/nebu-pipeline/scripts/select_pipeline_step.py --step ux-gate)
 ```
-Read and follow skills/nebu-agent-ux/SKILL.md.
-Run in --headless mode: accessibility audit on staged changes.
 
-Story: [STORY_FILE]
-Pipeline state: [contents of _bmad/nebu/pipeline-state.yaml]
-
-Audit changed templates against:
-- PRD accessibility requirements (from your BOND.md)
-- WCAG 2.1 AA baseline
-- DaisyUI consistency with existing components
-
-Return findings as: violations (blocking) | advisories (non-blocking).
-Finish after the audit.
-```
+Inject `[STEP_DESC]` into subagent, substituting `[STORY_SECTIONS]`.
 
 **If blocking violations:**
 ```
@@ -390,30 +386,27 @@ Show: `✓ Step 5b: UX audit passed.`
 
 Track `CYCLE_COUNT` — starts at 0, read from pipeline-state.yaml on resume.
 
-```
-Read and follow .claude/skills/bmad-code-review/SKILL.md.
-Review all staged changes (git diff --staged).
+```bash
+AC_SECTION=$(python3 skills/nebu-pipeline/scripts/extract_story_section.py \
+  --story [STORY_FILE] --sections "Story" "Acceptance Criteria")
 
-IMPORTANT: Do NOT fix issues yourself.
-Identify all issues, classify them (MAJOR / MINOR / INFO), return the full list.
-The pipeline hands MINOR issues back to the dev agent for fixing.
-Only MAJOR/CRITICAL issues require user decision.
+# Read findings from disk
+TEST_REVIEW_FINDINGS=$(cat _bmad-output/nebu/step-results/[STORY_ID]/test-review-findings.md 2>/dev/null || echo "")
+ORACLE_CONTEXT=$(cat _bmad-output/nebu/step-results/[STORY_ID]/oracle-context.md 2>/dev/null || echo "")
 
-Test quality findings (from pre-dev test-review):
-[TEST_REVIEW_FINDINGS]
-
-[IF ORACLE_CONTEXT — otherwise omit:]
-Matrix spec requirements (from Oracle):
-[ORACLE_CONTEXT]
-Verify the implementation satisfies ALL MUST requirements.
-Missing error codes or wrong HTTP status = MAJOR.
-
-Current review cycle: [CYCLE_COUNT] (escalate to user if same issues persist for 3+ cycles)
-
-Output the full report. Classify every finding as MAJOR, MINOR, or INFO. Finish.
+STEP_DESC=$(python3 skills/nebu-pipeline/scripts/select_pipeline_step.py --step code-review)
 ```
 
-Save output as `CODE_REVIEW_FINDINGS`.
+Inject `[STEP_DESC]` into subagent, substituting:
+- `[AC_SECTION]` → value
+- `[TEST_REVIEW_FINDINGS]` → value or drop block if empty
+- `[ORACLE_CONTEXT]` → value or drop block if empty
+- `[CYCLE_COUNT]` → current cycle number
+
+Write output to disk (overwritten each cycle — always the latest review):
+```bash
+tee _bmad-output/nebu/step-results/[STORY_ID]/code-review-findings.md
+```
 
 ```bash
 rtk git add .
@@ -430,19 +423,17 @@ Choose:
   (c) "stop" — pause pipeline
 ```
 Stop and wait.
-- `fix` → increment `CYCLE_COUNT`, update state, return to Step 4 with `CODE_REVIEW_FINDINGS` as context
+- `fix` → increment `CYCLE_COUNT`, update state, return to Step 4
 - `accept [reason]` → record justification, continue to Step 7
 
-**If only MINOR/INFO findings:**
-
-If MINOR findings present AND `CYCLE_COUNT < 3`:
+**If only MINOR/INFO findings and `CYCLE_COUNT < 3`:**
 ```
 Code-review found [N] MINOR findings. Sending back to dev agent for fixing.
 Cycle [CYCLE_COUNT + 1] starting...
 ```
 Increment `CYCLE_COUNT`. Update state. Return to Step 4. After dev completes, return here.
 
-If `CYCLE_COUNT >= 3` with the same findings still present:
+**If `CYCLE_COUNT >= 3` with same findings still present:**
 ```
 ⚠ Review cycle limit reached (3 rounds). Issues persist.
 Type "accept" to proceed with open minors, or "stop" to investigate.
@@ -458,13 +449,13 @@ python3 skills/nebu-pipeline/scripts/pipeline_state.py \
   --step security-review --done code-review \
   --log "[STORY_ID] TIMESTAMP code-review → CLEAN (cycle [CYCLE_COUNT])"
 
-# MINOR path (cycle back to dev-story, increment cycles):
+# MINOR path (cycle back to dev-story):
 python3 skills/nebu-pipeline/scripts/pipeline_state.py \
   --file _bmad-output/nebu/pipeline-state.yaml \
   --step dev-story --cycles [CYCLE_COUNT+1] \
   --log "[STORY_ID] TIMESTAMP code-review → N MINOR → cycle [CYCLE_COUNT+1]"
 
-# MAJOR blocked / accepted: use matching --log text, adjust --step accordingly
+# MAJOR blocked / accepted: adjust --step and --log accordingly
 ```
 
 ---
@@ -478,20 +469,16 @@ python3 skills/nebu-pipeline/scripts/pipeline_state.py \
 - `optional` → ask: "Story marked optional — run security review now? [Y/n]"
 - `not-needed` → `⏭ Step 7: Security review skipped (flagged not-needed).`
 
-**If required:**
+**If running:**
+
+```bash
+SEC_CONTEXT=$(python3 skills/nebu-pipeline/scripts/extract_story_section.py \
+  --story [STORY_FILE] --sections "Story" "Acceptance Criteria")
+
+STEP_DESC=$(python3 skills/nebu-pipeline/scripts/select_pipeline_step.py --step security-review)
 ```
-Read and follow skills/nebu-agent-kassandra/SKILL.md.
-Load references/security-review.md and execute a full security review.
 
-Scope: staged diff (git diff --staged)
-Story: [STORY_FILE]
-
-Write the report to:
-docs/stories/mvp/epic-{N}/security-reports/[STORY_ID]-security-review-[DATE].md
-Always write the report, even if zero findings (audit trail).
-
-Return: Classification (CRITICAL | HIGH | CLEAN) + report path + severity count.
-```
+Inject `[STEP_DESC]` into subagent, substituting `[SEC_CONTEXT]`, `[STORY_ID]`, `[DATE]`.
 
 **If CRITICAL:**
 ```
@@ -525,45 +512,34 @@ python3 skills/nebu-pipeline/scripts/pipeline_state.py \
 
 ### Step 8: arc42-update — Documentation Delta
 
-**Agent:** `nebu-agent-arc42` (if sanctum exists) or `bmad-maintain-arc42` (fallback) | **Model:** sonnet | **Fresh context** | **Mandatory**
+**Agent:** `nebu-agent-arc42` (if available) or `bmad-maintain-arc42` (fallback) | **Model:** haiku | **Fresh context** | **Mandatory**
 
-Check for nebu-agent-arc42:
 ```bash
 ls _bmad/memory/nebu-agent-arc42/ 2>/dev/null && echo "available"
+# Sets ARC42_SKILL_PATH:
+#   available → "skills/nebu-agent-arc42/SKILL.md"
+#   fallback  → ".claude/skills/bmad-maintain-arc42/SKILL.md"
+
+ARC42_CONTEXT=$(python3 skills/nebu-pipeline/scripts/extract_story_section.py \
+  --story [STORY_FILE] --sections "Story" "Dev Notes")
+
+STAGED_FILES=$(rtk git diff --staged --name-only)
+
+STEP_DESC=$(python3 skills/nebu-pipeline/scripts/select_pipeline_step.py --step arc42-update)
 ```
 
-**If available:**
-```
-Read and follow skills/nebu-agent-arc42/SKILL.md.
-Story completed: [STORY_FILE]
-Staged changes: [output of: rtk git diff --staged --name-only]
-
-Perform a delta update of the arc42 documentation.
-Update only the sections affected by this story. No full rewrites.
-Finish after the update.
-```
-
-**Fallback (bmad-maintain-arc42):**
-```
-Read and follow .claude/skills/bmad-maintain-arc42/SKILL.md.
-Story completed: [STORY_FILE]
-Staged changes: [output of: rtk git diff --staged --name-only]
-
-Perform a delta update of the arc42 documentation.
-Update only sections affected by this story's changes.
-Finish after the update.
-```
+Inject `[STEP_DESC]` into subagent, substituting `[ARC42_SKILL_PATH]`, `[ARC42_CONTEXT]`, `[STAGED_FILES]`.
 
 After completion:
 ```bash
 rtk git diff --name-only docs/
 ```
 
-If no `docs/` changes and the story has architecture-relevant changes (new endpoints, services, data models, gRPC handlers, or middleware):
+If no `docs/` changes and story has architecture-relevant changes (new endpoints, services, data models, gRPC handlers, or middleware):
 ```
 ⚠ Step 8 — Arc42 not updated.
 docs/ unchanged despite architecture-relevant changes.
-Type "continue [reason]" to proceed (e.g. "continue — config change only, no structural impact").
+Type "continue [reason]" to proceed.
 ```
 Stop and wait.
 
@@ -621,28 +597,6 @@ python3 skills/nebu-pipeline/scripts/pipeline_state.py \
 
 Compact summary examples: `ATDD+Code CLEAN`, `2 MINOR fixed 1 cycle+Kassandra CLEAN`, `MAJOR fixed 2 cycles+Kassandra HIGH resolved`
 
-The script prepends the log line and zeroes only the YAML fields — every comment/log line stays. Result:
-```yaml
-story: null
-current_step: null
-completed: []
-cycle_count: 0
-blocked_reason: null
-last_updated: "[NOW]"
-```
-
-After multiple stories the comment block will look like:
-```yaml
-# [9-20] 2026-05-07T10:00Z committed ✓ (ATDD+Code CLEAN)
-# [9-20] 2026-05-07T09:55Z security-review → Kassandra CLEAN
-# [9-20] 2026-05-07T09:40Z code-review → CLEAN (cycle 0)
-# [9-19] 2026-05-06T14:23Z committed ✓ (2 MINOR fixed 1 cycle)
-# [9-19] 2026-05-06T14:15Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
-# [9-19] 2026-05-06T13:44Z pipeline started
-```
-
-This is the intended journal format — never truncate it.
-
 Show: `✓ Step 9: Committed. Pipeline state cleared.`
 
 ---
@@ -653,9 +607,9 @@ Show: `✓ Step 9: Committed. Pipeline state cleared.`
 rtk read _bmad-output/implementation-artifacts/sprint-status.yaml
 ```
 
-Check if the story just committed is the last story of the epic (the entry immediately before `epic-{N}-retrospective` in the YAML).
+Check if the story just committed is the last story of the epic (entry immediately before `epic-{N}-retrospective` in the YAML).
 
-**If epic complete → SEC Gate 2 (mandatory, runs regardless of story flags):**
+**If epic complete → SEC Gate 2 (mandatory):**
 
 Determine the epic base commit:
 ```bash
@@ -664,23 +618,11 @@ rtk git log --grep="epic-{N-1}-retrospective\|retrospektive" --oneline
 
 If unclear, ask: "Epic diff base? (commit SHA or tag)"
 
+```bash
+STEP_DESC=$(python3 skills/nebu-pipeline/scripts/select_pipeline_step.py --step epic-security-review)
 ```
-Read and follow skills/nebu-agent-kassandra/SKILL.md.
-Load references/epic-review.md.
 
-Diff range: git diff [EPIC_BASE]..HEAD
-Report path: _bmad-output/implementation-artifacts/epic-{N}-security-review-[DATE].md
-Always write the report — this is a mandatory audit artifact.
-
-Focus beyond per-story findings:
-- Attack surfaces that emerge across multiple stories combined
-- New endpoints + partial auth that together enable bypass
-- Migrations that break RLS or existing policies
-- gRPC handlers that bypass middleware
-- Cumulative crypto or secrets drift
-
-Return: Classification (CRITICAL | HIGH | CLEAN) + report path.
-```
+Inject `[STEP_DESC]` into subagent, substituting `[EPIC_BASE]`, `[DATE]`, `{N}`.
 
 - **CRITICAL or HIGH:** Stop. User chooses: create follow-up stories in next epic, or accept as risk with written justification.
 - **CLEAN:** Continue to retrospective.
@@ -703,6 +645,30 @@ Stop and wait for user.
 
 ---
 
+## Context Fallback Rule
+
+**Never reduce story context between retries. Only ever expand it.**
+
+Each step extracts a targeted subset of the story. If a step produces output suggesting the agent lacked sufficient story knowledge — wrong implementation direction, bug from misunderstood requirements, reviewer noting divergence from story intent, or agent explicitly asking for more context — expand before retrying:
+
+```bash
+FULL_STORY=$(python3 skills/nebu-pipeline/scripts/extract_story_section.py \
+  --story [STORY_FILE] --all)
+```
+
+Pass `[FULL_STORY]` in place of the narrower variable. The `--all` flag extracts all `##` sections in document order.
+
+**Signals that trigger a context fallback (any step):**
+- Agent output contradicts the story's stated user goal
+- Bug-fix cycle where the root cause is requirements-related
+- Reviewer: "implementation doesn't match the story intent"
+- Agent asks for more context or story background
+- Two consecutive review cycles with the same misunderstanding
+
+**Rule:** a retry with expanded context is always valid. A retry with reduced context is never valid.
+
+---
+
 ## Error Handling
 
 | Situation | Response |
@@ -710,7 +676,7 @@ Stop and wait for user.
 | Agent fails | Show full error. Stop, user decides. |
 | git command fails | Show git error. Stop, wait for user. |
 | `sprint-status.yaml` missing | `ℹ sprint-status.yaml not found — epic check skipped.` |
-| SKILL.md not found | Report missing path and stop. |
+| `select_pipeline_step.py` returns error | Report missing step name and stop. |
 | ATDD skill unavailable | `⚠ ATDD skill not found — TEA Gate skipped. Acceptance tests must exist manually before dev starts.` |
 | `bmad-testarch-test-review` unavailable | `⚠ Test-review skill not found — pre-dev quality check skipped.` |
 | `nebu-agent-testing` unavailable | Fall back to inline CI execution (build → unit-go → unit-elixir → docker compose down --volumes && up -d --wait → make test-e2e → docker compose down → make test-integration). |
@@ -728,12 +694,12 @@ Stop and wait for user.
 | atdd | bmad-testarch-atdd | sonnet |
 | test-review (pre-dev) | bmad-testarch-test-review | sonnet |
 | dev-story | bmad-dev-story | sonnet |
-| ci-gate | nebu-agent-testing | sonnet |
+| ci-gate | nebu-agent-testing | haiku |
 | UX Gate (5b, conditional) | nebu-agent-ux | sonnet |
 | code-review | bmad-code-review | opus |
 | security-review (conditional) | nebu-agent-kassandra | opus |
 | epic-review (SEC Gate 2) | nebu-agent-kassandra | opus |
-| arc42-update | nebu-agent-arc42 / bmad-maintain-arc42 | sonnet |
+| arc42-update | nebu-agent-arc42 / bmad-maintain-arc42 | haiku |
 
 ---
 
@@ -747,4 +713,4 @@ Stop and wait for user.
 - `CODE_REVIEW_FINDINGS` carry through the full dev↔review cycle.
 - `rtk git add .` runs after code-review unconditionally.
 - The pipeline does not fix issues itself. The reviewer identifies; the dev agent fixes.
-- TEA skills (bmad-testarch-atdd, bmad-testarch-test-review) are called identically to today's usage — no changes to those skills themselves.
+- Story context extraction: see **Context Fallback Rule**. If any step seems to have too little context, use `--all` for that step's retry.

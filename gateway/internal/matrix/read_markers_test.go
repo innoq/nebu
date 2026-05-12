@@ -58,7 +58,7 @@ func buildAuthedReadMarkersHandler(t *testing.T) (http.Handler, *httptest.Server
 		ServerName: "test.local",
 	})
 
-	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
 		http.HandlerFunc(handler.PostReadMarkers),
 	)
 
