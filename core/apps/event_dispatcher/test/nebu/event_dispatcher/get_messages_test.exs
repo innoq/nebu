@@ -194,6 +194,9 @@ defmodule Nebu.EventDispatcher.GetMessagesTest do
 
     # Story 6.9: get_room_status/1 — returns {:ok, "active"} so normal rooms start correctly.
     def get_room_status(_room_id), do: {:ok, "active"}
+
+    # Story 9-9: TOCTOU fix — returns {:ok, "active"} for normal rooms.
+    def check_room_status_for_update(_room_id), do: {:ok, "active"}
   end
 
   # ─── Setup / Teardown ────────────────────────────────────────────────────────

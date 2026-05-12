@@ -242,11 +242,9 @@ func iRequestGETAdminDashboardWithCookie() error {
 }
 
 // theResponseIs200 asserts the last HTTP response had status 200.
+// Kept for backward compatibility; delegates to theResponseIs.
 func theResponseIs200() error {
-	if lastStatusCode != http.StatusOK {
-		return fmt.Errorf("expected 200, got %d (body: %.400s)", lastStatusCode, lastBody)
-	}
-	return nil
+	return theResponseIs(http.StatusOK)
 }
 
 // initializeAdminBootstrapSteps registers all step definitions for the admin bootstrap
@@ -261,5 +259,6 @@ func initializeAdminBootstrapSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^bootstrap is complete and server_config is seeded$`, bootstrapIsCompleteAndSeeded)
 	sc.Step(`^I have a forged valid admin session cookie$`, iHaveAForgedValidAdminSessionCookie)
 	sc.Step(`^I request GET /admin/dashboard with the admin session cookie$`, iRequestGETAdminDashboardWithCookie)
-	sc.Step(`^the response is 200$`, theResponseIs200)
+	// Note: "^the response is (\d+)$" is registered in claim_mapping_steps_test.go (theResponseIs)
+	// and handles all numeric status codes including 200. theResponseIs200 is kept as a helper function.
 }

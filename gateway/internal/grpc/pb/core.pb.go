@@ -23,16 +23,18 @@ const (
 
 // Shared event type used across multiple RPCs
 type Event struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	EventId       string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
-	RoomId        string                 `protobuf:"bytes,2,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
-	SenderId      string                 `protobuf:"bytes,3,opt,name=sender_id,json=senderId,proto3" json:"sender_id,omitempty"`
-	EventType     string                 `protobuf:"bytes,4,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"`
-	Content       []byte                 `protobuf:"bytes,5,opt,name=content,proto3" json:"content,omitempty"`                    // JSON-encoded event content
-	OriginTs      int64                  `protobuf:"varint,6,opt,name=origin_ts,json=originTs,proto3" json:"origin_ts,omitempty"` // Unix milliseconds
-	ServerTs      int64                  `protobuf:"varint,7,opt,name=server_ts,json=serverTs,proto3" json:"server_ts,omitempty"` // Unix milliseconds
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	EventId           string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
+	RoomId            string                 `protobuf:"bytes,2,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
+	SenderId          string                 `protobuf:"bytes,3,opt,name=sender_id,json=senderId,proto3" json:"sender_id,omitempty"`
+	EventType         string                 `protobuf:"bytes,4,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"`
+	Content           []byte                 `protobuf:"bytes,5,opt,name=content,proto3" json:"content,omitempty"`                                              // JSON-encoded event content
+	OriginTs          int64                  `protobuf:"varint,6,opt,name=origin_ts,json=originTs,proto3" json:"origin_ts,omitempty"`                           // Unix milliseconds
+	ServerTs          int64                  `protobuf:"varint,7,opt,name=server_ts,json=serverTs,proto3" json:"server_ts,omitempty"`                           // Unix milliseconds
+	StateKey          string                 `protobuf:"bytes,8,opt,name=state_key,json=stateKey,proto3" json:"state_key,omitempty"`                            // Matrix state_key (subject of state event, e.g. user_id for m.room.member)
+	UnsignedRelations []byte                 `protobuf:"bytes,9,opt,name=unsigned_relations,json=unsignedRelations,proto3" json:"unsigned_relations,omitempty"` // Story 9-28: JSON {"m.thread":{"count":N,"latest_event":{...},"current_user_participated":bool}}
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *Event) Reset() {
@@ -114,6 +116,20 @@ func (x *Event) GetServerTs() int64 {
 	return 0
 }
 
+func (x *Event) GetStateKey() string {
+	if x != nil {
+		return x.StateKey
+	}
+	return ""
+}
+
+func (x *Event) GetUnsignedRelations() []byte {
+	if x != nil {
+		return x.UnsignedRelations
+	}
+	return nil
+}
+
 // SendEvent
 type SendEventRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -122,7 +138,9 @@ type SendEventRequest struct {
 	EventType     string                 `protobuf:"bytes,3,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"`
 	TxnId         string                 `protobuf:"bytes,4,opt,name=txn_id,json=txnId,proto3" json:"txn_id,omitempty"` // idempotency key
 	Content       []byte                 `protobuf:"bytes,5,opt,name=content,proto3" json:"content,omitempty"`
-	OriginTs      int64                  `protobuf:"varint,6,opt,name=origin_ts,json=originTs,proto3" json:"origin_ts,omitempty"` // Unix milliseconds
+	OriginTs      int64                  `protobuf:"varint,6,opt,name=origin_ts,json=originTs,proto3" json:"origin_ts,omitempty"`               // Unix milliseconds
+	StateKey      string                 `protobuf:"bytes,7,opt,name=state_key,json=stateKey,proto3" json:"state_key,omitempty"`                // Story 9-7: Matrix state_key (may be "" for types like m.room.name)
+	IsStateEvent  bool                   `protobuf:"varint,8,opt,name=is_state_event,json=isStateEvent,proto3" json:"is_state_event,omitempty"` // SEC Gate 1: true when this is a state event (even if state_key="")
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -197,6 +215,20 @@ func (x *SendEventRequest) GetOriginTs() int64 {
 		return x.OriginTs
 	}
 	return 0
+}
+
+func (x *SendEventRequest) GetStateKey() string {
+	if x != nil {
+		return x.StateKey
+	}
+	return ""
+}
+
+func (x *SendEventRequest) GetIsStateEvent() bool {
+	if x != nil {
+		return x.IsStateEvent
+	}
+	return false
 }
 
 type SendEventResponse struct {
@@ -1859,6 +1891,7 @@ type GetSyncDeltaRequest struct {
 	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	SinceToken    string                 `protobuf:"bytes,2,opt,name=since_token,json=sinceToken,proto3" json:"since_token,omitempty"` // opaque token from previous next_batch
 	TimeoutMs     int64                  `protobuf:"varint,3,opt,name=timeout_ms,json=timeoutMs,proto3" json:"timeout_ms,omitempty"`   // long-poll wait time; 0 = return immediately; max 30000
+	DeviceId      string                 `protobuf:"bytes,4,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`       // device-scoped since-token lookup key (Story 9-22)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1912,6 +1945,13 @@ func (x *GetSyncDeltaRequest) GetTimeoutMs() int64 {
 		return x.TimeoutMs
 	}
 	return 0
+}
+
+func (x *GetSyncDeltaRequest) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
 }
 
 type GetSyncDeltaResponse struct {
@@ -3322,11 +3362,15 @@ func (x *GetEventContextResponse) GetEndToken() string {
 }
 
 // InvalidateUserSessions — Story 6.5: Admin deactivation revokes all active sessions.
-// Calls SessionManager.destroy_session/1 for the target user.
+// Story 9-22: when device_id is set, only the (user_id, device_id) session is invalidated
+// (per-device logout). When device_id is empty, all sessions for the user are invalidated
+// (admin deactivation / full logout).
+// Calls SessionManager.destroy_session/1 or /2 depending on device_id presence.
 // Returns ok=true on success; gRPC error on DB failure.
 type InvalidateUserSessionsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"` // Matrix user ID (@localpart:server)
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`       // Matrix user ID (@localpart:server)
+	DeviceId      string                 `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"` // Optional: if set, only invalidate this device's session (Story 9-22)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3364,6 +3408,13 @@ func (*InvalidateUserSessionsRequest) Descriptor() ([]byte, []int) {
 func (x *InvalidateUserSessionsRequest) GetUserId() string {
 	if x != nil {
 		return x.UserId
+	}
+	return ""
+}
+
+func (x *InvalidateUserSessionsRequest) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
 	}
 	return ""
 }
@@ -3768,12 +3819,2085 @@ func (x *InvalidateAllAdminSessionsResponse) GetOk() bool {
 	return false
 }
 
+// AdminUserProto — user record for admin RPCs
+type AdminUserProto struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	DisplayName   string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	EmailMasked   string                 `protobuf:"bytes,3,opt,name=email_masked,json=emailMasked,proto3" json:"email_masked,omitempty"` // masked: u***@domain
+	IsActive      bool                   `protobuf:"varint,4,opt,name=is_active,json=isActive,proto3" json:"is_active,omitempty"`
+	SystemRole    string                 `protobuf:"bytes,5,opt,name=system_role,json=systemRole,proto3" json:"system_role,omitempty"` // "user" | "instance_admin" | "compliance_officer"
+	CreatedAt     int64                  `protobuf:"varint,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`   // Unix milliseconds
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AdminUserProto) Reset() {
+	*x = AdminUserProto{}
+	mi := &file_core_proto_msgTypes[68]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AdminUserProto) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AdminUserProto) ProtoMessage() {}
+
+func (x *AdminUserProto) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[68]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AdminUserProto.ProtoReflect.Descriptor instead.
+func (*AdminUserProto) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{68}
+}
+
+func (x *AdminUserProto) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *AdminUserProto) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *AdminUserProto) GetEmailMasked() string {
+	if x != nil {
+		return x.EmailMasked
+	}
+	return ""
+}
+
+func (x *AdminUserProto) GetIsActive() bool {
+	if x != nil {
+		return x.IsActive
+	}
+	return false
+}
+
+func (x *AdminUserProto) GetSystemRole() string {
+	if x != nil {
+		return x.SystemRole
+	}
+	return ""
+}
+
+func (x *AdminUserProto) GetCreatedAt() int64 {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return 0
+}
+
+// ListAdminUsers
+type ListAdminUsersRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Limit         int32                  `protobuf:"varint,1,opt,name=limit,proto3" json:"limit,omitempty"`  // 1–100, default 20
+	Cursor        string                 `protobuf:"bytes,2,opt,name=cursor,proto3" json:"cursor,omitempty"` // opaque cursor (user_id); empty = first page
+	Search        string                 `protobuf:"bytes,3,opt,name=search,proto3" json:"search,omitempty"` // ILIKE substring match on display_name; empty = no filter
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListAdminUsersRequest) Reset() {
+	*x = ListAdminUsersRequest{}
+	mi := &file_core_proto_msgTypes[69]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAdminUsersRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAdminUsersRequest) ProtoMessage() {}
+
+func (x *ListAdminUsersRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[69]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAdminUsersRequest.ProtoReflect.Descriptor instead.
+func (*ListAdminUsersRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{69}
+}
+
+func (x *ListAdminUsersRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *ListAdminUsersRequest) GetCursor() string {
+	if x != nil {
+		return x.Cursor
+	}
+	return ""
+}
+
+func (x *ListAdminUsersRequest) GetSearch() string {
+	if x != nil {
+		return x.Search
+	}
+	return ""
+}
+
+type ListAdminUsersResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Users         []*AdminUserProto      `protobuf:"bytes,1,rep,name=users,proto3" json:"users,omitempty"`
+	Total         int32                  `protobuf:"varint,2,opt,name=total,proto3" json:"total,omitempty"`
+	NextCursor    string                 `protobuf:"bytes,3,opt,name=next_cursor,json=nextCursor,proto3" json:"next_cursor,omitempty"` // empty = no more pages
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListAdminUsersResponse) Reset() {
+	*x = ListAdminUsersResponse{}
+	mi := &file_core_proto_msgTypes[70]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAdminUsersResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAdminUsersResponse) ProtoMessage() {}
+
+func (x *ListAdminUsersResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[70]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAdminUsersResponse.ProtoReflect.Descriptor instead.
+func (*ListAdminUsersResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{70}
+}
+
+func (x *ListAdminUsersResponse) GetUsers() []*AdminUserProto {
+	if x != nil {
+		return x.Users
+	}
+	return nil
+}
+
+func (x *ListAdminUsersResponse) GetTotal() int32 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
+func (x *ListAdminUsersResponse) GetNextCursor() string {
+	if x != nil {
+		return x.NextCursor
+	}
+	return ""
+}
+
+// GetAdminUser
+type GetAdminUserRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAdminUserRequest) Reset() {
+	*x = GetAdminUserRequest{}
+	mi := &file_core_proto_msgTypes[71]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAdminUserRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAdminUserRequest) ProtoMessage() {}
+
+func (x *GetAdminUserRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[71]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAdminUserRequest.ProtoReflect.Descriptor instead.
+func (*GetAdminUserRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{71}
+}
+
+func (x *GetAdminUserRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+type GetAdminUserResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	User          *AdminUserProto        `protobuf:"bytes,1,opt,name=user,proto3" json:"user,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAdminUserResponse) Reset() {
+	*x = GetAdminUserResponse{}
+	mi := &file_core_proto_msgTypes[72]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAdminUserResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAdminUserResponse) ProtoMessage() {}
+
+func (x *GetAdminUserResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[72]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAdminUserResponse.ProtoReflect.Descriptor instead.
+func (*GetAdminUserResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{72}
+}
+
+func (x *GetAdminUserResponse) GetUser() *AdminUserProto {
+	if x != nil {
+		return x.User
+	}
+	return nil
+}
+
+// DeactivateUser
+type DeactivateUserRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeactivateUserRequest) Reset() {
+	*x = DeactivateUserRequest{}
+	mi := &file_core_proto_msgTypes[73]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeactivateUserRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeactivateUserRequest) ProtoMessage() {}
+
+func (x *DeactivateUserRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[73]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeactivateUserRequest.ProtoReflect.Descriptor instead.
+func (*DeactivateUserRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{73}
+}
+
+func (x *DeactivateUserRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+type DeactivateUserResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeactivateUserResponse) Reset() {
+	*x = DeactivateUserResponse{}
+	mi := &file_core_proto_msgTypes[74]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeactivateUserResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeactivateUserResponse) ProtoMessage() {}
+
+func (x *DeactivateUserResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[74]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeactivateUserResponse.ProtoReflect.Descriptor instead.
+func (*DeactivateUserResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{74}
+}
+
+func (x *DeactivateUserResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+// ReactivateUser
+type ReactivateUserRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReactivateUserRequest) Reset() {
+	*x = ReactivateUserRequest{}
+	mi := &file_core_proto_msgTypes[75]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReactivateUserRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReactivateUserRequest) ProtoMessage() {}
+
+func (x *ReactivateUserRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[75]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReactivateUserRequest.ProtoReflect.Descriptor instead.
+func (*ReactivateUserRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{75}
+}
+
+func (x *ReactivateUserRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+type ReactivateUserResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReactivateUserResponse) Reset() {
+	*x = ReactivateUserResponse{}
+	mi := &file_core_proto_msgTypes[76]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReactivateUserResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReactivateUserResponse) ProtoMessage() {}
+
+func (x *ReactivateUserResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[76]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReactivateUserResponse.ProtoReflect.Descriptor instead.
+func (*ReactivateUserResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{76}
+}
+
+func (x *ReactivateUserResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+// UpdateUserRole
+type UpdateUserRoleRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Role          string                 `protobuf:"bytes,2,opt,name=role,proto3" json:"role,omitempty"` // "user" | "instance_admin" | "compliance_officer"
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateUserRoleRequest) Reset() {
+	*x = UpdateUserRoleRequest{}
+	mi := &file_core_proto_msgTypes[77]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateUserRoleRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateUserRoleRequest) ProtoMessage() {}
+
+func (x *UpdateUserRoleRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[77]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateUserRoleRequest.ProtoReflect.Descriptor instead.
+func (*UpdateUserRoleRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{77}
+}
+
+func (x *UpdateUserRoleRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *UpdateUserRoleRequest) GetRole() string {
+	if x != nil {
+		return x.Role
+	}
+	return ""
+}
+
+type UpdateUserRoleResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateUserRoleResponse) Reset() {
+	*x = UpdateUserRoleResponse{}
+	mi := &file_core_proto_msgTypes[78]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateUserRoleResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateUserRoleResponse) ProtoMessage() {}
+
+func (x *UpdateUserRoleResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[78]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateUserRoleResponse.ProtoReflect.Descriptor instead.
+func (*UpdateUserRoleResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{78}
+}
+
+func (x *UpdateUserRoleResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+// AdminRoomProto — room summary for admin RPCs
+type AdminRoomProto struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RoomId        string                 `protobuf:"bytes,1,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"` // "active" | "archived"
+	MemberCount   int32                  `protobuf:"varint,4,opt,name=member_count,json=memberCount,proto3" json:"member_count,omitempty"`
+	CreatedAt     int64                  `protobuf:"varint,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"` // Unix milliseconds
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AdminRoomProto) Reset() {
+	*x = AdminRoomProto{}
+	mi := &file_core_proto_msgTypes[79]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AdminRoomProto) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AdminRoomProto) ProtoMessage() {}
+
+func (x *AdminRoomProto) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[79]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AdminRoomProto.ProtoReflect.Descriptor instead.
+func (*AdminRoomProto) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{79}
+}
+
+func (x *AdminRoomProto) GetRoomId() string {
+	if x != nil {
+		return x.RoomId
+	}
+	return ""
+}
+
+func (x *AdminRoomProto) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *AdminRoomProto) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *AdminRoomProto) GetMemberCount() int32 {
+	if x != nil {
+		return x.MemberCount
+	}
+	return 0
+}
+
+func (x *AdminRoomProto) GetCreatedAt() int64 {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return 0
+}
+
+// AdminRoomDetailProto — full room detail
+type AdminRoomDetailProto struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RoomId        string                 `protobuf:"bytes,1,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
+	MemberCount   int32                  `protobuf:"varint,4,opt,name=member_count,json=memberCount,proto3" json:"member_count,omitempty"`
+	MaxMembers    int32                  `protobuf:"varint,5,opt,name=max_members,json=maxMembers,proto3" json:"max_members,omitempty"` // 0 = no limit
+	Visibility    string                 `protobuf:"bytes,6,opt,name=visibility,proto3" json:"visibility,omitempty"`                    // "public" | "private"
+	CreatedAt     int64                  `protobuf:"varint,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AdminRoomDetailProto) Reset() {
+	*x = AdminRoomDetailProto{}
+	mi := &file_core_proto_msgTypes[80]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AdminRoomDetailProto) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AdminRoomDetailProto) ProtoMessage() {}
+
+func (x *AdminRoomDetailProto) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[80]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AdminRoomDetailProto.ProtoReflect.Descriptor instead.
+func (*AdminRoomDetailProto) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{80}
+}
+
+func (x *AdminRoomDetailProto) GetRoomId() string {
+	if x != nil {
+		return x.RoomId
+	}
+	return ""
+}
+
+func (x *AdminRoomDetailProto) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *AdminRoomDetailProto) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *AdminRoomDetailProto) GetMemberCount() int32 {
+	if x != nil {
+		return x.MemberCount
+	}
+	return 0
+}
+
+func (x *AdminRoomDetailProto) GetMaxMembers() int32 {
+	if x != nil {
+		return x.MaxMembers
+	}
+	return 0
+}
+
+func (x *AdminRoomDetailProto) GetVisibility() string {
+	if x != nil {
+		return x.Visibility
+	}
+	return ""
+}
+
+func (x *AdminRoomDetailProto) GetCreatedAt() int64 {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return 0
+}
+
+// ListAdminRooms
+type ListAdminRoomsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Limit         int32                  `protobuf:"varint,1,opt,name=limit,proto3" json:"limit,omitempty"`
+	Cursor        string                 `protobuf:"bytes,2,opt,name=cursor,proto3" json:"cursor,omitempty"`                                 // empty = first page
+	StatusFilter  string                 `protobuf:"bytes,3,opt,name=status_filter,json=statusFilter,proto3" json:"status_filter,omitempty"` // "active" | "archived" | "" (all)
+	Search        string                 `protobuf:"bytes,4,opt,name=search,proto3" json:"search,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListAdminRoomsRequest) Reset() {
+	*x = ListAdminRoomsRequest{}
+	mi := &file_core_proto_msgTypes[81]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAdminRoomsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAdminRoomsRequest) ProtoMessage() {}
+
+func (x *ListAdminRoomsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[81]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAdminRoomsRequest.ProtoReflect.Descriptor instead.
+func (*ListAdminRoomsRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{81}
+}
+
+func (x *ListAdminRoomsRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *ListAdminRoomsRequest) GetCursor() string {
+	if x != nil {
+		return x.Cursor
+	}
+	return ""
+}
+
+func (x *ListAdminRoomsRequest) GetStatusFilter() string {
+	if x != nil {
+		return x.StatusFilter
+	}
+	return ""
+}
+
+func (x *ListAdminRoomsRequest) GetSearch() string {
+	if x != nil {
+		return x.Search
+	}
+	return ""
+}
+
+type ListAdminRoomsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Rooms         []*AdminRoomProto      `protobuf:"bytes,1,rep,name=rooms,proto3" json:"rooms,omitempty"`
+	Total         int32                  `protobuf:"varint,2,opt,name=total,proto3" json:"total,omitempty"`
+	NextCursor    string                 `protobuf:"bytes,3,opt,name=next_cursor,json=nextCursor,proto3" json:"next_cursor,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListAdminRoomsResponse) Reset() {
+	*x = ListAdminRoomsResponse{}
+	mi := &file_core_proto_msgTypes[82]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAdminRoomsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAdminRoomsResponse) ProtoMessage() {}
+
+func (x *ListAdminRoomsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[82]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAdminRoomsResponse.ProtoReflect.Descriptor instead.
+func (*ListAdminRoomsResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{82}
+}
+
+func (x *ListAdminRoomsResponse) GetRooms() []*AdminRoomProto {
+	if x != nil {
+		return x.Rooms
+	}
+	return nil
+}
+
+func (x *ListAdminRoomsResponse) GetTotal() int32 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
+func (x *ListAdminRoomsResponse) GetNextCursor() string {
+	if x != nil {
+		return x.NextCursor
+	}
+	return ""
+}
+
+// GetAdminRoom
+type GetAdminRoomRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RoomId        string                 `protobuf:"bytes,1,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAdminRoomRequest) Reset() {
+	*x = GetAdminRoomRequest{}
+	mi := &file_core_proto_msgTypes[83]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAdminRoomRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAdminRoomRequest) ProtoMessage() {}
+
+func (x *GetAdminRoomRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[83]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAdminRoomRequest.ProtoReflect.Descriptor instead.
+func (*GetAdminRoomRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{83}
+}
+
+func (x *GetAdminRoomRequest) GetRoomId() string {
+	if x != nil {
+		return x.RoomId
+	}
+	return ""
+}
+
+type GetAdminRoomResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Room          *AdminRoomDetailProto  `protobuf:"bytes,1,opt,name=room,proto3" json:"room,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAdminRoomResponse) Reset() {
+	*x = GetAdminRoomResponse{}
+	mi := &file_core_proto_msgTypes[84]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAdminRoomResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAdminRoomResponse) ProtoMessage() {}
+
+func (x *GetAdminRoomResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[84]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAdminRoomResponse.ProtoReflect.Descriptor instead.
+func (*GetAdminRoomResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{84}
+}
+
+func (x *GetAdminRoomResponse) GetRoom() *AdminRoomDetailProto {
+	if x != nil {
+		return x.Room
+	}
+	return nil
+}
+
+// ServerConfigProto — server configuration (oidc_client_secret intentionally absent)
+type ServerConfigProto struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	InstanceName          string                 `protobuf:"bytes,1,opt,name=instance_name,json=instanceName,proto3" json:"instance_name,omitempty"`
+	OidcIssuer            string                 `protobuf:"bytes,2,opt,name=oidc_issuer,json=oidcIssuer,proto3" json:"oidc_issuer,omitempty"`
+	OidcClientId          string                 `protobuf:"bytes,3,opt,name=oidc_client_id,json=oidcClientId,proto3" json:"oidc_client_id,omitempty"`
+	RoomDefaultMaxMembers int32                  `protobuf:"varint,4,opt,name=room_default_max_members,json=roomDefaultMaxMembers,proto3" json:"room_default_max_members,omitempty"`
+	RoomDefaultVisibility string                 `protobuf:"bytes,5,opt,name=room_default_visibility,json=roomDefaultVisibility,proto3" json:"room_default_visibility,omitempty"`
+	AuditLogRetentionDays int32                  `protobuf:"varint,6,opt,name=audit_log_retention_days,json=auditLogRetentionDays,proto3" json:"audit_log_retention_days,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *ServerConfigProto) Reset() {
+	*x = ServerConfigProto{}
+	mi := &file_core_proto_msgTypes[85]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ServerConfigProto) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ServerConfigProto) ProtoMessage() {}
+
+func (x *ServerConfigProto) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[85]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ServerConfigProto.ProtoReflect.Descriptor instead.
+func (*ServerConfigProto) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{85}
+}
+
+func (x *ServerConfigProto) GetInstanceName() string {
+	if x != nil {
+		return x.InstanceName
+	}
+	return ""
+}
+
+func (x *ServerConfigProto) GetOidcIssuer() string {
+	if x != nil {
+		return x.OidcIssuer
+	}
+	return ""
+}
+
+func (x *ServerConfigProto) GetOidcClientId() string {
+	if x != nil {
+		return x.OidcClientId
+	}
+	return ""
+}
+
+func (x *ServerConfigProto) GetRoomDefaultMaxMembers() int32 {
+	if x != nil {
+		return x.RoomDefaultMaxMembers
+	}
+	return 0
+}
+
+func (x *ServerConfigProto) GetRoomDefaultVisibility() string {
+	if x != nil {
+		return x.RoomDefaultVisibility
+	}
+	return ""
+}
+
+func (x *ServerConfigProto) GetAuditLogRetentionDays() int32 {
+	if x != nil {
+		return x.AuditLogRetentionDays
+	}
+	return 0
+}
+
+// GetServerConfig
+type GetServerConfigRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetServerConfigRequest) Reset() {
+	*x = GetServerConfigRequest{}
+	mi := &file_core_proto_msgTypes[86]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetServerConfigRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetServerConfigRequest) ProtoMessage() {}
+
+func (x *GetServerConfigRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[86]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetServerConfigRequest.ProtoReflect.Descriptor instead.
+func (*GetServerConfigRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{86}
+}
+
+type GetServerConfigResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Config        *ServerConfigProto     `protobuf:"bytes,1,opt,name=config,proto3" json:"config,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetServerConfigResponse) Reset() {
+	*x = GetServerConfigResponse{}
+	mi := &file_core_proto_msgTypes[87]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetServerConfigResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetServerConfigResponse) ProtoMessage() {}
+
+func (x *GetServerConfigResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[87]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetServerConfigResponse.ProtoReflect.Descriptor instead.
+func (*GetServerConfigResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{87}
+}
+
+func (x *GetServerConfigResponse) GetConfig() *ServerConfigProto {
+	if x != nil {
+		return x.Config
+	}
+	return nil
+}
+
+// UpdateServerConfig — all fields optional (empty string / zero = do not update)
+type UpdateServerConfigRequest struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	InstanceName          string                 `protobuf:"bytes,1,opt,name=instance_name,json=instanceName,proto3" json:"instance_name,omitempty"`
+	OidcIssuer            string                 `protobuf:"bytes,2,opt,name=oidc_issuer,json=oidcIssuer,proto3" json:"oidc_issuer,omitempty"`
+	OidcClientId          string                 `protobuf:"bytes,3,opt,name=oidc_client_id,json=oidcClientId,proto3" json:"oidc_client_id,omitempty"`
+	RoomDefaultMaxMembers int32                  `protobuf:"varint,4,opt,name=room_default_max_members,json=roomDefaultMaxMembers,proto3" json:"room_default_max_members,omitempty"`
+	RoomDefaultVisibility string                 `protobuf:"bytes,5,opt,name=room_default_visibility,json=roomDefaultVisibility,proto3" json:"room_default_visibility,omitempty"`
+	AuditLogRetentionDays int32                  `protobuf:"varint,6,opt,name=audit_log_retention_days,json=auditLogRetentionDays,proto3" json:"audit_log_retention_days,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *UpdateServerConfigRequest) Reset() {
+	*x = UpdateServerConfigRequest{}
+	mi := &file_core_proto_msgTypes[88]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateServerConfigRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateServerConfigRequest) ProtoMessage() {}
+
+func (x *UpdateServerConfigRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[88]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateServerConfigRequest.ProtoReflect.Descriptor instead.
+func (*UpdateServerConfigRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{88}
+}
+
+func (x *UpdateServerConfigRequest) GetInstanceName() string {
+	if x != nil {
+		return x.InstanceName
+	}
+	return ""
+}
+
+func (x *UpdateServerConfigRequest) GetOidcIssuer() string {
+	if x != nil {
+		return x.OidcIssuer
+	}
+	return ""
+}
+
+func (x *UpdateServerConfigRequest) GetOidcClientId() string {
+	if x != nil {
+		return x.OidcClientId
+	}
+	return ""
+}
+
+func (x *UpdateServerConfigRequest) GetRoomDefaultMaxMembers() int32 {
+	if x != nil {
+		return x.RoomDefaultMaxMembers
+	}
+	return 0
+}
+
+func (x *UpdateServerConfigRequest) GetRoomDefaultVisibility() string {
+	if x != nil {
+		return x.RoomDefaultVisibility
+	}
+	return ""
+}
+
+func (x *UpdateServerConfigRequest) GetAuditLogRetentionDays() int32 {
+	if x != nil {
+		return x.AuditLogRetentionDays
+	}
+	return 0
+}
+
+type UpdateServerConfigResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateServerConfigResponse) Reset() {
+	*x = UpdateServerConfigResponse{}
+	mi := &file_core_proto_msgTypes[89]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateServerConfigResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateServerConfigResponse) ProtoMessage() {}
+
+func (x *UpdateServerConfigResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[89]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateServerConfigResponse.ProtoReflect.Descriptor instead.
+func (*UpdateServerConfigResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{89}
+}
+
+func (x *UpdateServerConfigResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+// UpgradeRoom — Story 9.8: atomic room version upgrade
+type UpgradeRoomRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OldRoomId     string                 `protobuf:"bytes,1,opt,name=old_room_id,json=oldRoomId,proto3" json:"old_room_id,omitempty"`
+	RequesterId   string                 `protobuf:"bytes,2,opt,name=requester_id,json=requesterId,proto3" json:"requester_id,omitempty"` // must be room owner (power_level >= 100)
+	NewVersion    string                 `protobuf:"bytes,3,opt,name=new_version,json=newVersion,proto3" json:"new_version,omitempty"`    // e.g. "10"
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpgradeRoomRequest) Reset() {
+	*x = UpgradeRoomRequest{}
+	mi := &file_core_proto_msgTypes[90]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpgradeRoomRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpgradeRoomRequest) ProtoMessage() {}
+
+func (x *UpgradeRoomRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[90]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpgradeRoomRequest.ProtoReflect.Descriptor instead.
+func (*UpgradeRoomRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{90}
+}
+
+func (x *UpgradeRoomRequest) GetOldRoomId() string {
+	if x != nil {
+		return x.OldRoomId
+	}
+	return ""
+}
+
+func (x *UpgradeRoomRequest) GetRequesterId() string {
+	if x != nil {
+		return x.RequesterId
+	}
+	return ""
+}
+
+func (x *UpgradeRoomRequest) GetNewVersion() string {
+	if x != nil {
+		return x.NewVersion
+	}
+	return ""
+}
+
+type UpgradeRoomResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NewRoomId     string                 `protobuf:"bytes,1,opt,name=new_room_id,json=newRoomId,proto3" json:"new_room_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpgradeRoomResponse) Reset() {
+	*x = UpgradeRoomResponse{}
+	mi := &file_core_proto_msgTypes[91]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpgradeRoomResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpgradeRoomResponse) ProtoMessage() {}
+
+func (x *UpgradeRoomResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[91]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpgradeRoomResponse.ProtoReflect.Descriptor instead.
+func (*UpgradeRoomResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{91}
+}
+
+func (x *UpgradeRoomResponse) GetNewRoomId() string {
+	if x != nil {
+		return x.NewRoomId
+	}
+	return ""
+}
+
+// AdminRoomMemberProto — Story 9.18: one member row in ListAdminRoomMembersResponse.
+// display_name is decrypted by the Elixir Core before sending; empty string on failure.
+type AdminRoomMemberProto struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	DisplayName   string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"` // decrypted; empty string if decryption fails
+	JoinedAt      int64                  `protobuf:"varint,3,opt,name=joined_at,json=joinedAt,proto3" json:"joined_at,omitempty"`         // Unix milliseconds
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AdminRoomMemberProto) Reset() {
+	*x = AdminRoomMemberProto{}
+	mi := &file_core_proto_msgTypes[92]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AdminRoomMemberProto) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AdminRoomMemberProto) ProtoMessage() {}
+
+func (x *AdminRoomMemberProto) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[92]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AdminRoomMemberProto.ProtoReflect.Descriptor instead.
+func (*AdminRoomMemberProto) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{92}
+}
+
+func (x *AdminRoomMemberProto) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *AdminRoomMemberProto) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *AdminRoomMemberProto) GetJoinedAt() int64 {
+	if x != nil {
+		return x.JoinedAt
+	}
+	return 0
+}
+
+// ListAdminRoomMembers — Story 9.18
+type ListAdminRoomMembersRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RoomId        string                 `protobuf:"bytes,1,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListAdminRoomMembersRequest) Reset() {
+	*x = ListAdminRoomMembersRequest{}
+	mi := &file_core_proto_msgTypes[93]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAdminRoomMembersRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAdminRoomMembersRequest) ProtoMessage() {}
+
+func (x *ListAdminRoomMembersRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[93]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAdminRoomMembersRequest.ProtoReflect.Descriptor instead.
+func (*ListAdminRoomMembersRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{93}
+}
+
+func (x *ListAdminRoomMembersRequest) GetRoomId() string {
+	if x != nil {
+		return x.RoomId
+	}
+	return ""
+}
+
+type ListAdminRoomMembersResponse struct {
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	Members       []*AdminRoomMemberProto `protobuf:"bytes,1,rep,name=members,proto3" json:"members,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListAdminRoomMembersResponse) Reset() {
+	*x = ListAdminRoomMembersResponse{}
+	mi := &file_core_proto_msgTypes[94]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAdminRoomMembersResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAdminRoomMembersResponse) ProtoMessage() {}
+
+func (x *ListAdminRoomMembersResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[94]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAdminRoomMembersResponse.ProtoReflect.Descriptor instead.
+func (*ListAdminRoomMembersResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{94}
+}
+
+func (x *ListAdminRoomMembersResponse) GetMembers() []*AdminRoomMemberProto {
+	if x != nil {
+		return x.Members
+	}
+	return nil
+}
+
+// GetRelations — Story 9-28 / 9-29
+// Returns all events that relate to parent_event_id via rel_type (e.g. "m.thread").
+// Story 9-29: rel_type empty = all relation types; event_type filters further.
+// dir: "b" = newest-first (DESC, default), "f" = oldest-first (ASC).
+// recurse: accepted without error; MVP passes through (Core may ignore).
+// from: opaque pagination token; empty = start from newest (dir=b) or oldest (dir=f).
+// Caller must be a joined member of the room.
+type GetRelationsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	RoomId        string                 `protobuf:"bytes,2,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
+	EventId       string                 `protobuf:"bytes,3,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`       // parent event ID (thread root)
+	RelType       string                 `protobuf:"bytes,4,opt,name=rel_type,json=relType,proto3" json:"rel_type,omitempty"`       // e.g. "m.thread"; empty = all relation types (Story 9-29)
+	Limit         int32                  `protobuf:"varint,5,opt,name=limit,proto3" json:"limit,omitempty"`                         // 0 = default 20; clamped to 100
+	EventType     string                 `protobuf:"bytes,6,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"` // filter by event type; empty = all event types (Story 9-29)
+	Dir           string                 `protobuf:"bytes,7,opt,name=dir,proto3" json:"dir,omitempty"`                              // "f" or "b" (default "b" = newest-first DESC) (Story 9-29)
+	Recurse       bool                   `protobuf:"varint,8,opt,name=recurse,proto3" json:"recurse,omitempty"`                     // accepted without error; MVP: same as dir=b (Story 9-29)
+	From          string                 `protobuf:"bytes,9,opt,name=from,proto3" json:"from,omitempty"`                            // opaque pagination token; empty = first page (Story 9-29)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetRelationsRequest) Reset() {
+	*x = GetRelationsRequest{}
+	mi := &file_core_proto_msgTypes[95]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetRelationsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetRelationsRequest) ProtoMessage() {}
+
+func (x *GetRelationsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[95]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetRelationsRequest.ProtoReflect.Descriptor instead.
+func (*GetRelationsRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{95}
+}
+
+func (x *GetRelationsRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *GetRelationsRequest) GetRoomId() string {
+	if x != nil {
+		return x.RoomId
+	}
+	return ""
+}
+
+func (x *GetRelationsRequest) GetEventId() string {
+	if x != nil {
+		return x.EventId
+	}
+	return ""
+}
+
+func (x *GetRelationsRequest) GetRelType() string {
+	if x != nil {
+		return x.RelType
+	}
+	return ""
+}
+
+func (x *GetRelationsRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *GetRelationsRequest) GetEventType() string {
+	if x != nil {
+		return x.EventType
+	}
+	return ""
+}
+
+func (x *GetRelationsRequest) GetDir() string {
+	if x != nil {
+		return x.Dir
+	}
+	return ""
+}
+
+func (x *GetRelationsRequest) GetRecurse() bool {
+	if x != nil {
+		return x.Recurse
+	}
+	return false
+}
+
+func (x *GetRelationsRequest) GetFrom() string {
+	if x != nil {
+		return x.From
+	}
+	return ""
+}
+
+type GetRelationsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Events        []*Event               `protobuf:"bytes,1,rep,name=events,proto3" json:"events,omitempty"`
+	NextBatch     string                 `protobuf:"bytes,2,opt,name=next_batch,json=nextBatch,proto3" json:"next_batch,omitempty"` // empty when no more pages
+	PrevBatch     string                 `protobuf:"bytes,3,opt,name=prev_batch,json=prevBatch,proto3" json:"prev_batch,omitempty"` // for dir=b pagination (Story 9-29)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetRelationsResponse) Reset() {
+	*x = GetRelationsResponse{}
+	mi := &file_core_proto_msgTypes[96]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetRelationsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetRelationsResponse) ProtoMessage() {}
+
+func (x *GetRelationsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[96]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetRelationsResponse.ProtoReflect.Descriptor instead.
+func (*GetRelationsResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{96}
+}
+
+func (x *GetRelationsResponse) GetEvents() []*Event {
+	if x != nil {
+		return x.Events
+	}
+	return nil
+}
+
+func (x *GetRelationsResponse) GetNextBatch() string {
+	if x != nil {
+		return x.NextBatch
+	}
+	return ""
+}
+
+func (x *GetRelationsResponse) GetPrevBatch() string {
+	if x != nil {
+		return x.PrevBatch
+	}
+	return ""
+}
+
+// GetEventRequest — Story 11-8: fetch a single event by ID, scoped to a room.
+// user_id is required for membership enforcement.
+type GetEventRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RoomId        string                 `protobuf:"bytes,1,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
+	EventId       string                 `protobuf:"bytes,2,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
+	UserId        string                 `protobuf:"bytes,3,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetEventRequest) Reset() {
+	*x = GetEventRequest{}
+	mi := &file_core_proto_msgTypes[97]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetEventRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetEventRequest) ProtoMessage() {}
+
+func (x *GetEventRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[97]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetEventRequest.ProtoReflect.Descriptor instead.
+func (*GetEventRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{97}
+}
+
+func (x *GetEventRequest) GetRoomId() string {
+	if x != nil {
+		return x.RoomId
+	}
+	return ""
+}
+
+func (x *GetEventRequest) GetEventId() string {
+	if x != nil {
+		return x.EventId
+	}
+	return ""
+}
+
+func (x *GetEventRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+// GetEventResponse — Story 11-8: the target event, fully serialized.
+// Returns NOT_FOUND if event does not exist in room.
+// Returns PERMISSION_DENIED if user is not a room member.
+type GetEventResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Event         *Event                 `protobuf:"bytes,1,opt,name=event,proto3" json:"event,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetEventResponse) Reset() {
+	*x = GetEventResponse{}
+	mi := &file_core_proto_msgTypes[98]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetEventResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetEventResponse) ProtoMessage() {}
+
+func (x *GetEventResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[98]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetEventResponse.ProtoReflect.Descriptor instead.
+func (*GetEventResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{98}
+}
+
+func (x *GetEventResponse) GetEvent() *Event {
+	if x != nil {
+		return x.Event
+	}
+	return nil
+}
+
+// ProfileInfo — one entry in SearchResult.profile_info map (keyed by user_id).
+type ProfileInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Displayname   string                 `protobuf:"bytes,1,opt,name=displayname,proto3" json:"displayname,omitempty"`
+	AvatarUrl     string                 `protobuf:"bytes,2,opt,name=avatar_url,json=avatarUrl,proto3" json:"avatar_url,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProfileInfo) Reset() {
+	*x = ProfileInfo{}
+	mi := &file_core_proto_msgTypes[99]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProfileInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProfileInfo) ProtoMessage() {}
+
+func (x *ProfileInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[99]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProfileInfo.ProtoReflect.Descriptor instead.
+func (*ProfileInfo) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{99}
+}
+
+func (x *ProfileInfo) GetDisplayname() string {
+	if x != nil {
+		return x.Displayname
+	}
+	return ""
+}
+
+func (x *ProfileInfo) GetAvatarUrl() string {
+	if x != nil {
+		return x.AvatarUrl
+	}
+	return ""
+}
+
+// SearchResult — one hit in a SearchMessagesResponse.
+type SearchResult struct {
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	Rank          float32                 `protobuf:"fixed32,1,opt,name=rank,proto3" json:"rank,omitempty"`                                                                                                          // ts_rank_cd score; higher = more relevant
+	Event         []byte                  `protobuf:"bytes,2,opt,name=event,proto3" json:"event,omitempty"`                                                                                                          // raw event JSON (same encoding as other bytes fields)
+	EventsBefore  [][]byte                `protobuf:"bytes,3,rep,name=events_before,json=eventsBefore,proto3" json:"events_before,omitempty"`                                                                        // up to 5 events before result event in same room
+	EventsAfter   [][]byte                `protobuf:"bytes,4,rep,name=events_after,json=eventsAfter,proto3" json:"events_after,omitempty"`                                                                           // up to 5 events after result event in same room
+	ProfileInfo   map[string]*ProfileInfo `protobuf:"bytes,5,rep,name=profile_info,json=profileInfo,proto3" json:"profile_info,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // keyed by user_id (sender + context senders)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SearchResult) Reset() {
+	*x = SearchResult{}
+	mi := &file_core_proto_msgTypes[100]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SearchResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SearchResult) ProtoMessage() {}
+
+func (x *SearchResult) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[100]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SearchResult.ProtoReflect.Descriptor instead.
+func (*SearchResult) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{100}
+}
+
+func (x *SearchResult) GetRank() float32 {
+	if x != nil {
+		return x.Rank
+	}
+	return 0
+}
+
+func (x *SearchResult) GetEvent() []byte {
+	if x != nil {
+		return x.Event
+	}
+	return nil
+}
+
+func (x *SearchResult) GetEventsBefore() [][]byte {
+	if x != nil {
+		return x.EventsBefore
+	}
+	return nil
+}
+
+func (x *SearchResult) GetEventsAfter() [][]byte {
+	if x != nil {
+		return x.EventsAfter
+	}
+	return nil
+}
+
+func (x *SearchResult) GetProfileInfo() map[string]*ProfileInfo {
+	if x != nil {
+		return x.ProfileInfo
+	}
+	return nil
+}
+
+// SearchMessagesRequest — Story 11.3: SearchMessages gRPC handler.
+// SECURITY: user_id field is IGNORED by the handler — user_id is extracted from
+// x-user-id gRPC metadata (set by Go JWTMiddleware). This field is present only
+// for client auditing/documentation; treating it as authoritative would bypass
+// all membership enforcement.
+type SearchMessagesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"` // IGNORED by handler — use x-user-id metadata
+	SearchTerm    string                 `protobuf:"bytes,2,opt,name=search_term,json=searchTerm,proto3" json:"search_term,omitempty"`
+	RoomFilter    []string               `protobuf:"bytes,3,rep,name=room_filter,json=roomFilter,proto3" json:"room_filter,omitempty"`       // client-requested room filter; intersected with membership
+	SenderFilter  []string               `protobuf:"bytes,4,rep,name=sender_filter,json=senderFilter,proto3" json:"sender_filter,omitempty"` // optional sender restriction (not yet enforced at DB layer)
+	Limit         int32                  `protobuf:"varint,5,opt,name=limit,proto3" json:"limit,omitempty"`                                  // 0 = default 10; server clamps to 1–100
+	NextBatch     string                 `protobuf:"bytes,6,opt,name=next_batch,json=nextBatch,proto3" json:"next_batch,omitempty"`          // opaque pagination token (base64-encoded offset int)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SearchMessagesRequest) Reset() {
+	*x = SearchMessagesRequest{}
+	mi := &file_core_proto_msgTypes[101]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SearchMessagesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SearchMessagesRequest) ProtoMessage() {}
+
+func (x *SearchMessagesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[101]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SearchMessagesRequest.ProtoReflect.Descriptor instead.
+func (*SearchMessagesRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{101}
+}
+
+func (x *SearchMessagesRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *SearchMessagesRequest) GetSearchTerm() string {
+	if x != nil {
+		return x.SearchTerm
+	}
+	return ""
+}
+
+func (x *SearchMessagesRequest) GetRoomFilter() []string {
+	if x != nil {
+		return x.RoomFilter
+	}
+	return nil
+}
+
+func (x *SearchMessagesRequest) GetSenderFilter() []string {
+	if x != nil {
+		return x.SenderFilter
+	}
+	return nil
+}
+
+func (x *SearchMessagesRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *SearchMessagesRequest) GetNextBatch() string {
+	if x != nil {
+		return x.NextBatch
+	}
+	return ""
+}
+
+// SearchMessagesResponse — Story 11.3.
+type SearchMessagesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Results       []*SearchResult        `protobuf:"bytes,1,rep,name=results,proto3" json:"results,omitempty"`
+	NextBatch     string                 `protobuf:"bytes,2,opt,name=next_batch,json=nextBatch,proto3" json:"next_batch,omitempty"`     // empty when no more results
+	TotalCount    int32                  `protobuf:"varint,3,opt,name=total_count,json=totalCount,proto3" json:"total_count,omitempty"` // approximate total matching events (for UI display)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SearchMessagesResponse) Reset() {
+	*x = SearchMessagesResponse{}
+	mi := &file_core_proto_msgTypes[102]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SearchMessagesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SearchMessagesResponse) ProtoMessage() {}
+
+func (x *SearchMessagesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[102]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SearchMessagesResponse.ProtoReflect.Descriptor instead.
+func (*SearchMessagesResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{102}
+}
+
+func (x *SearchMessagesResponse) GetResults() []*SearchResult {
+	if x != nil {
+		return x.Results
+	}
+	return nil
+}
+
+func (x *SearchMessagesResponse) GetNextBatch() string {
+	if x != nil {
+		return x.NextBatch
+	}
+	return ""
+}
+
+func (x *SearchMessagesResponse) GetTotalCount() int32 {
+	if x != nil {
+		return x.TotalCount
+	}
+	return 0
+}
+
 var File_core_proto protoreflect.FileDescriptor
 
 const file_core_proto_rawDesc = "" +
 	"\n" +
 	"\n" +
-	"core.proto\x12\x04core\"\xcb\x01\n" +
+	"core.proto\x12\x04core\"\x97\x02\n" +
 	"\x05Event\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x17\n" +
 	"\aroom_id\x18\x02 \x01(\tR\x06roomId\x12\x1b\n" +
@@ -3782,7 +5906,9 @@ const file_core_proto_rawDesc = "" +
 	"event_type\x18\x04 \x01(\tR\teventType\x12\x18\n" +
 	"\acontent\x18\x05 \x01(\fR\acontent\x12\x1b\n" +
 	"\torigin_ts\x18\x06 \x01(\x03R\boriginTs\x12\x1b\n" +
-	"\tserver_ts\x18\a \x01(\x03R\bserverTs\"\xb5\x01\n" +
+	"\tserver_ts\x18\a \x01(\x03R\bserverTs\x12\x1b\n" +
+	"\tstate_key\x18\b \x01(\tR\bstateKey\x12-\n" +
+	"\x12unsigned_relations\x18\t \x01(\fR\x11unsignedRelations\"\xf8\x01\n" +
 	"\x10SendEventRequest\x12\x17\n" +
 	"\aroom_id\x18\x01 \x01(\tR\x06roomId\x12\x1b\n" +
 	"\tsender_id\x18\x02 \x01(\tR\bsenderId\x12\x1d\n" +
@@ -3790,7 +5916,9 @@ const file_core_proto_rawDesc = "" +
 	"event_type\x18\x03 \x01(\tR\teventType\x12\x15\n" +
 	"\x06txn_id\x18\x04 \x01(\tR\x05txnId\x12\x18\n" +
 	"\acontent\x18\x05 \x01(\fR\acontent\x12\x1b\n" +
-	"\torigin_ts\x18\x06 \x01(\x03R\boriginTs\".\n" +
+	"\torigin_ts\x18\x06 \x01(\x03R\boriginTs\x12\x1b\n" +
+	"\tstate_key\x18\a \x01(\tR\bstateKey\x12$\n" +
+	"\x0eis_state_event\x18\b \x01(\bR\fisStateEvent\".\n" +
 	"\x11SendEventResponse\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\"\x96\x01\n" +
 	"\x11CreateRoomRequest\x12\x1d\n" +
@@ -3906,13 +6034,14 @@ const file_core_proto_rawDesc = "" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12\x1b\n" +
 	"\tstate_key\x18\x02 \x01(\tR\bstateKey\x12\x18\n" +
 	"\acontent\x18\x03 \x01(\fR\acontent\x12\x16\n" +
-	"\x06sender\x18\x04 \x01(\tR\x06sender\"n\n" +
+	"\x06sender\x18\x04 \x01(\tR\x06sender\"\x8b\x01\n" +
 	"\x13GetSyncDeltaRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x1f\n" +
 	"\vsince_token\x18\x02 \x01(\tR\n" +
 	"sinceToken\x12\x1d\n" +
 	"\n" +
-	"timeout_ms\x18\x03 \x01(\x03R\ttimeoutMs\"\x8d\x01\n" +
+	"timeout_ms\x18\x03 \x01(\x03R\ttimeoutMs\x12\x1b\n" +
+	"\tdevice_id\x18\x04 \x01(\tR\bdeviceId\"\x8d\x01\n" +
 	"\x14GetSyncDeltaResponse\x12\x1f\n" +
 	"\vsince_token\x18\x01 \x01(\tR\n" +
 	"sinceToken\x12$\n" +
@@ -4009,9 +6138,10 @@ const file_core_proto_rawDesc = "" +
 	"\x05state\x18\x04 \x03(\v2\x17.core.ContextStateEventR\x05state\x12\x1f\n" +
 	"\vstart_token\x18\x05 \x01(\tR\n" +
 	"startToken\x12\x1b\n" +
-	"\tend_token\x18\x06 \x01(\tR\bendToken\"8\n" +
+	"\tend_token\x18\x06 \x01(\tR\bendToken\"U\n" +
 	"\x1dInvalidateUserSessionsRequest\x12\x17\n" +
-	"\auser_id\x18\x01 \x01(\tR\x06userId\"0\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x1b\n" +
+	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\"0\n" +
 	"\x1eInvalidateUserSessionsResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\"U\n" +
 	"\x19UpdateRoomSettingsRequest\x12\x17\n" +
@@ -4030,7 +6160,163 @@ const file_core_proto_rawDesc = "" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\"#\n" +
 	"!InvalidateAllAdminSessionsRequest\"4\n" +
 	"\"InvalidateAllAdminSessionsResponse\x12\x0e\n" +
-	"\x02ok\x18\x01 \x01(\bR\x02ok2\xfc\x11\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\"\xcc\x01\n" +
+	"\x0eAdminUserProto\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12!\n" +
+	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12!\n" +
+	"\femail_masked\x18\x03 \x01(\tR\vemailMasked\x12\x1b\n" +
+	"\tis_active\x18\x04 \x01(\bR\bisActive\x12\x1f\n" +
+	"\vsystem_role\x18\x05 \x01(\tR\n" +
+	"systemRole\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\x06 \x01(\x03R\tcreatedAt\"]\n" +
+	"\x15ListAdminUsersRequest\x12\x14\n" +
+	"\x05limit\x18\x01 \x01(\x05R\x05limit\x12\x16\n" +
+	"\x06cursor\x18\x02 \x01(\tR\x06cursor\x12\x16\n" +
+	"\x06search\x18\x03 \x01(\tR\x06search\"{\n" +
+	"\x16ListAdminUsersResponse\x12*\n" +
+	"\x05users\x18\x01 \x03(\v2\x14.core.AdminUserProtoR\x05users\x12\x14\n" +
+	"\x05total\x18\x02 \x01(\x05R\x05total\x12\x1f\n" +
+	"\vnext_cursor\x18\x03 \x01(\tR\n" +
+	"nextCursor\".\n" +
+	"\x13GetAdminUserRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\"@\n" +
+	"\x14GetAdminUserResponse\x12(\n" +
+	"\x04user\x18\x01 \x01(\v2\x14.core.AdminUserProtoR\x04user\"0\n" +
+	"\x15DeactivateUserRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\"(\n" +
+	"\x16DeactivateUserResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\"0\n" +
+	"\x15ReactivateUserRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\"(\n" +
+	"\x16ReactivateUserResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\"D\n" +
+	"\x15UpdateUserRoleRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x12\n" +
+	"\x04role\x18\x02 \x01(\tR\x04role\"(\n" +
+	"\x16UpdateUserRoleResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\"\x97\x01\n" +
+	"\x0eAdminRoomProto\x12\x17\n" +
+	"\aroom_id\x18\x01 \x01(\tR\x06roomId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x16\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status\x12!\n" +
+	"\fmember_count\x18\x04 \x01(\x05R\vmemberCount\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\x05 \x01(\x03R\tcreatedAt\"\xde\x01\n" +
+	"\x14AdminRoomDetailProto\x12\x17\n" +
+	"\aroom_id\x18\x01 \x01(\tR\x06roomId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x16\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status\x12!\n" +
+	"\fmember_count\x18\x04 \x01(\x05R\vmemberCount\x12\x1f\n" +
+	"\vmax_members\x18\x05 \x01(\x05R\n" +
+	"maxMembers\x12\x1e\n" +
+	"\n" +
+	"visibility\x18\x06 \x01(\tR\n" +
+	"visibility\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\a \x01(\x03R\tcreatedAt\"\x82\x01\n" +
+	"\x15ListAdminRoomsRequest\x12\x14\n" +
+	"\x05limit\x18\x01 \x01(\x05R\x05limit\x12\x16\n" +
+	"\x06cursor\x18\x02 \x01(\tR\x06cursor\x12#\n" +
+	"\rstatus_filter\x18\x03 \x01(\tR\fstatusFilter\x12\x16\n" +
+	"\x06search\x18\x04 \x01(\tR\x06search\"{\n" +
+	"\x16ListAdminRoomsResponse\x12*\n" +
+	"\x05rooms\x18\x01 \x03(\v2\x14.core.AdminRoomProtoR\x05rooms\x12\x14\n" +
+	"\x05total\x18\x02 \x01(\x05R\x05total\x12\x1f\n" +
+	"\vnext_cursor\x18\x03 \x01(\tR\n" +
+	"nextCursor\".\n" +
+	"\x13GetAdminRoomRequest\x12\x17\n" +
+	"\aroom_id\x18\x01 \x01(\tR\x06roomId\"F\n" +
+	"\x14GetAdminRoomResponse\x12.\n" +
+	"\x04room\x18\x01 \x01(\v2\x1a.core.AdminRoomDetailProtoR\x04room\"\xa9\x02\n" +
+	"\x11ServerConfigProto\x12#\n" +
+	"\rinstance_name\x18\x01 \x01(\tR\finstanceName\x12\x1f\n" +
+	"\voidc_issuer\x18\x02 \x01(\tR\n" +
+	"oidcIssuer\x12$\n" +
+	"\x0eoidc_client_id\x18\x03 \x01(\tR\foidcClientId\x127\n" +
+	"\x18room_default_max_members\x18\x04 \x01(\x05R\x15roomDefaultMaxMembers\x126\n" +
+	"\x17room_default_visibility\x18\x05 \x01(\tR\x15roomDefaultVisibility\x127\n" +
+	"\x18audit_log_retention_days\x18\x06 \x01(\x05R\x15auditLogRetentionDays\"\x18\n" +
+	"\x16GetServerConfigRequest\"J\n" +
+	"\x17GetServerConfigResponse\x12/\n" +
+	"\x06config\x18\x01 \x01(\v2\x17.core.ServerConfigProtoR\x06config\"\xb1\x02\n" +
+	"\x19UpdateServerConfigRequest\x12#\n" +
+	"\rinstance_name\x18\x01 \x01(\tR\finstanceName\x12\x1f\n" +
+	"\voidc_issuer\x18\x02 \x01(\tR\n" +
+	"oidcIssuer\x12$\n" +
+	"\x0eoidc_client_id\x18\x03 \x01(\tR\foidcClientId\x127\n" +
+	"\x18room_default_max_members\x18\x04 \x01(\x05R\x15roomDefaultMaxMembers\x126\n" +
+	"\x17room_default_visibility\x18\x05 \x01(\tR\x15roomDefaultVisibility\x127\n" +
+	"\x18audit_log_retention_days\x18\x06 \x01(\x05R\x15auditLogRetentionDays\",\n" +
+	"\x1aUpdateServerConfigResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\"x\n" +
+	"\x12UpgradeRoomRequest\x12\x1e\n" +
+	"\vold_room_id\x18\x01 \x01(\tR\toldRoomId\x12!\n" +
+	"\frequester_id\x18\x02 \x01(\tR\vrequesterId\x12\x1f\n" +
+	"\vnew_version\x18\x03 \x01(\tR\n" +
+	"newVersion\"5\n" +
+	"\x13UpgradeRoomResponse\x12\x1e\n" +
+	"\vnew_room_id\x18\x01 \x01(\tR\tnewRoomId\"o\n" +
+	"\x14AdminRoomMemberProto\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12!\n" +
+	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12\x1b\n" +
+	"\tjoined_at\x18\x03 \x01(\x03R\bjoinedAt\"6\n" +
+	"\x1bListAdminRoomMembersRequest\x12\x17\n" +
+	"\aroom_id\x18\x01 \x01(\tR\x06roomId\"T\n" +
+	"\x1cListAdminRoomMembersResponse\x124\n" +
+	"\amembers\x18\x01 \x03(\v2\x1a.core.AdminRoomMemberProtoR\amembers\"\xf2\x01\n" +
+	"\x13GetRelationsRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x17\n" +
+	"\aroom_id\x18\x02 \x01(\tR\x06roomId\x12\x19\n" +
+	"\bevent_id\x18\x03 \x01(\tR\aeventId\x12\x19\n" +
+	"\brel_type\x18\x04 \x01(\tR\arelType\x12\x14\n" +
+	"\x05limit\x18\x05 \x01(\x05R\x05limit\x12\x1d\n" +
+	"\n" +
+	"event_type\x18\x06 \x01(\tR\teventType\x12\x10\n" +
+	"\x03dir\x18\a \x01(\tR\x03dir\x12\x18\n" +
+	"\arecurse\x18\b \x01(\bR\arecurse\x12\x12\n" +
+	"\x04from\x18\t \x01(\tR\x04from\"y\n" +
+	"\x14GetRelationsResponse\x12#\n" +
+	"\x06events\x18\x01 \x03(\v2\v.core.EventR\x06events\x12\x1d\n" +
+	"\n" +
+	"next_batch\x18\x02 \x01(\tR\tnextBatch\x12\x1d\n" +
+	"\n" +
+	"prev_batch\x18\x03 \x01(\tR\tprevBatch\"^\n" +
+	"\x0fGetEventRequest\x12\x17\n" +
+	"\aroom_id\x18\x01 \x01(\tR\x06roomId\x12\x19\n" +
+	"\bevent_id\x18\x02 \x01(\tR\aeventId\x12\x17\n" +
+	"\auser_id\x18\x03 \x01(\tR\x06userId\"5\n" +
+	"\x10GetEventResponse\x12!\n" +
+	"\x05event\x18\x01 \x01(\v2\v.core.EventR\x05event\"N\n" +
+	"\vProfileInfo\x12 \n" +
+	"\vdisplayname\x18\x01 \x01(\tR\vdisplayname\x12\x1d\n" +
+	"\n" +
+	"avatar_url\x18\x02 \x01(\tR\tavatarUrl\"\x9b\x02\n" +
+	"\fSearchResult\x12\x12\n" +
+	"\x04rank\x18\x01 \x01(\x02R\x04rank\x12\x14\n" +
+	"\x05event\x18\x02 \x01(\fR\x05event\x12#\n" +
+	"\revents_before\x18\x03 \x03(\fR\feventsBefore\x12!\n" +
+	"\fevents_after\x18\x04 \x03(\fR\veventsAfter\x12F\n" +
+	"\fprofile_info\x18\x05 \x03(\v2#.core.SearchResult.ProfileInfoEntryR\vprofileInfo\x1aQ\n" +
+	"\x10ProfileInfoEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12'\n" +
+	"\x05value\x18\x02 \x01(\v2\x11.core.ProfileInfoR\x05value:\x028\x01\"\xcc\x01\n" +
+	"\x15SearchMessagesRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x1f\n" +
+	"\vsearch_term\x18\x02 \x01(\tR\n" +
+	"searchTerm\x12\x1f\n" +
+	"\vroom_filter\x18\x03 \x03(\tR\n" +
+	"roomFilter\x12#\n" +
+	"\rsender_filter\x18\x04 \x03(\tR\fsenderFilter\x12\x14\n" +
+	"\x05limit\x18\x05 \x01(\x05R\x05limit\x12\x1d\n" +
+	"\n" +
+	"next_batch\x18\x06 \x01(\tR\tnextBatch\"\x86\x01\n" +
+	"\x16SearchMessagesResponse\x12,\n" +
+	"\aresults\x18\x01 \x03(\v2\x12.core.SearchResultR\aresults\x12\x1d\n" +
+	"\n" +
+	"next_batch\x18\x02 \x01(\tR\tnextBatch\x12\x1f\n" +
+	"\vtotal_count\x18\x03 \x01(\x05R\n" +
+	"totalCount2\xa6\x1a\n" +
 	"\vCoreService\x12<\n" +
 	"\tSendEvent\x12\x16.core.SendEventRequest\x1a\x17.core.SendEventResponse\x12?\n" +
 	"\n" +
@@ -4067,7 +6353,21 @@ const file_core_proto_rawDesc = "" +
 	"\x12UpdateRoomSettings\x12\x1f.core.UpdateRoomSettingsRequest\x1a .core.UpdateRoomSettingsResponse\x12B\n" +
 	"\vArchiveRoom\x12\x18.core.ArchiveRoomRequest\x1a\x19.core.ArchiveRoomResponse\x12H\n" +
 	"\rUnarchiveRoom\x12\x1a.core.UnarchiveRoomRequest\x1a\x1b.core.UnarchiveRoomResponse\x12o\n" +
-	"\x1aInvalidateAllAdminSessions\x12'.core.InvalidateAllAdminSessionsRequest\x1a(.core.InvalidateAllAdminSessionsResponseB'Z%github.com/nebu/nebu/internal/grpc/pbb\x06proto3"
+	"\x1aInvalidateAllAdminSessions\x12'.core.InvalidateAllAdminSessionsRequest\x1a(.core.InvalidateAllAdminSessionsResponse\x12K\n" +
+	"\x0eListAdminUsers\x12\x1b.core.ListAdminUsersRequest\x1a\x1c.core.ListAdminUsersResponse\x12E\n" +
+	"\fGetAdminUser\x12\x19.core.GetAdminUserRequest\x1a\x1a.core.GetAdminUserResponse\x12K\n" +
+	"\x0eDeactivateUser\x12\x1b.core.DeactivateUserRequest\x1a\x1c.core.DeactivateUserResponse\x12K\n" +
+	"\x0eReactivateUser\x12\x1b.core.ReactivateUserRequest\x1a\x1c.core.ReactivateUserResponse\x12K\n" +
+	"\x0eUpdateUserRole\x12\x1b.core.UpdateUserRoleRequest\x1a\x1c.core.UpdateUserRoleResponse\x12K\n" +
+	"\x0eListAdminRooms\x12\x1b.core.ListAdminRoomsRequest\x1a\x1c.core.ListAdminRoomsResponse\x12E\n" +
+	"\fGetAdminRoom\x12\x19.core.GetAdminRoomRequest\x1a\x1a.core.GetAdminRoomResponse\x12N\n" +
+	"\x0fGetServerConfig\x12\x1c.core.GetServerConfigRequest\x1a\x1d.core.GetServerConfigResponse\x12W\n" +
+	"\x12UpdateServerConfig\x12\x1f.core.UpdateServerConfigRequest\x1a .core.UpdateServerConfigResponse\x12B\n" +
+	"\vUpgradeRoom\x12\x18.core.UpgradeRoomRequest\x1a\x19.core.UpgradeRoomResponse\x12]\n" +
+	"\x14ListAdminRoomMembers\x12!.core.ListAdminRoomMembersRequest\x1a\".core.ListAdminRoomMembersResponse\x12E\n" +
+	"\fGetRelations\x12\x19.core.GetRelationsRequest\x1a\x1a.core.GetRelationsResponse\x129\n" +
+	"\bGetEvent\x12\x15.core.GetEventRequest\x1a\x16.core.GetEventResponse\x12K\n" +
+	"\x0eSearchMessages\x12\x1b.core.SearchMessagesRequest\x1a\x1c.core.SearchMessagesResponseB'Z%github.com/nebu/nebu/internal/grpc/pbb\x06proto3"
 
 var (
 	file_core_proto_rawDescOnce sync.Once
@@ -4081,7 +6381,7 @@ func file_core_proto_rawDescGZIP() []byte {
 	return file_core_proto_rawDescData
 }
 
-var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 68)
+var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 104)
 var file_core_proto_goTypes = []any{
 	(*Event)(nil),                              // 0: core.Event
 	(*SendEventRequest)(nil),                   // 1: core.SendEventRequest
@@ -4151,89 +6451,164 @@ var file_core_proto_goTypes = []any{
 	(*UnarchiveRoomResponse)(nil),              // 65: core.UnarchiveRoomResponse
 	(*InvalidateAllAdminSessionsRequest)(nil),  // 66: core.InvalidateAllAdminSessionsRequest
 	(*InvalidateAllAdminSessionsResponse)(nil), // 67: core.InvalidateAllAdminSessionsResponse
+	(*AdminUserProto)(nil),                     // 68: core.AdminUserProto
+	(*ListAdminUsersRequest)(nil),              // 69: core.ListAdminUsersRequest
+	(*ListAdminUsersResponse)(nil),             // 70: core.ListAdminUsersResponse
+	(*GetAdminUserRequest)(nil),                // 71: core.GetAdminUserRequest
+	(*GetAdminUserResponse)(nil),               // 72: core.GetAdminUserResponse
+	(*DeactivateUserRequest)(nil),              // 73: core.DeactivateUserRequest
+	(*DeactivateUserResponse)(nil),             // 74: core.DeactivateUserResponse
+	(*ReactivateUserRequest)(nil),              // 75: core.ReactivateUserRequest
+	(*ReactivateUserResponse)(nil),             // 76: core.ReactivateUserResponse
+	(*UpdateUserRoleRequest)(nil),              // 77: core.UpdateUserRoleRequest
+	(*UpdateUserRoleResponse)(nil),             // 78: core.UpdateUserRoleResponse
+	(*AdminRoomProto)(nil),                     // 79: core.AdminRoomProto
+	(*AdminRoomDetailProto)(nil),               // 80: core.AdminRoomDetailProto
+	(*ListAdminRoomsRequest)(nil),              // 81: core.ListAdminRoomsRequest
+	(*ListAdminRoomsResponse)(nil),             // 82: core.ListAdminRoomsResponse
+	(*GetAdminRoomRequest)(nil),                // 83: core.GetAdminRoomRequest
+	(*GetAdminRoomResponse)(nil),               // 84: core.GetAdminRoomResponse
+	(*ServerConfigProto)(nil),                  // 85: core.ServerConfigProto
+	(*GetServerConfigRequest)(nil),             // 86: core.GetServerConfigRequest
+	(*GetServerConfigResponse)(nil),            // 87: core.GetServerConfigResponse
+	(*UpdateServerConfigRequest)(nil),          // 88: core.UpdateServerConfigRequest
+	(*UpdateServerConfigResponse)(nil),         // 89: core.UpdateServerConfigResponse
+	(*UpgradeRoomRequest)(nil),                 // 90: core.UpgradeRoomRequest
+	(*UpgradeRoomResponse)(nil),                // 91: core.UpgradeRoomResponse
+	(*AdminRoomMemberProto)(nil),               // 92: core.AdminRoomMemberProto
+	(*ListAdminRoomMembersRequest)(nil),        // 93: core.ListAdminRoomMembersRequest
+	(*ListAdminRoomMembersResponse)(nil),       // 94: core.ListAdminRoomMembersResponse
+	(*GetRelationsRequest)(nil),                // 95: core.GetRelationsRequest
+	(*GetRelationsResponse)(nil),               // 96: core.GetRelationsResponse
+	(*GetEventRequest)(nil),                    // 97: core.GetEventRequest
+	(*GetEventResponse)(nil),                   // 98: core.GetEventResponse
+	(*ProfileInfo)(nil),                        // 99: core.ProfileInfo
+	(*SearchResult)(nil),                       // 100: core.SearchResult
+	(*SearchMessagesRequest)(nil),              // 101: core.SearchMessagesRequest
+	(*SearchMessagesResponse)(nil),             // 102: core.SearchMessagesResponse
+	nil,                                        // 103: core.SearchResult.ProfileInfoEntry
 }
 var file_core_proto_depIdxs = []int32{
-	0,  // 0: core.GetMessagesResponse.events:type_name -> core.Event
-	0,  // 1: core.GetPendingEventsResponse.events:type_name -> core.Event
-	32, // 2: core.GetRoomStateResponse.state_events:type_name -> core.SyncRoomStateEvent
-	35, // 3: core.GetInitialSyncResponse.rooms:type_name -> core.SyncRoom
-	35, // 4: core.GetSyncDeltaResponse.rooms:type_name -> core.SyncRoom
-	32, // 5: core.SyncRoom.state_events:type_name -> core.SyncRoomStateEvent
-	0,  // 6: core.SyncRoom.timeline_events:type_name -> core.Event
-	53, // 7: core.ListPublicRoomsResponse.rooms:type_name -> core.RoomSummary
-	0,  // 8: core.GetEventContextResponse.event:type_name -> core.Event
-	0,  // 9: core.GetEventContextResponse.events_before:type_name -> core.Event
-	0,  // 10: core.GetEventContextResponse.events_after:type_name -> core.Event
-	56, // 11: core.GetEventContextResponse.state:type_name -> core.ContextStateEvent
-	1,  // 12: core.CoreService.SendEvent:input_type -> core.SendEventRequest
-	3,  // 13: core.CoreService.CreateRoom:input_type -> core.CreateRoomRequest
-	5,  // 14: core.CoreService.JoinRoom:input_type -> core.JoinRoomRequest
-	7,  // 15: core.CoreService.LeaveRoom:input_type -> core.LeaveRoomRequest
-	9,  // 16: core.CoreService.GetMessages:input_type -> core.GetMessagesRequest
-	11, // 17: core.CoreService.SetPresence:input_type -> core.SetPresenceRequest
-	13, // 18: core.CoreService.SetTyping:input_type -> core.SetTypingRequest
-	15, // 19: core.CoreService.ValidateToken:input_type -> core.ValidateTokenRequest
-	17, // 20: core.CoreService.GetPendingEvents:input_type -> core.GetPendingEventsRequest
-	19, // 21: core.CoreService.EventBus:input_type -> core.EventBusRequest
-	20, // 22: core.CoreService.GetMetrics:input_type -> core.GetMetricsRequest
-	24, // 23: core.CoreService.GetRoomState:input_type -> core.GetRoomStateRequest
-	22, // 24: core.CoreService.InviteUser:input_type -> core.InviteUserRequest
-	26, // 25: core.CoreService.SetPowerLevels:input_type -> core.SetPowerLevelsRequest
-	28, // 26: core.CoreService.SendReceipt:input_type -> core.SendReceiptRequest
-	30, // 27: core.CoreService.GetInitialSync:input_type -> core.GetInitialSyncRequest
-	33, // 28: core.CoreService.GetSyncDelta:input_type -> core.GetSyncDeltaRequest
-	36, // 29: core.CoreService.GetPresence:input_type -> core.GetPresenceRequest
-	38, // 30: core.CoreService.UpdateProfile:input_type -> core.UpdateProfileRequest
-	40, // 31: core.CoreService.WriteAuditLog:input_type -> core.WriteAuditLogRequest
-	42, // 32: core.CoreService.DeleteUserKeys:input_type -> core.DeleteUserKeysRequest
-	44, // 33: core.CoreService.KickUser:input_type -> core.KickUserRequest
-	46, // 34: core.CoreService.BanUser:input_type -> core.BanUserRequest
-	48, // 35: core.CoreService.UnbanUser:input_type -> core.UnbanUserRequest
-	50, // 36: core.CoreService.ForgetRoom:input_type -> core.ForgetRoomRequest
-	52, // 37: core.CoreService.ListPublicRooms:input_type -> core.ListPublicRoomsRequest
-	55, // 38: core.CoreService.GetEventContext:input_type -> core.GetEventContextRequest
-	58, // 39: core.CoreService.InvalidateUserSessions:input_type -> core.InvalidateUserSessionsRequest
-	60, // 40: core.CoreService.UpdateRoomSettings:input_type -> core.UpdateRoomSettingsRequest
-	62, // 41: core.CoreService.ArchiveRoom:input_type -> core.ArchiveRoomRequest
-	64, // 42: core.CoreService.UnarchiveRoom:input_type -> core.UnarchiveRoomRequest
-	66, // 43: core.CoreService.InvalidateAllAdminSessions:input_type -> core.InvalidateAllAdminSessionsRequest
-	2,  // 44: core.CoreService.SendEvent:output_type -> core.SendEventResponse
-	4,  // 45: core.CoreService.CreateRoom:output_type -> core.CreateRoomResponse
-	6,  // 46: core.CoreService.JoinRoom:output_type -> core.JoinRoomResponse
-	8,  // 47: core.CoreService.LeaveRoom:output_type -> core.LeaveRoomResponse
-	10, // 48: core.CoreService.GetMessages:output_type -> core.GetMessagesResponse
-	12, // 49: core.CoreService.SetPresence:output_type -> core.SetPresenceResponse
-	14, // 50: core.CoreService.SetTyping:output_type -> core.SetTypingResponse
-	16, // 51: core.CoreService.ValidateToken:output_type -> core.ValidateTokenResponse
-	18, // 52: core.CoreService.GetPendingEvents:output_type -> core.GetPendingEventsResponse
-	0,  // 53: core.CoreService.EventBus:output_type -> core.Event
-	21, // 54: core.CoreService.GetMetrics:output_type -> core.GetMetricsResponse
-	25, // 55: core.CoreService.GetRoomState:output_type -> core.GetRoomStateResponse
-	23, // 56: core.CoreService.InviteUser:output_type -> core.InviteUserResponse
-	27, // 57: core.CoreService.SetPowerLevels:output_type -> core.SetPowerLevelsResponse
-	29, // 58: core.CoreService.SendReceipt:output_type -> core.SendReceiptResponse
-	31, // 59: core.CoreService.GetInitialSync:output_type -> core.GetInitialSyncResponse
-	34, // 60: core.CoreService.GetSyncDelta:output_type -> core.GetSyncDeltaResponse
-	37, // 61: core.CoreService.GetPresence:output_type -> core.GetPresenceResponse
-	39, // 62: core.CoreService.UpdateProfile:output_type -> core.UpdateProfileResponse
-	41, // 63: core.CoreService.WriteAuditLog:output_type -> core.WriteAuditLogResponse
-	43, // 64: core.CoreService.DeleteUserKeys:output_type -> core.DeleteUserKeysResponse
-	45, // 65: core.CoreService.KickUser:output_type -> core.KickUserResponse
-	47, // 66: core.CoreService.BanUser:output_type -> core.BanUserResponse
-	49, // 67: core.CoreService.UnbanUser:output_type -> core.UnbanUserResponse
-	51, // 68: core.CoreService.ForgetRoom:output_type -> core.ForgetRoomResponse
-	54, // 69: core.CoreService.ListPublicRooms:output_type -> core.ListPublicRoomsResponse
-	57, // 70: core.CoreService.GetEventContext:output_type -> core.GetEventContextResponse
-	59, // 71: core.CoreService.InvalidateUserSessions:output_type -> core.InvalidateUserSessionsResponse
-	61, // 72: core.CoreService.UpdateRoomSettings:output_type -> core.UpdateRoomSettingsResponse
-	63, // 73: core.CoreService.ArchiveRoom:output_type -> core.ArchiveRoomResponse
-	65, // 74: core.CoreService.UnarchiveRoom:output_type -> core.UnarchiveRoomResponse
-	67, // 75: core.CoreService.InvalidateAllAdminSessions:output_type -> core.InvalidateAllAdminSessionsResponse
-	44, // [44:76] is the sub-list for method output_type
-	12, // [12:44] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	0,   // 0: core.GetMessagesResponse.events:type_name -> core.Event
+	0,   // 1: core.GetPendingEventsResponse.events:type_name -> core.Event
+	32,  // 2: core.GetRoomStateResponse.state_events:type_name -> core.SyncRoomStateEvent
+	35,  // 3: core.GetInitialSyncResponse.rooms:type_name -> core.SyncRoom
+	35,  // 4: core.GetSyncDeltaResponse.rooms:type_name -> core.SyncRoom
+	32,  // 5: core.SyncRoom.state_events:type_name -> core.SyncRoomStateEvent
+	0,   // 6: core.SyncRoom.timeline_events:type_name -> core.Event
+	53,  // 7: core.ListPublicRoomsResponse.rooms:type_name -> core.RoomSummary
+	0,   // 8: core.GetEventContextResponse.event:type_name -> core.Event
+	0,   // 9: core.GetEventContextResponse.events_before:type_name -> core.Event
+	0,   // 10: core.GetEventContextResponse.events_after:type_name -> core.Event
+	56,  // 11: core.GetEventContextResponse.state:type_name -> core.ContextStateEvent
+	68,  // 12: core.ListAdminUsersResponse.users:type_name -> core.AdminUserProto
+	68,  // 13: core.GetAdminUserResponse.user:type_name -> core.AdminUserProto
+	79,  // 14: core.ListAdminRoomsResponse.rooms:type_name -> core.AdminRoomProto
+	80,  // 15: core.GetAdminRoomResponse.room:type_name -> core.AdminRoomDetailProto
+	85,  // 16: core.GetServerConfigResponse.config:type_name -> core.ServerConfigProto
+	92,  // 17: core.ListAdminRoomMembersResponse.members:type_name -> core.AdminRoomMemberProto
+	0,   // 18: core.GetRelationsResponse.events:type_name -> core.Event
+	0,   // 19: core.GetEventResponse.event:type_name -> core.Event
+	103, // 20: core.SearchResult.profile_info:type_name -> core.SearchResult.ProfileInfoEntry
+	100, // 21: core.SearchMessagesResponse.results:type_name -> core.SearchResult
+	99,  // 22: core.SearchResult.ProfileInfoEntry.value:type_name -> core.ProfileInfo
+	1,   // 23: core.CoreService.SendEvent:input_type -> core.SendEventRequest
+	3,   // 24: core.CoreService.CreateRoom:input_type -> core.CreateRoomRequest
+	5,   // 25: core.CoreService.JoinRoom:input_type -> core.JoinRoomRequest
+	7,   // 26: core.CoreService.LeaveRoom:input_type -> core.LeaveRoomRequest
+	9,   // 27: core.CoreService.GetMessages:input_type -> core.GetMessagesRequest
+	11,  // 28: core.CoreService.SetPresence:input_type -> core.SetPresenceRequest
+	13,  // 29: core.CoreService.SetTyping:input_type -> core.SetTypingRequest
+	15,  // 30: core.CoreService.ValidateToken:input_type -> core.ValidateTokenRequest
+	17,  // 31: core.CoreService.GetPendingEvents:input_type -> core.GetPendingEventsRequest
+	19,  // 32: core.CoreService.EventBus:input_type -> core.EventBusRequest
+	20,  // 33: core.CoreService.GetMetrics:input_type -> core.GetMetricsRequest
+	24,  // 34: core.CoreService.GetRoomState:input_type -> core.GetRoomStateRequest
+	22,  // 35: core.CoreService.InviteUser:input_type -> core.InviteUserRequest
+	26,  // 36: core.CoreService.SetPowerLevels:input_type -> core.SetPowerLevelsRequest
+	28,  // 37: core.CoreService.SendReceipt:input_type -> core.SendReceiptRequest
+	30,  // 38: core.CoreService.GetInitialSync:input_type -> core.GetInitialSyncRequest
+	33,  // 39: core.CoreService.GetSyncDelta:input_type -> core.GetSyncDeltaRequest
+	36,  // 40: core.CoreService.GetPresence:input_type -> core.GetPresenceRequest
+	38,  // 41: core.CoreService.UpdateProfile:input_type -> core.UpdateProfileRequest
+	40,  // 42: core.CoreService.WriteAuditLog:input_type -> core.WriteAuditLogRequest
+	42,  // 43: core.CoreService.DeleteUserKeys:input_type -> core.DeleteUserKeysRequest
+	44,  // 44: core.CoreService.KickUser:input_type -> core.KickUserRequest
+	46,  // 45: core.CoreService.BanUser:input_type -> core.BanUserRequest
+	48,  // 46: core.CoreService.UnbanUser:input_type -> core.UnbanUserRequest
+	50,  // 47: core.CoreService.ForgetRoom:input_type -> core.ForgetRoomRequest
+	52,  // 48: core.CoreService.ListPublicRooms:input_type -> core.ListPublicRoomsRequest
+	55,  // 49: core.CoreService.GetEventContext:input_type -> core.GetEventContextRequest
+	58,  // 50: core.CoreService.InvalidateUserSessions:input_type -> core.InvalidateUserSessionsRequest
+	60,  // 51: core.CoreService.UpdateRoomSettings:input_type -> core.UpdateRoomSettingsRequest
+	62,  // 52: core.CoreService.ArchiveRoom:input_type -> core.ArchiveRoomRequest
+	64,  // 53: core.CoreService.UnarchiveRoom:input_type -> core.UnarchiveRoomRequest
+	66,  // 54: core.CoreService.InvalidateAllAdminSessions:input_type -> core.InvalidateAllAdminSessionsRequest
+	69,  // 55: core.CoreService.ListAdminUsers:input_type -> core.ListAdminUsersRequest
+	71,  // 56: core.CoreService.GetAdminUser:input_type -> core.GetAdminUserRequest
+	73,  // 57: core.CoreService.DeactivateUser:input_type -> core.DeactivateUserRequest
+	75,  // 58: core.CoreService.ReactivateUser:input_type -> core.ReactivateUserRequest
+	77,  // 59: core.CoreService.UpdateUserRole:input_type -> core.UpdateUserRoleRequest
+	81,  // 60: core.CoreService.ListAdminRooms:input_type -> core.ListAdminRoomsRequest
+	83,  // 61: core.CoreService.GetAdminRoom:input_type -> core.GetAdminRoomRequest
+	86,  // 62: core.CoreService.GetServerConfig:input_type -> core.GetServerConfigRequest
+	88,  // 63: core.CoreService.UpdateServerConfig:input_type -> core.UpdateServerConfigRequest
+	90,  // 64: core.CoreService.UpgradeRoom:input_type -> core.UpgradeRoomRequest
+	93,  // 65: core.CoreService.ListAdminRoomMembers:input_type -> core.ListAdminRoomMembersRequest
+	95,  // 66: core.CoreService.GetRelations:input_type -> core.GetRelationsRequest
+	97,  // 67: core.CoreService.GetEvent:input_type -> core.GetEventRequest
+	101, // 68: core.CoreService.SearchMessages:input_type -> core.SearchMessagesRequest
+	2,   // 69: core.CoreService.SendEvent:output_type -> core.SendEventResponse
+	4,   // 70: core.CoreService.CreateRoom:output_type -> core.CreateRoomResponse
+	6,   // 71: core.CoreService.JoinRoom:output_type -> core.JoinRoomResponse
+	8,   // 72: core.CoreService.LeaveRoom:output_type -> core.LeaveRoomResponse
+	10,  // 73: core.CoreService.GetMessages:output_type -> core.GetMessagesResponse
+	12,  // 74: core.CoreService.SetPresence:output_type -> core.SetPresenceResponse
+	14,  // 75: core.CoreService.SetTyping:output_type -> core.SetTypingResponse
+	16,  // 76: core.CoreService.ValidateToken:output_type -> core.ValidateTokenResponse
+	18,  // 77: core.CoreService.GetPendingEvents:output_type -> core.GetPendingEventsResponse
+	0,   // 78: core.CoreService.EventBus:output_type -> core.Event
+	21,  // 79: core.CoreService.GetMetrics:output_type -> core.GetMetricsResponse
+	25,  // 80: core.CoreService.GetRoomState:output_type -> core.GetRoomStateResponse
+	23,  // 81: core.CoreService.InviteUser:output_type -> core.InviteUserResponse
+	27,  // 82: core.CoreService.SetPowerLevels:output_type -> core.SetPowerLevelsResponse
+	29,  // 83: core.CoreService.SendReceipt:output_type -> core.SendReceiptResponse
+	31,  // 84: core.CoreService.GetInitialSync:output_type -> core.GetInitialSyncResponse
+	34,  // 85: core.CoreService.GetSyncDelta:output_type -> core.GetSyncDeltaResponse
+	37,  // 86: core.CoreService.GetPresence:output_type -> core.GetPresenceResponse
+	39,  // 87: core.CoreService.UpdateProfile:output_type -> core.UpdateProfileResponse
+	41,  // 88: core.CoreService.WriteAuditLog:output_type -> core.WriteAuditLogResponse
+	43,  // 89: core.CoreService.DeleteUserKeys:output_type -> core.DeleteUserKeysResponse
+	45,  // 90: core.CoreService.KickUser:output_type -> core.KickUserResponse
+	47,  // 91: core.CoreService.BanUser:output_type -> core.BanUserResponse
+	49,  // 92: core.CoreService.UnbanUser:output_type -> core.UnbanUserResponse
+	51,  // 93: core.CoreService.ForgetRoom:output_type -> core.ForgetRoomResponse
+	54,  // 94: core.CoreService.ListPublicRooms:output_type -> core.ListPublicRoomsResponse
+	57,  // 95: core.CoreService.GetEventContext:output_type -> core.GetEventContextResponse
+	59,  // 96: core.CoreService.InvalidateUserSessions:output_type -> core.InvalidateUserSessionsResponse
+	61,  // 97: core.CoreService.UpdateRoomSettings:output_type -> core.UpdateRoomSettingsResponse
+	63,  // 98: core.CoreService.ArchiveRoom:output_type -> core.ArchiveRoomResponse
+	65,  // 99: core.CoreService.UnarchiveRoom:output_type -> core.UnarchiveRoomResponse
+	67,  // 100: core.CoreService.InvalidateAllAdminSessions:output_type -> core.InvalidateAllAdminSessionsResponse
+	70,  // 101: core.CoreService.ListAdminUsers:output_type -> core.ListAdminUsersResponse
+	72,  // 102: core.CoreService.GetAdminUser:output_type -> core.GetAdminUserResponse
+	74,  // 103: core.CoreService.DeactivateUser:output_type -> core.DeactivateUserResponse
+	76,  // 104: core.CoreService.ReactivateUser:output_type -> core.ReactivateUserResponse
+	78,  // 105: core.CoreService.UpdateUserRole:output_type -> core.UpdateUserRoleResponse
+	82,  // 106: core.CoreService.ListAdminRooms:output_type -> core.ListAdminRoomsResponse
+	84,  // 107: core.CoreService.GetAdminRoom:output_type -> core.GetAdminRoomResponse
+	87,  // 108: core.CoreService.GetServerConfig:output_type -> core.GetServerConfigResponse
+	89,  // 109: core.CoreService.UpdateServerConfig:output_type -> core.UpdateServerConfigResponse
+	91,  // 110: core.CoreService.UpgradeRoom:output_type -> core.UpgradeRoomResponse
+	94,  // 111: core.CoreService.ListAdminRoomMembers:output_type -> core.ListAdminRoomMembersResponse
+	96,  // 112: core.CoreService.GetRelations:output_type -> core.GetRelationsResponse
+	98,  // 113: core.CoreService.GetEvent:output_type -> core.GetEventResponse
+	102, // 114: core.CoreService.SearchMessages:output_type -> core.SearchMessagesResponse
+	69,  // [69:115] is the sub-list for method output_type
+	23,  // [23:69] is the sub-list for method input_type
+	23,  // [23:23] is the sub-list for extension type_name
+	23,  // [23:23] is the sub-list for extension extendee
+	0,   // [0:23] is the sub-list for field type_name
 }
 
 func init() { file_core_proto_init() }
@@ -4251,7 +6626,7 @@ func file_core_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_core_proto_rawDesc), len(file_core_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   68,
+			NumMessages:   104,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

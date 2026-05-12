@@ -18,7 +18,9 @@ package matrix
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 
 	coregrpc "github.com/nebu/nebu/internal/grpc"
@@ -48,12 +50,14 @@ type membershipActionRequest struct {
 type ModerationHandler struct {
 	coreClient ModerationCoreClient
 	serverName string
+	db         *sql.DB // optional: enables forgotten_rooms persistence for /forget (GAP-FORGET)
 }
 
 // ModerationConfig holds dependencies for NewModerationHandler.
 type ModerationConfig struct {
 	CoreClient ModerationCoreClient
 	ServerName string
+	DB         *sql.DB // optional: enables forgotten_rooms persistence for /forget (GAP-FORGET)
 }
 
 // NewModerationHandler constructs a ModerationHandler from the provided config.
@@ -61,6 +65,7 @@ func NewModerationHandler(cfg ModerationConfig) *ModerationHandler {
 	return &ModerationHandler{
 		coreClient: cfg.CoreClient,
 		serverName: cfg.ServerName,
+		db:         cfg.DB,
 	}
 }
 
@@ -225,6 +230,20 @@ func (h *ModerationHandler) PostForgetRoom(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		grpcErrToModerationHTTP(w, err)
 		return
+	}
+
+	// GAP-FORGET: persist the forget so buildLeaveRooms excludes this room from future syncs.
+	// Idempotent via ON CONFLICT DO NOTHING. We do NOT fail the request on a DB error here:
+	// the gRPC ForgetRoom precondition has already succeeded, so returning 500 would mislead
+	// clients into believing the forget did not take effect. Instead, surface the error in
+	// observability so an operator can repair the forgotten_rooms table out-of-band.
+	if h.db != nil {
+		if _, err := h.db.ExecContext(r.Context(),
+			`INSERT INTO forgotten_rooms (user_id, room_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+			userID, roomID); err != nil {
+			slog.Warn("PostForgetRoom: forgotten_rooms INSERT failed",
+				"err", err, "userID", userID, "roomID", roomID)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

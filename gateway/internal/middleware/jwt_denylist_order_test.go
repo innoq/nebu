@@ -40,7 +40,7 @@ func TestJWT_InvalidTokenSkipsDBLookup(t *testing.T) {
 	provider := auth.NewProvider(context.Background(), srv.URL)
 
 	handler := middleware.JWTMiddleware(
-		provider, "nebu-gateway", "nebu_role", panicStore{},
+		provider, "nebu-gateway", "nebu_role", panicStore{}, nil,
 	)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("inner handler must not be reached for invalid token")
 		w.WriteHeader(http.StatusOK)
@@ -81,7 +81,7 @@ func TestJWT_ValidThenDenylisted_Returns401(t *testing.T) {
 	store := &boolStore{invalidated: true}
 
 	handler := middleware.JWTMiddleware(
-		provider, "nebu-gateway", "nebu_role", store,
+		provider, "nebu-gateway", "nebu_role", store, nil,
 	)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("inner handler must not be reached for denylisted token")
 		w.WriteHeader(http.StatusOK)
@@ -118,7 +118,7 @@ func TestJWT_ValidNotDenylisted_Returns200(t *testing.T) {
 
 	called := false
 	handler := middleware.JWTMiddleware(
-		provider, "nebu-gateway", "nebu_role", store,
+		provider, "nebu-gateway", "nebu_role", store, nil,
 	)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusOK)
@@ -152,7 +152,7 @@ func TestJWT_DenylistOnlyOnVerified_PrometheusMetric(t *testing.T) {
 	store := &boolStore{invalidated: false}
 
 	handler := middleware.JWTMiddleware(
-		provider, "nebu-gateway", "nebu_role", store,
+		provider, "nebu-gateway", "nebu_role", store, nil,
 	)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))

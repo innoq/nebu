@@ -92,6 +92,9 @@ defmodule Nebu.Room.PowerLevelEnforcementTest do
 
     # Story 6.9: get_room_status/1 returns {:ok, "active"} — normal rooms start correctly.
     def get_room_status(_room_id), do: {:ok, "active"}
+
+    # Story 9-9: TOCTOU fix — returns {:ok, "active"} for normal rooms.
+    def check_room_status_for_update(_room_id), do: {:ok, "active"}
   end
 
   defmodule FailingWriteDB do
@@ -105,6 +108,8 @@ defmodule Nebu.Room.PowerLevelEnforcementTest do
     def load_room_settings(_room_id), do: {:error, :db_connection_lost}
     # Story 6.9: fail-open — if get_room_status errors, GenServer starts normally.
     def get_room_status(_room_id), do: {:ok, "active"}
+    # Story 9-9: TOCTOU fix — fail-open semantics, proceed on DB error.
+    def check_room_status_for_update(_room_id), do: {:ok, "active"}
   end
 
   # ─── Setup ──────────────────────────────────────────────────────────────────

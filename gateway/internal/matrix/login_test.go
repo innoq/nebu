@@ -16,6 +16,8 @@ import (
 	josejwt "github.com/go-jose/go-jose/v4/jwt"
 	"github.com/nebu/nebu/internal/auth"
 	pb "github.com/nebu/nebu/internal/grpc/pb"
+	"github.com/nebu/nebu/internal/middleware"
+	"google.golang.org/grpc"
 )
 
 type mockCoreClient struct {
@@ -25,6 +27,16 @@ type mockCoreClient struct {
 
 func (m *mockCoreClient) ValidateToken(ctx context.Context, req *pb.ValidateTokenRequest) (*pb.ValidateTokenResponse, error) {
 	return m.validateResp, m.validateErr
+}
+
+// Story 11.3: SearchMessages stub.
+func (m *mockCoreClient) SearchMessages(_ context.Context, _ *pb.SearchMessagesRequest, _ ...grpc.CallOption) (*pb.SearchMessagesResponse, error) {
+	return &pb.SearchMessagesResponse{}, nil
+}
+
+// Story 11-8: GetEvent stub — not called in login tests.
+func (m *mockCoreClient) GetEvent(_ context.Context, _ *pb.GetEventRequest, _ ...grpc.CallOption) (*pb.GetEventResponse, error) {
+	panic("unexpected call: GetEvent")
 }
 
 func setupOIDCServer(t *testing.T) (*httptest.Server, *rsa.PrivateKey) {
@@ -257,10 +269,10 @@ func TestPostLogin(t *testing.T) {
 				if resp.TokenType != "Bearer" {
 					t.Errorf("expected token_type Bearer, got %s", resp.TokenType)
 				}
-				// login.go resolves displayName from preferred_username first ("kai.mueller"),
-				// then falls back to name claim. FormatUserIDFromClaims → @kai.mueller:localhost.
-				if resp.UserID != "@kai.mueller:localhost" {
-					t.Errorf("expected user_id @kai.mueller:localhost, got %s", resp.UserID)
+				// login.go uses the "name" claim as the oidc_user_id_claim fallback (AC7, Story 11-10).
+				// The test JWT has name="test-sub-123", so FormatUserIDFromClaims("name", ...) → @test-sub-123:localhost.
+				if resp.UserID != "@test-sub-123:localhost" {
+					t.Errorf("expected user_id @test-sub-123:localhost, got %s", resp.UserID)
 				}
 				if len(resp.DeviceID) == 0 {
 					t.Error("device_id should not be empty")
@@ -324,4 +336,57 @@ func TestPostLogin_ArrayGroupClaim(t *testing.T) {
 	}
 
 	_ = capturedSystemRole // role is passed via gRPC metadata; 200 response confirms correct flow
+}
+
+// TestPostLogin_DenylistRejectsInvalidatedJWT verifies that PostLogin returns
+// 403 M_FORBIDDEN when the JWT has been previously invalidated (logged out).
+//
+// This guards against the Safari re-login failure scenario:
+//   - Dex returns the same cached id_token despite prompt=login
+//   - The nonce check in GetSSOCallback rejects it, but as defense-in-depth
+//     PostLogin also rejects any invalidated JWT submitted via the raw-JWT fallback.
+//
+// Without this check, an invalidated JWT would be accepted by PostLogin and
+// returned as access_token. The first /sync would then receive 401 (denylist hit)
+// and Element would land on #/welcome instead of the room list.
+func TestPostLogin_DenylistRejectsInvalidatedJWT(t *testing.T) {
+	t.Parallel()
+
+	srv, key := setupOIDCServer(t)
+	provider := auth.NewProvider(context.Background(), srv.URL)
+
+	jwtToken := signJWT(t, srv.URL, key, time.Now().Add(time.Hour), nil)
+
+	// Pre-populate the denylist with this JWT (simulating a prior logout).
+	denylist := middleware.NewDenylist()
+	if err := denylist.Invalidate(jwtToken, time.Now().Add(time.Hour)); err != nil {
+		t.Fatalf("Invalidate: %v", err)
+	}
+
+	h := NewLoginHandler(LoginConfig{
+		DisplayName: "Test SSO",
+		Provider:    provider,
+		CoreClient:  &mockCoreClient{},
+		Store:       denylist,
+		ServerName:  "localhost",
+		ClientID:    "nebu-gateway",
+	})
+
+	body := fmt.Sprintf(`{"type":"m.login.token","token":"%s"}`, jwtToken)
+	req := httptest.NewRequest(http.MethodPost, "/_matrix/client/v3/login", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	h.PostLogin(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for invalidated JWT, got %d; body: %s", w.Code, w.Body.String())
+	}
+	var errResp matrixError
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+	if errResp.ErrCode != "M_FORBIDDEN" {
+		t.Errorf("expected M_FORBIDDEN, got %s", errResp.ErrCode)
+	}
 }

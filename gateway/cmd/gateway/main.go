@@ -18,6 +18,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -40,6 +41,14 @@ import (
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+)
+
+// Build-time metadata — injected via -ldflags at Docker build time.
+// Fallback to "unknown" when built locally without ldflags.
+var (
+	buildVersion = "unknown"
+	gitCommit    = "unknown"
+	buildTime    = "unknown"
 )
 
 // coreMetricsAdapter adapts *coregrpc.Client to satisfy the admin.MetricsReader interface.
@@ -73,6 +82,54 @@ func (a *coreMetricsAdapter) GetMetrics(ctx context.Context) (float64, int, int,
 		return 0, 0, 0, fmt.Errorf("core unavailable")
 	}
 	return float64(resp.MsgPerSec), int(resp.ActiveSessions), int(resp.RoomCount), nil
+}
+
+// claimLoader is a TTL-cached loader for server_config claim values (MAJOR-3 fix, Story 11-10).
+// It reduces per-request DB queries (oidc_user_id_claim etc.) from 1-per-request to at most
+// 1-per-ttl, while still allowing live updates without a gateway restart.
+// On load failure the stale value is returned (fail-open) to avoid blocking all auth.
+type claimLoader struct {
+	mu       sync.Mutex
+	value    string
+	loadedAt time.Time
+	ttl      time.Duration
+	loadFn   func(ctx context.Context) (string, error)
+}
+
+// get returns the cached claim value, refreshing from DB if the TTL has expired.
+// On DB error the stale cached value is returned (fail-open) and the error is logged internally.
+// Callers receive only the string value — the fail-open contract means callers do not
+// need to handle errors; a transient DB failure silently returns the stale value.
+func (c *claimLoader) get(ctx context.Context) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if time.Since(c.loadedAt) < c.ttl {
+		return c.value
+	}
+	v, err := c.loadFn(ctx)
+	if err != nil {
+		slog.Warn("claimLoader: DB refresh failed, returning stale value", "err", err)
+		return c.value // return stale on error (fail-open)
+	}
+	c.value = v
+	c.loadedAt = time.Now()
+	return c.value
+}
+
+// newServerConfigClaimLoader returns a claimLoader that reads the given key from
+// server_config via the ServerConfigReader interface with a 60s TTL.
+// The envOverride (if non-empty) bypasses the DB entirely (backward-compat escape hatch).
+// Using ServerConfigReader avoids embedding raw SQL outside the admin package (MINOR-5).
+func newServerConfigClaimLoader(reader admin.ServerConfigReader, key, envOverride string) *claimLoader {
+	return &claimLoader{
+		ttl: 60 * time.Second,
+		loadFn: func(ctx context.Context) (string, error) {
+			if envOverride != "" {
+				return envOverride, nil
+			}
+			return reader.LoadServerConfigKey(ctx, key)
+		},
+	}
 }
 
 func main() {
@@ -171,6 +228,7 @@ func main() {
 	healthHandler := health.NewHandler(cfg.DBURL, coreClient)
 	pubMux.HandleFunc("GET /health", healthHandler.Health)
 	pubMux.HandleFunc("GET /ready", healthHandler.Ready)
+	pubMux.HandleFunc("GET /info", health.NewInfoHandler("gateway", buildVersion, gitCommit, buildTime))
 	pubMux.Handle("GET /metrics", promhttp.Handler())
 
 	go func() {
@@ -232,6 +290,9 @@ func main() {
 	mediumRL := middleware.NewIPRateLimiter(middleware.RateLimitConfig{Rate: rate.Limit(30.0 / 60.0), Burst: 10}, trustedProxy, "medium")
 	// looseRL: remaining unauthenticated public endpoints — 300 req/min, burst 100.
 	looseRL := middleware.NewIPRateLimiter(middleware.RateLimitConfig{Rate: rate.Limit(300.0 / 60.0), Burst: 100}, trustedProxy, "loose")
+	// searchRL: POST /_matrix/client/v3/search — 10 req/min per authenticated user (Story 11-5).
+	// Per-user bucket (keyed on user_id from JWT context, not IP). Must be placed INSIDE jwtWithStatusCheck.
+	searchRL := middleware.NewUserRateLimiter(middleware.RateLimitConfig{Rate: rate.Limit(10.0 / 60.0), Burst: 10}, "search")
 	reg := registry.New()
 	regHandler := registry.NewHandler(reg)
 	pskHandler := middleware.PSKMiddleware(internalSecret)(regHandler)
@@ -250,12 +311,21 @@ func main() {
 		slog.Error("failed to initialize template handler", "err", err)
 		os.Exit(1)
 	}
+	// Story 11-9: inject build metadata into admin template footer.
+	admin.SetBuildInfo(buildVersion, gitCommit, buildTime)
 
 	adminAuth := admin.NewAdminAuth(oidcProvider, cfg.OIDCClientID, cfg.OIDCClientSecret, cfg.OIDCClaimRole, []byte(internalSecret), bootstrapDB, tmplHandler)
 	sessionStore := db.NewPostgresAdminSessionStore(bootstrapDB)
 	adminAuth.SetSessionStore(sessionStore)
 	adminAuth.SetCoreClient(coreClient.CoreServiceClient())
-	sessionGuard := admin.SessionGuardWithStore([]byte(internalSecret), sessionStore)
+	// Story 9.14: Use SessionGuardWithRefresh so expiring sessions are silently renewed
+	// via the OIDC token endpoint before the user is redirected to /admin/login.
+	sessionGuard := admin.SessionGuardWithRefresh(admin.SessionRefreshConfig{
+		Secret:       []byte(internalSecret),
+		Store:        sessionStore,
+		ConfigReader: adminAuth.ConfigReader(),
+		CoreClient:   coreClient.CoreServiceClient(),
+	})
 
 	// AC5: Periodically clean up expired admin sessions (once per hour).
 	go func() {
@@ -322,31 +392,54 @@ func main() {
 	mux.Handle("GET /admin/dashboard", csrf(sessionGuard(http.HandlerFunc(dashboardHandler.Handler))))
 
 	// Story 7.2: Users + Rooms master-detail routes — registered BEFORE catch-all
-	usersHandler := admin.NewUsersHandler(tmplHandler)
+	// Story 9.2: pass gRPC client so handlers use real Core RPCs instead of stubs.
+	usersHandler := admin.NewUsersHandler(tmplHandler, coreClient)
 	mux.Handle("GET /admin/users", csrf(sessionGuard(http.HandlerFunc(usersHandler.ListHandler))))
 	mux.Handle("GET /admin/users/{userId}", csrf(sessionGuard(http.HandlerFunc(usersHandler.DetailHandler))))
 	mux.Handle("POST /admin/users/{userId}/display-name", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(usersHandler.UpdateDisplayNameHandler)))))
 	mux.Handle("POST /admin/users/{userId}/role", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(usersHandler.UpdateRoleHandler)))))
 	mux.Handle("POST /admin/users/{userId}/deactivate", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(usersHandler.DeactivateUserHandler)))))
 	mux.Handle("POST /admin/users/{userId}/reactivate", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(usersHandler.ReactivateUserHandler)))))
-	roomsHandler := admin.NewRoomsHandler(tmplHandler)
+	// Story 9.3: pass gRPC client so handlers use real Core RPCs instead of stubs.
+	roomsHandler := admin.NewRoomsHandler(tmplHandler, coreClient)
 	mux.Handle("GET /admin/rooms", csrf(sessionGuard(http.HandlerFunc(roomsHandler.ListHandler))))
 	mux.Handle("GET /admin/rooms/{roomId}", csrf(sessionGuard(http.HandlerFunc(roomsHandler.DetailHandler))))
 	mux.Handle("POST /admin/rooms/{roomId}/name", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(roomsHandler.UpdateRoomNameHandler)))))
 	mux.Handle("POST /admin/rooms/{roomId}/archive", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(roomsHandler.ArchiveRoomHandler)))))
 	mux.Handle("POST /admin/rooms/{roomId}/unarchive", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(roomsHandler.UnarchiveRoomHandler)))))
+	mux.Handle("POST /admin/rooms/{roomId}/settings", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(roomsHandler.UpdateRoomSettingsHandler)))))
 	// Story 7.10: Server Configuration page.
-	configHandler := admin.NewConfigHandler(tmplHandler)
+	// Story 9.4: pass gRPC client so handler uses real Core RPCs instead of stubs.
+	configHandler := admin.NewConfigHandler(tmplHandler, coreClient)
 	mux.Handle("GET /admin/config", csrf(sessionGuard(http.HandlerFunc(configHandler.Handler))))
 	mux.Handle("POST /admin/config", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(configHandler.UpdateConfigHandler)))))
 
 	// Story 7.15: Role Mapping configuration page.
-	roleMappingHandler := admin.NewRoleMappingHandler(tmplHandler)
+	// Story 9.4: variadic client passed for future wiring; role mapping deferred to epic-9 follow-up.
+	roleMappingHandler := admin.NewRoleMappingHandler(tmplHandler, coreClient)
 	mux.Handle("GET /admin/config/role-mapping", csrf(sessionGuard(http.HandlerFunc(roleMappingHandler.Handler))))
 	mux.Handle("POST /admin/config/role-mapping", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(roleMappingHandler.UpdateHandler)))))
 
+	// Story 11-10: Claim Mapping configuration page.
+	// Reads/writes oidc_user_id_claim, oidc_displayname_claim, oidc_email_claim in server_config.
+	claimMappingHandler := admin.NewClaimMappingHandler(tmplHandler, adminAuth.ConfigReader())
+	claimMappingHandler.SetCoreClient(coreClient.CoreServiceClient())
+	mux.Handle("GET /admin/config/claim-mapping", csrf(sessionGuard(http.HandlerFunc(claimMappingHandler.Handler))))
+	mux.Handle("POST /admin/config/claim-mapping", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(claimMappingHandler.UpdateHandler)))))
+
 	// Story 7.11: Compliance Access Requests page (four-eyes approval UI).
-	complianceHandler := admin.NewComplianceHandler(tmplHandler)
+	// Story 9.5: wire real compliance DB so approve/reject persist via PostgreSQL.
+	adminComplianceDB, adminComplianceDBErr := sql.Open("pgx", cfg.DBURL)
+	if adminComplianceDBErr != nil {
+		slog.Error("failed to open DB for admin compliance handler", "err", adminComplianceDBErr)
+		os.Exit(1)
+	}
+	defer adminComplianceDB.Close()
+	complianceSvc := &admin.DBComplianceApprovalClient{
+		DB:         adminComplianceDB,
+		CoreClient: coreClient.CoreServiceClient(),
+	}
+	complianceHandler := admin.NewComplianceHandler(tmplHandler, complianceSvc)
 	mux.Handle("GET /admin/compliance", csrf(sessionGuard(http.HandlerFunc(complianceHandler.ListHandler))))
 	mux.Handle("POST /admin/compliance/{id}/approve", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(complianceHandler.ApproveHandler)))))
 	mux.Handle("POST /admin/compliance/{id}/reject", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(complianceHandler.RejectHandler)))))
@@ -423,15 +516,45 @@ func main() {
 		fmt.Fprintf(w, `{"m.homeserver":{"base_url":%q}}`, baseURL)
 	})))
 
+	tokenDB, err := sql.Open("pgx", cfg.DBURL)
+	if err != nil {
+		slog.Error("failed to open DB for token store", "err", err)
+		os.Exit(1)
+	}
+	defer tokenDB.Close()
+	tokenStore := db.NewPostgresTokenStore(tokenDB)
+
+	// Story 11-10 (AC5, AC7, MAJOR-3 fix): TTL-cached loaders for OIDC claim mapping.
+	// Each loader reads from server_config at most once per 60s — no per-request DB hit.
+	// Stale value is returned on DB error (fail-open) so auth is never blocked by a transient
+	// DB issue. NEBU_OIDC_USER_ID_CLAIM env var overrides DB for backward compat (AC7).
+	uidClaimCached := newServerConfigClaimLoader(adminAuth.ConfigReader(), "oidc_user_id_claim", os.Getenv("NEBU_OIDC_USER_ID_CLAIM"))
+	dnClaimCached := newServerConfigClaimLoader(adminAuth.ConfigReader(), "oidc_displayname_claim", "")
+	emailClaimCached := newServerConfigClaimLoader(adminAuth.ConfigReader(), "oidc_email_claim", "")
+
+	userIDClaimLoader := func(ctx context.Context) string {
+		return uidClaimCached.get(ctx)
+	}
+	displaynameClaimLoader := func(ctx context.Context) string {
+		return dnClaimCached.get(ctx)
+	}
+	emailClaimLoader := func(ctx context.Context) string {
+		return emailClaimCached.get(ctx)
+	}
+
 	loginHandler := matrix.NewLoginHandler(matrix.LoginConfig{
-		DisplayName:        cfg.OIDCDisplayName,
-		Provider:           oidcProvider,
-		CoreClient:         coreClient,
-		ServerName:         serverName,
-		ClientID:           cfg.OIDCClientID,
-		ClientSecret:       cfg.OIDCClientSecret,
-		RoleClaimName:      cfg.OIDCClaimRole,
-		SSORedirectSchemes: cfg.SSORedirectSchemes,
+		DisplayName:            cfg.OIDCDisplayName,
+		Provider:               oidcProvider,
+		CoreClient:             coreClient,
+		Store:                  tokenStore,
+		ServerName:             serverName,
+		ClientID:               cfg.OIDCClientID,
+		ClientSecret:           cfg.OIDCClientSecret,
+		RoleClaimName:          cfg.OIDCClaimRole,
+		SSORedirectSchemes:     cfg.SSORedirectSchemes,
+		UserIDClaimLoader:      userIDClaimLoader,
+		DisplaynameClaimLoader: displaynameClaimLoader,
+		EmailClaimLoader:       emailClaimLoader,
 	})
 	mux.Handle("GET /_matrix/client/v3/login", looseRL(http.HandlerFunc(loginHandler.GetLogin)))
 	mux.Handle("POST /_matrix/client/v3/login", strictRL(bodyLimit1MiB(http.HandlerFunc(loginHandler.PostLogin))))
@@ -440,16 +563,12 @@ func main() {
 	// /_matrix/client/v3/login/sso/redirect/oidc is registered in Dex redirectURIs.
 	mux.Handle("GET /_matrix/client/v3/login/sso/redirect", mediumRL(http.HandlerFunc(loginHandler.GetSSORedirect)))
 	mux.Handle("GET /_matrix/client/v3/login/sso/redirect/oidc", mediumRL(http.HandlerFunc(loginHandler.GetSSOCallback)))
-
-	tokenDB, err := sql.Open("pgx", cfg.DBURL)
-	if err != nil {
-		slog.Error("failed to open DB for token store", "err", err)
-		os.Exit(1)
-	}
-	defer tokenDB.Close()
-	tokenStore := db.NewPostgresTokenStore(tokenDB)
-	logoutHandler := matrix.NewLogoutHandler(tokenStore)
-	jwtMiddleware := middleware.JWTMiddleware(oidcProvider, cfg.OIDCClientID, cfg.OIDCClaimRole, tokenStore, serverName)
+	// AC4 (Story 9-22): wire Core gRPC client to logout handler for per-device sync-token cleanup.
+	logoutHandler := matrix.NewLogoutHandlerWithCore(matrix.LogoutConfig{
+		Store:      tokenStore,
+		CoreClient: coreClient.CoreServiceClient(),
+	})
+	jwtMiddleware := middleware.JWTMiddleware(oidcProvider, cfg.OIDCClientID, cfg.OIDCClaimRole, tokenStore, userIDClaimLoader, serverName)
 	// Story 6.5 (HIGH-1 fix): wrap jwtMiddleware with is_active check so ALL authenticated
 	// routes (Matrix, admin, compliance) reject tokens for deactivated users.
 	// 60s TTL cache per user; fail-open on DB error to avoid blocking on transient DB issues.
@@ -466,9 +585,10 @@ func main() {
 
 	// capabilities: Matrix clients check server feature flags before making API calls.
 	// looseRL: unauthenticated capabilities endpoint (300 req/min, burst 100).
+	// Story 9.8 (AC6): updated default room version to "10" and added "10" to available map.
 	mux.Handle("GET /_matrix/client/v3/capabilities", looseRL(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"capabilities":{"m.change_password":{"enabled":false},"m.room_versions":{"default":"6","available":{"6":"stable"}}}}`))
+		w.Write([]byte(`{"capabilities":{"m.change_password":{"enabled":false},"m.room_versions":{"default":"10","available":{"6":"stable","10":"stable"}}}}`))
 	})))
 
 	// MSC2965 OIDC-native auth metadata — not supported; return explicit 404 so
@@ -706,6 +826,40 @@ func main() {
 	mux.Handle("GET /_matrix/client/v3/rooms/{roomId}/context/{eventId}",
 		jwtWithStatusCheck(http.HandlerFunc(eventContextHandler.GetEventContext)))
 
+	// Story 11-8: Single event fetch — GET /_matrix/client/v3/rooms/{roomId}/event/{eventId}.
+	// JWT required. Element Web calls this from thread.ts fetchRootEvent() to load thread roots.
+	eventHandler := matrix.NewGetEventHandler(matrix.GetEventConfig{
+		CoreClient: coreClient,
+	})
+	mux.Handle("GET /_matrix/client/v3/rooms/{roomId}/event/{eventId}",
+		jwtWithStatusCheck(http.HandlerFunc(eventHandler.GetEvent)))
+
+	// Story 9-28 / 9-29: Thread Relations — all three /relations route variants.
+	// Matrix CS API v1 requires all three to be registered:
+	//   1. /relations/{eventId}                       — base route (fixes Element Web 404, Story 9-29)
+	//   2. /relations/{eventId}/{relType}              — filter by relation type (Story 9-28)
+	//   3. /relations/{eventId}/{relType}/{eventType}  — filter by both (Story 9-29)
+	// JWT required. All three variants share the same GetRelations handler method.
+	relationsHandler := matrix.NewGetRelationsHandler(matrix.GetRelationsConfig{
+		CoreClient: coreClient,
+	})
+	mux.Handle("GET /_matrix/client/v1/rooms/{roomId}/relations/{eventId}",
+		jwtWithStatusCheck(http.HandlerFunc(relationsHandler.GetRelations)))
+	mux.Handle("GET /_matrix/client/v1/rooms/{roomId}/relations/{eventId}/{relType}",
+		jwtWithStatusCheck(http.HandlerFunc(relationsHandler.GetRelations)))
+	mux.Handle("GET /_matrix/client/v1/rooms/{roomId}/relations/{eventId}/{relType}/{eventType}",
+		jwtWithStatusCheck(http.HandlerFunc(relationsHandler.GetRelations)))
+
+	// Story 11-4/11-5: Full-text search — POST /_matrix/client/v3/search.
+	// JWT required. 10 req/min per user (searchRL, Story 11-5). Delegates to Elixir Core SearchMessages gRPC.
+	// user_id sourced from JWT context; never from request body.
+	// Chain: bodyLimit → jwtWithStatusCheck → searchRL (inside JWT so ContextKeyUserID is set).
+	searchHandler := matrix.NewSearchHandler(matrix.SearchConfig{
+		CoreClient: coreClient,
+	})
+	mux.Handle("POST /_matrix/client/v3/search",
+		bodyLimit1MiB(jwtWithStatusCheck(searchRL(http.HandlerFunc(searchHandler.PostSearch)))))
+
 	// Story 7-29: Notifications API — GET /_matrix/client/v3/notifications.
 	// Reads from the notifications table (migration 000031) with cursor-based pagination.
 	// JWT required (jwtMiddleware). Query params: from (cursor), limit (default 50, max 200), only.
@@ -778,10 +932,11 @@ func main() {
 	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/invite",
 		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(inviteHandler.PostInviteUser))))
 
-	// Story 5-29e Bug 1: upgrade endpoint was missing, returning 404 from default mux fallback.
-	// This 501 stub prevents the 404 and signals the client that the server understands the
-	// endpoint but does not yet implement full room upgrade (tombstone + new room + state copy).
+	// Story 9.8: Full room upgrade implementation — calls Core.UpgradeRoom which atomically
+	// tombstones the old room, creates a new room with predecessor info, copies state events,
+	// and invites all former members.
 	upgradeRoomHandler := matrix.NewUpgradeRoomHandler(matrix.UpgradeRoomConfig{
+		CoreClient: coreClient,
 		ServerName: serverName,
 	})
 	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/upgrade",
@@ -818,12 +973,14 @@ func main() {
 	mux.Handle("PUT /_matrix/client/v3/rooms/{roomId}/state/{eventType}",
 		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(setRoomStateHandler.PutSetRoomState))))
 
+	postgresAccountDataDB := db.NewPostgresAccountDataDB(bootstrapDB)
 	syncHandler := matrix.NewGetSyncHandler(matrix.GetSyncConfig{
 		CoreClient:    coreClient,
 		ServerName:    serverName,
 		Buffer:        msgBuf,
 		DB:            bootstrapDB,                              // for rooms.invite pending invitation queries
-		AccountDataDB: db.NewPostgresAccountDataDB(bootstrapDB), // Story 7-24 AC4: account_data in sync
+		AccountDataDB: postgresAccountDataDB, // Story 7-24 AC4: per-room account_data in sync
+		GlobalAccountDataDB: postgresAccountDataDB, // Story 9-24: top-level global account_data in sync
 	})
 	mux.Handle("GET /_matrix/client/v3/sync",
 		jwtWithStatusCheck(http.HandlerFunc(syncHandler.GetSync)))
@@ -900,6 +1057,7 @@ func main() {
 	moderationHandler := matrix.NewModerationHandler(matrix.ModerationConfig{
 		CoreClient: coreClient,
 		ServerName: serverName,
+		DB:         bootstrapDB,
 	})
 	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/kick",
 		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(moderationHandler.PostKickUser))))

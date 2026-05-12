@@ -26,6 +26,22 @@ type AccountDataDB interface {
 	PutAccountData(ctx context.Context, userID, roomID, eventType string, content json.RawMessage) error
 }
 
+// GlobalAccountDataRow represents a single global account data event (room_id = '').
+// Used as the element type for GlobalAccountDataDB.ListGlobalAccountData results.
+type GlobalAccountDataRow struct {
+	EventType string
+	Content   json.RawMessage
+}
+
+// GlobalAccountDataDB is the consumer-defined interface for listing all global
+// account data for a user. Defined separately from AccountDataDB to keep
+// interfaces minimal (ADR-009 / Go interface convention).
+type GlobalAccountDataDB interface {
+	// ListGlobalAccountData returns all global account data rows (room_id = '')
+	// for the given userID. Returns an empty slice (not nil) when no rows exist.
+	ListGlobalAccountData(ctx context.Context, userID string) ([]GlobalAccountDataRow, error)
+}
+
 // AccountDataHandler handles the four Matrix account data endpoints:
 //
 //	GET  /_matrix/client/v3/user/{userId}/account_data/{type}

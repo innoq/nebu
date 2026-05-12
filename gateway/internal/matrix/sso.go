@@ -12,16 +12,18 @@ import (
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/nebu/nebu/internal/validate"
 	"golang.org/x/oauth2"
 )
 
 // ── SSO state store ───────────────────────────────────────────────────────────
 
-// ssoStateEntry holds the PKCE verifier and client redirectUrl for one SSO flow.
+// ssoStateEntry holds the PKCE verifier, nonce, and client redirectUrl for one SSO flow.
 // Keyed by the opaque `state` value sent to the IdP.
 type ssoStateEntry struct {
 	verifier    string
 	redirectURL string
+	nonce       string
 	exp         time.Time
 }
 
@@ -41,7 +43,7 @@ var globalSSOState = &ssoStateStore{store: make(map[string]ssoStateEntry)}
 // unbounded memory growth from unauthenticated requests (Story 5.21, AC 5).
 const ssoStateStoreMaxEntries = 10_000
 
-func (s *ssoStateStore) save(state, verifier, redirectURL string, ttl time.Duration) error {
+func (s *ssoStateStore) save(state, verifier, redirectURL, nonce string, ttl time.Duration) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now()
@@ -58,6 +60,7 @@ func (s *ssoStateStore) save(state, verifier, redirectURL string, ttl time.Durat
 	s.store[state] = ssoStateEntry{
 		verifier:    verifier,
 		redirectURL: redirectURL,
+		nonce:       nonce,
 		exp:         now.Add(ttl),
 	}
 	return nil
@@ -273,13 +276,19 @@ func (h *LoginHandler) GetSSORedirect(w http.ResponseWriter, r *http.Request) {
 
 	verifier := oauth2.GenerateVerifier()
 	stateBytes := make([]byte, 16)
+	nonceBytes := make([]byte, 16)
 	if _, err := rand.Read(stateBytes); err != nil {
 		writeMatrixError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal error")
 		return
 	}
+	if _, err := rand.Read(nonceBytes); err != nil {
+		writeMatrixError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal error")
+		return
+	}
 	state := hex.EncodeToString(stateBytes)
+	nonce := hex.EncodeToString(nonceBytes)
 
-	if err := globalSSOState.save(state, verifier, clientRedirectURL, 10*time.Minute); err != nil {
+	if err := globalSSOState.save(state, verifier, clientRedirectURL, nonce, 10*time.Minute); err != nil {
 		slog.Warn("matrix SSO: state store full, rejecting redirect request", "err", err)
 		writeMatrixError(w, http.StatusTooManyRequests, "M_LIMIT_EXCEEDED", "Too many pending SSO flows")
 		return
@@ -297,10 +306,19 @@ func (h *LoginHandler) GetSSORedirect(w http.ResponseWriter, r *http.Request) {
 	// return the same id_token that was already added to the denylist on logout,
 	// causing the first /sync after re-login to return 401 → Element lands on #/welcome.
 	// See: bugfix-logout-oidc-dex-session — OIDC Core 1.0 §3.1.2.1
+	//
+	// nonce ensures Dex includes a fresh, request-specific value in the id_token.
+	// Even if Dex caches tokens server-side, the nonce forces a new JWT string
+	// that cannot match any previously invalidated token in the denylist.
 	authURL := oauth2Config.AuthCodeURL(state,
 		oauth2.S256ChallengeOption(verifier),
 		oauth2.SetAuthURLParam("prompt", "login"),
+		oauth2.SetAuthURLParam("nonce", nonce),
 	)
+	// Cache-Control: no-store prevents Safari from caching the 302 redirect.
+	// A cached redirect would replay the old state on re-login, causing
+	// globalSSOState.pop() to fail (state already consumed) → 400 → welcome screen.
+	w.Header().Set("Cache-Control", "no-store")
 	http.Redirect(w, r, authURL, http.StatusFound)
 }
 
@@ -319,6 +337,10 @@ func (h *LoginHandler) GetSSOCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// pop() is called before nonce verification (below). If verification fails, the
+	// state entry is already consumed — any retry will receive 400 M_UNKNOWN instead
+	// of the more descriptive 403 M_FORBIDDEN. This is intentional: state entries are
+	// single-use by design (prevent replay). Do not restore the entry on failure.
 	entry, ok := globalSSOState.pop(state)
 	if !ok {
 		slog.Warn("matrix SSO: unknown or expired state", "state", state)
@@ -351,6 +373,45 @@ func (h *LoginHandler) GetSSOCallback(w http.ResponseWriter, r *http.Request) {
 	if !ok || rawIDToken == "" {
 		slog.Error("matrix SSO: id_token missing from token response")
 		writeMatrixError(w, http.StatusForbidden, "M_FORBIDDEN", "SSO response missing id_token")
+		return
+	}
+
+	// Verify the id_token here to extract and check the nonce claim. This is a
+	// preliminary verification whose sole purpose is nonce extraction — it does NOT
+	// replace the authoritative verification performed by PostLogin via its own
+	// oidc.Verifier. Both verifiers must stay: this one rejects stale/cached JWTs
+	// early (before issuing a loginToken), and PostLogin provides the final,
+	// authoritative verification that the token is valid and not in the denylist.
+	//
+	// The nonce was generated per-request in GetSSORedirect and stored in
+	// globalSSOState. Dex must include it in the id_token claims. If the nonce is
+	// missing or wrong, Dex returned a stale/cached JWT that does not belong to
+	// this SSO flow — reject it immediately to prevent a previously invalidated
+	// token from being issued as a new access_token (Path A fix, Story 11.7).
+	// Note: oidc.IDTokenVerifier does NOT check the nonce claim automatically —
+	// we extract and compare it ourselves below.
+	callbackVerifier := inner.Verifier(&oidc.Config{
+		ClientID:             h.clientID,
+		SupportedSigningAlgs: validate.SupportedAlgs(),
+	})
+	parsedToken, err := callbackVerifier.Verify(r.Context(), rawIDToken)
+	if err != nil {
+		slog.Error("matrix SSO: id_token verification failed in callback", "err", err)
+		writeMatrixError(w, http.StatusForbidden, "M_FORBIDDEN", "SSO token verification failed")
+		return
+	}
+	var nonceClaims struct {
+		Nonce string `json:"nonce"`
+	}
+	if err := parsedToken.Claims(&nonceClaims); err != nil {
+		slog.Error("matrix SSO: failed to extract nonce from id_token", "err", err)
+		writeMatrixError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal error")
+		return
+	}
+	if entry.nonce == "" || nonceClaims.Nonce != entry.nonce {
+		slog.Error("matrix SSO: nonce mismatch — Dex returned a stale or cached id_token",
+			"want_prefix", entry.nonce[:min(8, len(entry.nonce))], "got", nonceClaims.Nonce)
+		writeMatrixError(w, http.StatusForbidden, "M_FORBIDDEN", "SSO nonce mismatch — please try logging in again")
 		return
 	}
 

@@ -2,12 +2,14 @@
 name: bmad-pipeline
 description: >
   Orchestriert den kompletten BMAD-Entwicklungszyklus als automatische Pipeline:
-  bmad-create-story → bmad-testarch-atdd → bmad-dev-story → bmad-testarch-test-review
-  → bmad-code-review → bmad-security-review (Kassandra, conditional), jeweils in frischem Kontext.
-  Führt git add nach dev-story aus. Der Code-Review-Skill fixt Minor Issues selbst
-  ("fixe minor issues instantly"). Pausiert nur bei Major/Critical Issues (User-Entscheidung),
-  am Epic-Ende zwingend mit Kassandra-Security-Review und danach für die Retrospektive
-  (liest sprint-status.yaml).
+  bmad-create-story → bmad-testarch-atdd → bmad-dev-story → CI-Pipeline-Gate (build,
+  unit-go, unit-elixir, playwright-e2e, integration) → bmad-testarch-test-review
+  → bmad-code-review → bmad-security-review (Kassandra, conditional) → bmad-maintain-arc42,
+  jeweils in frischem Kontext. CI-Gate blockiert den Review bei Fehlern. E2E-Tests müssen
+  bei jeder UI-Story wachsen. Arc42 wird nach jeder Story delta-aktualisiert.
+  Der Code-Review-Skill fixt Minor Issues selbst ("fixe minor issues instantly").
+  Pausiert nur bei Major/Critical Issues (User-Entscheidung), am Epic-Ende zwingend
+  mit Kassandra-Security-Review und danach für die Retrospektive (liest sprint-status.yaml).
   Trigger: "bmad pipeline", "bmad run", "bmad start", "story pipeline", "neues feature",
   "story durchlaufen", "pipeline starten", immer wenn der User den kompletten BMAD-Flow
   starten will ohne jeden Schritt einzeln aufzurufen.
@@ -17,6 +19,23 @@ description: >
 
 Dieser Skill orchestriert den vollständigen BMAD-Entwicklungszyklus in einer einzigen
 Ausführung. Jeder Schritt läuft in einem eigenen, frischen Subagenten-Kontext.
+
+## Definition of Done (pro Story — harte Schranken)
+
+Bevor eine Story committed werden darf, MÜSSEN alle folgenden Punkte erfüllt sein:
+
+- [ ] Alle Acceptance Criteria haben mindestens einen Test (TEA Gate 2)
+- [ ] `make build-gateway && make build-core` — grün (CI Gate Build)
+- [ ] `make test-unit-go` — grün (CI Gate Unit Go)
+- [ ] `make test-unit-elixir` — grün (CI Gate Unit Elixir)
+- [ ] `make test-e2e` — grün gegen frischen Stack (CI Gate Playwright)
+  - Falls Story neues UI-Verhalten einführt: neue E2E-Tests in `e2e/tests/` oder `e2e/features/` vorhanden
+- [ ] `make test-integration` — grün (CI Gate Godog/Gherkin)
+- [ ] Code-Review: keine MAJOR/CRITICAL/HIGH Issues unbehandelt
+- [ ] Security-Review: CRITICAL/HIGH blockieren den Commit (conditional)
+- [ ] Arc42-Dokumentation aktualisiert (`/bmad-maintain-arc42`)
+
+---
 
 ## Ablauf-Übersicht
 
@@ -33,8 +52,18 @@ Ausführung. Jeder Schritt läuft in einem eigenen, frischen Subagenten-Kontext.
           ↓
        rtk git add .
           ↓
+[3b] CI Pipeline Gate (lokal)  ← DEF-OF-DONE Gate (keine Subagenten, direkte Shell)
+     make build-gateway + make build-core
+     make test-unit-go + make test-unit-elixir
+     docker compose down --volumes; docker compose up -d --wait  (frischer E2E-Stack)
+     make test-e2e  (Playwright — gegen laufenden Stack)
+     docker compose down
+     make test-integration  (Godog/Gherkin — startet eigenen Stack)
+     Alles grün → weiter | Fehler → Stopp, User entscheidet
+          ↓
 [4] bmad-testarch-test-review (Sonnet, frischer Kontext) ← TEA Gate 2
     Test-Qualität prüfen, Findings ausgeben
+    Prüft auch: neue E2E-Tests vorhanden wenn Story UI-Verhalten einführt?
           ↓
 [5] bmad-code-review         (Opus, frischer Kontext)
     "fixe minor issues instantly"
@@ -49,6 +78,10 @@ Ausführung. Jeder Schritt läuft in einem eigenen, frischen Subagenten-Kontext.
        → bmad-security-review (Kassandra) — staged diff
        → CRITICAL blockiert den Commit; HIGH konfigurierbar
        → Report nach _bmad-output/.../security-reports/
+          ↓
+[5c] Arc42-Dokumentation aktualisieren  ← DOC Gate (pro Story, pflicht)
+     /bmad-maintain-arc42 aufrufen
+     Geänderte arc42-Dateien stagen
           ↓
     Major/Critical/HIGH Issues aus [5] oder [5b] gefunden?
        Ja  → Pause, User entscheidet
@@ -215,6 +248,146 @@ Zeige: `✓ Schritt 3: Implementierung abgeschlossen, git add ausgeführt.`
 
 ---
 
+### Schritt 3b: CI Pipeline Gate (lokal — Definition of Done)
+
+**Pflicht** | Kein Subagent — direkte Shell-Befehle | Blockiert den Commit bei Fehler
+
+Vor dem Review muss die komplette lokale CI-Pipeline einmal grün durchlaufen.
+Dies ist eine harte Definition-of-Done-Schranke — kein Code-Review ohne grüne CI.
+
+#### 3b.1: Build
+
+```bash
+make build-gateway && make build-core
+```
+
+Bei Fehler:
+
+```
+🔴 CI Gate — Build fehlgeschlagen (Schritt 3b.1).
+Ausgabe siehe oben. Pipeline gestoppt.
+Behebe den Build-Fehler und starte ab Schritt 3b neu.
+```
+
+Stoppe und warte.
+
+Zeige bei Erfolg: `✓ 3b.1 Build: grün.`
+
+#### 3b.2: Unit Tests
+
+```bash
+make test-unit-go && make test-unit-elixir
+```
+
+Bei Fehler:
+
+```
+🔴 CI Gate — Unit Tests fehlgeschlagen (Schritt 3b.2).
+Ausgabe siehe oben. Pipeline gestoppt.
+Behebe die fehlgeschlagenen Tests und starte ab Schritt 3b neu.
+```
+
+Stoppe und warte.
+
+Zeige bei Erfolg: `✓ 3b.2 Unit Tests: grün (Go + Elixir).`
+
+#### 3b.3: E2E-Testumgebung frisch starten
+
+```bash
+docker compose down --volumes 2>/dev/null; docker compose up -d --wait
+```
+
+Wartet bis der Stack bereit ist (--wait). Bei Timeout (>120s): Stoppe mit Fehlermeldung.
+
+Zeige: `✓ 3b.3 E2E-Stack: gestartet (frischer Zustand).`
+
+#### 3b.4: Playwright E2E-Tests
+
+```bash
+cd e2e && npm install --silent && \
+npx playwright install chromium --with-deps --quiet && \
+npx playwright test
+```
+
+**Wichtig — E2E-Test-Wachstumspflicht:**
+Wenn die Story neues beobachtbares UI-Verhalten einführt (neue Seiten, neue Formulare,
+neue Interaktionen in der Admin-UI oder Bootstrap-Wizard), MÜSSEN neue Playwright-Tests
+in `e2e/tests/` oder `e2e/features/` vorhanden sein.
+
+Prüfe vor dem Ausführen:
+
+```bash
+rtk git diff --staged --name-only | grep -E "^e2e/tests/|^e2e/features/"
+```
+
+Falls keine neuen E2E-Tests und die Story enthält UI-Änderungen (grep in gestagten Dateien
+nach `gateway/internal/admin/templates/`, `.html`, `.ts` mit Event-Handler):
+
+```
+⚠️ CI Gate — E2E-Test-Wachstumslücke (Schritt 3b.4).
+Die Story führt UI-Verhalten ein, aber keine neuen Playwright-Tests wurden hinzugefügt.
+Dies ist ein MAJOR Finding (Definition of Done verletzt).
+Tippe "weiter" um trotzdem fortzufahren (mit expliziter Begründung),
+oder füge die fehlenden E2E-Tests hinzu.
+```
+
+Stoppe und warte. Bei "weiter" mit Begründung: notiere die Ausnahme für den Review-Bericht.
+
+Bei fehlgeschlagenen Tests:
+
+```
+🔴 CI Gate — Playwright E2E-Tests fehlgeschlagen (Schritt 3b.4).
+Ausgabe siehe oben. Pipeline gestoppt.
+Behebe die fehlgeschlagenen Tests und starte ab Schritt 3b.3 neu.
+```
+
+Stoppe und warte.
+
+Zeige bei Erfolg: `✓ 3b.4 Playwright E2E: grün.`
+
+#### 3b.5: E2E-Stack herunterfahren
+
+```bash
+docker compose down
+```
+
+Zeige: `✓ 3b.5 E2E-Stack: beendet.`
+
+#### 3b.6: Godog/Gherkin Integration Tests
+
+```bash
+make test-integration
+```
+
+(Startet automatisch frischen Stack, führt Godog-Tests aus, räumt auf.)
+
+Bei Fehler:
+
+```
+🔴 CI Gate — Integration Tests fehlgeschlagen (Schritt 3b.6).
+Ausgabe siehe oben. Pipeline gestoppt.
+Behebe die fehlgeschlagenen Tests und starte ab Schritt 3b.6 neu.
+```
+
+Stoppe und warte.
+
+Zeige bei Erfolg: `✓ 3b.6 Integration Tests (Godog): grün.`
+
+#### 3b.7: CI Gate — Ergebnis
+
+Zeige:
+
+```
+✓ Schritt 3b: CI Pipeline grün.
+  Build:            ✓
+  Unit Go:          ✓
+  Unit Elixir:      ✓
+  Playwright E2E:   ✓
+  Integration:      ✓
+```
+
+---
+
 ### Schritt 4: bmad-testarch-test-review (TEA Gate 2 — Test-Qualität)
 
 **Modell:** `claude-sonnet-4-6` | **Kontext:** frisch (Task-Tool) | **Pflicht**
@@ -228,8 +401,11 @@ Prüfe insbesondere:
 - Gibt es Hard Waits, versteckte Assertions oder nicht-deterministische Tests?
 - Haben GenServer-State-Stories einen Crash/Restart-Test?
 - Wird Cookie-Forging oder DB-Seeding als Shortcut verwendet?
+- Führt die Story neues UI-Verhalten ein? Falls ja: sind neue Playwright-Tests in e2e/tests/ oder e2e/features/ vorhanden?
+  E2E-Tests müssen mit jeder Story wachsen die neues beobachtbares Verhalten einführt.
+  Fehlende E2E-Tests bei UI-Stories = MAJOR Finding.
 Klassifiziere jeden Fund als MAJOR, MINOR oder INFO.
-MAJOR: fehlendes Test-Coverage für ein Acceptance Criterion.
+MAJOR: fehlendes Test-Coverage für ein Acceptance Criterion, fehlende E2E-Tests bei UI-Stories.
 Gib das vollständige Ergebnis aus und beende dann.
 ```
 
@@ -371,6 +547,55 @@ Zeige: `✓ Schritt 5b: Kassandra — clean.`
 [ -f /tmp/bmad-session-env.sh ] && source /tmp/bmad-session-env.sh
 rtk git add .
 ```
+
+---
+
+### Schritt 5c: Arc42-Dokumentation aktualisieren (pro Story — Pflicht)
+
+**Modell:** `claude-sonnet-4-6` | **Kontext:** frisch (Task-Tool) | **Pflicht nach jeder Story**
+
+Die arc42-Dokumentation muss nach jeder Story aktualisiert werden, bevor der Commit entsteht.
+Kein Commit ohne arc42-Delta-Update.
+
+```
+Lies und befolge die Anweisungen aus .claude/skills/bmad-maintain-arc42/SKILL.md.
+
+Story, die gerade abgeschlossen wurde: [STORY_DATEI_AUS_SCHRITT_1]
+Geänderte Dateien (gestagter Diff): [rtk git diff --staged --name-only]
+
+Führe ein Delta-Update der arc42-Dokumentation durch:
+- Welche Architektur-Entscheidungen, Komponenten oder Schnittstellen hat diese Story geändert?
+- Aktualisiere nur die Abschnitte, die von den Änderungen betroffen sind (kein Full-Rewrite).
+- Aktualisiere docs/.arc42-manifest.json (generated_at, affected_sections).
+
+Beende nach dem Update.
+```
+
+Warte auf Fertigstellung. Danach:
+
+```bash
+rtk git diff --name-only docs/
+```
+
+Falls keine Änderungen in `docs/` und die Story hat Architektur-relevante Änderungen
+(neue Endpoints, neue Services, geänderte Datenmodelle, neue gRPC-Handler, neue Middleware):
+
+```
+⚠️ Schritt 5c — Arc42 nicht aktualisiert.
+Die Story enthält Architektur-relevante Änderungen, aber docs/ blieb unverändert.
+Prüfe: Ist /bmad-maintain-arc42 korrekt ausgeführt worden?
+Tippe "weiter" um trotzdem fortzufahren (mit Begründung, warum keine Doku-Änderung nötig ist).
+```
+
+Stoppe und warte.
+
+Stagen:
+
+```bash
+rtk git add docs/
+```
+
+Zeige: `✓ Schritt 5c: Arc42-Dokumentation aktualisiert.`
 
 ---
 
@@ -555,9 +780,11 @@ Stoppe hier und warte auf den User.
 | Matrix-Gate Oracle (Schritt 1b, nur bei Matrix-Stories) | claude-sonnet-4-6 |
 | bmad-testarch-atdd           | claude-sonnet-4-6 |
 | bmad-dev-story               | claude-sonnet-4-6 |
+| CI Pipeline Gate (Schritt 3b) | kein Subagent — direkte Shell |
 | bmad-testarch-test-review    | claude-sonnet-4-6 |
 | bmad-code-review             | claude-opus-4-7   |
 | bmad-security-review (Kassandra, Gate 1 & 2) | per `.claude/security-agent.yaml` (Default: claude-opus-4-7) |
+| bmad-maintain-arc42 (Schritt 5c) | claude-sonnet-4-6 |
 
 ---
 
@@ -571,11 +798,20 @@ Stoppe hier und warte auf den User.
   Minor Issues gefunden wurden oder nicht – es schadet nicht und stellt Vollständigkeit sicher.
 - **TEA Gate 1 (ATDD)** erzeugt failing Tests — der Dev-Agent implementiert gegen diese.
   Ohne failing Tests kein klares Definition of Done.
-- **TEA Gate 2 (Test-Review)** läuft vor dem Code-Review, damit Test-Lücken frühzeitig
-  erkannt werden und der Code-Reviewer sich auf Logik konzentrieren kann.
+- **CI Gate (Schritt 3b)** ist pflicht und läuft nach der Implementierung, vor dem Review.
+  Kein Code-Review ohne grüne CI (build + unit-go + unit-elixir + playwright-e2e + integration).
+  Der Stack wird für Playwright frisch gestartet (`docker compose down --volumes`).
+  `make test-integration` startet seinen eigenen Stack separat.
+- **E2E-Test-Wachstum** ist pflicht: Jede Story mit neuem UI-Verhalten muss neue
+  Playwright-Tests hinzufügen. Fehlende E2E-Tests = MAJOR Finding in TEA Gate 2 + CI Gate.
+- **TEA Gate 2 (Test-Review)** läuft nach der CI und vor dem Code-Review, damit Test-Lücken
+  frühzeitig erkannt werden und der Code-Reviewer sich auf Logik konzentrieren kann.
 - **SEC Gate 1 (Story-Security-Review)** ist conditional und läuft nach dem Code-Review.
   Entscheidung per Story-Frontmatter-Flag `security_review` oder per Heuristik über
   die gestagten Dateipfade. Blockiert den Commit bei CRITICAL/HIGH.
+- **DOC Gate (Schritt 5c)** ist pflicht nach jeder Story. Arc42-Dokumentation wird via
+  `/bmad-maintain-arc42` delta-aktualisiert. Kein Commit ohne arc42-Update (oder explizite
+  Begründung warum keine Doku-Änderung nötig ist).
 - **SEC Gate 2 (Epic-Ende-Security-Review)** ist zwingend, unabhängig von Story-Flags.
   Läuft vor der Retrospektive mit dem gesamten Epic-Diff. Erzeugt immer ein
   `epic-{N}-security-review-{date}.md` Audit-Artefakt.

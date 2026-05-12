@@ -184,3 +184,83 @@ func writeTooManyRequests(w http.ResponseWriter, retryAfterSeconds int) {
 		"error":   "Rate limit exceeded",
 	})
 }
+
+// writeUserTooManyRequests writes a 429 Matrix error response for per-user rate limits.
+// Includes retry_after_ms in the JSON body (Matrix spec §3.2.2) in addition to the
+// standard Retry-After header, so Element Web can display a meaningful countdown.
+func writeUserTooManyRequests(w http.ResponseWriter, retryAfterSeconds int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", strconv.Itoa(retryAfterSeconds))
+	w.WriteHeader(http.StatusTooManyRequests)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"errcode":        "M_LIMIT_EXCEEDED",
+		"error":          "Search rate limit exceeded. Try again later.",
+		"retry_after_ms": retryAfterSeconds * 1000,
+	})
+}
+
+// NewUserRateLimiter returns a per-user token-bucket middleware for authenticated endpoints.
+// The rate-limit key is the user_id from the JWT context (ContextKeyUserID).
+// If no user_id is present (defense-in-depth: should not occur after jwtMiddleware),
+// the request IP is used as the fallback key.
+//
+// The 429 response includes retry_after_ms in the JSON body (Matrix spec §3.2.2)
+// in addition to the standard Retry-After header.
+//
+// IMPORTANT: this middleware must be placed INSIDE jwtWithStatusCheck in the handler chain
+// so that ContextKeyUserID is populated before the rate-limit key is extracted:
+//
+//	bodyLimit1MiB(jwtWithStatusCheck(searchRL(http.HandlerFunc(h.PostSearch))))
+//
+// Dev/test escape hatch: NEBU_RATE_LIMIT_DISABLED=true makes this a no-op.
+func NewUserRateLimiter(cfg RateLimitConfig, tier string) func(http.Handler) http.Handler {
+	if os.Getenv("NEBU_RATE_LIMIT_DISABLED") == "true" {
+		return func(next http.Handler) http.Handler { return next }
+	}
+
+	cache, _ := lru.New(lruCapacity)
+	var mu sync.Mutex
+
+	getLimiter := func(key string) *rate.Limiter {
+		mu.Lock()
+		defer mu.Unlock()
+		if val, ok := cache.Get(key); ok {
+			return val.(*rate.Limiter)
+		}
+		lim := rate.NewLimiter(cfg.Rate, cfg.Burst)
+		cache.Add(key, lim)
+		return lim
+	}
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			key, _ := r.Context().Value(ContextKeyUserID).(string)
+			if key == "" {
+				key = extractClientIP(r, false)
+			}
+
+			lim := getLimiter(key)
+			reservation := lim.Reserve()
+			if !reservation.OK() {
+				rateLimitTotal.WithLabelValues(tier, "deny").Inc()
+				writeUserTooManyRequests(w, 1)
+				return
+			}
+
+			delay := reservation.Delay()
+			if delay > 0 {
+				reservation.Cancel()
+				retryAfter := int(math.Ceil(delay.Seconds()))
+				if retryAfter < 1 {
+					retryAfter = 1
+				}
+				rateLimitTotal.WithLabelValues(tier, "deny").Inc()
+				writeUserTooManyRequests(w, retryAfter)
+				return
+			}
+
+			rateLimitTotal.WithLabelValues(tier, "allow").Inc()
+			next.ServeHTTP(w, r)
+		})
+	}
+}

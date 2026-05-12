@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/nebu/nebu/internal/buffer"
@@ -28,22 +30,24 @@ type GetSyncCoreClient interface {
 
 // GetSyncHandler handles GET /_matrix/client/v3/sync.
 type GetSyncHandler struct {
-	coreClient    GetSyncCoreClient
-	serverName    string
-	timeout       time.Duration
-	buffer        *buffer.MessageBuffer // Story 4-16: local event buffer (nil = disabled)
-	db            *sql.DB               // for pending invite queries
-	accountDataDB AccountDataDB         // Story 7-24: per-room account data (nil = disabled)
+	coreClient          GetSyncCoreClient
+	serverName          string
+	timeout             time.Duration
+	buffer              *buffer.MessageBuffer  // Story 4-16: local event buffer (nil = disabled)
+	db                  *sql.DB                // for pending invite queries
+	accountDataDB       AccountDataDB          // Story 7-24: per-room account data (nil = disabled)
+	globalAccountDataDB GlobalAccountDataDB    // Story 9-24: top-level global account data (nil = disabled)
 }
 
 // GetSyncConfig holds dependencies for NewGetSyncHandler.
 type GetSyncConfig struct {
-	CoreClient    GetSyncCoreClient
-	ServerName    string
-	Timeout       time.Duration         // gRPC call timeout; defaults to 5s if zero
-	Buffer        *buffer.MessageBuffer // Story 4-16: optional local event buffer
-	DB            *sql.DB               // optional: enables rooms.invite in sync response
-	AccountDataDB AccountDataDB         // Story 7-24: optional, enables account_data in sync response
+	CoreClient          GetSyncCoreClient
+	ServerName          string
+	Timeout             time.Duration         // gRPC call timeout; defaults to 5s if zero
+	Buffer              *buffer.MessageBuffer // Story 4-16: optional local event buffer
+	DB                  *sql.DB               // optional: enables rooms.invite in sync response
+	AccountDataDB       AccountDataDB         // Story 7-24: optional, enables account_data in sync response
+	GlobalAccountDataDB GlobalAccountDataDB   // Story 9-24: optional, enables top-level account_data in sync response
 }
 
 // NewGetSyncHandler constructs a GetSyncHandler from the provided config.
@@ -53,13 +57,52 @@ func NewGetSyncHandler(cfg GetSyncConfig) *GetSyncHandler {
 		timeout = 5 * time.Second
 	}
 	return &GetSyncHandler{
-		coreClient:    cfg.CoreClient,
-		serverName:    cfg.ServerName,
-		timeout:       timeout,
-		buffer:        cfg.Buffer,
-		db:            cfg.DB,
-		accountDataDB: cfg.AccountDataDB,
+		coreClient:          cfg.CoreClient,
+		serverName:          cfg.ServerName,
+		timeout:             timeout,
+		buffer:              cfg.Buffer,
+		db:                  cfg.DB,
+		accountDataDB:       cfg.AccountDataDB,
+		globalAccountDataDB: cfg.GlobalAccountDataDB,
 	}
+}
+
+// queryForgottenRoomIDs returns the set of room IDs the user has forgotten (GAP-FORGET).
+// Used to exclude forgotten rooms from rooms.join so they don't resurface after POST /forget.
+func (h *GetSyncHandler) queryForgottenRoomIDs(ctx context.Context, userID string) map[string]struct{} {
+	forgotten := map[string]struct{}{}
+	if h.db == nil {
+		return forgotten
+	}
+	rows, err := h.db.QueryContext(ctx,
+		`SELECT room_id FROM forgotten_rooms WHERE user_id = $1`, userID)
+	if err != nil {
+		return forgotten
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var roomID string
+		if err := rows.Scan(&roomID); err == nil {
+			forgotten[roomID] = struct{}{}
+		}
+	}
+	return forgotten
+}
+
+// querySinceTsMs looks up the wall-clock timestamp (Unix ms) of the user's
+// last persisted sync token. Used to filter buildLeaveRooms so left rooms
+// only appear in the first sync after the leave event, not repeatedly (GAP-LEAVE-ONCE).
+func (h *GetSyncHandler) querySinceTsMs(ctx context.Context, userID string) int64 {
+	if h.db == nil {
+		return 0
+	}
+	var updatedAt int64
+	if err := h.db.QueryRowContext(ctx,
+		`SELECT updated_at FROM sync_tokens WHERE user_id = $1`, userID,
+	).Scan(&updatedAt); err != nil {
+		return 0
+	}
+	return updatedAt
 }
 
 // buildLeaveRooms queries rooms the user has left or declined and builds the
@@ -69,14 +112,22 @@ func NewGetSyncHandler(cfg GetSyncConfig) *GetSyncHandler {
 // Element Web uses rooms.leave to remove rooms from its local state — without
 // it, declined invitations and left rooms remain visible in the UI indefinitely.
 //
+// sinceMs filters results to only rooms left/rejected after the given Unix-ms
+// timestamp. Pass 0 for initial sync (no filter). This prevents left rooms from
+// appearing in every subsequent incremental sync (GAP-LEAVE-ONCE).
+//
 // Fix-1: For each left/rejected room, the most recent m.room.member leave event
 // is fetched from the events table and included in state.events. If no event is
 // found (e.g. rooms created before this fix), state.events degrades to empty.
-func (h *GetSyncHandler) buildLeaveRooms(ctx context.Context, userID string) map[string]interface{} {
+//
+// Fix-2 (GAP-FORGET): rooms the user has forgotten are excluded via the
+// forgotten_rooms subquery.
+func (h *GetSyncHandler) buildLeaveRooms(ctx context.Context, userID string, sinceMs int64) map[string]interface{} {
 	leaves := map[string]interface{}{}
 	if h.db == nil {
 		return leaves
 	}
+	slog.Debug("buildLeaveRooms called", "userID", userID, "sinceMs", sinceMs)
 
 	// leaveEventQuery fetches the most recent m.room.member leave event for a given
 	// room and user. Content may be stored as a JSONB object or a double-encoded
@@ -125,15 +176,22 @@ func (h *GetSyncHandler) buildLeaveRooms(ctx context.Context, userID string) map
 		return stateEvents
 	}
 
-	// Rooms the user has left (was a member, now has left_at set)
+	// Rooms the user has left (was a member, now has left_at set).
+	// GAP-LEAVE-ONCE: only return rooms left after sinceMs (0 = no filter for initial sync).
+	// GAP-FORGET: exclude rooms the user has forgotten.
 	leftRows, err := h.db.QueryContext(ctx,
-		`SELECT room_id FROM room_members WHERE user_id = $1 AND left_at IS NOT NULL`,
-		userID)
+		`SELECT room_id FROM room_members
+		 WHERE user_id = $1
+		   AND left_at IS NOT NULL
+		   AND left_at >= $2
+		   AND room_id NOT IN (SELECT room_id FROM forgotten_rooms WHERE user_id = $1)`,
+		userID, sinceMs)
 	if err == nil {
 		defer leftRows.Close()
 		for leftRows.Next() {
 			var roomID string
 			if err := leftRows.Scan(&roomID); err == nil {
+				slog.Debug("buildLeaveRooms: found left room", "roomID", roomID, "userID", userID)
 				stateEvents := buildStateEvents(roomID)
 				leaves[roomID] = map[string]interface{}{
 					"timeline":     map[string]interface{}{"events": []interface{}{}, "limited": false},
@@ -142,11 +200,19 @@ func (h *GetSyncHandler) buildLeaveRooms(ctx context.Context, userID string) map
 				}
 			}
 		}
+	} else {
+		slog.Warn("buildLeaveRooms: query error", "err", err, "userID", userID, "sinceMs", sinceMs)
 	}
-	// Invitations the user has declined (rejected_at IS NOT NULL)
+	// Invitations the user has declined (rejected_at IS NOT NULL).
+	// GAP-LEAVE-ONCE: only return rejections after sinceMs (0 = no filter for initial sync).
+	// GAP-FORGET: exclude rooms the user has forgotten.
 	rejRows, err := h.db.QueryContext(ctx,
-		`SELECT room_id FROM room_invitations WHERE invitee_id = $1 AND rejected_at IS NOT NULL`,
-		userID)
+		`SELECT room_id FROM room_invitations
+		 WHERE invitee_id = $1
+		   AND rejected_at IS NOT NULL
+		   AND rejected_at >= $2
+		   AND room_id NOT IN (SELECT room_id FROM forgotten_rooms WHERE user_id = $1)`,
+		userID, sinceMs)
 	if err == nil {
 		defer rejRows.Close()
 		for rejRows.Next() {
@@ -175,7 +241,10 @@ func (h *GetSyncHandler) buildInviteRooms(ctx context.Context, userID string) ma
 	}
 	rows, err := h.db.QueryContext(ctx,
 		`SELECT room_id, inviter_id FROM room_invitations
-		 WHERE invitee_id = $1 AND accepted_at IS NULL AND rejected_at IS NULL`,
+		 WHERE invitee_id = $1
+		   AND accepted_at IS NULL
+		   AND rejected_at IS NULL
+		   AND room_id NOT IN (SELECT room_id FROM forgotten_rooms WHERE user_id = $1)`,
 		userID)
 	if err != nil {
 		slog.Warn("buildInviteRooms: query failed", "err", err)
@@ -215,6 +284,61 @@ func (h *GetSyncHandler) buildInviteRooms(ctx context.Context, userID string) ma
 				"content":   map[string]string{"name": roomName},
 			})
 		}
+		// m.room.join_rules — included per Matrix spec §4.4.4 stripped state
+		var joinRule string
+		joinRulesRow := h.db.QueryRowContext(ctx,
+			`SELECT CASE
+				WHEN jsonb_typeof(content) = 'object' THEN content->>'join_rule'
+				ELSE ((content#>>'{}')::jsonb)->>'join_rule'
+			 END
+			 FROM events WHERE room_id = $1 AND event_type = 'm.room.join_rules'
+			 ORDER BY origin_server_ts DESC LIMIT 1`,
+			roomID)
+		if err := joinRulesRow.Scan(&joinRule); err == nil && joinRule != "" {
+			events = append(events, map[string]interface{}{
+				"type":      "m.room.join_rules",
+				"sender":    inviterID,
+				"state_key": "",
+				"content":   map[string]string{"join_rule": joinRule},
+			})
+		}
+		// m.room.avatar — included per Matrix spec §4.4.4 stripped state
+		// Omitted entirely when url is empty or missing (Element Web handles gracefully).
+		var avatarURL string
+		avatarRow := h.db.QueryRowContext(ctx,
+			`SELECT CASE
+				WHEN jsonb_typeof(content) = 'object' THEN content->>'url'
+				ELSE ((content#>>'{}')::jsonb)->>'url'
+			 END
+			 FROM events WHERE room_id = $1 AND event_type = 'm.room.avatar'
+			 ORDER BY origin_server_ts DESC LIMIT 1`,
+			roomID)
+		if err := avatarRow.Scan(&avatarURL); err == nil && avatarURL != "" {
+			events = append(events, map[string]interface{}{
+				"type":      "m.room.avatar",
+				"sender":    inviterID,
+				"state_key": "",
+				"content":   map[string]string{"url": avatarURL},
+			})
+		}
+		// m.room.create — included per Matrix spec §4.4.4 stripped state
+		var roomCreator string
+		createRow := h.db.QueryRowContext(ctx,
+			`SELECT CASE
+				WHEN jsonb_typeof(content) = 'object' THEN content->>'creator'
+				ELSE ((content#>>'{}')::jsonb)->>'creator'
+			 END
+			 FROM events WHERE room_id = $1 AND event_type = 'm.room.create'
+			 ORDER BY origin_server_ts DESC LIMIT 1`,
+			roomID)
+		if err := createRow.Scan(&roomCreator); err == nil && roomCreator != "" {
+			events = append(events, map[string]interface{}{
+				"type":      "m.room.create",
+				"sender":    roomCreator,
+				"state_key": "",
+				"content":   map[string]string{"creator": roomCreator},
+			})
+		}
 		invites[roomID] = map[string]interface{}{
 			"invite_state": map[string]interface{}{
 				"events": events,
@@ -227,9 +351,10 @@ func (h *GetSyncHandler) buildInviteRooms(ctx context.Context, userID string) ma
 // ─── JSON response structs ─────────────────────────────────────────────────────
 
 type syncResponse struct {
-	NextBatch string       `json:"next_batch"`
-	Rooms     syncRooms    `json:"rooms"`
-	Presence  syncPresence `json:"presence"`
+	NextBatch   string                 `json:"next_batch"`
+	Rooms       syncRooms              `json:"rooms"`
+	Presence    syncPresence           `json:"presence"`
+	AccountData syncAccountDataSection `json:"account_data"` // Story 9-24: §6.3 top-level global account data — MUST NOT use omitempty
 	// Story 5-29e Bug 4: Element Web's matrix-js-sdk treats these three fields as
 	// mandatory. Missing device_one_time_keys_count is interpreted as 0, triggering
 	// an OTK-upload + keys/query polling loop. Always emit empty values (never nil
@@ -292,13 +417,30 @@ type syncTimelineSection struct {
 	PrevBatch string              `json:"prev_batch,omitempty"`
 }
 
+// syncUnsigned holds the unsigned section of a timeline event (spec §8.4.3).
+// age is the time in milliseconds since the event was sent, computed as
+// time.Now().UnixMilli() - event.OriginTS. matrix-js-sdk uses this field for
+// event deduplication and lag detection; missing unsigned.age causes sporadic
+// re-polling of already-seen events during DM creation.
+//
+// Story 9-28: MRelations carries bundled aggregations (e.g. m.thread count +
+// latest_event) for thread-root events. Only set when unsigned_relations is
+// non-empty on the proto Event. Element Web reads this to show thread reply
+// counts on the parent message.
+type syncUnsigned struct {
+	Age        int64           `json:"age"`
+	MRelations json.RawMessage `json:"m.relations,omitempty"`
+}
+
 type syncTimelineEvent struct {
 	EventID  string          `json:"event_id"`
 	Type     string          `json:"type"`
+	StateKey string          `json:"state_key,omitempty"`
 	Sender   string          `json:"sender"`
 	RoomID   string          `json:"room_id"`
 	Content  json.RawMessage `json:"content"`
 	OriginTS int64           `json:"origin_server_ts"`
+	Unsigned syncUnsigned    `json:"unsigned"`
 }
 
 type syncPresence struct {
@@ -356,9 +498,11 @@ func (h *GetSyncHandler) GetSync(w http.ResponseWriter, r *http.Request) {
 		Rooms: syncRooms{
 			Join:   joinedRooms,
 			Invite: h.buildInviteRooms(r.Context(), userID),
-			Leave:  h.buildLeaveRooms(r.Context(), userID),
+			// Initial sync: sinceMs=0 → no time filter (return all left/rejected rooms).
+			Leave: h.buildLeaveRooms(r.Context(), userID, 0),
 		},
 		Presence:                 syncPresence{Events: []interface{}{}},
+		AccountData:              h.injectGlobalAccountData(r.Context(), userID), // Story 9-24: §6.3 top-level global account data
 		DeviceOneTimeKeysCount:   otkCount,
 		DeviceUnusedFallbackKeys: fallbackKeys,
 		DeviceLists:              deviceLists,
@@ -400,7 +544,7 @@ func (h *GetSyncHandler) handleIncrementalSync(w http.ResponseWriter, r *http.Re
 	// If events are already available locally, return them immediately (skip Core long-poll).
 	if h.buffer != nil {
 		if events := h.buffer.DrainFor(userID, 50); len(events) > 0 {
-			resp := h.buildResponseFromBufferedEvents(events, sinceToken)
+			resp := h.buildResponseFromBufferedEvents(events)
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(resp)
 			return
@@ -414,7 +558,7 @@ func (h *GetSyncHandler) handleIncrementalSync(w http.ResponseWriter, r *http.Re
 		case <-waitCh:
 			if events := h.buffer.DrainFor(userID, 50); len(events) > 0 {
 				bufCancel()
-				resp := h.buildResponseFromBufferedEvents(events, sinceToken)
+				resp := h.buildResponseFromBufferedEvents(events)
 				w.Header().Set("Content-Type", "application/json")
 				_ = json.NewEncoder(w).Encode(resp)
 				return
@@ -425,16 +569,28 @@ func (h *GetSyncHandler) handleIncrementalSync(w http.ResponseWriter, r *http.Re
 		bufCancel()
 	}
 
+	// GAP-LEAVE-ONCE fix: read the previous sync token's timestamp BEFORE calling
+	// GetSyncDelta. Elixir calls persist_since_token (which updates sync_tokens.updated_at)
+	// at the END of GetSyncDelta. If we called querySinceTsMs after GetSyncDelta, we would
+	// read the timestamp set by THIS sync cycle, which is always >= left_at, causing
+	// buildLeaveRooms to filter out the newly-left room. By reading before, we capture
+	// the timestamp from the PREVIOUS sync cycle (before the leave happened), so newly-left
+	// rooms (left_at > prev_updated_at) correctly appear in rooms.leave.
+	sinceMs := h.querySinceTsMs(r.Context(), userID)
+	slog.Debug("handleIncrementalSync: sinceMs read before GetSyncDelta", "userID", userID, "sinceMs", sinceMs)
+
 	// AC #11: handler timeout = timeout_ms + 5000 ms grace period
 	handlerTimeout := h.timeout + time.Duration(timeoutMs)*time.Millisecond
 	ctx, cancel := context.WithTimeout(r.Context(), handlerTimeout)
 	defer cancel()
 	grpcCtx := coregrpc.WithUserMetadata(ctx, userID, systemRole)
 
+	deviceID, _ := r.Context().Value(middleware.ContextKeyDeviceID).(string)
 	deltaResp, err := h.coreClient.GetSyncDelta(grpcCtx, &pb.GetSyncDeltaRequest{
 		UserId:     userID,
 		SinceToken: sinceToken,
 		TimeoutMs:  timeoutMs,
+		DeviceId:   deviceID,
 	})
 	if err != nil {
 		st, _ := status.FromError(err)
@@ -469,9 +625,11 @@ func (h *GetSyncHandler) handleIncrementalSync(w http.ResponseWriter, r *http.Re
 			Rooms: syncRooms{
 				Join:   joinedRooms,
 				Invite: h.buildInviteRooms(r.Context(), userID),
-				Leave:  h.buildLeaveRooms(r.Context(), userID),
+				// FallbackToInitial: sinceMs=0 → no time filter (full re-sync).
+				Leave: h.buildLeaveRooms(r.Context(), userID, 0),
 			},
 			Presence:                 syncPresence{Events: []interface{}{}},
+			AccountData:              h.injectGlobalAccountData(r.Context(), userID), // Story 9-24: §6.3 global account data in FallbackToInitial path
 			DeviceOneTimeKeysCount:   otkCount,
 			DeviceUnusedFallbackKeys: fallbackKeys,
 			DeviceLists:              deviceLists,
@@ -487,9 +645,17 @@ func (h *GetSyncHandler) handleIncrementalSync(w http.ResponseWriter, r *http.Re
 	// Element Web behaviour is undefined for such conflicts and it may fail to navigate
 	// away. Rooms.leave takes precedence: a room the user just left must not be returned
 	// as joined even if fetch_delta_rooms found its leave event in the timeline.
-	leaveRooms := h.buildLeaveRooms(r.Context(), userID)
+	// GAP-LEAVE-ONCE: sinceMs was captured above BEFORE GetSyncDelta updated sync_tokens.
+	leaveRooms := h.buildLeaveRooms(r.Context(), userID, sinceMs)
+	slog.Debug("handleIncrementalSync: leaveRooms count", "userID", userID, "count", len(leaveRooms))
 	joinedRooms := buildJoinedRooms(deltaResp.GetRooms())
 	for roomID := range leaveRooms {
+		delete(joinedRooms, roomID)
+	}
+	// GAP-FORGET: remove forgotten rooms from rooms.join so they don't resurface after
+	// POST /forget. The Elixir delta may still include the room (left_room_ids pattern),
+	// but a forgotten room must be absent from ALL sync sections.
+	for roomID := range h.queryForgottenRoomIDs(r.Context(), userID) {
 		delete(joinedRooms, roomID)
 	}
 	// Story 7-24 AC4: inject per-room account data into joined rooms.
@@ -503,6 +669,7 @@ func (h *GetSyncHandler) handleIncrementalSync(w http.ResponseWriter, r *http.Re
 			Leave:  leaveRooms,
 		},
 		Presence:                 syncPresence{Events: []interface{}{}},
+		AccountData:              h.injectGlobalAccountData(r.Context(), userID), // Story 9-24: §6.3 global account data in delta sync path
 		DeviceOneTimeKeysCount:   otkCount,
 		DeviceUnusedFallbackKeys: fallbackKeys,
 		DeviceLists:              deviceLists,
@@ -512,33 +679,61 @@ func (h *GetSyncHandler) handleIncrementalSync(w http.ResponseWriter, r *http.Re
 	_ = json.NewEncoder(w).Encode(syncResp)
 }
 
+// syntheticBatchSeq is an atomic counter used by syntheticNextBatch to guarantee
+// token uniqueness even when two goroutines call the function within the same millisecond.
+// Package-level var; zero-initialized (Story 9-25, GAP-BUFFER-NEXT-BATCH).
+var syntheticBatchSeq atomic.Int64
+
+// syntheticNextBatch generates a monotonically advancing, opaque next_batch token
+// for responses served from the local ring buffer (Story 9-25, GAP-BUFFER-NEXT-BATCH).
+//
+// Format: "buf_<unix_ms>_<seq>" — clearly synthetic, not a real Elixir since-token.
+// If the client sends this token on the next request, Elixir's GetSyncDelta will
+// not find a matching sync_tokens row → FallbackToInitial → safe full re-sync.
+//
+// Monotonicity guarantee: time.Now().UnixMilli() is monotonically increasing within
+// a process under normal NTP conditions. For sub-millisecond bursts the counter suffix
+// ensures uniqueness (see syntheticBatchSeq above).
+func syntheticNextBatch() string {
+	seq := syntheticBatchSeq.Add(1)
+	return fmt.Sprintf("buf_%d_%d", time.Now().UnixMilli(), seq)
+}
+
 // buildResponseFromBufferedEvents constructs a minimal syncResponse from locally-buffered
 // *pb.Event values (Story 4-16). Events are placed in the timeline of their respective rooms.
-// sinceToken is used as the next_batch value (events are fresh, not a new server token).
-func (h *GetSyncHandler) buildResponseFromBufferedEvents(events []*pb.Event, sinceToken string) syncResponse {
+// syntheticNextBatch() generates a buf_<ms>_<seq> token. The Elixir delta handler will
+// not recognise it, triggering FallbackToInitial on the next request — which is the
+// correct behaviour for a client that resumes from a synthetic token.
+func (h *GetSyncHandler) buildResponseFromBufferedEvents(events []*pb.Event) syncResponse {
 	joinedRooms := make(map[string]syncJoinedRoom)
 	for _, ev := range events {
 		room := joinedRooms[ev.RoomId]
 		room.Timeline.Events = append(room.Timeline.Events, syncTimelineEvent{
 			EventID:  ev.EventId,
 			Type:     ev.EventType,
+			StateKey: ev.StateKey,
 			Sender:   ev.SenderId,
 			RoomID:   ev.RoomId,
 			Content:  json.RawMessage(ev.Content),
 			OriginTS: ev.OriginTs,
+			Unsigned: syncUnsigned{Age: max(1, time.Now().UnixMilli()-ev.OriginTs)},
 		})
 		joinedRooms[ev.RoomId] = room
 	}
 	// Buffer-based fast path: skip invite/leave queries (caller handles full sync).
+	// Story 9-24: AccountData is set to empty section here — no DB call in the buffer
+	// hot path. Global account data changes are rare; the next full sync cycle will
+	// pick them up. This keeps the buffer fast-path O(0) DB queries.
 	otkCount, fallbackKeys, deviceLists := emptySyncDeviceFields()
 	return syncResponse{
-		NextBatch: sinceToken,
+		NextBatch: syntheticNextBatch(),
 		Rooms: syncRooms{
 			Join:   joinedRooms,
 			Invite: map[string]interface{}{},
 			Leave:  map[string]interface{}{},
 		},
 		Presence:                 syncPresence{Events: []interface{}{}},
+		AccountData:              syncAccountDataSection{Events: []syncAccountDataEvent{}}, // Story 9-24: empty section — buffer fast-path skips DB call
 		DeviceOneTimeKeysCount:   otkCount,
 		DeviceUnusedFallbackKeys: fallbackKeys,
 		DeviceLists:              deviceLists,
@@ -562,13 +757,23 @@ func buildJoinedRooms(rooms []*pb.SyncRoom) map[string]syncJoinedRoom {
 
 		timelineEvents := make([]syncTimelineEvent, 0, len(room.GetTimelineEvents()))
 		for _, te := range room.GetTimelineEvents() {
+			// Story 9-28: attach bundled m.thread aggregations when present.
+			var mRelations json.RawMessage
+			if unsignedRel := te.GetUnsignedRelations(); len(unsignedRel) > 0 {
+				mRelations = json.RawMessage(unsignedRel)
+			}
 			timelineEvents = append(timelineEvents, syncTimelineEvent{
 				EventID:  te.GetEventId(),
 				Type:     te.GetEventType(),
+				StateKey: te.GetStateKey(),
 				Sender:   te.GetSenderId(),
 				RoomID:   te.GetRoomId(),
 				Content:  json.RawMessage(te.GetContent()),
 				OriginTS: te.GetOriginTs(),
+				Unsigned: syncUnsigned{
+					Age:        max(1, time.Now().UnixMilli()-te.GetOriginTs()),
+					MRelations: mRelations,
+				},
 			})
 		}
 
@@ -608,6 +813,28 @@ func (h *GetSyncHandler) injectAccountData(ctx context.Context, userID string, j
 		room.AccountData = syncAccountDataSection{Events: events}
 		joinedRooms[roomID] = room
 	}
+}
+
+// injectGlobalAccountData queries global account data (room_id = '') for userID
+// and returns a syncAccountDataSection for the top-level account_data field.
+// Degrades gracefully to an empty events slice on DB error (AC6).
+// The section is always returned with Events initialized to a non-nil slice
+// so that "account_data":{"events":[]} is always present in the JSON response
+// (never absent, never null — Matrix spec §6.3).
+func (h *GetSyncHandler) injectGlobalAccountData(ctx context.Context, userID string) syncAccountDataSection {
+	if h.globalAccountDataDB == nil {
+		return syncAccountDataSection{Events: []syncAccountDataEvent{}}
+	}
+	rows, err := h.globalAccountDataDB.ListGlobalAccountData(ctx, userID)
+	if err != nil {
+		slog.Warn("injectGlobalAccountData: DB error", "user_id", userID, "err", err)
+		return syncAccountDataSection{Events: []syncAccountDataEvent{}}
+	}
+	events := make([]syncAccountDataEvent, 0, len(rows))
+	for _, r := range rows {
+		events = append(events, syncAccountDataEvent{Type: r.EventType, Content: r.Content})
+	}
+	return syncAccountDataSection{Events: events}
 }
 
 // fetchRoomAccountDataEvents queries all account data rows for (userID, roomID) and

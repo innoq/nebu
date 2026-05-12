@@ -32,15 +32,20 @@ func generateSID() (string, error) {
 }
 
 // Create inserts a new session row into admin_sessions and returns the generated SID.
-func (s *PostgresAdminSessionStore) Create(ctx context.Context, userID string, expiresAt time.Time) (string, error) {
+// refreshToken is the AES-256-GCM encrypted refresh token; pass "" to store NULL.
+func (s *PostgresAdminSessionStore) Create(ctx context.Context, userID string, expiresAt time.Time, refreshToken string) (string, error) {
 	sid, err := generateSID()
 	if err != nil {
 		return "", err
 	}
+	var encRT *string
+	if refreshToken != "" {
+		encRT = &refreshToken
+	}
 	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO admin_sessions (sid, user_id, created_at, expires_at)
-		 VALUES ($1, $2, $3, $4)`,
-		sid, userID, time.Now(), expiresAt,
+		`INSERT INTO admin_sessions (sid, user_id, created_at, expires_at, refresh_token)
+		 VALUES ($1, $2, $3, $4, $5)`,
+		sid, userID, time.Now(), expiresAt, encRT,
 	)
 	if err != nil {
 		return "", fmt.Errorf("inserting admin session: %w", err)
@@ -52,11 +57,12 @@ func (s *PostgresAdminSessionStore) Create(ctx context.Context, userID string, e
 func (s *PostgresAdminSessionStore) Get(ctx context.Context, sid string) (*admin.AdminSession, error) {
 	var sess admin.AdminSession
 	var revokedAt sql.NullTime
+	var refreshToken sql.NullString
 	err := s.db.QueryRowContext(ctx,
-		`SELECT sid, user_id, expires_at, revoked_at
+		`SELECT sid, user_id, expires_at, revoked_at, refresh_token
 		 FROM admin_sessions WHERE sid = $1`,
 		sid,
-	).Scan(&sess.SID, &sess.UserID, &sess.ExpiresAt, &revokedAt)
+	).Scan(&sess.SID, &sess.UserID, &sess.ExpiresAt, &revokedAt, &refreshToken)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -67,7 +73,26 @@ func (s *PostgresAdminSessionStore) Get(ctx context.Context, sid string) (*admin
 		t := revokedAt.Time
 		sess.RevokedAt = &t
 	}
+	if refreshToken.Valid {
+		sess.EncryptedRefreshToken = refreshToken.String
+	}
 	return &sess, nil
+}
+
+// UpdateExpiry updates the expires_at and encrypted refresh token for the given SID.
+func (s *PostgresAdminSessionStore) UpdateExpiry(ctx context.Context, sid string, expiresAt time.Time, encryptedRefreshToken string) error {
+	var encRT *string
+	if encryptedRefreshToken != "" {
+		encRT = &encryptedRefreshToken
+	}
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE admin_sessions SET expires_at = $1, refresh_token = $2 WHERE sid = $3`,
+		expiresAt, encRT, sid,
+	)
+	if err != nil {
+		return fmt.Errorf("updating admin session expiry: %w", err)
+	}
+	return nil
 }
 
 // Revoke sets revoked_at = NOW() for the given SID.

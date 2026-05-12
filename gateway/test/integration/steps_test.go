@@ -94,6 +94,7 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^I call GET :4000(/\S+) on the core$`, iCallGETOnCore)
 	sc.Step(`^the response status is (\d+)$`, theResponseStatusIs)
 	sc.Step(`^the response body contains "([^"]*)"$`, theResponseBodyContains)
+	sc.Step(`^the response body has errcode "([^"]*)"$`, theResponseHasErrcodeIs)
 	initializeAuthSteps(sc)            // auth scenario step definitions
 	initializeAdminBootstrapSteps(sc)  // admin bootstrap + dashboard step definitions
 	initializeRoomFlowSteps(sc)        // room flow step definitions
@@ -111,4 +112,12 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	initializeNotificationsSteps(sc)     // notifications API step definitions (Story 7-29)
 	initializePushRulesSteps(sc)          // push rules + pushers API step definitions (Story 7-30)
 	initializeAdminAPISteps(sc)           // Admin API step definitions (Story 6-11)
+	initializeSetRoomStateFullSteps(sc)        // room state full implementation + whitelist steps (Story 9-7 / 9-6)
+	initializeUpgradeRoomSteps(sc)             // room version upgrade steps (Story 9-8)
+	initializeMatrixEventCorrectnessSteps(sc)  // Matrix event correctness steps (Story 9-10b)
+	initializeThreadRelationsSteps(sc)          // thread relations steps (Story 9-28)
+	initializeMessagesThreadSteps(sc)           // thread message relations steps (Story 9-29)
+	initializeSearchSteps(sc)                  // search Gherkin E2E step definitions (Story 11.6)
+	initializeGetRoomEventSteps(sc)            // GET /rooms/{roomId}/event/{eventId} step definitions (Story 11-8)
+	initializeClaimMappingSteps(sc)            // OIDC claim mapping step definitions (Story 11-10)
 }

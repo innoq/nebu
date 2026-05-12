@@ -132,7 +132,9 @@ func TestRoomsPageStatusBadge(t *testing.T) {
 	}
 }
 
-// TestRoomsPagePagination verifies that 5 stubs fit on page 0 (HasMore=false → no pagination nav).
+// TestRoomsPagePagination verifies the pagination boundary: with 6 stubs and pageSize=5,
+// page 0 renders 5 rooms and HasMore=true, so the pagination nav IS rendered.
+// (Story 9.15 added room-006 to stubs to exercise the AC3 fallback name template.)
 // AC: 6 (Story 7.8)
 func TestRoomsPagePagination(t *testing.T) {
 	tmpl, err := NewTemplateHandler()
@@ -149,7 +151,7 @@ func TestRoomsPagePagination(t *testing.T) {
 		t.Fatalf("expected HTTP 200, got %d", w.Code)
 	}
 	body := w.Body.String()
-	if strings.Contains(body, `aria-label="pagination"`) {
-		t.Error("expected no pagination nav when HasMore=false (5 stubs, pageSize=5)")
+	if !strings.Contains(body, `aria-label="pagination"`) {
+		t.Error("expected pagination nav when HasMore=true (6 stubs, pageSize=5)")
 	}
 }

@@ -256,6 +256,55 @@ func theIncrementalSyncContainsAccountDataEventOfType(eventType string) error {
 		eventType, lastRoomID, kaiIncrementalSyncBody)
 }
 
+// ─── Story 9-24: Global account_data in top-level sync response ──────────────
+
+// kaiCallsGETSyncInitial calls GET /sync (no ?since — initial sync) as kai and
+// stores the response body in kaiInitialSyncBody.
+// Story 9-24 AC3: used to verify that a global PUT is reflected in the next sync.
+func kaiCallsGETSyncInitial() error {
+	req, err := http.NewRequest(http.MethodGet,
+		matrixURL+"/_matrix/client/v3/sync?timeout=0", nil)
+	if err != nil {
+		return fmt.Errorf("building GET /sync initial request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+kaiAccessToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("GET /sync initial failed: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("GET /sync initial returned %d: %s", resp.StatusCode, string(body))
+	}
+	kaiInitialSyncBody = string(body)
+	return nil
+}
+
+// theSyncResponseTopLevelAccountDataEventsContainsEntryWithType asserts that
+// kaiInitialSyncBody contains a top-level account_data.events entry with the
+// given type.
+// Story 9-24 AC3: verifies that global account data PUT is delivered via sync.
+func theSyncResponseTopLevelAccountDataEventsContainsEntryWithType(eventType string) error {
+	var syncResp struct {
+		AccountData struct {
+			Events []struct {
+				Type string `json:"type"`
+			} `json:"events"`
+		} `json:"account_data"`
+	}
+	if err := json.Unmarshal([]byte(kaiInitialSyncBody), &syncResp); err != nil {
+		return fmt.Errorf("parsing sync body for top-level account_data: %w (body: %s)", err, kaiInitialSyncBody)
+	}
+	for _, event := range syncResp.AccountData.Events {
+		if event.Type == eventType {
+			return nil
+		}
+	}
+	return fmt.Errorf("top-level account_data.events does not contain entry with type %q — Story 9-24 not yet implemented.\nSync body: %s",
+		eventType, kaiInitialSyncBody)
+}
+
 // ─── Step registration ────────────────────────────────────────────────────────
 
 // initializeAccountDataSteps registers all step definitions for account_data.feature.
@@ -280,4 +329,7 @@ func initializeAccountDataSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^kai captures a sync token before tag change$`, kaiCapturesSyncTokenBeforeTagChange)
 	sc.Step(`^kai calls incremental sync with the captured token$`, kaiCallsIncrementalSyncWithCapturedToken)
 	sc.Step(`^the incremental sync contains account_data event of type "([^"]*)" for the room$`, theIncrementalSyncContainsAccountDataEventOfType)
+	// Story 9-24: global account_data in top-level sync response
+	sc.Step(`^kai calls GET /sync initial$`, kaiCallsGETSyncInitial)
+	sc.Step(`^the sync response top-level account_data\.events contains an entry with type "([^"]*)"$`, theSyncResponseTopLevelAccountDataEventsContainsEntryWithType)
 }

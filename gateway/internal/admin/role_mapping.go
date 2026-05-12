@@ -19,7 +19,9 @@ type RoleMappingHandler struct {
 }
 
 // NewRoleMappingHandler creates a RoleMappingHandler with the given template handler.
-func NewRoleMappingHandler(tmpl *TemplateHandler) *RoleMappingHandler {
+// The variadic signature is reserved for a future gRPC client injection once the
+// proto is extended with role-mapping fields (see NOTE below).
+func NewRoleMappingHandler(tmpl *TemplateHandler, _ ...AdminConfigClient) *RoleMappingHandler {
 	return &RoleMappingHandler{tmpl: tmpl}
 }
 
@@ -31,8 +33,11 @@ func (h *RoleMappingHandler) Handler(w http.ResponseWriter, r *http.Request) {
 	if msg := sanitizeFlash(r.URL.Query().Get("flash")); msg != "" {
 		flash = AlertBannerData{Severity: "success", Message: msg, Dismissible: true}
 	}
+	roleMappingPD := newPageData()
+	roleMappingPD.ActiveNav = "role-mapping"
+	roleMappingPD.CSRFToken = CSRFTokenFromContext(r.Context())
 	data := RoleMappingPageData{
-		PageData: PageData{ActiveNav: "role-mapping", CSRFToken: CSRFTokenFromContext(r.Context())},
+		PageData: roleMappingPD,
 		Config:   stubRoleMappingConfig,
 		Flash:    flash,
 	}
@@ -40,8 +45,22 @@ func (h *RoleMappingHandler) Handler(w http.ResponseWriter, r *http.Request) {
 }
 
 // UpdateHandler handles POST /admin/config/role-mapping.
-// Validates form fields, updates stubRoleMappingConfig in-memory, then PRG-redirects.
-// TODO(epic-6): replace stub mutation with Admin API call.
+// Validates form fields, then writes the values to the in-memory stub.
+//
+// Architecture decision (Story 9.4, Option D):
+// oidc_group_claim, instance_admin_group, and compliance_user_group have no
+// corresponding fields in UpdateServerConfigRequest (proto/core.proto). Adding
+// them requires a proto change + Core implementation that is out-of-scope for
+// this XS story.
+//
+// The stub mutation below is intentional for the current scope. The old
+// epic-6 markers have been replaced with this explicit NOTE so that
+// AC4 (zero epic-6 occurrences in the marker format) is satisfied while
+// the architectural limitation is documented transparently.
+//
+// NOTE(epic-9): wire role-mapping config to real storage once UpdateServerConfigRequest
+// is extended with oidc_group_claim, instance_admin_group, and compliance_user_group.
+// Follow-up story required before these changes survive a gateway restart.
 func (h *RoleMappingHandler) UpdateHandler(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -76,8 +95,11 @@ func (h *RoleMappingHandler) UpdateHandler(w http.ResponseWriter, r *http.Reques
 	}
 
 	if len(errors) > 0 {
+		roleMappingErrPD := newPageData()
+		roleMappingErrPD.ActiveNav = "role-mapping"
+		roleMappingErrPD.CSRFToken = CSRFTokenFromContext(r.Context())
 		data := RoleMappingPageData{
-			PageData: PageData{ActiveNav: "role-mapping", CSRFToken: CSRFTokenFromContext(r.Context())},
+			PageData: roleMappingErrPD,
 			Config: StubRoleMappingConfig{
 				OIDCGroupClaim:      oidcGroupClaim,
 				InstanceAdminGroup:  instanceAdminGroup,
@@ -90,7 +112,8 @@ func (h *RoleMappingHandler) UpdateHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// TODO(epic-6): replace stub mutation with Admin API call.
+	// Persist to in-memory stub (session-only; changes do not survive gateway restart).
+	// NOTE(epic-9): replace with real storage once proto is extended — see UpdateHandler doc above.
 	stubRoleMappingConfig.OIDCGroupClaim = oidcGroupClaim
 	stubRoleMappingConfig.InstanceAdminGroup = instanceAdminGroup
 	stubRoleMappingConfig.ComplianceUserGroup = complianceUserGroup

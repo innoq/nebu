@@ -164,7 +164,7 @@ func buildAuthedNotificationsHandler(t *testing.T, db *mockNotificationsDB) (htt
 	t.Cleanup(oidcSrv.Close)
 
 	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
-	jwtMiddleware := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")
+	jwtMiddleware := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")
 
 	handler := NewNotificationsHandler(NotificationsConfig{DB: db})
 

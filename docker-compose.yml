@@ -25,7 +25,12 @@ services:
       - ./dev/postgres/init:/docker-entrypoint-initdb.d:ro
 
   gateway:
-    build: ./gateway
+    build:
+      context: ./gateway
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
+        BUILD_TIME: ${BUILD_TIME:-unknown}
+        RELEASE_VERSION: ${RELEASE_VERSION:-unknown}
     depends_on:
       postgres:
         condition: service_healthy
@@ -63,7 +68,12 @@ services:
       start_period: 10s
 
   core:
-    build: ./core
+    build:
+      context: ./core
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
+        BUILD_TIME: ${BUILD_TIME:-unknown}
+        RELEASE_VERSION: ${RELEASE_VERSION:-unknown}
     depends_on:
       postgres:
         condition: service_healthy

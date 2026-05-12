@@ -129,14 +129,15 @@ func (h *DashboardHandler) Handler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	pd := newPageData()
+	pd.ActiveNav = "dashboard"
+	pd.TopbarStatus = topbarStatus
+	pd.TopbarLabel = topbarLabel
+	pd.CSRFToken = CSRFTokenFromContext(r.Context())
+	pd.CompliancePendingCount = pendingCount // Story 5.4 — sidebar badge
+
 	data := DashboardPageData{
-		PageData: PageData{
-			ActiveNav:              "dashboard",
-			TopbarStatus:           topbarStatus,
-			TopbarLabel:            topbarLabel,
-			CSRFToken:              CSRFTokenFromContext(r.Context()),
-			CompliancePendingCount: pendingCount, // Story 5.4 — sidebar badge
-		},
+		PageData: pd,
 		GatewayStatus:      gatewayStatus,
 		GatewayStatusLabel: gatewayLabel,
 		CoreStatus:         coreStatus,

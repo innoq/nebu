@@ -174,6 +174,61 @@ func (m *mockCoreClient) InvalidateAllAdminSessions(_ context.Context, _ *pb.Inv
 	return &pb.InvalidateAllAdminSessionsResponse{Ok: true}, nil
 }
 
+// Story 9.1: Admin gRPC RPC stubs
+func (m *mockCoreClient) ListAdminUsers(_ context.Context, _ *pb.ListAdminUsersRequest, _ ...grpc.CallOption) (*pb.ListAdminUsersResponse, error) {
+	return &pb.ListAdminUsersResponse{}, nil
+}
+func (m *mockCoreClient) GetAdminUser(_ context.Context, _ *pb.GetAdminUserRequest, _ ...grpc.CallOption) (*pb.GetAdminUserResponse, error) {
+	return &pb.GetAdminUserResponse{}, nil
+}
+func (m *mockCoreClient) DeactivateUser(_ context.Context, _ *pb.DeactivateUserRequest, _ ...grpc.CallOption) (*pb.DeactivateUserResponse, error) {
+	return &pb.DeactivateUserResponse{Ok: true}, nil
+}
+func (m *mockCoreClient) ReactivateUser(_ context.Context, _ *pb.ReactivateUserRequest, _ ...grpc.CallOption) (*pb.ReactivateUserResponse, error) {
+	return &pb.ReactivateUserResponse{Ok: true}, nil
+}
+func (m *mockCoreClient) UpdateUserRole(_ context.Context, _ *pb.UpdateUserRoleRequest, _ ...grpc.CallOption) (*pb.UpdateUserRoleResponse, error) {
+	return &pb.UpdateUserRoleResponse{Ok: true}, nil
+}
+func (m *mockCoreClient) ListAdminRooms(_ context.Context, _ *pb.ListAdminRoomsRequest, _ ...grpc.CallOption) (*pb.ListAdminRoomsResponse, error) {
+	return &pb.ListAdminRoomsResponse{}, nil
+}
+func (m *mockCoreClient) GetAdminRoom(_ context.Context, _ *pb.GetAdminRoomRequest, _ ...grpc.CallOption) (*pb.GetAdminRoomResponse, error) {
+	return &pb.GetAdminRoomResponse{}, nil
+}
+func (m *mockCoreClient) GetServerConfig(_ context.Context, _ *pb.GetServerConfigRequest, _ ...grpc.CallOption) (*pb.GetServerConfigResponse, error) {
+	return &pb.GetServerConfigResponse{}, nil
+}
+func (m *mockCoreClient) UpdateServerConfig(_ context.Context, _ *pb.UpdateServerConfigRequest, _ ...grpc.CallOption) (*pb.UpdateServerConfigResponse, error) {
+	return &pb.UpdateServerConfigResponse{Ok: true}, nil
+}
+func (m *mockCoreClient) UpgradeRoom(_ context.Context, _ *pb.UpgradeRoomRequest, _ ...grpc.CallOption) (*pb.UpgradeRoomResponse, error) {
+	panic("unexpected call: UpgradeRoom")
+}
+
+// Story 9.18: no-op stub — ListAdminRoomMembers added to AdminRoomsClient interface.
+// RED: pb.ListAdminRoomMembersRequest / pb.ListAdminRoomMembersResponse do not exist
+// yet (generated after `make proto`). This stub will fail to compile until the proto
+// types are generated and the AdminRoomsClient interface method is added to rooms.go.
+func (m *mockCoreClient) ListAdminRoomMembers(_ context.Context, _ *pb.ListAdminRoomMembersRequest, _ ...grpc.CallOption) (*pb.ListAdminRoomMembersResponse, error) {
+	return &pb.ListAdminRoomMembersResponse{}, nil
+}
+
+// Story 9-28: stub — GetRelations not called in admin auth tests.
+func (m *mockCoreClient) GetRelations(_ context.Context, _ *pb.GetRelationsRequest, _ ...grpc.CallOption) (*pb.GetRelationsResponse, error) {
+	panic("unexpected call: GetRelations")
+}
+
+// Story 11.3: SearchMessages stub.
+func (m *mockCoreClient) SearchMessages(_ context.Context, _ *pb.SearchMessagesRequest, _ ...grpc.CallOption) (*pb.SearchMessagesResponse, error) {
+	return &pb.SearchMessagesResponse{}, nil
+}
+
+// Story 11-8: GetEvent stub — not called in admin auth tests.
+func (m *mockCoreClient) GetEvent(_ context.Context, _ *pb.GetEventRequest, _ ...grpc.CallOption) (*pb.GetEventResponse, error) {
+	panic("unexpected call: GetEvent")
+}
+
 // lastReceived returns the most recently recorded request (nil if none).
 func (m *mockCoreClient) lastReceived() *pb.WriteAuditLogRequest {
 	m.mu.Lock()

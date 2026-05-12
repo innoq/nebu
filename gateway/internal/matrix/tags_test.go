@@ -58,7 +58,7 @@ func buildAuthedTagsHandler(t *testing.T, db *mockAccountDataDB) (http.Handler, 
 		ServerName: "test.local",
 	})
 
-	jwt := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")
+	jwt := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")
 
 	mux := http.NewServeMux()
 	mux.Handle("GET /_matrix/client/v3/user/{userId}/rooms/{roomId}/tags",

@@ -104,27 +104,86 @@ service CoreService {
   // Iterates EtsStore.list_user_ids/0 and calls SessionSupervisor.destroy_session/1 for each.
   // Returns ok=true always (best-effort — OIDC config is already updated in DB).
   rpc InvalidateAllAdminSessions(InvalidateAllAdminSessionsRequest) returns (InvalidateAllAdminSessionsResponse);
+
+  // Story 9.1: Admin gRPC RPCs — User + Room Management
+  // ListAdminUsers — paginated user listing for Admin UI.
+  rpc ListAdminUsers(ListAdminUsersRequest) returns (ListAdminUsersResponse);
+
+  // GetAdminUser — fetch a single user by user_id for Admin UI.
+  rpc GetAdminUser(GetAdminUserRequest) returns (GetAdminUserResponse);
+
+  // DeactivateUser — set is_active=false and invalidate all sessions.
+  rpc DeactivateUser(DeactivateUserRequest) returns (DeactivateUserResponse);
+
+  // ReactivateUser — set is_active=true.
+  rpc ReactivateUser(ReactivateUserRequest) returns (ReactivateUserResponse);
+
+  // UpdateUserRole — update system_role for a user.
+  rpc UpdateUserRole(UpdateUserRoleRequest) returns (UpdateUserRoleResponse);
+
+  // ListAdminRooms — paginated room listing for Admin UI.
+  rpc ListAdminRooms(ListAdminRoomsRequest) returns (ListAdminRoomsResponse);
+
+  // GetAdminRoom — fetch a single room by room_id for Admin UI.
+  rpc GetAdminRoom(GetAdminRoomRequest) returns (GetAdminRoomResponse);
+
+  // GetServerConfig — fetch current server configuration (oidc_client_secret is intentionally excluded).
+  rpc GetServerConfig(GetServerConfigRequest) returns (GetServerConfigResponse);
+
+  // UpdateServerConfig — upsert server configuration fields.
+  rpc UpdateServerConfig(UpdateServerConfigRequest) returns (UpdateServerConfigResponse);
+
+  // UpgradeRoom — Story 9.8: atomic room version upgrade.
+  // Creates tombstone in old room, creates new room with predecessor,
+  // copies state, and invites all old members.
+  rpc UpgradeRoom(UpgradeRoomRequest) returns (UpgradeRoomResponse);
+
+  // ListAdminRoomMembers — Story 9.18: fetch current members of a room for Admin UI.
+  // Returns all members where left_at IS NULL, ordered by joined_at ASC.
+  // Returns empty list (not an error) when the room has no current members.
+  rpc ListAdminRoomMembers(ListAdminRoomMembersRequest) returns (ListAdminRoomMembersResponse);
+
+  // GetRelations — Story 9-28: returns events that relate to a given parent event
+  // via the specified rel_type (e.g. "m.thread").
+  // Returns PERMISSION_DENIED if user is not a room member.
+  // Returns NOT_FOUND if the parent event does not exist.
+  rpc GetRelations(GetRelationsRequest) returns (GetRelationsResponse);
+
+  // GetEvent — Story 11-8: fetches a single event by ID, scoped to a room.
+  // Implements GET /_matrix/client/v3/rooms/{roomId}/event/{eventId}.
+  // Returns PERMISSION_DENIED if user is not a room member.
+  // Returns NOT_FOUND if the event does not exist in the room.
+  rpc GetEvent(GetEventRequest) returns (GetEventResponse);
+
+  // SearchMessages — Story 11.3: Full-text search over rooms the user is a member of.
+  // user_id in the request is for documentation/auditing only — the handler MUST use
+  // x-user-id from gRPC metadata, never from the request body.
+  rpc SearchMessages(SearchMessagesRequest) returns (SearchMessagesResponse);
 }
 
 // Shared event type used across multiple RPCs
 message Event {
-  string event_id   = 1;
-  string room_id    = 2;
-  string sender_id  = 3;
-  string event_type = 4;
-  bytes  content    = 5;  // JSON-encoded event content
-  int64  origin_ts  = 6;  // Unix milliseconds
-  int64  server_ts  = 7;  // Unix milliseconds
+  string event_id          = 1;
+  string room_id           = 2;
+  string sender_id         = 3;
+  string event_type        = 4;
+  bytes  content           = 5;  // JSON-encoded event content
+  int64  origin_ts         = 6;  // Unix milliseconds
+  int64  server_ts         = 7;  // Unix milliseconds
+  string state_key         = 8;  // Matrix state_key (subject of state event, e.g. user_id for m.room.member)
+  bytes  unsigned_relations = 9; // Story 9-28: JSON {"m.thread":{"count":N,"latest_event":{...},"current_user_participated":bool}}
 }
 
 // SendEvent
 message SendEventRequest {
-  string room_id    = 1;
-  string sender_id  = 2;
-  string event_type = 3;
-  string txn_id     = 4;  // idempotency key
-  bytes  content    = 5;
-  int64  origin_ts  = 6;  // Unix milliseconds
+  string room_id        = 1;
+  string sender_id      = 2;
+  string event_type     = 3;
+  string txn_id         = 4;  // idempotency key
+  bytes  content        = 5;
+  int64  origin_ts      = 6;  // Unix milliseconds
+  string state_key      = 7;  // Story 9-7: Matrix state_key (may be "" for types like m.room.name)
+  bool   is_state_event = 8;  // SEC Gate 1: true when this is a state event (even if state_key="")
 }
 message SendEventResponse {
   string event_id = 1;
@@ -291,6 +350,7 @@ message GetSyncDeltaRequest {
   string user_id     = 1;
   string since_token = 2;  // opaque token from previous next_batch
   int64  timeout_ms  = 3;  // long-poll wait time; 0 = return immediately; max 30000
+  string device_id   = 4;  // device-scoped since-token lookup key (Story 9-22)
 }
 
 message GetSyncDeltaResponse {
@@ -441,10 +501,14 @@ message GetEventContextResponse {
 }
 
 // InvalidateUserSessions — Story 6.5: Admin deactivation revokes all active sessions.
-// Calls SessionManager.destroy_session/1 for the target user.
+// Story 9-22: when device_id is set, only the (user_id, device_id) session is invalidated
+// (per-device logout). When device_id is empty, all sessions for the user are invalidated
+// (admin deactivation / full logout).
+// Calls SessionManager.destroy_session/1 or /2 depending on device_id presence.
 // Returns ok=true on success; gRPC error on DB failure.
 message InvalidateUserSessionsRequest {
-  string user_id = 1;  // Matrix user ID (@localpart:server)
+  string user_id   = 1;  // Matrix user ID (@localpart:server)
+  string device_id = 2;  // Optional: if set, only invalidate this device's session (Story 9-22)
 }
 
 message InvalidateUserSessionsResponse {
@@ -481,4 +545,214 @@ message InvalidateAllAdminSessionsRequest {}
 
 message InvalidateAllAdminSessionsResponse {
   bool ok = 1;
+}
+
+// ── Story 9.1: Admin gRPC messages ──────────────────────────────────────────
+
+// AdminUserProto — user record for admin RPCs
+message AdminUserProto {
+  string user_id      = 1;
+  string display_name = 2;
+  string email_masked = 3;  // masked: u***@domain
+  bool   is_active    = 4;
+  string system_role  = 5;  // "user" | "instance_admin" | "compliance_officer"
+  int64  created_at   = 6;  // Unix milliseconds
+}
+
+// ListAdminUsers
+message ListAdminUsersRequest {
+  int32  limit  = 1;   // 1–100, default 20
+  string cursor = 2;   // opaque cursor (user_id); empty = first page
+  string search = 3;   // ILIKE substring match on display_name; empty = no filter
+}
+message ListAdminUsersResponse {
+  repeated AdminUserProto users       = 1;
+  int32                   total       = 2;
+  string                  next_cursor = 3;  // empty = no more pages
+}
+
+// GetAdminUser
+message GetAdminUserRequest  { string user_id = 1; }
+message GetAdminUserResponse { AdminUserProto user = 1; }
+
+// DeactivateUser
+message DeactivateUserRequest  { string user_id = 1; }
+message DeactivateUserResponse { bool ok = 1; }
+
+// ReactivateUser
+message ReactivateUserRequest  { string user_id = 1; }
+message ReactivateUserResponse { bool ok = 1; }
+
+// UpdateUserRole
+message UpdateUserRoleRequest  {
+  string user_id = 1;
+  string role    = 2;  // "user" | "instance_admin" | "compliance_officer"
+}
+message UpdateUserRoleResponse { bool ok = 1; }
+
+// AdminRoomProto — room summary for admin RPCs
+message AdminRoomProto {
+  string room_id      = 1;
+  string name         = 2;
+  string status       = 3;  // "active" | "archived"
+  int32  member_count = 4;
+  int64  created_at   = 5;  // Unix milliseconds
+}
+
+// AdminRoomDetailProto — full room detail
+message AdminRoomDetailProto {
+  string room_id      = 1;
+  string name         = 2;
+  string status       = 3;
+  int32  member_count = 4;
+  int32  max_members  = 5;  // 0 = no limit
+  string visibility   = 6;  // "public" | "private"
+  int64  created_at   = 7;
+}
+
+// ListAdminRooms
+message ListAdminRoomsRequest {
+  int32  limit         = 1;
+  string cursor        = 2;   // empty = first page
+  string status_filter = 3;   // "active" | "archived" | "" (all)
+  string search        = 4;
+}
+message ListAdminRoomsResponse {
+  repeated AdminRoomProto rooms       = 1;
+  int32                   total       = 2;
+  string                  next_cursor = 3;
+}
+
+// GetAdminRoom
+message GetAdminRoomRequest  { string room_id = 1; }
+message GetAdminRoomResponse { AdminRoomDetailProto room = 1; }
+
+// ServerConfigProto — server configuration (oidc_client_secret intentionally absent)
+message ServerConfigProto {
+  string instance_name            = 1;
+  string oidc_issuer              = 2;
+  string oidc_client_id           = 3;
+  int32  room_default_max_members = 4;
+  string room_default_visibility  = 5;
+  int32  audit_log_retention_days = 6;
+}
+
+// GetServerConfig
+message GetServerConfigRequest  {}
+message GetServerConfigResponse { ServerConfigProto config = 1; }
+
+// UpdateServerConfig — all fields optional (empty string / zero = do not update)
+message UpdateServerConfigRequest {
+  string instance_name            = 1;
+  string oidc_issuer              = 2;
+  string oidc_client_id           = 3;
+  int32  room_default_max_members = 4;
+  string room_default_visibility  = 5;
+  int32  audit_log_retention_days = 6;
+}
+message UpdateServerConfigResponse { bool ok = 1; }
+
+// UpgradeRoom — Story 9.8: atomic room version upgrade
+message UpgradeRoomRequest {
+  string old_room_id  = 1;
+  string requester_id = 2;  // must be room owner (power_level >= 100)
+  string new_version  = 3;  // e.g. "10"
+}
+
+message UpgradeRoomResponse {
+  string new_room_id = 1;
+}
+
+// AdminRoomMemberProto — Story 9.18: one member row in ListAdminRoomMembersResponse.
+// display_name is decrypted by the Elixir Core before sending; empty string on failure.
+message AdminRoomMemberProto {
+  string user_id      = 1;
+  string display_name = 2;  // decrypted; empty string if decryption fails
+  int64  joined_at    = 3;  // Unix milliseconds
+}
+
+// ListAdminRoomMembers — Story 9.18
+message ListAdminRoomMembersRequest  { string room_id = 1; }
+message ListAdminRoomMembersResponse { repeated AdminRoomMemberProto members = 1; }
+
+// GetRelations — Story 9-28 / 9-29
+// Returns all events that relate to parent_event_id via rel_type (e.g. "m.thread").
+// Story 9-29: rel_type empty = all relation types; event_type filters further.
+// dir: "b" = newest-first (DESC, default), "f" = oldest-first (ASC).
+// recurse: accepted without error; MVP passes through (Core may ignore).
+// from: opaque pagination token; empty = start from newest (dir=b) or oldest (dir=f).
+// Caller must be a joined member of the room.
+message GetRelationsRequest {
+  string user_id    = 1;
+  string room_id    = 2;
+  string event_id   = 3;  // parent event ID (thread root)
+  string rel_type   = 4;  // e.g. "m.thread"; empty = all relation types (Story 9-29)
+  int32  limit      = 5;  // 0 = default 20; clamped to 100
+  string event_type = 6;  // filter by event type; empty = all event types (Story 9-29)
+  string dir        = 7;  // "f" or "b" (default "b" = newest-first DESC) (Story 9-29)
+  bool   recurse    = 8;  // accepted without error; MVP: same as dir=b (Story 9-29)
+  string from       = 9;  // opaque pagination token; empty = first page (Story 9-29)
+}
+
+message GetRelationsResponse {
+  repeated Event events     = 1;
+  string         next_batch = 2;  // empty when no more pages
+  string         prev_batch = 3;  // for dir=b pagination (Story 9-29)
+}
+
+// ── Story 11-8: GetEvent messages ────────────────────────────────────────────
+
+// GetEventRequest — Story 11-8: fetch a single event by ID, scoped to a room.
+// Caller identity is sourced from gRPC metadata (x-user-id), not from user_id field.
+message GetEventRequest {
+  string room_id  = 1;
+  string event_id = 2;
+  // user_id is documentation/auditing only — the handler MUST use x-user-id
+  // from gRPC metadata (Nebu.Grpc.Metadata.trusted_identity), never from this field.
+  string user_id  = 3;
+}
+
+// GetEventResponse — Story 11-8: the target event, fully serialized.
+// Returns NOT_FOUND if event does not exist in room.
+// Returns PERMISSION_DENIED if user is not a room member.
+message GetEventResponse {
+  Event event = 1;
+}
+
+// ── Story 11.3: SearchMessages gRPC messages ─────────────────────────────────
+
+// ProfileInfo — one entry in SearchResult.profile_info map (keyed by user_id).
+message ProfileInfo {
+  string displayname = 1;
+  string avatar_url  = 2;
+}
+
+// SearchResult — one hit in a SearchMessagesResponse.
+message SearchResult {
+  float             rank           = 1;  // ts_rank_cd score; higher = more relevant
+  bytes             event          = 2;  // raw event JSON (same encoding as other bytes fields)
+  repeated bytes    events_before  = 3;  // up to 5 events before result event in same room
+  repeated bytes    events_after   = 4;  // up to 5 events after result event in same room
+  map<string, ProfileInfo> profile_info = 5;  // keyed by user_id (sender + context senders)
+}
+
+// SearchMessagesRequest — Story 11.3: SearchMessages gRPC handler.
+// SECURITY: user_id field is IGNORED by the handler — user_id is extracted from
+// x-user-id gRPC metadata (set by Go JWTMiddleware). This field is present only
+// for client auditing/documentation; treating it as authoritative would bypass
+// all membership enforcement.
+message SearchMessagesRequest {
+  string          user_id        = 1;  // IGNORED by handler — use x-user-id metadata
+  string          search_term    = 2;
+  repeated string room_filter    = 3;  // client-requested room filter; intersected with membership
+  repeated string sender_filter  = 4;  // optional sender restriction (not yet enforced at DB layer)
+  int32           limit          = 5;  // 0 = default 10; server clamps to 1–100
+  string          next_batch     = 6;  // opaque pagination token (base64-encoded offset int)
+}
+
+// SearchMessagesResponse — Story 11.3.
+message SearchMessagesResponse {
+  repeated SearchResult results     = 1;
+  string                next_batch  = 2;  // empty when no more results
+  int32                 total_count = 3;  // approximate total matching events (for UI display)
 }

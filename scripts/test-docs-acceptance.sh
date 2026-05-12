@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # test-docs-acceptance.sh
-# Red-phase acceptance tests for Story 9.1 — arc42 docs generation from BMAD
+# Red-phase acceptance tests for Story 9-11 — arc42 docs generation from BMAD
 # artifacts.
 #
 # Usage: bash scripts/test-docs-acceptance.sh
@@ -541,7 +541,7 @@ test_matrix_api_scope_complete() {
 # MAIN — Run all 9 acceptance tests sequentially
 # =============================================================================
 echo "======================================================================="
-echo "test-docs-acceptance.sh — Story 9.1 Acceptance Tests"
+echo "test-docs-acceptance.sh — Story 9-11 Acceptance Tests"
 echo "Repo root: ${REPO_ROOT}"
 echo "======================================================================="
 echo ""

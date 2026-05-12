@@ -1,0 +1,228 @@
+{
+    "components": {
+        "securitySchemes": {}
+    },
+    "info": {
+        "title": "Matrix Push Gateway API",
+        "version": "v1.18"
+    },
+    "openapi": "3.1.0",
+    "paths": {
+        "/_matrix/push/v1/notify": {
+            "post": {
+                "description": "This endpoint is invoked by HTTP pushers to notify a push gateway about\nan event or update the number of unread notifications a user has.\nIn the former case it will contain selected information about the event.\nIn either case it may contain numeric counts of the number of unread\nevents of different types the user has. The counts may be sent along\nwith a notification about an event or by themselves.\n\nNotifications about a particular event will normally cause the user to be\nalerted in some way. It is therefore necessary to perform duplicate\nsuppression for such notifications using the `event_id` field to avoid\nretries of this HTTP API causing duplicate alerts. The operation of\nupdating counts of unread notifications should be idempotent and\ntherefore do not require duplicate suppression.\n\nClients interested in receiving notifications via this endpoint MUST\nconfigure its full URI when creating the associated pusher via\n[`/_matrix/client/v3/pushers/set`](https://spec.matrix.org/v1.18/client-server-api/#post_matrixclientv3pushersset).",
+                "operationId": "notify",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "example": {
+                                    "notification": {
+                                        "content": {
+                                            "body": "I'm floating in a most peculiar way.",
+                                            "msgtype": "m.text"
+                                        },
+                                        "counts": {
+                                            "missed_calls": 1,
+                                            "unread": 2
+                                        },
+                                        "devices": [
+                                            {
+                                                "app_id": "org.matrix.matrixConsole.ios",
+                                                "data": {},
+                                                "pushkey": "V2h5IG9uIGVhcnRoIGRpZCB5b3UgZGVjb2RlIHRoaXM/",
+                                                "pushkey_ts": 12345678,
+                                                "tweaks": {
+                                                    "sound": "bing"
+                                                }
+                                            }
+                                        ],
+                                        "event_id": "$3957tyerfgewrf384",
+                                        "prio": "high",
+                                        "room_alias": "#exampleroom:matrix.org",
+                                        "room_id": "!slw48wfj34rtnrf:example.com",
+                                        "room_name": "Mission Control",
+                                        "sender": "@exampleuser:matrix.org",
+                                        "sender_display_name": "Major Tom",
+                                        "type": "m.room.message"
+                                    }
+                                },
+                                "properties": {
+                                    "notification": {
+                                        "description": "Information about the push notification",
+                                        "properties": {
+                                            "content": {
+                                                "description": "The `content` field from the event, if present. The pusher\nmay omit this if the event had no content or for any other\nreason.",
+                                                "title": "EventContent",
+                                                "type": "object"
+                                            },
+                                            "counts": {
+                                                "description": "This is a dictionary of the current number of unacknowledged\ncommunications for the recipient user. Counts whose value is\nzero should be omitted.",
+                                                "properties": {
+                                                    "missed_calls": {
+                                                        "description": "The number of unacknowledged missed calls a user has\nacross all rooms of which they are a member.",
+                                                        "type": "integer"
+                                                    },
+                                                    "unread": {
+                                                        "description": "The number of unread messages a user has across all of the\nrooms they are a member of.",
+                                                        "type": "integer"
+                                                    }
+                                                },
+                                                "title": "Counts",
+                                                "type": "object"
+                                            },
+                                            "devices": {
+                                                "description": "This is an array of devices that the notification should be sent to.",
+                                                "items": {
+                                                    "properties": {
+                                                        "app_id": {
+                                                            "description": "The `app_id` given when the pusher was created.",
+                                                            "type": "string"
+                                                        },
+                                                        "data": {
+                                                            "description": "A dictionary of additional pusher-specific data. This\nis the `data` dictionary passed in at\n[pusher creation](https://spec.matrix.org/v1.18/client-server-api/#post_matrixclientv3pushersset)\nminus the `url` key.",
+                                                            "properties": {
+                                                                "format": {
+                                                                    "description": "The format to use for sending notifications.",
+                                                                    "type": "string"
+                                                                }
+                                                            },
+                                                            "title": "PusherData",
+                                                            "type": "object"
+                                                        },
+                                                        "pushkey": {
+                                                            "description": "The `pushkey` given when the pusher was created.",
+                                                            "type": "string"
+                                                        },
+                                                        "pushkey_ts": {
+                                                            "description": "The unix timestamp (in seconds) when the\npushkey was last updated.",
+                                                            "format": "int64",
+                                                            "type": "integer"
+                                                        },
+                                                        "tweaks": {
+                                                            "description": "A dictionary of customisations made to the way this\nnotification is to be presented. These are added by push rules.",
+                                                            "title": "Tweaks",
+                                                            "type": "object"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "app_id",
+                                                        "pushkey"
+                                                    ],
+                                                    "title": "Device",
+                                                    "type": "object"
+                                                },
+                                                "title": "Devices",
+                                                "type": "array"
+                                            },
+                                            "event_id": {
+                                                "description": "The Matrix event ID of the event being notified about.\nThis is required if the notification is about a\nparticular Matrix event. It may be omitted for notifications\nthat only contain updated badge counts. This ID can and\nshould be used to detect duplicate notification requests.",
+                                                "type": "string"
+                                            },
+                                            "prio": {
+                                                "description": "The priority of the notification. If omitted, `high` is\nassumed. This may be used by push gateways to deliver less\ntime-sensitive notifications in a way that will preserve\nbattery power on mobile devices.",
+                                                "enum": [
+                                                    "high",
+                                                    "low"
+                                                ],
+                                                "type": "string"
+                                            },
+                                            "room_alias": {
+                                                "description": "An alias to display for the room in which the event occurred.",
+                                                "type": "string"
+                                            },
+                                            "room_id": {
+                                                "description": "The ID of the room in which this event occurred.\nRequired if the notification relates to a specific\nMatrix event.",
+                                                "type": "string"
+                                            },
+                                            "room_name": {
+                                                "description": "The name of the room in which the event occurred.",
+                                                "type": "string"
+                                            },
+                                            "sender": {
+                                                "description": "The sender of the event as in the corresponding event field.",
+                                                "type": "string"
+                                            },
+                                            "sender_display_name": {
+                                                "description": "The current display name of the sender in the room in which\nthe event occurred.",
+                                                "type": "string"
+                                            },
+                                            "type": {
+                                                "description": "The type of the event as in the event's `type` field.",
+                                                "type": "string"
+                                            },
+                                            "user_is_target": {
+                                                "description": "This is true if the user receiving the notification is the\nsubject of a member event (i.e. the `state_key` of the\nmember event is equal to the user's Matrix ID).",
+                                                "type": "boolean"
+                                            }
+                                        },
+                                        "required": [
+                                            "devices"
+                                        ],
+                                        "title": "Notification",
+                                        "type": "object"
+                                    }
+                                },
+                                "required": [
+                                    "notification"
+                                ],
+                                "type": "object"
+                            }
+                        }
+                    },
+                    "description": "Information about the push notification.",
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "examples": {
+                                    "response": {
+                                        "value": {
+                                            "rejected": [
+                                                "V2h5IG9uIGVhcnRoIGRpZCB5b3UgZGVjb2RlIHRoaXM/"
+                                            ]
+                                        }
+                                    }
+                                },
+                                "schema": {
+                                    "properties": {
+                                        "rejected": {
+                                            "description": "A list of all pushkeys given in the notification request that\nare not valid. These could have been rejected by an upstream\ngateway because they have expired or have never been valid.\nHomeservers must cease sending notification requests for these\npushkeys and remove the associated pushers. It may not\nnecessarily be the notification in the request that failed:\nit could be that a previous notification to the same pushkey\nfailed. May be empty.",
+                                            "items": {
+                                                "description": "A pushkey that has been rejected.",
+                                                "type": "string"
+                                            },
+                                            "type": "array"
+                                        }
+                                    },
+                                    "required": [
+                                        "rejected"
+                                    ],
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "A list of rejected push keys."
+                    }
+                },
+                "summary": "Notify a push gateway about an event."
+            }
+        }
+    },
+    "servers": [
+        {
+            "url": "https://matrix.org"
+        },
+        {
+            "url": "https://{homeserver_address}",
+            "variables": {
+                "homeserver_address": {
+                    "default": "matrix-client.matrix.org",
+                    "description": "The base URL for your homeserver"
+                }
+            }
+        }
+    ]
+}

@@ -2,7 +2,10 @@ package matrix
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -77,9 +80,7 @@ func (h *CreateRoomHandler) PostCreateRoom(w http.ResponseWriter, r *http.Reques
 	}
 
 	var req CreateRoomRequest
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeMatrixError(w, http.StatusBadRequest, "M_BAD_JSON", "Request body is not valid JSON")
 		return
 	}
@@ -301,10 +302,12 @@ func (h *InviteUserHandler) PostInviteUser(w http.ResponseWriter, r *http.Reques
 
 // ─── SetRoomStateHandler ──────────────────────────────────────────────────────
 
-// SetRoomStateCoreClient is a consumer-defined interface for the SetPowerLevels gRPC call.
+// SetRoomStateCoreClient is a consumer-defined interface for state event gRPC calls.
 // Keep it minimal — only what this handler needs (Go interface convention, ADR-009).
+// Story 9-7: SendEvent added so all whitelisted state event types can delegate to Core.
 type SetRoomStateCoreClient interface {
 	SetPowerLevels(ctx context.Context, req *pb.SetPowerLevelsRequest) (*pb.SetPowerLevelsResponse, error)
+	SendEvent(ctx context.Context, req *pb.SendEventRequest) (*pb.SendEventResponse, error)
 }
 
 // setRoomStateResponse is the JSON response for a successful state event.
@@ -336,14 +339,23 @@ func NewSetRoomStateHandler(cfg SetRoomStateConfig) *SetRoomStateHandler {
 //
 // Flow:
 //  1. Extract roomId, eventType, stateKey from URL path via Go 1.22+ r.PathValue.
-//  2. Extract sub + systemRole from JWT context (set by JWTMiddleware).
-//  3. Decode JSON body; return 400 M_BAD_JSON on failure.
-//  4. For m.room.power_levels: JSON-encode the body and call gRPC CoreService.SetPowerLevels.
-//  5. Map gRPC errors: PERMISSION_DENIED → 403 M_FORBIDDEN, NOT_FOUND → 404 M_NOT_FOUND.
-//  6. Return 200 {"event_id": ""} on success — state events don't generate event_ids in MVP.
+//  2. Check eventType against allowedStateEventTypes — reject unknown types with 400 M_BAD_JSON
+//     before any body decoding (Story 9-6, AC3 / AC4).
+//  3. Extract sub + systemRole from JWT context (set by JWTMiddleware).
+//  4. Decode JSON body; return 400 M_BAD_JSON on failure.
+//  5. For m.room.power_levels: JSON-encode the body and call gRPC CoreService.SetPowerLevels.
+//  6. Map gRPC errors: PERMISSION_DENIED → 403 M_FORBIDDEN, NOT_FOUND → 404 M_NOT_FOUND.
+//  7. Return 200 {"event_id": ""} on success — state events don't generate event_ids in MVP.
 func (h *SetRoomStateHandler) PutSetRoomState(w http.ResponseWriter, r *http.Request) {
 	roomID := r.PathValue("roomId")
 	eventType := r.PathValue("eventType")
+
+	// Story 9-6 AC3 / AC4: reject any event type not in the single authoritative whitelist.
+	// The check fires before body decoding so unknown types are rejected immediately.
+	if !allowedStateEventTypes[eventType] {
+		writeMatrixError(w, http.StatusBadRequest, "M_BAD_JSON", "unknown state event type: "+eventType)
+		return
+	}
 
 	userID, _ := r.Context().Value(middleware.ContextKeyUserID).(string)
 	systemRole, _ := r.Context().Value(middleware.ContextKeySystemRole).(string)
@@ -384,8 +396,60 @@ func (h *SetRoomStateHandler) PutSetRoomState(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// For other state event types, return 501 Not Implemented (MVP scope).
-	writeMatrixError(w, http.StatusNotImplemented, "M_UNRECOGNIZED", "Unsupported state event type")
+	// For all other whitelisted state event types: delegate to Core via SendEvent.
+	// State events follow the same persistence path as regular events — the Room
+	// GenServer signs, persists, and broadcasts them. The state_key identifies
+	// which "slot" the event occupies in the room state (e.g. "" for m.room.name,
+	// userId for m.room.member). Story 9-7: replaces the 501 fallback.
+	stateKey := r.PathValue("stateKey")
+
+	contentJSON, err := json.Marshal(body)
+	if err != nil {
+		writeMatrixError(w, http.StatusBadRequest, "M_BAD_JSON", "Cannot encode state event content")
+		return
+	}
+
+	// State events do not use client-supplied txn_ids — Matrix spec idempotency
+	// for state events is by (roomId, eventType, stateKey), not by txn_id.
+	// Generate a unique txn_id per request so the ETS dedup cache (keyed on
+	// {room_id, user_id, txn_id}) never silently drops a second state event
+	// from the same user in the same room. (MAJOR-1 fix, code review story 9-7)
+	//
+	// LOW fix (SEC Gate 1): append 8 crypto/rand bytes (hex-encoded) to eliminate
+	// the theoretical nanosecond-collision window across multiple gateway pods.
+	randBytes := make([]byte, 8)
+	rand.Read(randBytes) //nolint:errcheck // crypto/rand.Read never returns an error on supported platforms
+	stateTxnID := fmt.Sprintf("state-%d-%s-%s", time.Now().UnixNano(), eventType, hex.EncodeToString(randBytes))
+
+	resp, err := h.coreClient.SendEvent(grpcCtx, &pb.SendEventRequest{
+		RoomId:       roomID,
+		SenderId:     userID,
+		EventType:    eventType,
+		TxnId:        stateTxnID,
+		Content:      contentJSON,
+		OriginTs:     time.Now().UnixMilli(),
+		StateKey:     stateKey,
+		IsStateEvent: true, // SEC Gate 1: signals :change_state power check in Room.Server
+	})
+	if err != nil {
+		st, _ := status.FromError(err)
+		switch st.Code() {
+		case codes.PermissionDenied:
+			writeMatrixError(w, http.StatusForbidden, "M_FORBIDDEN", "You do not have permission to set this state event")
+		case codes.NotFound:
+			writeMatrixError(w, http.StatusNotFound, "M_NOT_FOUND", "Room not found")
+		default:
+			writeMatrixError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
+		}
+		return
+	}
+	if resp == nil {
+		writeMatrixError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(setRoomStateResponse{EventID: resp.EventId})
 }
 
 // ─── SendEventHandler ─────────────────────────────────────────────────────────
@@ -495,6 +559,8 @@ func (h *SendEventHandler) PutSendEvent(w http.ResponseWriter, r *http.Request) 
 			writeMatrixError(w, http.StatusForbidden, "M_FORBIDDEN", "You are not allowed to send events to this room")
 		case codes.ResourceExhausted:
 			writeMatrixError(w, http.StatusTooManyRequests, "M_LIMIT_EXCEEDED", "Rate limit exceeded")
+		case codes.FailedPrecondition:
+			writeMatrixError(w, http.StatusForbidden, "M_ROOM_ARCHIVED", "Room is archived")
 		default:
 			writeMatrixError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
 		}

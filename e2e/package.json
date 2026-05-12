@@ -2,15 +2,19 @@
   "name": "nebu-e2e",
   "private": true,
   "scripts": {
-    "test": "playwright test",
-    "test:headed": "playwright test --headed",
+    "test": "bddgen && playwright test",
+    "test:headed": "bddgen && playwright test --headed",
     "test:ui": "playwright test --ui",
+    "test:element": "bddgen && playwright test --project=element-web --reporter=list",
+    "test:admin": "bddgen && playwright test --project=admin-ui --reporter=list",
+    "bddgen": "bddgen",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.10.1",
     "@playwright/test": "^1.44.0",
     "@types/node": "^20.19.39",
+    "playwright-bdd": "^8.5.0",
     "typescript": "^6.0.2"
   }
 }

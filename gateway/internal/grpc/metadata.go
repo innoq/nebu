@@ -40,18 +40,26 @@ func FormatUserID(sub, serverName string) string {
 	return "@" + localpart + ":" + serverName
 }
 
-// FormatUserIDFromClaims builds a Matrix user ID preferring the human-readable
-// name claim as the localpart. Falls back to FormatUserID(sub, serverName).
+// FormatUserIDFromClaims builds a Matrix user ID using the configured claim name.
+// It looks up claims[claimName], sanitises the value via sanitiseLocalpart, and
+// uses the result as the localpart. If the result is empty (claim absent, not a
+// string, or sanitises to ""), it falls back to FormatUserID(sub, serverName)
+// where sub = claims["sub"].(string).
 //
-// The name claim is sanitised to Matrix-safe characters: [a-z0-9._\-].
-// If the sanitised name is empty, the SHA-256 fallback is used.
-func FormatUserIDFromClaims(sub, name, serverName string) string {
-	if sub == "" {
-		return ""
+// AC6 (Story 11-10): new signature — claimName + full claims map replace the old
+// (sub, name string) pair. All call sites must pass the DB-loaded claim name.
+//
+// Security: claims[claimName] is used only as a map key lookup (no SQL) and is
+// sanitised before use — injection risk is nil.
+func FormatUserIDFromClaims(claimName string, claims map[string]interface{}, serverName string) string {
+	// Extract configured claim value as string (non-string types fall through to fallback).
+	if claimValue, ok := claims[claimName].(string); ok {
+		if safe := sanitiseLocalpart(claimValue); safe != "" {
+			return "@" + safe + ":" + serverName
+		}
 	}
-	if safe := sanitiseLocalpart(name); safe != "" {
-		return "@" + safe + ":" + serverName
-	}
+	// Fallback: use SHA-256 of sub claim.
+	sub, _ := claims["sub"].(string)
 	return FormatUserID(sub, serverName)
 }
 

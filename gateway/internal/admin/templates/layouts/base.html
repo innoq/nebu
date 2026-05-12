@@ -17,7 +17,7 @@
   <header class="h-12 bg-base-300 flex items-center justify-between px-4 shrink-0">
     <span class="font-semibold text-base-content">Nebu Admin</span>
     <!-- C3: TopbarStatusIndicator — hidden during bootstrap, server-side status on dashboard, "Connecting..." elsewhere -->
-    {{ if not .BootstrapMode }}
+    {{ if not .BootstrapMode }}{{ if not .LoginMode }}
     {{ if .TopbarStatus }}
     <span id="topbar-status" aria-live="polite" aria-label="System status: {{ .TopbarLabel }}"
           class="flex items-center gap-1 text-sm
@@ -31,14 +31,8 @@
             aria-hidden="true"></span>
       <span id="topbar-label">{{ .TopbarLabel }}</span>
     </span>
-    {{ else }}
-    <span id="topbar-status" aria-live="polite" aria-label="System status: connecting"
-          class="flex items-center gap-1 text-sm text-warning">
-      <span class="w-2 h-2 rounded-full bg-warning inline-block" aria-hidden="true"></span>
-      Connecting&hellip;
-    </span>
     {{ end }}
-    {{ end }}
+    {{ end }}{{ end }}
   </header>
 
   <!-- Shell: sidebar + content -->
@@ -60,7 +54,7 @@
           </a>
         </li>
         {{ end }}
-        {{ if not .BootstrapMode }}
+        {{ if not .BootstrapMode }}{{ if not .LoginMode }}
         <li>
           <a href="/admin/dashboard"
              data-navkey="dashboard"
@@ -125,6 +119,16 @@
           </a>
         </li>
         <li>
+          <a href="/admin/config/claim-mapping"
+             data-navkey="claim-mapping"
+             {{ if eq .ActiveNav "claim-mapping" }}aria-current="page"{{ end }}
+             class="flex items-center gap-2 px-3 py-3 rounded text-sm
+                    {{ if eq .ActiveNav "claim-mapping" }}active bg-primary text-primary-content font-semibold{{ else }}font-medium text-base-content hover:bg-base-300{{ end }}
+                    focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-base-200">
+            Claim Mapping
+          </a>
+        </li>
+        <li>
           <form method="POST" action="/admin/logout" class="m-0 p-0">
             <input type="hidden" name="_csrf" value="{{ .CSRFToken }}">
             <button type="submit"
@@ -137,7 +141,7 @@
             </button>
           </form>
         </li>
-        {{ end }}
+        {{ end }}{{ end }}
       </ul>
     </nav>
 
@@ -149,5 +153,10 @@
   </div>
 
   {{ block "scripts" . }}{{ end }}
+  {{ if not .BootstrapMode }}{{ if not .LoginMode }}{{ if not .ErrorMode }}
+  <footer class="footer footer-center p-2 bg-base-200 text-base-content text-xs opacity-60 shrink-0">
+    <p>nebu gateway v{{.BuildVersion}} · {{.GitCommit}} · built {{.BuildTime}}</p>
+  </footer>
+  {{ end }}{{ end }}{{ end }}
 </body>
 </html>{{ end }}

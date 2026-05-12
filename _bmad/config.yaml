@@ -1,0 +1,8 @@
+document_output_language: English
+output_folder: '{project-root}/_bmad-output'
+nebu:
+  name: Nebu Dev
+  description: Project-specific development pipeline and agent ecosystem for the Nebu
+    Matrix chat server.
+  version: 1.0.0
+  default_selected: false

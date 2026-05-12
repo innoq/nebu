@@ -287,7 +287,7 @@ func buildAuthedPushRulesHandler(t *testing.T, db *mockPushRulesDB) (http.Handle
 	t.Cleanup(oidcSrv.Close)
 
 	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
-	jwtMiddleware := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")
+	jwtMiddleware := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")
 
 	handler := NewPushRulesHandler(PushRulesConfig{DB: db})
 
@@ -320,7 +320,7 @@ func buildAuthedPushersHandler(t *testing.T, db *mockPushersDB) (http.Handler, f
 	t.Cleanup(oidcSrv.Close)
 
 	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
-	jwtMiddleware := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")
+	jwtMiddleware := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")
 
 	handler := NewPushersHandler(PushersConfig{DB: db})
 

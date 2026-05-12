@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-05-01T00:00:00Z",
-  "generator": "bmad-generate-arc42 skill (Story 9-1)",
+  "generated_at": "2026-05-12T14:00:00Z",
+  "generator": "bmad-maintain-arc42 skill (Story 11-11 delta)",
   "source_artifacts": [
     "_bmad-output/planning-artifacts/architecture.md",
     "_bmad-output/planning-artifacts/prd.md",
@@ -37,13 +37,13 @@
     },
     "docs/architecture/05-building-blocks.md": {
       "editable": false,
-      "generated_at": "2026-05-01T00:00:00Z",
+      "generated_at": "2026-05-12T12:00:00Z",
       "source": "_bmad-output/planning-artifacts/architecture.md",
       "arc42_section": "05 Building Block View"
     },
     "docs/architecture/06-runtime.md": {
       "editable": false,
-      "generated_at": "2026-05-01T00:00:00Z",
+      "generated_at": "2026-05-12T14:00:00Z",
       "source": "_bmad-output/planning-artifacts/architecture.md",
       "arc42_section": "06 Runtime View"
     },
@@ -55,31 +55,31 @@
     },
     "docs/architecture/08-concepts.md": {
       "editable": false,
-      "generated_at": "2026-05-01T00:00:00Z",
+      "generated_at": "2026-05-12T14:00:00Z",
       "source": "_bmad-output/planning-artifacts/architecture.md",
       "arc42_section": "08 Cross-cutting Concepts"
     },
     "docs/architecture/09-decisions.md": {
       "editable": false,
-      "generated_at": "2026-05-01T00:00:00Z",
+      "generated_at": "2026-05-08T12:00:00Z",
       "source": "CLAUDE.md",
       "arc42_section": "09 Architecture Decisions"
     },
     "docs/architecture/10-quality.md": {
       "editable": false,
-      "generated_at": "2026-05-01T00:00:00Z",
+      "generated_at": "2026-05-08T13:00:00Z",
       "source": "_bmad-output/planning-artifacts/prd.md",
       "arc42_section": "10 Quality Requirements"
     },
     "docs/architecture/11-risks.md": {
       "editable": false,
-      "generated_at": "2026-05-01T00:00:00Z",
+      "generated_at": "2026-05-11T00:00:00Z",
       "source": "_bmad-output/implementation-artifacts/sprint-status.yaml",
       "arc42_section": "11 Risks and Technical Debt"
     },
     "docs/architecture/12-glossary.md": {
       "editable": false,
-      "generated_at": "2026-05-01T00:00:00Z",
+      "generated_at": "2026-05-08T10:00:00Z",
       "source": "CLAUDE.md",
       "arc42_section": "12 Glossary"
     },
@@ -139,14 +139,14 @@
     },
     "docs/architecture/adr/ADR-010-fts-strategy.md": {
       "editable": true,
-      "generated_at": "2026-05-01T00:00:00Z",
-      "source": "Story 9-1 Dev Notes",
-      "arc42_section": "ADR-010 (Proposed)"
+      "generated_at": "2026-05-08T12:00:00Z",
+      "source": "Story 11-1 (migration 000042, search_vector tsvector + GIN index)",
+      "arc42_section": "ADR-010 (Accepted 2026-05-08)"
     },
     "docs/architecture/adr/ADR-011-managed-e2ee-key-escrow.md": {
       "editable": true,
       "generated_at": "2026-05-01T00:00:00Z",
-      "source": "Story 9-1 Dev Notes",
+      "source": "Story 9-11 Dev Notes",
       "arc42_section": "ADR-011 (Proposed)"
     },
     "docs/getting-started.md": {
@@ -157,7 +157,7 @@
     },
     "docs/matrix-api-scope.md": {
       "editable": false,
-      "generated_at": "2026-05-01T00:00:00Z",
+      "generated_at": "2026-05-11T12:00:00Z",
       "source": "gateway/cmd/gateway/main.go",
       "arc42_section": "Matrix API Scope"
     },

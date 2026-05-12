@@ -49,7 +49,8 @@ func TestBootstrapWizard_Step2_Fields(t *testing.T) {
 	}
 }
 
-// TestBootstrapWizard_Step2_ConnectButton verifies template with Step:2 contains "Connect with OIDC" button.
+// TestBootstrapWizard_Step2_NextButton verifies template with Step:2 contains a "Next" button.
+// "Connect with OIDC" moved to Step 3 (Claim Mapping) in Story 11-10.
 func TestBootstrapWizard_Step2_ConnectButton(t *testing.T) {
 	tmpl, err := NewTemplateHandler()
 	if err != nil {
@@ -65,8 +66,36 @@ func TestBootstrapWizard_Step2_ConnectButton(t *testing.T) {
 	tmpl.render(w, "bootstrap", data)
 
 	body := w.Body.String()
+	// Step 2 now shows "Next" (advances to Step 3 Claim Mapping) — "Connect with OIDC" is in Step 3.
+	if !strings.Contains(body, "Next") {
+		t.Error("step 2 should contain 'Next' button (advances to Claim Mapping step)")
+	}
+}
+
+// TestBootstrapWizard_Step3_ConnectButton verifies template with Step:3 contains "Connect with OIDC" button.
+func TestBootstrapWizard_Step3_ConnectButton(t *testing.T) {
+	tmpl, err := NewTemplateHandler()
+	if err != nil {
+		t.Fatalf("NewTemplateHandler: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	data := BootstrapPageData{
+		PageData:            PageData{BootstrapMode: true, ActiveNav: "bootstrap"},
+		Step:                3,
+		InstanceName:        "my-instance",
+		OIDCUserIDClaim:     "sub",
+		OIDCDisplaynameClaim: "name",
+		OIDCEmailClaim:      "email",
+	}
+	tmpl.render(w, "bootstrap", data)
+
+	body := w.Body.String()
 	if !strings.Contains(body, "Connect with OIDC") {
-		t.Error("step 2 should contain 'Connect with OIDC' button")
+		t.Error("step 3 should contain 'Connect with OIDC' button")
+	}
+	if !strings.Contains(body, `name="oidc_user_id_claim"`) {
+		t.Error("step 3 should contain oidc_user_id_claim field")
 	}
 }
 

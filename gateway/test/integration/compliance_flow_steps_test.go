@@ -599,15 +599,11 @@ func postgresqlRaisesAPolicyViolationError() error {
 func initializeComplianceFlowSteps(sc *godog.ScenarioContext) {
 	// Reset all scenario-local state before each scenario.
 	sc.Before(func(ctx context.Context, scenario *godog.Scenario) (context.Context, error) {
-		officerAAccessToken = ""
-		officerAUserID = ""
-		officerBAccessToken = ""
-		officerBUserID = ""
+		// Auth tokens are intentionally NOT reset between scenarios — sessions remain valid
+		// for the full suite run. Resetting on every scenario exhausts the /login burst (10).
 		complianceRoomID = ""
 		complianceRequestID = ""
 		complianceSessionToken = ""
-		complianceAdminAccessToken = ""
-		complianceAdminUserID = ""
 		complianceVictimUserID = ""
 		complianceRLSDeleteErr = nil
 		return ctx, nil

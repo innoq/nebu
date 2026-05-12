@@ -154,6 +154,58 @@ func (m *mockCoreClient) InvalidateAllAdminSessions(_ context.Context, _ *pb.Inv
 	return &pb.InvalidateAllAdminSessionsResponse{Ok: true}, nil
 }
 
+// Story 9.1: Admin gRPC RPC stubs — panic on unexpected call (matches writer_test.go pattern).
+func (m *mockCoreClient) ListAdminUsers(_ context.Context, _ *pb.ListAdminUsersRequest, _ ...grpc.CallOption) (*pb.ListAdminUsersResponse, error) {
+	panic("unexpected call: ListAdminUsers")
+}
+func (m *mockCoreClient) GetAdminUser(_ context.Context, _ *pb.GetAdminUserRequest, _ ...grpc.CallOption) (*pb.GetAdminUserResponse, error) {
+	panic("unexpected call: GetAdminUser")
+}
+func (m *mockCoreClient) DeactivateUser(_ context.Context, _ *pb.DeactivateUserRequest, _ ...grpc.CallOption) (*pb.DeactivateUserResponse, error) {
+	panic("unexpected call: DeactivateUser")
+}
+func (m *mockCoreClient) ReactivateUser(_ context.Context, _ *pb.ReactivateUserRequest, _ ...grpc.CallOption) (*pb.ReactivateUserResponse, error) {
+	panic("unexpected call: ReactivateUser")
+}
+func (m *mockCoreClient) UpdateUserRole(_ context.Context, _ *pb.UpdateUserRoleRequest, _ ...grpc.CallOption) (*pb.UpdateUserRoleResponse, error) {
+	panic("unexpected call: UpdateUserRole")
+}
+func (m *mockCoreClient) ListAdminRooms(_ context.Context, _ *pb.ListAdminRoomsRequest, _ ...grpc.CallOption) (*pb.ListAdminRoomsResponse, error) {
+	panic("unexpected call: ListAdminRooms")
+}
+func (m *mockCoreClient) GetAdminRoom(_ context.Context, _ *pb.GetAdminRoomRequest, _ ...grpc.CallOption) (*pb.GetAdminRoomResponse, error) {
+	panic("unexpected call: GetAdminRoom")
+}
+func (m *mockCoreClient) GetServerConfig(_ context.Context, _ *pb.GetServerConfigRequest, _ ...grpc.CallOption) (*pb.GetServerConfigResponse, error) {
+	panic("unexpected call: GetServerConfig")
+}
+func (m *mockCoreClient) UpdateServerConfig(_ context.Context, _ *pb.UpdateServerConfigRequest, _ ...grpc.CallOption) (*pb.UpdateServerConfigResponse, error) {
+	panic("unexpected call: UpdateServerConfig")
+}
+func (m *mockCoreClient) UpgradeRoom(_ context.Context, _ *pb.UpgradeRoomRequest, _ ...grpc.CallOption) (*pb.UpgradeRoomResponse, error) {
+	panic("unexpected call: UpgradeRoom")
+}
+
+// Story 9.18: no-op stub for AdminRoomsClient interface extension.
+func (m *mockCoreClient) ListAdminRoomMembers(_ context.Context, _ *pb.ListAdminRoomMembersRequest, _ ...grpc.CallOption) (*pb.ListAdminRoomMembersResponse, error) {
+	return &pb.ListAdminRoomMembersResponse{}, nil
+}
+
+// Story 9-28: stub — GetRelations not expected in stream tests.
+func (m *mockCoreClient) GetRelations(_ context.Context, _ *pb.GetRelationsRequest, _ ...grpc.CallOption) (*pb.GetRelationsResponse, error) {
+	panic("unexpected call: GetRelations")
+}
+
+// Story 11.3: SearchMessages stub.
+func (m *mockCoreClient) SearchMessages(_ context.Context, _ *pb.SearchMessagesRequest, _ ...grpc.CallOption) (*pb.SearchMessagesResponse, error) {
+	return &pb.SearchMessagesResponse{}, nil
+}
+
+// Story 11-8: GetEvent stub.
+func (m *mockCoreClient) GetEvent(_ context.Context, _ *pb.GetEventRequest, _ ...grpc.CallOption) (*pb.GetEventResponse, error) {
+	panic("unexpected call: GetEvent")
+}
+
 // ─── Mock server-streaming client ────────────────────────────────────────────
 
 // mockEventStream is a fake grpc.ServerStreamingClient[pb.Event].

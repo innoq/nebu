@@ -67,3 +67,11 @@ Feature: Account Data API — GET/PUT /user/{userId}/account_data/{type} and /us
     When kai puts room account data type "m.fully_read" with body {"event_id":"$test123"} for the created room
     And kai calls incremental sync with the captured token
     Then the incremental sync contains account_data event of type "m.fully_read" for the room
+
+  # Story 9-24 AC3 — After global PUT, next /sync delivers the new event at top-level
+  # RED: this scenario MUST FAIL until syncResponse.AccountData is populated from the DB.
+  Scenario: Sync_GlobalAccountData_AfterPut — global PUT visible in top-level account_data after sync
+    When kai puts global account data type "m.direct" with body {"@bob:nebu.test":["!room1:nebu.test"]}
+    Then the response status is 200
+    When kai calls GET /sync initial
+    Then the sync response top-level account_data.events contains an entry with type "m.direct"

@@ -16,12 +16,15 @@ var stubUsers = []StubUser{
 
 // stubRooms holds fake room records for the Rooms master-detail page (Story 7.2).
 // These are used until Epic 6 (Admin API) provides real room management endpoints.
+// room-006 has an intentionally empty Name to exercise the AC3 fallback template
+// "(Direct Chat · N members)" added in Story 9.15.
 var stubRooms = []StubRoom{
 	{ID: "room-001", Name: "General", Visibility: "public", MemberCount: 47, Status: "active"},
 	{ID: "room-002", Name: "Engineering", Visibility: "private", MemberCount: 12, Status: "active"},
 	{ID: "room-003", Name: "Compliance-Team", Visibility: "private", MemberCount: 5, Status: "active"},
 	{ID: "room-004", Name: "Old Project X", Visibility: "private", MemberCount: 8, Status: "archived"},
 	{ID: "room-005", Name: "Announcements", Visibility: "public", MemberCount: 47, Status: "active"},
+	{ID: "room-006", Name: "", Visibility: "private", MemberCount: 2, Status: "active"},
 }
 
 // findStubUser returns a pointer to the StubUser with the given ID,
@@ -45,6 +48,19 @@ func findStubRoom(id string) *StubRoom {
 		}
 	}
 	return nil
+}
+
+// stubRoomMembers holds fake member lists for the Room Detail panel (Story 9.18).
+// Only rooms with active members are listed here; rooms absent from this map render
+// with an empty member list (no crash, no heading rendered — {{ if .ActiveRoomMembers }} guard).
+var stubRoomMembers = map[string][]RoomMemberData{
+	"room-001": {
+		{UserID: "usr-001", DisplayName: "Alice Müller", JoinedAt: 1714560000000},
+		{UserID: "usr-003", DisplayName: "Carla Reiter", JoinedAt: 1714646400000},
+	},
+	"room-002": {
+		{UserID: "usr-002", DisplayName: "Bob Wagner", JoinedAt: 1714560000000},
+	},
 }
 
 // StubComplianceRequest is a fake compliance access request record for the Compliance page (Story 7.11).
@@ -81,13 +97,17 @@ func findStubComplianceRequest(id string) *StubComplianceRequest {
 // StubAuditEntry is a fake audit log entry for the Audit Log page (Story 7.12).
 // Used until a real audit log API is available. Timestamps are ISO-8601-like strings
 // so that date-range filtering can use simple string-prefix comparison.
+// FormattedTime holds the pre-formatted timestamp ("2006-01-02 15:04") populated by the handler (AC13).
+// BadgeClass is the DaisyUI badge color class pre-computed by auditActionBadgeClass (AC14).
 type StubAuditEntry struct {
-	ID         string
-	Timestamp  string // ISO-8601-like, e.g. "2026-04-29T14:30:00Z"
-	Actor      string // email, e.g. "kai@example.com"
-	Action     string // dot-notation verb, e.g. "user.deactivate"
-	TargetID   string // e.g. "usr-003"
-	TargetName string // human-readable, e.g. "Carla Reiter"
+	ID            string
+	Timestamp     string // ISO-8601-like, e.g. "2026-04-29T14:30:00Z"
+	FormattedTime string // pre-formatted: "YYYY-MM-DD HH:mm", e.g. "2026-04-29 14:30" (AC13)
+	Actor         string // email, e.g. "kai@example.com"
+	Action        string // dot-notation verb, e.g. "user.deactivate"
+	BadgeClass    string // DaisyUI badge color class, e.g. "badge-error" (AC14)
+	TargetID      string // e.g. "usr-003"
+	TargetName    string // human-readable, e.g. "Carla Reiter"
 }
 
 // stubAuditLog holds fake audit log entries for the Audit Log page (Story 7.12).

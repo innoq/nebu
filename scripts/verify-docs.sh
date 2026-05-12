@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 # =============================================================================
 # verify-docs.sh
-# CI check for Story 9.1 — arc42 docs presence, size, and manifest freshness.
+# CI check for Story 9-11 — arc42 docs presence, size, and manifest freshness.
+#
+# NOTE on DRY: the manifest JSON validation block is intentionally duplicated
+# with scripts/test-docs-acceptance.sh — both scripts are zero-dependency,
+# self-contained Bash + python3 entry points (CI vs. acceptance harness).
+# A shared helper would couple them; the duplication is ~30 LOC and stable.
 #
 # Usage: bash scripts/verify-docs.sh
 #
@@ -164,8 +169,9 @@ PYEOF
 }
 
 # =============================================================================
-# CHECK 3 — editable:false files have generated_at within last 180 days
-#           (staleness WARNING only — does not fail the check)
+# CHECK 3 — editable:false files have generated_at within last 60 days
+#           (CI-blocking error — stale docs fail the pipeline)
+#           ~2 epic cadence; increase if release cadence slows
 # =============================================================================
 check_manifest_freshness() {
     local manifest="${REPO_ROOT}/docs/.arc42-manifest.json"
@@ -189,7 +195,8 @@ except Exception as e:
     sys.exit(0)  # Don't fail on parse error here (check_manifest_valid_json handles it)
 
 now = datetime.now(timezone.utc)
-cutoff = now - timedelta(days=180)
+# ~2 epic cadence; increase if release cadence slows
+cutoff = now - timedelta(days=60)
 stale = []
 
 files = data.get("files", {})
@@ -208,19 +215,25 @@ for rel_path, entry in files.items():
         pass  # unparseable timestamp — skip
 
 if stale:
-    print("WARNING: " + str(len(stale)) + " auto-generated file(s) are >180 days old:", file=sys.stderr)
+    print("ERROR: " + str(len(stale)) + " auto-generated file(s) are >60 days old:", file=sys.stderr)
     for s in stale:
         print("  " + s, file=sys.stderr)
-    print("Run /bmad-generate-arc42 to refresh. (This is a warning, not a failure.)", file=sys.stderr)
+    print("Run /bmad-generate-arc42 to refresh.", file=sys.stderr)
+    sys.exit(1)
 else:
-    print("All auto-generated files are within 180 days.")
+    print("All auto-generated files are within 60 days.")
 PYEOF
 )
 
     local output rc=0
     output=$(python3 -c "${py_script}" "${manifest}" 2>&1) || rc=$?
 
-    # Print output (may contain WARNING) but always return 0 (staleness is not an error)
+    if [[ "${rc}" -ne 0 ]]; then
+        echo "  FAIL: arc42 docs staleness check failed:" >&2
+        echo "${output}" >&2
+        return 1
+    fi
+
     echo "  ${output}"
     return 0
 }

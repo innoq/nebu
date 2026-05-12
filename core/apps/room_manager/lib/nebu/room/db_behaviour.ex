@@ -84,6 +84,19 @@ defmodule Nebu.Room.DBBehaviour do
               {:ok, [String.t()]} | {:error, term()}
 
   @doc """
+  Returns all room IDs where user_id has left (left_at IS NOT NULL).
+
+  Used by do_incremental_sync to include recently-left rooms in the initial
+  fetch_delta_rooms check. Closes the race window where the {new_leave} broadcast
+  fires before the sync task subscribes, causing a 30 s long-poll delay.
+
+  Returns `{:ok, [room_id]}` — empty list if user has no left rooms.
+  Returns `{:error, reason}` on DB error.
+  """
+  @callback get_recently_left_rooms_for_user(user_id :: String.t()) ::
+              {:ok, [String.t()]} | {:error, term()}
+
+  @doc """
   Returns paginated events from the events table for the given room.
 
   Returns `{:ok, [event_map], next_batch, prev_batch}`.
@@ -158,4 +171,118 @@ defmodule Nebu.Room.DBBehaviour do
   """
   @callback get_room_status(room_id :: String.t()) ::
               {:ok, String.t()} | {:error, :not_found | term()}
+
+  @doc """
+  Atomically checks if a room is archived using SELECT FOR UPDATE.
+  Called by Room.Server.send_event/6 before inserting an event.
+
+  Must be called inside an Ecto transaction (the transaction context is
+  created inside db.ex — caller does NOT need to manage a transaction).
+
+  Returns {:ok, "active"} for active rooms.
+  Returns {:ok, "archived"} for archived rooms.
+  Returns {:error, :not_found} when the room does not exist.
+  Returns {:error, reason} on DB error.
+
+  Story 9-9: closes the TOCTOU race window between archive_room_atomic/1
+  and send_event insert.
+  """
+  @callback check_room_status_for_update(room_id :: String.t()) ::
+              {:ok, String.t()} | {:error, :not_found | term()}
+
+  @doc """
+  Returns the user_id of the room creator from the most recent m.room.create event.
+
+  Returns `{:ok, String.t()}` on success.
+  Returns `{:error, :not_found}` if no m.room.create event exists.
+  Returns `{:error, reason}` on DB error.
+  """
+  @callback get_room_creator(room_id :: String.t()) ::
+              {:ok, String.t()} | {:error, :not_found | term()}
+
+  @doc """
+  Returns the most recent state event per (event_type, state_key) for `room_id`,
+  excluding types assembled from GenServer state (member, power_levels, create, name).
+
+  Story 9-7: used by build_state_events/2 in EventDispatcher.Server to include
+  state events set via PUT /rooms/{roomId}/state/{eventType}.
+
+  Returns `{:ok, [%{type, state_key, content_json, sender}]}` on success.
+  Returns `{:error, reason}` on DB error.
+  """
+  @callback get_generic_state_events(room_id :: String.t()) ::
+              {:ok, list(map())} | {:error, term()}
+
+  @doc """
+  Returns the content of the m.room.create event for `room_id` (the first such event
+  by origin_server_ts ASC, i.e. the authoritative create event).
+
+  Used by build_state_events/2 so that upgraded rooms return their persisted
+  m.room.create content (which includes the `predecessor` field) rather than a
+  synthesized fallback that would omit predecessor.
+
+  Returns `{:ok, content_map}` on success.
+  Returns `{:error, :not_found}` if no m.room.create event exists (new room not yet
+  persisted, or pre-create-persist legacy room).
+  Returns `{:error, reason}` on DB error.
+  """
+  @callback get_room_create_event(room_id :: String.t()) ::
+              {:ok, map()} | {:error, :not_found | term()}
+
+  @doc """
+  Returns events in `room_id` that relate to `event_id` via `rel_type`.
+
+  Queries JSONB content column for `m.relates_to` object.
+  Story 9-28: up to `limit` events ordered newest first (DESC).
+  Story 9-29: opts map extends behaviour:
+    - `rel_type`: empty string = all relation types (no rel_type filter)
+    - `event_type`: filter by event_type; empty = all event types
+    - `dir`: "b" (DESC, default) or "f" (ASC)
+
+  Returns `{:ok, [event_map]}` — empty list if no matching events.
+  Returns `{:error, reason}` on DB error.
+
+  Story 9-28: used by GetRelations gRPC handler and attach_thread_aggregations.
+  Story 9-29: extended with opts for dir and event_type filtering.
+  """
+  @callback fetch_events_by_relation(
+              room_id :: String.t(),
+              event_id :: String.t(),
+              rel_type :: String.t(),
+              limit :: pos_integer(),
+              opts :: map()
+            ) :: {:ok, [map()]} | {:error, term()}
+
+  @doc """
+  Returns the number of `m.thread` replies to `event_id` in `room_id`.
+
+  Returns `{:ok, count}` — 0 when no thread replies exist.
+  Returns `{:error, reason}` on DB error.
+
+  Story 9-28: used by attach_thread_aggregations to build bundled aggregations.
+  """
+  @callback count_thread_children(room_id :: String.t(), event_id :: String.t()) ::
+              {:ok, non_neg_integer()} | {:error, term()}
+
+  @doc """
+  Returns `true` if `event_id` belongs to `room_id`, `false` otherwise.
+
+  Fail-closed: DB errors return `false` so callers get a 404, not a 500.
+
+  Story 9-28: room-scoped existence check used by GetRelations to prevent
+  cross-room event-existence probing by room members.
+  """
+  @callback event_in_room?(event_id :: String.t(), room_id :: String.t()) :: boolean()
+
+  @doc """
+  Fetches a single event by `event_id` scoped to `room_id`.
+
+  Returns `{:ok, event_map}` on success.
+  Returns `{:error, :not_found}` if the event does not exist in this room.
+  Returns `{:error, reason}` on DB error.
+
+  Story 11-8: used by GetEvent gRPC handler (GET /rooms/{roomId}/event/{eventId}).
+  """
+  @callback fetch_event(event_id :: String.t(), room_id :: String.t()) ::
+              {:ok, map()} | {:error, :not_found | term()}
 end

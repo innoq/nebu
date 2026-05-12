@@ -63,11 +63,32 @@ defmodule Nebu.EventDispatcher.Server do
     Application.get_env(:event_dispatcher, :session_supervisor_module, Nebu.Session.SessionSupervisor)
   end
 
+  # ─── Configurable AdminDB module for testability ─────────────────────────────
+  # Override via Application.put_env(:event_dispatcher, :admin_db_module, FakeAdminDB) in tests.
+  defp admin_db_module do
+    Application.get_env(:event_dispatcher, :admin_db_module, Nebu.Admin.DB)
+  end
+
+  # ─── Configurable search DB module for testability ──────────────────────────
+  # Override via Application.put_env(:event_dispatcher, :search_db_module, FakeSearchDB) in tests.
+  defp search_db_module do
+    Application.get_env(:event_dispatcher, :search_db_module, Nebu.Search.DB)
+  end
+
   def send_event(request, _stream) do
     room_id = request.room_id
     sender_id = request.sender_id
     event_type = request.event_type
     txn_id = request.txn_id
+    # Story 9-7: extract state_key (field 7 in SendEventRequest).
+    # SEC Gate 1 fix: use is_state_event (field 8) to decide the power level check.
+    # When is_state_event=true, Room.Server uses :change_state (state_default=50).
+    # When is_state_event=false (default), Room.Server uses :send_event (events_default=0).
+    # state_key is passed as the Matrix state_key string (may be "" for m.room.name).
+    # Pass nil when NOT a state event so Room.Server applies the correct power check.
+    is_state_event = Map.get(request, :is_state_event, false)
+    raw_state_key = Map.get(request, :state_key, "")
+    state_key = if is_state_event, do: raw_state_key, else: nil
 
     # Decode content bytes from protobuf (bytes field → binary → decode to map).
     content =
@@ -94,7 +115,9 @@ defmodule Nebu.EventDispatcher.Server do
         end
 
         # Delegate to Room.Server — handles idempotency, signing, persistence, broadcast.
-        case Nebu.Room.Server.send_event(room_id, sender_id, event_type, content, txn_id) do
+        # Story 9-7: pass state_key so state events are persisted with their key.
+        # SEC Gate 1: state_key=nil triggers :send_event check; state_key=string triggers :change_state.
+        case Nebu.Room.Server.send_event(room_id, sender_id, event_type, content, txn_id, state_key) do
           {:ok, event_id} ->
             %Core.SendEventResponse{event_id: event_id}
 
@@ -102,6 +125,11 @@ defmodule Nebu.EventDispatcher.Server do
             raise GRPC.RPCError,
               status: GRPC.Status.permission_denied(),
               message: "#{sender_id} lacks power level to send events in #{room_id}"
+
+          {:error, :room_archived} ->
+            raise GRPC.RPCError,
+              status: GRPC.Status.failed_precondition(),
+              message: "M_ROOM_ARCHIVED: room is archived"
 
           {:error, reason} ->
             raise GRPC.RPCError,
@@ -117,13 +145,10 @@ defmodule Nebu.EventDispatcher.Server do
 
     case Nebu.Room.RoomSupervisor.start_room(room_id) do
       {:ok, _pid} ->
-        :ok = Nebu.Room.Server.join(room_id, creator_id)
-
-        default_pl = Nebu.Room.Server.default_power_levels()
-        creator_pl = put_in(default_pl, ["users", creator_id], 100)
-        :ok = Nebu.Room.Server.set_power_levels(room_id, creator_id, creator_pl)
-
-        # Emit m.room.create — persists the authoritative creator and room version.
+        # Persist m.room.create FIRST — Matrix spec §8.5.1 requires it to be the
+        # first event in the room timeline (before m.room.member and m.room.power_levels).
+        # Emitting after Server.join would put m.room.member before m.room.create in
+        # the events table, causing Element to log "No membership changes detected".
         create_event_map = %{
           "room_id"          => room_id,
           "type"             => "m.room.create",
@@ -144,6 +169,21 @@ defmodule Nebu.EventDispatcher.Server do
           {:error, reason} ->
             Logger.warning("create_room: failed to write m.room.create for #{room_id}: #{inspect(reason)}")
         end
+
+        # Join creator AFTER m.room.create — emit_membership_event writes m.room.member
+        # as the second event in the timeline (spec §8.5.1 order: create → member → pl).
+        :ok = Nebu.Room.Server.join(room_id, creator_id)
+
+        # Wake the creator's long-polling sync task immediately (mirrors join_room/2 pattern).
+        # Without this broadcast, a sync task that started BEFORE createRoom returns will not
+        # be subscribed to room:#{room_id}. Any leave/send event before the sync timeout
+        # (30 s) would be missed, causing GAP-FORGET and similar issues.
+        :pg.get_local_members("user:#{creator_id}")
+        |> Enum.each(&send(&1, {:new_join, room_id}))
+
+        default_pl = Nebu.Room.Server.default_power_levels()
+        creator_pl = put_in(default_pl, ["users", creator_id], 100)
+        :ok = Nebu.Room.Server.set_power_levels(room_id, creator_id, creator_pl)
 
         # Emit m.room.name state event if a name was provided
         name = request.name
@@ -242,6 +282,10 @@ defmodule Nebu.EventDispatcher.Server do
             # Mark any pending invitation as accepted so it disappears from
             # rooms.invite in subsequent sync responses (no-op for public joins).
             db_module_invite().accept_invitation(room_id, user_id)
+            # Wake user's long-polling sync task immediately (mirrors invite_user/2 pattern).
+            # Without this, the sync task sleeps 30 s after a public-room join (GAP-JOIN-PUBLIC).
+            :pg.get_local_members("user:#{user_id}")
+            |> Enum.each(&send(&1, {:new_join, room_id}))
             audit_writer_module().log(user_id, "room_joined", "room", room_id, %{}, "success")
             %Core.JoinRoomResponse{room_id: room_id}
 
@@ -309,6 +353,17 @@ defmodule Nebu.EventDispatcher.Server do
       {:ok, _pid} ->
         case Nebu.Room.Server.leave(room_id, user_id) do
           :ok ->
+            # Wake the user's long-polling sync task immediately so rooms.leave
+            # arrives within the long-poll window instead of waiting up to 30 s.
+            # The sync task may not be subscribed to room:#{room_id} if it started
+            # before the user was in this room (e.g. a room the user created and
+            # immediately left). Broadcasting to user:#{user_id} guarantees wakeup
+            # regardless of room subscriptions. The Go side's buildLeaveRooms does
+            # the actual DB query — the sync task just needs to wake up and return [].
+            members = :pg.get_local_members("user:#{user_id}")
+            require Logger
+            Logger.debug("[leave_room] broadcasting {:new_leave, #{room_id}} to #{length(members)} sync tasks for #{user_id}")
+            Enum.each(members, &send(&1, {:new_leave, room_id}))
             %Core.LeaveRoomResponse{room_id: room_id}
 
           {:error, :not_member} ->
@@ -412,18 +467,21 @@ defmodule Nebu.EventDispatcher.Server do
   end
 
   # Convert a DB event map (string keys) to a %Core.Event{} protobuf struct.
-  # The `content` column is JSONB (returned as Elixir map by Postgrex) —
-  # re-encode to JSON bytes for the proto bytes field.
+  # The `content` column is JSONB — Postgrex returns it as either an Elixir map,
+  # a %Postgrex.JSONB{decoded: map} struct, or a binary string.
+  # All three forms are normalised to a map before re-encoding.
   defp event_map_to_proto(event) do
-    # content from the DB may arrive as either:
+    # content from the DB may arrive as:
+    #   - %Postgrex.JSONB{decoded: map} struct (Story 9-30 fix — must be before is_map)
     #   - Elixir map (Postgrex decoded JSONB object directly)
-    #   - Elixir binary/string (Postgrex decoded JSONB string — happens when
-    #     the content was stored as a JSON-encoded string rather than a raw object).
-    # Normalise to a map before re-encoding so the proto bytes field always
-    # contains a JSON object, never a doubly-encoded JSON string.
+    #   - Elixir binary/string (Postgrex decoded JSONB string)
     raw = Map.get(event, "content", %{})
     content_map =
       cond do
+        # Postgrex returns JSONB columns as %Postgrex.JSONB{decoded: map}.
+        # Postgrex is not a direct dep of event_dispatcher so we match by shape
+        # rather than module name. Only DB-sourced structs appear in `content`.
+        is_struct(raw) and Map.has_key?(raw, :decoded) and is_map(raw.decoded) -> raw.decoded
         is_map(raw) -> raw
         is_binary(raw) ->
           case Jason.decode(raw) do
@@ -441,7 +499,8 @@ defmodule Nebu.EventDispatcher.Server do
       event_type: Map.get(event, "event_type", ""),
       content: content_json,
       origin_ts: Map.get(event, "origin_server_ts", 0),
-      server_ts: System.system_time(:millisecond)
+      server_ts: System.system_time(:millisecond),
+      state_key: Map.get(event, "state_key") || ""
     }
   end
 
@@ -592,15 +651,33 @@ defmodule Nebu.EventDispatcher.Server do
         message: "missing user_id in request"
     end
 
-    # Room existence check.
-    case Nebu.Room.RoomSupervisor.lookup_room(room_id) do
-      {:error, :not_found} ->
+    # Room existence check — start on demand (mirrors sync.ex line 1034–1035).
+    # start_room/1 is idempotent: returns {:ok, pid} whether the GenServer was
+    # already running or was just started from DB. {:error, _} maps to not_found
+    # because the only failure path is Room.Server.init/1 returning {:stop, _},
+    # which happens when load_members returns {:error, :not_found} (room absent
+    # from DB). Note: Horde supervisor errors (e.g. :max_children) would also hit
+    # this branch and be surfaced as not_found — acceptable trade-off consistent
+    # with sync.ex and unarchive_room patterns across the codebase (AA-1).
+    case Nebu.Room.RoomSupervisor.start_room(room_id) do
+      {:error, _reason} ->
         raise GRPC.RPCError,
           status: GRPC.Status.not_found(),
           message: "room not found: #{room_id}"
 
       {:ok, _pid} ->
-        state = room_registry_module().get_state(room_id)
+        # Guard against a race where the GenServer dies between start_room and
+        # get_state (e.g. Horde CRDT reconciliation). Mirrors get_room_state/2
+        # helper at line ~922–938. Surfaces as not_found rather than a raw exit.
+        state =
+          try do
+            room_registry_module().get_state(room_id)
+          catch
+            :exit, {:noproc, _} ->
+              raise GRPC.RPCError,
+                status: GRPC.Status.not_found(),
+                message: "room not found: #{room_id}"
+          end
 
         unless MapSet.member?(state.members, user_id) do
           raise GRPC.RPCError,
@@ -709,17 +786,28 @@ defmodule Nebu.EventDispatcher.Server do
   end
 
   # ─── InvalidateUserSessions — Story 6.5: Admin deactivation revokes all sessions ─
+  # Story 9-22 (AC4): Per-device logout when device_id is set.
   #
-  # Called by the Go gateway after a successful user deactivation.
-  # Delegates to session_supervisor_module().destroy_session/1 which handles:
-  #   - Nebu.Session.PgStore.invalidate_session/1 → deletes sync_tokens + sessions rows in a DB tx
-  #   - Nebu.Session.EtsStore.delete_session/1 → evicts ETS entry (after DB commit)
+  # Called by the Go gateway:
+  #   - Admin deactivation: device_id="" → destroy_session/1 deletes all sync_tokens +
+  #     sessions rows for the user and evicts from ETS.
+  #   - Matrix POST /logout: device_id="<id>" → destroy_session/2 deletes only the
+  #     (user_id, device_id) sync_tokens + sessions rows in a single DB transaction.
+  #     ETS is NOT evicted (other devices may still be active).
   #
   # Returns %Core.InvalidateUserSessionsResponse{ok: true} on success.
   # Raises GRPC.RPCError with status=internal on failure (Go logs as warning, does not block).
 
   def invalidate_user_sessions(%Core.InvalidateUserSessionsRequest{} = req, _stream) do
-    case session_supervisor_module().destroy_session(req.user_id) do
+    # AC4 (Story 9-22): per-device cleanup when device_id is present.
+    result =
+      if req.device_id != "" do
+        session_supervisor_module().destroy_session(req.user_id, req.device_id)
+      else
+        session_supervisor_module().destroy_session(req.user_id)
+      end
+
+    case result do
       :ok ->
         %Core.InvalidateUserSessionsResponse{ok: true}
 
@@ -763,8 +851,33 @@ defmodule Nebu.EventDispatcher.Server do
     %Core.GetPendingEventsResponse{}
   end
 
+  # ─── GetMetrics — Real implementation (Story 9.1, Task 8) ───────────────────
+  #
+  # Replaces the empty stub with real counts from ETS and Horde.
+  #   - active_sessions: counted from Nebu.Session.EtsStore.list_user_ids/0
+  #     (already used in invalidate_all_admin_sessions/2).
+  #   - room_count: counted from Horde.Registry.select/2
+  #     (already used in subscribe_to_all_rooms/0).
+  #   - msg_per_sec: kept at 0.0 for MVP (rolling window not yet implemented).
+
   def get_metrics(_request, _stream) do
-    %Core.GetMetricsResponse{}
+    active_sessions = Nebu.Session.EtsStore.list_user_ids() |> length()
+
+    room_count =
+      try do
+        Horde.Registry.select(Nebu.Room.Registry, [{{:"$1", :"$2", :"$3"}, [], [:"$1"]}])
+        |> length()
+      rescue
+        _ -> 0
+      catch
+        _, _ -> 0
+      end
+
+    %Core.GetMetricsResponse{
+      active_sessions: active_sessions,
+      room_count: room_count,
+      msg_per_sec: 0.0
+    }
   end
 
   # ─── AC #2: EventBus server-streaming handler ───────────────────────────────
@@ -916,17 +1029,18 @@ defmodule Nebu.EventDispatcher.Server do
           {:ok, events, _next_batch, prev_batch} =
             messages_db_module().fetch_events(room_id, "b", 20, "")
 
-          timeline_events =
+          raw_tl_events =
             events
             |> Enum.reverse()
             |> Enum.map(&event_map_to_proto/1)
 
+          timeline_events = attach_thread_aggregations(raw_tl_events, room_id, user_id)
           limited = length(events) >= 20
 
           [
             %Core.SyncRoom{
               room_id: room_id,
-              state_events: state_events,
+              state_events: dedup_member_state_events(state_events, timeline_events),
               timeline_events: timeline_events,
               limited: limited,
               prev_batch: prev_batch
@@ -942,10 +1056,11 @@ defmodule Nebu.EventDispatcher.Server do
               state_evs  = build_state_events(state, room_id)
               {:ok, evs, _next_batch, prev_b} =
                 messages_db_module().fetch_events(room_id, "b", 20, "")
-              tl_evs = evs |> Enum.reverse() |> Enum.map(&event_map_to_proto/1)
+              raw_tl_evs = evs |> Enum.reverse() |> Enum.map(&event_map_to_proto/1)
+              tl_evs = attach_thread_aggregations(raw_tl_evs, room_id, user_id)
               [%Core.SyncRoom{
                 room_id:        room_id,
-                state_events:   state_evs,
+                state_events:   dedup_member_state_events(state_evs, tl_evs),
                 timeline_events: tl_evs,
                 limited:        length(evs) >= 20,
                 prev_batch:     prev_b
@@ -996,15 +1111,36 @@ defmodule Nebu.EventDispatcher.Server do
 
   def get_sync_delta(request, _stream) do
     user_id = request.user_id
-    _since_token = request.since_token
+    # proto3 string fields are never nil — no need for `|| ""`
+    device_id = request.device_id
+    # client_since_token is validated against the stored token after lookup (AC2, Story 9-22).
+    client_since_token = request.since_token
     timeout_ms = request.timeout_ms |> max(0) |> min(30_000)
 
-    # Step 3: Resolve last_event_id from the since_token
-    case pg_store_module().get_since_token(user_id) do
+    # Step 3: Resolve last_event_id from the since_token.
+    # Use per-device lookup when device_id is present (Story 9-22).
+    lookup_result =
+      if device_id != "" do
+        pg_store_module().get_since_token(user_id, device_id)
+      else
+        pg_store_module().get_since_token(user_id)
+      end
+
+    case lookup_result do
       {:error, :not_found} ->
-        # Fallback to full initial sync
+        # AC3: No stored token for this (user_id, device_id) → full initial sync.
+        # This handles first sync after re-login, unknown device_id, or missing row.
         initial_req = %Core.GetInitialSyncRequest{user_id: user_id}
         initial_resp = get_initial_sync(initial_req, %{http_request_headers: %{}})
+
+        # MAJOR-A fix: persist the freshly-minted token to the per-device row so
+        # the next request from this device resolves the correct checkpoint and
+        # does not trigger a perpetual full-sync (AC1/AC2 recovery).
+        if device_id != "" do
+          :ok = pg_store_module().persist_since_token(
+            user_id, device_id, initial_resp.since_token, nil
+          )
+        end
 
         %Core.GetSyncDeltaResponse{
           since_token: initial_resp.since_token,
@@ -1012,29 +1148,51 @@ defmodule Nebu.EventDispatcher.Server do
           fallback_to_initial: true
         }
 
-      {:ok, %{last_event_id: last_event_id}} ->
-        # Run the incremental sync in a short-lived Task so the Task's process
-        # joins and leaves :pg groups. When the Task exits, :pg auto-cleans its
-        # membership. This ensures the handler process itself never appears in any
-        # room :pg group after get_sync_delta/2 returns.
-        #
-        # Capture all module-level injectable deps before spawning (they are looked
-        # up at call time via Application.get_env, so the Task re-evaluates them in
-        # its own context automatically — no capture needed).
-        task_timeout = timeout_ms + 10_000
+      {:ok, %{since_token: stored_token, last_event_id: last_event_id}} ->
+        # AC2: Validate that the client echoes back the token we issued.
+        # A mismatch means a stale or replayed token → fall back to full initial sync.
+        if client_since_token != stored_token do
+          initial_req = %Core.GetInitialSyncRequest{user_id: user_id}
+          initial_resp = get_initial_sync(initial_req, %{http_request_headers: %{}})
 
-        task = Task.async(fn ->
-          do_incremental_sync(user_id, last_event_id, timeout_ms)
-        end)
+          # MAJOR-A fix: persist the freshly-minted token to the per-device row so
+          # the next request from this device resolves the correct checkpoint and
+          # does not trigger a perpetual full-sync (AC2 recovery path).
+          if device_id != "" do
+            :ok = pg_store_module().persist_since_token(
+              user_id, device_id, initial_resp.since_token, nil
+            )
+          end
 
-        Task.await(task, task_timeout)
+          %Core.GetSyncDeltaResponse{
+            since_token: initial_resp.since_token,
+            rooms: initial_resp.rooms,
+            fallback_to_initial: true
+          }
+        else
+          # Run the incremental sync in a short-lived Task so the Task's process
+          # joins and leaves :pg groups. When the Task exits, :pg auto-cleans its
+          # membership. This ensures the handler process itself never appears in any
+          # room :pg group after get_sync_delta/2 returns.
+          #
+          # Capture all module-level injectable deps before spawning (they are looked
+          # up at call time via Application.get_env, so the Task re-evaluates them in
+          # its own context automatically — no capture needed).
+          task_timeout = timeout_ms + 10_000
+
+          task = Task.async(fn ->
+            do_incremental_sync(user_id, device_id, last_event_id, timeout_ms)
+          end)
+
+          Task.await(task, task_timeout)
+        end
     end
   end
 
   # Runs the incremental sync logic in a separate (Task) process so that
   # :pg group subscriptions are owned by a process that exits when done.
   # :pg auto-removes dead processes from groups.
-  defp do_incremental_sync(user_id, last_event_id, timeout_ms) do
+  defp do_incremental_sync(user_id, device_id, last_event_id, timeout_ms) do
     # Step 4: Get user's rooms
     room_ids =
       case rooms_db_module().get_rooms_for_user(user_id) do
@@ -1063,7 +1221,16 @@ defmodule Nebu.EventDispatcher.Server do
         {:error, _} -> []
       end
 
-    room_ids = room_ids ++ invited_room_ids ++ declined_room_ids
+    # GAP-LEAVE-UI: include recently-left rooms so fetch_delta_rooms finds the leave event
+    # in the initial DB check. Closes the race window where {new_leave} fires before the
+    # sync task subscribes to :pg groups, causing a 30 s long-poll delay.
+    left_room_ids =
+      case rooms_db_module().get_recently_left_rooms_for_user(user_id) do
+        {:ok, ids} -> ids
+        {:error, _} -> []
+      end
+
+    room_ids = room_ids ++ invited_room_ids ++ declined_room_ids ++ left_room_ids
 
     # Step 5a: Subscribe to user-level :pg group BEFORE DB check.
     # Receives {:new_invite, room_id} when invite_user/2 sends an invitation — this
@@ -1077,7 +1244,7 @@ defmodule Nebu.EventDispatcher.Server do
 
     # Step 6: Check DB for pending events per room.
     # Pass last_event_id (string) directly — the DB module resolves the ts internally.
-    delta_rooms = fetch_delta_rooms(room_ids, last_event_id)
+    delta_rooms = fetch_delta_rooms(room_ids, last_event_id, user_id)
 
     leave_all_groups = fn ->
       :pg.leave("user:#{user_id}", self())
@@ -1100,12 +1267,31 @@ defmodule Nebu.EventDispatcher.Server do
                 # Cancel the timer and re-query DB for all pending events
                 Process.cancel_timer(timer_ref)
                 flush_long_poll_timeout()
-                fetch_delta_rooms(room_ids, last_event_id)
+                fetch_delta_rooms(room_ids, last_event_id, user_id)
 
               {:new_invite, _room_id} ->
                 # New invitation for this user — cancel timer and return empty delta.
                 # The Go gateway's buildInviteRooms queries the DB for invite data,
                 # so returning [] here is sufficient to unblock the client.
+                Process.cancel_timer(timer_ref)
+                flush_long_poll_timeout()
+                []
+
+              {:new_join, new_room_id} ->
+                # User joined a public room — subscribe to it and re-query (mirrors {:new_invite} pattern).
+                # GAP-JOIN-PUBLIC: without this, join_room broadcasts are missed and the long-poll sleeps 30 s.
+                Process.cancel_timer(timer_ref)
+                flush_long_poll_timeout()
+                :pg.join("room:#{new_room_id}", self())
+                fetch_delta_rooms(Enum.uniq([new_room_id | room_ids]), last_event_id, user_id)
+
+              {:new_leave, recv_room_id} ->
+                # User left a room — wake up immediately so Go's buildLeaveRooms can find it via DB query.
+                # GAP-LEAVE-UI / GAP-FORGET: without this, leave_room broadcasts to room:#{room_id} only;
+                # if the sync task missed that subscription (race), the leave is never delivered within
+                # the long-poll window. Returning [] is sufficient — Go queries DB for rooms.leave.
+                require Logger
+                Logger.debug("[do_incremental_sync] {:new_leave} received for room #{recv_room_id}, waking sync task for #{user_id}")
                 Process.cancel_timer(timer_ref)
                 flush_long_poll_timeout()
                 []
@@ -1125,7 +1311,13 @@ defmodule Nebu.EventDispatcher.Server do
       end
 
     {new_since_token, newest_event_id} = generate_delta_token(user_id, result_rooms, last_event_id)
-    :ok = pg_store_module().persist_since_token(user_id, new_since_token, newest_event_id)
+
+    # Persist per-device when device_id is set, fallback to legacy /1 key otherwise (Story 9-22).
+    if device_id != "" do
+      :ok = pg_store_module().persist_since_token(user_id, device_id, new_since_token, newest_event_id)
+    else
+      :ok = pg_store_module().persist_since_token(user_id, new_since_token, newest_event_id)
+    end
 
     %Core.GetSyncDeltaResponse{
       since_token: new_since_token,
@@ -1136,7 +1328,8 @@ defmodule Nebu.EventDispatcher.Server do
 
   # Fetch events since last_event_id for each room, build SyncRoom protos.
   # last_event_id is the string event_id — the DB module resolves it to a timestamp.
-  defp fetch_delta_rooms(room_ids, last_event_id) do
+  # user_id is passed so attach_thread_aggregations can compute current_user_participated.
+  defp fetch_delta_rooms(room_ids, last_event_id, user_id) do
     Enum.flat_map(room_ids, fn room_id ->
       case messages_db_module().fetch_events_since(room_id, last_event_id, 20) do
         {:ok, []} ->
@@ -1145,16 +1338,39 @@ defmodule Nebu.EventDispatcher.Server do
         {:ok, events} ->
           try do
             state = room_registry_module().get_state(room_id)
-            state_events = build_state_events(state, room_id)
-            timeline_events = Enum.map(events, &event_map_to_proto/1)
+            raw_timeline_events = Enum.map(events, &event_map_to_proto/1)
+            thread_roots = thread_root_updates(events, room_id, user_id)
+            timeline_events = attach_thread_aggregations(raw_timeline_events, room_id, user_id)
+            timeline_events = thread_roots ++ timeline_events
+            limited = length(events) >= 20
+            # When limited, the oldest event's event_id is the backward-pagination
+            # cursor (Spec §6.3.3). Client passes this to GET /messages?from=<token>&dir=b.
+            prev_batch = if limited, do: List.first(events)["event_id"] || "", else: ""
+
+            # §6.3.3: state.events = room state BEFORE the timeline window. Any
+            # {type, state_key} already delivered in the timeline must be excluded
+            # from state so the client computes the change (not a no-op delta).
+            # We detect state events in the raw batch via Map.has_key?("state_key"),
+            # which correctly identifies state events with empty state_key (power_levels,
+            # name, join_rules) — proto conversion cannot distinguish them from messages.
+            timeline_state_keys =
+              events
+              |> Enum.filter(fn ev -> Map.has_key?(ev, "state_key") end)
+              |> MapSet.new(fn ev -> {ev["event_type"] || "", ev["state_key"] || ""} end)
+
+            state_events =
+              build_state_events(state, room_id)
+              |> Enum.reject(fn ev ->
+                MapSet.member?(timeline_state_keys, {ev.type, ev.state_key})
+              end)
 
             [
               %Core.SyncRoom{
                 room_id: room_id,
-                state_events: state_events,
+                state_events: dedup_member_state_events(state_events, timeline_events),
                 timeline_events: timeline_events,
-                limited: length(events) >= 20,
-                prev_batch: ""
+                limited: limited,
+                prev_batch: prev_batch
               }
             ]
           catch
@@ -1165,6 +1381,30 @@ defmodule Nebu.EventDispatcher.Server do
           []
       end
     end)
+  end
+
+  # Removes m.room.member entries from state_events when the same user already has
+  # a m.room.member event in timeline_events. This prevents Element Web from logging
+  # "No membership changes detected" — without deduplication, matrix-js-sdk sees the
+  # join in state (prev=join) and again in the timeline (new=join), computes no change,
+  # and silently skips processing the membership event. With deduplication, the member
+  # event is ONLY in the timeline, so the sdk correctly detects: none→join.
+  #
+  # State events for members NOT in the timeline are kept intact (e.g. for rooms with
+  # limited=true where historic joins are outside the timeline window).
+  defp dedup_member_state_events(state_events, timeline_events) do
+    member_state_keys =
+      timeline_events
+      |> Enum.filter(fn ev -> ev.event_type == "m.room.member" end)
+      |> MapSet.new(fn ev -> ev.state_key end)
+
+    if MapSet.size(member_state_keys) == 0 do
+      state_events
+    else
+      Enum.reject(state_events, fn ev ->
+        ev.type == "m.room.member" && MapSet.member?(member_state_keys, ev.state_key)
+      end)
+    end
   end
 
   # Flush any stale :sync_long_poll_timeout message left in the mailbox
@@ -1212,10 +1452,22 @@ defmodule Nebu.EventDispatcher.Server do
           |> elem(0)
       end
 
+    # MAJOR-2 fix: use the persisted m.room.create content when available so that
+    # upgraded rooms return the `predecessor` field rather than a synthesized fallback.
+    # Fall back to synthesized content for rooms created before create-event persistence,
+    # or when the DB query fails (e.g. in unit tests without a real DB).
+    create_content =
+      case messages_db_module().get_room_create_event(room_id) do
+        {:ok, persisted_content} when is_map(persisted_content) ->
+          persisted_content
+        _ ->
+          %{"creator" => creator_id, "room_version" => "10"}
+      end
+
     create_event = %Core.SyncRoomStateEvent{
       type: "m.room.create",
       state_key: "",
-      content: Jason.encode!(%{"creator" => creator_id, "room_version" => "10"}),
+      content: Jason.encode!(create_content),
       sender: creator_id
     }
 
@@ -1250,7 +1502,24 @@ defmodule Nebu.EventDispatcher.Server do
         _ -> []
       end
 
-    [create_event] ++ member_events ++ [pl_event] ++ name_events
+    # Story 9-7: load generic state events persisted via PUT /rooms/{roomId}/state/{eventType}.
+    # These cover m.room.topic, m.room.join_rules, m.room.encryption, m.room.avatar, etc.
+    # Excludes types already assembled above (member, power_levels, create, name).
+    generic_state_events =
+      case messages_db_module().get_generic_state_events(room_id) do
+        {:ok, evs} ->
+          Enum.map(evs, fn ev ->
+            %Core.SyncRoomStateEvent{
+              type: ev.type,
+              state_key: ev.state_key,
+              content: ev.content_json,
+              sender: ev.sender
+            }
+          end)
+        _ -> []
+      end
+
+    [create_event] ++ member_events ++ [pl_event] ++ name_events ++ generic_state_events
   end
 
   # ─── Private helpers ─────────────────────────────────────────────────────────
@@ -1306,7 +1575,8 @@ defmodule Nebu.EventDispatcher.Server do
       event_type: Map.get(event_map, "type", ""),
       content: content_json,
       origin_ts: Map.get(event_map, "origin_server_ts", 0),
-      server_ts: System.system_time(:millisecond)
+      server_ts: System.system_time(:millisecond),
+      state_key: Map.get(event_map, "state_key", "")
     }
   end
 
@@ -1601,10 +1871,45 @@ defmodule Nebu.EventDispatcher.Server do
   #   Best-effort: starts the Room GenServer so it is immediately available for messages.
   #   Returns ok=true even if start_room fails (DB is authoritative; Gateway returns 200).
 
-  def archive_room(%Core.ArchiveRoomRequest{} = req, _stream) do
-    room_id = req.room_id
+  # ─── Story 9.1 AC:4 — ArchiveRoom with atomic SELECT FOR UPDATE ─────────────
+  #
+  # IMPORTANT CONTRACT CHANGE (Story 9.1):
+  # Pre-9.1: Go Gateway set rooms.status='archived' in DB, then called this RPC
+  #          which only terminated the GenServer.
+  # Post-9.1: Core now owns the DB write atomically (SELECT FOR UPDATE) before
+  #           terminating the GenServer. The Gateway call sequence must adapt in
+  #           Story 9.2 — the Gateway should no longer update DB before calling
+  #           this RPC; Core is now the authoritative writer for archive operations.
+  #
+  # The admin_db_module().archive_room_atomic/1 call performs:
+  #   1. BEGIN TRANSACTION
+  #   2. SELECT status FROM rooms WHERE room_id = ? FOR UPDATE
+  #   3. UPDATE rooms SET status = 'archived' WHERE room_id = ?
+  #   4. COMMIT
+  # Then the GenServer is terminated (best-effort).
 
-    # Terminate the running GenServer (best-effort — idempotent if not running).
+  def archive_room(%Core.ArchiveRoomRequest{} = req, stream) do
+    room_id = req.room_id
+    {actor_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
+
+    # Step 1: Atomically update rooms.status='archived' in DB (SELECT FOR UPDATE).
+    # This replaces the old pre-9.1 contract where the Go Gateway did the DB write.
+    case admin_db_module().archive_room_atomic(room_id) do
+      :ok ->
+        :ok
+
+      {:error, :not_found} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "room not found: #{room_id}"
+
+      {:error, reason} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.internal(),
+          message: "archive_room DB update failed: #{inspect(reason)}"
+    end
+
+    # Step 2: Terminate the running GenServer (best-effort — idempotent if not running).
     # Room.Server.child_spec uses :transient restart, so Horde will NOT restart it
     # after a terminate_child call. DB status is the authoritative archived flag.
     case Nebu.Room.RoomSupervisor.lookup_room(room_id) do
@@ -1615,8 +1920,7 @@ defmodule Nebu.EventDispatcher.Server do
 
           {:error, reason} ->
             # Race: process likely crashed between lookup and terminate. The DB
-            # is already archived, so the Gateway returns 200 — but log so this
-            # isn't silently swallowed.
+            # is already archived, so this is a soft failure — log and continue.
             Logger.warning("ArchiveRoom: terminate_child failed (likely already stopped) — #{inspect(reason)}",
               room_id: room_id
             )
@@ -1629,11 +1933,22 @@ defmodule Nebu.EventDispatcher.Server do
         :ok
     end
 
+    # Story 9.3: Audit log for room archival (mirrors deactivate_user pattern from Story 9.2).
+    audit_writer_module().log(
+      actor_id,
+      "room_archived",
+      "room",
+      room_id,
+      %{},
+      "success"
+    )
+
     %Core.ArchiveRoomResponse{ok: true}
   end
 
-  def unarchive_room(%Core.UnarchiveRoomRequest{} = req, _stream) do
+  def unarchive_room(%Core.UnarchiveRoomRequest{} = req, stream) do
     room_id = req.room_id
+    {actor_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
 
     # Start the Room GenServer so it is immediately available.
     # Room.Server.init/1 now calls get_room_status/1 on start:
@@ -1646,8 +1961,436 @@ defmodule Nebu.EventDispatcher.Server do
       {:error, _reason} -> :ok
     end
 
+    # Story 9.3: Audit log for room unarchival (mirrors reactivate_user pattern from Story 9.2).
+    audit_writer_module().log(
+      actor_id,
+      "room_unarchived",
+      "room",
+      room_id,
+      %{},
+      "success"
+    )
+
     %Core.UnarchiveRoomResponse{ok: true}
   end
+
+  # ─── Story 9.1: Admin gRPC RPCs — User + Room Management ─────────────────────
+
+  # ─── ListAdminUsers ──────────────────────────────────────────────────────────
+  #
+  # Returns paginated users from PostgreSQL for the Admin UI.
+  # Email masking: returns "u***@domain" pattern (first char + *** + @domain).
+  # PII: display_name_encrypted (Tier 1) is decrypted here via admin_db_module.
+  # Email (Tier 2) is returned masked — never in plaintext.
+  # Security: admin RPCs verified via RequireRole middleware in Go Gateway (HTTP layer).
+
+  def list_admin_users(%Core.ListAdminUsersRequest{} = req, _stream) do
+    limit = if req.limit > 0, do: min(req.limit, 100), else: 20
+    cursor = req.cursor || ""
+    search = req.search || ""
+
+    {users, next_cursor} = admin_db_module().list_users(limit, cursor, search)
+
+    proto_users =
+      Enum.map(users, fn user ->
+        %Core.AdminUserProto{
+          user_id: user.user_id,
+          display_name: decrypt_display_name(user),
+          email_masked: mask_email(user),
+          is_active: user.is_active,
+          system_role: user.system_role || "user",
+          created_at: user.created_at || 0
+        }
+      end)
+
+    %Core.ListAdminUsersResponse{
+      users: proto_users,
+      total: length(proto_users),
+      next_cursor: next_cursor
+    }
+  end
+
+  # ─── GetAdminUser ────────────────────────────────────────────────────────────
+
+  def get_admin_user(%Core.GetAdminUserRequest{} = req, _stream) do
+    case admin_db_module().get_user(req.user_id) do
+      {:ok, user} ->
+        %Core.GetAdminUserResponse{
+          user: %Core.AdminUserProto{
+            user_id: user.user_id,
+            display_name: decrypt_display_name(user),
+            email_masked: mask_email(user),
+            is_active: user.is_active,
+            system_role: user.system_role || "user",
+            created_at: user.created_at || 0
+          }
+        }
+
+      {:error, :not_found} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "user not found: #{req.user_id}"
+
+      {:error, reason} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.internal(),
+          message: "get_admin_user failed: #{inspect(reason)}"
+    end
+  end
+
+  # ─── DeactivateUser ──────────────────────────────────────────────────────────
+  #
+  # Sets is_active=false in DB, then calls destroy_session/1 AFTER the DB commit.
+  # Security invariant: DB update must complete before session invalidation.
+
+  def deactivate_user(%Core.DeactivateUserRequest{} = req, stream) do
+    user_id = req.user_id
+    {actor_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
+
+    case admin_db_module().set_is_active(user_id, false) do
+      :ok ->
+        # Session invalidation happens AFTER DB commit (sequencing invariant).
+        case session_supervisor_module().destroy_session(user_id) do
+          :ok ->
+            :ok
+
+          {:error, reason} ->
+            Logger.warning("DeactivateUser: destroy_session failed for #{user_id}: #{inspect(reason)}")
+        end
+
+        audit_writer_module().log(
+          actor_id,
+          "user_deactivated",
+          "user",
+          user_id,
+          %{},
+          "success"
+        )
+
+        %Core.DeactivateUserResponse{ok: true}
+
+      {:error, :not_found} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "user not found: #{user_id}"
+
+      {:error, reason} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.internal(),
+          message: "deactivate_user DB update failed: #{inspect(reason)}"
+    end
+  end
+
+  # ─── ReactivateUser ──────────────────────────────────────────────────────────
+  #
+  # Sets is_active=true in DB. Does NOT call destroy_session (reactivation must
+  # not invalidate existing sessions).
+
+  def reactivate_user(%Core.ReactivateUserRequest{} = req, stream) do
+    user_id = req.user_id
+    {actor_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
+
+    case admin_db_module().set_is_active(user_id, true) do
+      :ok ->
+        audit_writer_module().log(
+          actor_id,
+          "user_reactivated",
+          "user",
+          user_id,
+          %{},
+          "success"
+        )
+
+        %Core.ReactivateUserResponse{ok: true}
+
+      {:error, :not_found} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "user not found: #{user_id}"
+
+      {:error, reason} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.internal(),
+          message: "reactivate_user DB update failed: #{inspect(reason)}"
+    end
+  end
+
+  # ─── UpdateUserRole ──────────────────────────────────────────────────────────
+  #
+  # Updates users.system_role directly (NOT role_overrides — those are Gateway-side
+  # overrides with TTL cache). Valid values: "user", "instance_admin", "compliance_officer".
+
+  @valid_roles ~w(user instance_admin compliance_officer)
+
+  def update_user_role(%Core.UpdateUserRoleRequest{} = req, stream) do
+    user_id = req.user_id
+    role = req.role
+    {actor_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
+
+    unless role in @valid_roles do
+      raise GRPC.RPCError,
+        status: GRPC.Status.invalid_argument(),
+        message: "invalid role '#{role}'; must be one of: #{Enum.join(@valid_roles, ", ")}"
+    end
+
+    case admin_db_module().set_system_role(user_id, role) do
+      :ok ->
+        audit_writer_module().log(
+          actor_id,
+          "update_user_role",
+          "user",
+          user_id,
+          %{"role" => role},
+          "success"
+        )
+
+        %Core.UpdateUserRoleResponse{ok: true}
+
+      {:error, :not_found} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "user not found: #{user_id}"
+
+      {:error, reason} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.internal(),
+          message: "update_user_role DB update failed: #{inspect(reason)}"
+    end
+  end
+
+  # ─── ListAdminRooms ──────────────────────────────────────────────────────────
+
+  def list_admin_rooms(%Core.ListAdminRoomsRequest{} = req, _stream) do
+    limit = if req.limit > 0, do: min(req.limit, 100), else: 20
+    cursor = req.cursor || ""
+    status_filter = req.status_filter || ""
+    search = req.search || ""
+
+    {rooms, next_cursor} = admin_db_module().list_rooms(limit, cursor, status_filter, search)
+
+    proto_rooms =
+      Enum.map(rooms, fn room ->
+        %Core.AdminRoomProto{
+          room_id: room.room_id,
+          name: room.name || "",
+          status: room.status || "active",
+          member_count: room.member_count || 0,
+          created_at: room.created_at || 0
+        }
+      end)
+
+    %Core.ListAdminRoomsResponse{
+      rooms: proto_rooms,
+      total: length(proto_rooms),
+      next_cursor: next_cursor
+    }
+  end
+
+  # ─── GetAdminRoom ────────────────────────────────────────────────────────────
+
+  def get_admin_room(%Core.GetAdminRoomRequest{} = req, _stream) do
+    case admin_db_module().get_room(req.room_id) do
+      {:ok, room} ->
+        %Core.GetAdminRoomResponse{
+          room: %Core.AdminRoomDetailProto{
+            room_id: room.room_id,
+            name: room.name || "",
+            status: room.status || "active",
+            member_count: room.member_count || 0,
+            max_members: room.max_members || 0,
+            visibility: room.visibility || "private",
+            created_at: room.created_at || 0
+          }
+        }
+
+      {:error, :not_found} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "room not found: #{req.room_id}"
+
+      {:error, reason} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.internal(),
+          message: "get_admin_room failed: #{inspect(reason)}"
+    end
+  end
+
+  # ─── ListAdminRoomMembers (Story 9.18) ───────────────────────────────────────
+  #
+  # Returns all current members (left_at IS NULL) for a room, ordered by joined_at ASC.
+  # display_name is decrypted via the same decrypt_display_name/1 helper used by
+  # list_admin_users/get_admin_user. On decryption failure, display_name = "" (non-fatal).
+  # Empty room returns empty members list (not an error).
+
+  def list_admin_room_members(%Core.ListAdminRoomMembersRequest{} = req, _stream) do
+    case admin_db_module().list_room_members(req.room_id) do
+      {:ok, members} ->
+        proto_members =
+          Enum.map(members, fn member ->
+            %Core.AdminRoomMemberProto{
+              user_id: member.user_id,
+              display_name: decrypt_display_name(member),
+              joined_at: member.joined_at || 0
+            }
+          end)
+
+        %Core.ListAdminRoomMembersResponse{members: proto_members}
+
+      {:error, reason} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.internal(),
+          message: "list_admin_room_members failed: #{inspect(reason)}"
+    end
+  end
+
+  # ─── GetServerConfig ─────────────────────────────────────────────────────────
+  #
+  # Security invariant: oidc_client_secret MUST NOT be returned in the response.
+  # It is AES-256-GCM encrypted in the DB and only the Go Gateway has the key.
+  # The admin_db_module().get_server_config/0 already filters it out at DB level.
+
+  def get_server_config(%Core.GetServerConfigRequest{} = _req, _stream) do
+    case admin_db_module().get_server_config() do
+      {:ok, config} ->
+        %Core.GetServerConfigResponse{
+          config: %Core.ServerConfigProto{
+            instance_name: Map.get(config, "instance_name", ""),
+            oidc_issuer: Map.get(config, "oidc_issuer", ""),
+            oidc_client_id: Map.get(config, "oidc_client_id", ""),
+            room_default_max_members: parse_int_config(config, "room_default_max_members"),
+            room_default_visibility: Map.get(config, "room_default_visibility", ""),
+            audit_log_retention_days: parse_int_config(config, "audit_log_retention_days")
+          }
+        }
+
+      {:error, reason} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.internal(),
+          message: "get_server_config failed: #{inspect(reason)}"
+    end
+  end
+
+  # ─── UpdateServerConfig ──────────────────────────────────────────────────────
+  #
+  # Upserts server_config table rows for provided fields.
+  # Empty string / zero fields are not updated (callers omit fields they don't change).
+  # NOTE: The Gateway calls CoreClient.InvalidateAllAdminSessions after OIDC config changes
+  # (Story 6.10) — Core only persists the data here.
+
+  def update_server_config(%Core.UpdateServerConfigRequest{} = req, stream) do
+    {actor_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
+
+    changes =
+      []
+      |> maybe_add_change("instance_name", req.instance_name)
+      |> maybe_add_change("oidc_issuer", req.oidc_issuer)
+      |> maybe_add_change("oidc_client_id", req.oidc_client_id)
+      |> maybe_add_int_change("room_default_max_members", req.room_default_max_members)
+      |> maybe_add_change("room_default_visibility", req.room_default_visibility)
+      |> maybe_add_int_change("audit_log_retention_days", req.audit_log_retention_days)
+
+    if changes == [] do
+      %Core.UpdateServerConfigResponse{ok: true}
+    else
+      case admin_db_module().upsert_server_config(Map.new(changes)) do
+        :ok ->
+          # Audit log for server config update (Story 9.4 — mirrors deactivate_user pattern from Story 9.2).
+          audit_writer_module().log(
+            actor_id,
+            "server_config_updated",
+            "server_config",
+            "config",
+            %{changed_keys: Map.keys(Map.new(changes))},
+            "success"
+          )
+
+          %Core.UpdateServerConfigResponse{ok: true}
+
+        {:error, reason} ->
+          raise GRPC.RPCError,
+            status: GRPC.Status.internal(),
+            message: "update_server_config failed: #{inspect(reason)}"
+      end
+    end
+  end
+
+  # ─── Private helpers for admin handlers ──────────────────────────────────────
+
+  # Decrypts display_name from the user map returned by admin_db_module.
+  #
+  # Two supported layouts:
+  #   - Test fakes (FakeAdminDB): return %{display_name: "Alice"} (already plaintext).
+  #   - Real DB (Nebu.Admin.DB): returns %{display_name_encrypted: <<...>>,
+  #     display_name_nonce: <<...>>}; decrypted via Nebu.Signature.decrypt_operational_pii/3.
+  #
+  # Falls back to empty string on decryption failure or missing data.
+  defp decrypt_display_name(%{display_name: dn}) when is_binary(dn) do
+    dn
+  end
+
+  defp decrypt_display_name(%{display_name_encrypted: enc, display_name_nonce: nonce})
+       when is_binary(enc) and is_binary(nonce) do
+    server_key = Application.get_env(:signature, :pii_encryption_key)
+
+    case Nebu.Signature.decrypt_operational_pii(enc, nonce, server_key) do
+      {:ok, plaintext} -> plaintext
+      {:error, _} -> ""
+    end
+  end
+
+  defp decrypt_display_name(_), do: ""
+
+  # Masks email to "u***@domain" format.
+  #
+  # Two supported layouts:
+  #   - Test fakes (FakeAdminDB): return %{email_masked: "a***@example.com"} (pre-masked).
+  #   - Real DB (Nebu.Admin.DB): returns %{email_encrypted: <<...>>, email_nonce: <<...>>,
+  #     email_ephemeral_pub: <<...>>}; decrypted via Nebu.Signature.decrypt_sensitive_pii/4.
+  #
+  # Email masking pattern: first char of local part + "***" + "@" + domain.
+  defp mask_email(%{email_masked: masked}) when is_binary(masked) and byte_size(masked) > 0 do
+    masked
+  end
+
+  defp mask_email(%{email_encrypted: enc, email_nonce: nonce, email_ephemeral_pub: ephemeral_pub})
+       when is_binary(enc) and is_binary(nonce) and is_binary(ephemeral_pub) do
+    {_pub, priv} = :persistent_term.get(:nebu_encryption_key, {nil, nil})
+
+    case Nebu.Signature.decrypt_sensitive_pii(enc, ephemeral_pub, nonce, priv) do
+      {:ok, email} -> do_mask_email(email)
+      {:error, _} -> "***@unknown"
+    end
+  end
+
+  defp mask_email(_), do: "***@unknown"
+
+  defp do_mask_email(email) do
+    case String.split(email, "@", parts: 2) do
+      [local, domain] when byte_size(local) > 0 ->
+        first = String.first(local)
+        "#{first}***@#{domain}"
+
+      _ ->
+        "***@unknown"
+    end
+  end
+
+  defp parse_int_config(config, key) do
+    case Map.get(config, key) do
+      nil -> 0
+      val when is_integer(val) -> val
+      val when is_binary(val) -> String.to_integer(val)
+      _ -> 0
+    end
+  end
+
+  defp maybe_add_change(acc, _key, ""), do: acc
+  defp maybe_add_change(acc, key, value) when is_binary(value), do: [{key, value} | acc]
+  defp maybe_add_change(acc, _key, _), do: acc
+
+  defp maybe_add_int_change(acc, _key, 0), do: acc
+  defp maybe_add_int_change(acc, key, value) when is_integer(value) and value > 0, do: [{key, value} | acc]
+  defp maybe_add_int_change(acc, _key, _), do: acc
 
   # ─── Private helpers ──────────────────────────────────────────────────────────
 
@@ -1681,6 +2424,644 @@ defmodule Nebu.EventDispatcher.Server do
       {:error, reason} ->
         require Logger
         Logger.warning("emit_decline_event: failed for #{user_id} in #{room_id}: #{inspect(reason)}")
+    end
+  end
+
+  # ─── UpgradeRoom — Story 9.8: atomic room version upgrade ─────────────────────
+  #
+  # Sequence (all in one call, no extra GenServer abstraction needed):
+  #   1. Verify old room exists and requester has power_level >= 100 (owner).
+  #   2. Emit m.room.tombstone in the old room.
+  #   3. Create new room, join requester as creator, set creator power levels.
+  #   4. Emit m.room.create in new room WITH predecessor (old_room_id + tombstone_event_id).
+  #   5. Copy state events from old room (excluding create, tombstone, aliases, member).
+  #      Emit m.room.join_rules LAST per Matrix spec.
+  #   6. Invite all old members (except requester, who is already joined).
+  #   7. Write audit log: room_upgraded.
+  #
+  # Security: power level check (step 1) is performed BEFORE any state mutation.
+  # All events are emitted via the private emit_state_event/5 helper (same signing
+  # pattern as create_room/2) to avoid triggering the Room.Server power check a
+  # second time after we've already verified power level >= 100.
+
+  def upgrade_room(request, stream) do
+    {requester_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
+    old_room_id  = request.old_room_id
+    new_version  = if request.new_version == "" or is_nil(request.new_version),
+                     do: "10",
+                     else: request.new_version
+
+    # 1. Verify old room exists and requester is owner (power_level >= 100).
+    case Nebu.Room.RoomSupervisor.lookup_room(old_room_id) do
+      {:error, :not_found} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "room not found: #{old_room_id}"
+
+      {:ok, _pid} ->
+        old_state =
+          try do
+            room_registry_module().get_state(old_room_id)
+          catch
+            :exit, {:noproc, _} ->
+              raise GRPC.RPCError,
+                status: GRPC.Status.not_found(),
+                message: "room not found: #{old_room_id}"
+          end
+
+        requester_level =
+          get_in(old_state.power_levels, ["users", requester_id]) || 0
+
+        if requester_level < 100 do
+          raise GRPC.RPCError,
+            status: GRPC.Status.permission_denied(),
+            message: "insufficient power level for room upgrade"
+        end
+
+        # 2. Create new room and set up creator membership + power levels.
+        # MAJOR-3 fix: m.room.create MUST be the first event in any room per Matrix spec.
+        # We therefore emit m.room.create BEFORE joining the creator so that the
+        # m.room.create event has a lower origin_server_ts than the m.room.member event.
+        new_room_id = generate_room_id()
+
+        case Nebu.Room.RoomSupervisor.start_room(new_room_id) do
+          {:ok, _new_pid} ->
+            try do
+              # 3. Emit m.room.tombstone in the OLD room (via private helper, bypasses Room.Server
+              #    power check — we already confirmed power_level >= 100 above).
+              tombstone_content = %{
+                "body"             => "This room has been replaced",
+                "replacement_room" => new_room_id
+              }
+
+              tombstone_event_id =
+                case emit_state_event(old_room_id, requester_id, "m.room.tombstone", "", tombstone_content) do
+                  {:ok, event_id} -> event_id
+                  {:error, reason} ->
+                    raise GRPC.RPCError,
+                      status: GRPC.Status.internal(),
+                      message: "Failed to emit tombstone event: #{inspect(reason)}"
+                end
+
+              # 4. Emit m.room.create in new room WITH predecessor FIRST (before join).
+              # MAJOR-3 fix: create event must be the first event written to the new room.
+              create_content = %{
+                "creator"      => requester_id,
+                "room_version" => new_version,
+                "predecessor"  => %{
+                  "room_id"  => old_room_id,
+                  "event_id" => tombstone_event_id
+                }
+              }
+              case emit_state_event(new_room_id, requester_id, "m.room.create", "", create_content) do
+                {:ok, _} -> :ok
+                {:error, reason} ->
+                  raise GRPC.RPCError,
+                    status: GRPC.Status.internal(),
+                    message: "Failed to emit m.room.create in new room: #{inspect(reason)}"
+              end
+
+              # Now join the creator and set power levels (m.room.member comes AFTER m.room.create).
+              case Nebu.Room.Server.join(new_room_id, requester_id) do
+                :ok -> :ok
+                {:error, reason} ->
+                  raise GRPC.RPCError,
+                    status: GRPC.Status.internal(),
+                    message: "Failed to join requester to new room: #{inspect(reason)}"
+              end
+
+              default_pl = Nebu.Room.Server.default_power_levels()
+              creator_pl = put_in(default_pl, ["users", requester_id], 100)
+
+              case Nebu.Room.Server.set_power_levels(new_room_id, requester_id, creator_pl) do
+                :ok -> :ok
+                {:error, reason} ->
+                  raise GRPC.RPCError,
+                    status: GRPC.Status.internal(),
+                    message: "Failed to set power levels on new room: #{inspect(reason)}"
+              end
+
+              # 5. Copy state events from old room (spec-mandated order).
+              copy_state_events(old_room_id, new_room_id, requester_id)
+
+              # 6. Invite all old members (except requester — already joined).
+              old_members = MapSet.delete(old_state.members, requester_id)
+
+              Enum.each(old_members, fn member_id ->
+                case db_module_invite().insert_invitation(new_room_id, requester_id, member_id) do
+                  :ok ->
+                    :pg.get_local_members("user:#{member_id}")
+                    |> Enum.each(&send(&1, {:new_invite, new_room_id}))
+
+                  {:error, reason} ->
+                    Logger.warning(
+                      "upgrade_room: invite failed for #{member_id} in #{new_room_id}: #{inspect(reason)}"
+                    )
+                end
+              end)
+
+              # 7. Archive old room (Matrix spec §11.35.1 — no new events after tombstone).
+              case admin_db_module().archive_room_atomic(old_room_id) do
+                :ok -> :ok
+                {:error, :not_found} ->
+                  # Idempotent: room row already removed by a concurrent admin operation.
+                  :ok
+                {:error, reason} ->
+                  raise GRPC.RPCError,
+                    status: GRPC.Status.internal(),
+                    message: "Failed to archive old room after upgrade: #{inspect(reason)}"
+              end
+
+              # Stop the old room GenServer — no new writes possible after tombstone.
+              case Nebu.Room.RoomSupervisor.lookup_room(old_room_id) do
+                {:ok, old_pid} ->
+                  case Horde.DynamicSupervisor.terminate_child(Nebu.Room.HordeSupervisor, old_pid) do
+                    :ok -> :ok
+                    {:error, reason} ->
+                      Logger.warning(
+                        "upgrade_room: terminate_child for old room #{old_room_id} failed: #{inspect(reason)}"
+                      )
+                  end
+                {:error, :not_found} -> :ok
+              end
+
+              # 8. Audit log — success.
+              audit_writer_module().log(
+                requester_id,
+                "room_upgraded",
+                "room",
+                old_room_id,
+                %{"new_room_id" => new_room_id, "new_version" => new_version},
+                "success"
+              )
+
+              %Core.UpgradeRoomResponse{new_room_id: new_room_id}
+            rescue
+              e ->
+                # Audit log — partial failure (tombstone may already be in old room).
+                # Wrap in its own rescue so an audit-writer outage never masks the original error.
+                error_msg = if is_exception(e), do: Exception.message(e), else: inspect(e)
+                try do
+                  audit_writer_module().log(
+                    requester_id,
+                    "room_upgraded",
+                    "room",
+                    old_room_id,
+                    %{"new_room_id" => new_room_id, "new_version" => new_version, "error" => error_msg},
+                    "failure"
+                  )
+                rescue
+                  audit_err ->
+                    Logger.error(
+                      "upgrade_room: failure audit log failed for #{old_room_id}: #{inspect(audit_err)}"
+                    )
+                end
+                reraise e, __STACKTRACE__
+            end
+
+          {:error, reason} ->
+            raise GRPC.RPCError,
+              status: GRPC.Status.internal(),
+              message: "Failed to start new room: #{inspect(reason)}"
+        end
+    end
+  end
+
+  # ─── SearchMessages — Story 11.3 ────────────────────────────────────────────
+  #
+  # Full-text search over rooms where the authenticated user is an active member.
+  # Delegates to Nebu.Search.DB.search_messages/5 which enforces membership at SQL layer.
+  #
+  # SECURITY: user_id MUST come from gRPC metadata (x-user-id set by Go JWTMiddleware).
+  # The request.user_id field is IGNORED — reading it would bypass membership enforcement
+  # and allow a malicious authenticated user to search any other user's rooms (IDOR).
+  # See Security Trust Boundary section in Story 11.3 for full details.
+
+  def search_messages(request, stream) do
+    # SECURITY: user_id MUST come from gRPC metadata, never from request.user_id
+    {user_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
+
+    if is_nil(user_id) or user_id == "" do
+      raise GRPC.RPCError,
+        status: GRPC.Status.unauthenticated(),
+        message: "missing x-user-id metadata"
+    end
+
+    search_term = request.search_term
+
+    # Kassandra Finding #4: clamp limit to prevent DOS / over-large queries.
+    # limit=0 defaults to 10; clamped to 1–100.
+    raw_limit = if request.limit == 0, do: 10, else: request.limit
+    limit = min(max(raw_limit, 1), 100)
+
+    # Decode next_batch pagination token (base64-encoded integer offset).
+    # Invalid or missing token → default offset 0.
+    offset =
+      case Base.decode64(request.next_batch || "") do
+        {:ok, bin} ->
+          case Integer.parse(bin) do
+            {n, ""} when n >= 0 -> min(n, 10_000)
+            _ -> 0
+          end
+        :error -> 0
+      end
+
+    # room_filter: empty list = no filter; non-empty = intersect with membership at SQL layer.
+    room_filter = request.room_filter || []
+
+    # Delegate to Nebu.Search.DB — user_id enforces membership scoping at SQL layer.
+    case search_db_module().search_messages(user_id, search_term, limit, offset, room_filter) do
+      {:ok, rows} ->
+        results =
+          Enum.map(rows, fn row ->
+            event_id = Map.get(row, "event_id", "")
+            room_id  = Map.get(row, "room_id", "")
+            sender   = Map.get(row, "sender", "")
+
+            # Build event JSON from row fields.
+            content =
+              case Map.get(row, "content") do
+                c when is_map(c) -> c
+                c when is_binary(c) ->
+                  case Jason.decode(c) do
+                    {:ok, m} -> m
+                    _ -> %{}
+                  end
+                _ -> %{}
+              end
+
+            event_json =
+              Jason.encode!(%{
+                "event_id"         => event_id,
+                "room_id"          => room_id,
+                "sender"           => sender,
+                "type"             => Map.get(row, "event_type", "m.room.message"),
+                "content"          => content,
+                "origin_server_ts" => Map.get(row, "origin_server_ts", 0)
+              })
+
+            # rank from ts_rank_cd is a float4 (native Elixir float from Ecto)
+            rank_val = Map.get(row, "rank", 0.0)
+            rank = cond do
+              is_float(rank_val)   -> rank_val
+              is_integer(rank_val) -> rank_val * 1.0
+              true                 -> 0.0
+            end
+
+            %Core.SearchResult{
+              rank:          rank,
+              event:         event_json,
+              events_before: [],   # MVP: empty — Story 11.6 Godog scenarios do not test context events
+              events_after:  [],   # MVP: empty
+              profile_info:  %{}   # MVP: empty — get_profile/1 not yet in Nebu.Profile.DB
+            }
+          end)
+
+        # Build next_batch token: if we got `limit` results, there may be more pages.
+        next_batch =
+          if length(results) == limit do
+            Base.encode64(Integer.to_string(offset + limit))
+          else
+            ""
+          end
+
+        %Core.SearchMessagesResponse{
+          results:     results,
+          next_batch:  next_batch,
+          total_count: offset + length(results)  # lower bound — exact COUNT(*) deferred to Story 11.5
+        }
+
+      {:error, reason} ->
+        # Kassandra Finding LOW-3: log full reason server-side, return sanitized error to client.
+        # NEVER expose DB error details (schema names, table names, postgres messages) to caller.
+        Logger.error("search_messages failed", user_id: user_id, error: inspect(reason))
+
+        raise GRPC.RPCError,
+          status: GRPC.Status.internal(),
+          message: "search failed"
+    end
+  end
+
+  # Emits a signed state event into the events table and broadcasts to :pg subscribers.
+  # Used by upgrade_room/2 and any other path that needs to write state events directly
+  # without going through Room.Server (which would re-check power levels).
+  # Returns {:ok, event_id} on success, {:error, reason} on DB failure.
+  defp emit_state_event(room_id, sender_id, event_type, state_key, content) do
+    event_map = %{
+      "room_id"          => room_id,
+      "type"             => event_type,
+      "state_key"        => state_key,
+      "sender"           => sender_id,
+      "content"          => content,
+      "origin_server_ts" => Nebu.DB.Helpers.now_ms()
+    }
+
+    event_id      = Nebu.EventId.generate(event_map)
+    event_with_id = Map.put(event_map, "event_id", event_id)
+    {_pub, priv}  = :persistent_term.get(:nebu_signing_key)
+    event_json    = Nebu.CanonicalJson.encode!(event_map)
+    signature     = :crypto.sign(:eddsa, :none, event_json, [priv, :ed25519])
+    sig_b64       = Base.encode64(signature)
+    signed        = Map.put(event_with_id, "signatures", %{"nebu" => sig_b64})
+
+    case messages_db_module().insert_event(signed) do
+      :ok ->
+        Enum.each(:pg.get_local_members("room:#{room_id}"), &send(&1, {:new_event, signed}))
+        {:ok, event_id}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  # Copies state events from old_room to new_room per Matrix spec Section 11.35.1.
+  #
+  # Filter rules:
+  #   - Exclude m.room.create (new room gets its own with predecessor).
+  #   - Exclude m.room.tombstone (the old room is dead; we don't copy its tombstone).
+  #   - Exclude m.room.aliases (room-alias events are scoped to the old room's alias).
+  #   - Exclude m.space.child / m.space.parent (space relationships are not migrated).
+  #   - Exclude m.room.member (membership is re-established via invite/join).
+  #
+  # Required state events to copy per Matrix spec: m.room.name, m.room.topic,
+  # m.room.join_rules, m.room.power_levels, m.room.history_visibility,
+  # m.room.guest_access, m.room.avatar, m.room.canonical_alias, m.room.encryption.
+  #
+  # MAJOR-1 fix: m.room.name is excluded by get_generic_state_events/1 (it has a
+  # dedicated DB helper in Story 9-7). We fetch it here explicitly and include it in
+  # the "other" batch so the upgraded room preserves its name.
+  #
+  # Order: emit all state events first, then m.room.join_rules last (per spec).
+  # Uses get_generic_state_events/1 from Story 9-7 which excludes member,
+  # power_levels, create, and name.
+  defp copy_state_events(old_room_id, new_room_id, requester_id) do
+    # Fetch generic state events (excludes member, power_levels, create, name per 9-7).
+    state_events =
+      case messages_db_module().get_generic_state_events(old_room_id) do
+        {:ok, events} -> events
+        {:error, _}   -> []
+      end
+
+    # Exclude tombstone, aliases, and space events (get_generic_state_events already
+    # excludes member/power_levels/create/name, but tombstone/aliases are included).
+    excluded_types = [
+      "m.room.tombstone",
+      "m.room.aliases",
+      "m.space.child",
+      "m.space.parent"
+    ]
+
+    # MAJOR-1 fix: get_generic_state_events excludes m.room.name, so fetch it
+    # separately and prepend it as a synthetic event entry for the copy.
+    name_state_events =
+      case messages_db_module().get_room_name(old_room_id) do
+        {:ok, name} ->
+          [%{type: "m.room.name", state_key: "", content_json: Jason.encode!(%{"name" => name})}]
+        {:error, _} ->
+          []
+      end
+
+    {join_rules_events, other_events} =
+      (name_state_events ++ state_events)
+      |> Enum.reject(fn e -> e.type in excluded_types end)
+      |> Enum.split_with(fn e -> e.type == "m.room.join_rules" end)
+
+    # Emit non-join_rules state events first.
+    Enum.each(other_events, fn e ->
+      content =
+        case Jason.decode(e.content_json) do
+          {:ok, map} -> map
+          _          -> %{}
+        end
+      emit_state_event(new_room_id, requester_id, e.type, e.state_key || "", content)
+    end)
+
+    # Emit join_rules last (Matrix spec requirement).
+    Enum.each(join_rules_events, fn e ->
+      content =
+        case Jason.decode(e.content_json) do
+          {:ok, map} -> map
+          _          -> %{}
+        end
+      emit_state_event(new_room_id, requester_id, e.type, e.state_key || "", content)
+    end)
+  end
+
+  # ─── GetRelations — Story 9-28 / 9-29 ───────────────────────────────────────
+  #
+  # Returns events that relate to `event_id`, optionally filtered by rel_type and event_type.
+  # Story 9-28: initial implementation for m.thread relations.
+  # Story 9-29:
+  #   - rel_type empty → return all relation types (no filter).
+  #   - event_type non-empty → additionally filter by event_type.
+  #   - dir "f" → ASC ordering; dir "b" (default) → DESC ordering.
+  #   - recurse: accepted per spec; transitive recursion not yet implemented — ignored by DB layer.
+  #
+  # Membership check: caller must be a joined room member.
+  # Unknown event_id: returns NOT_FOUND.
+  # Limit clamped to 1–100 (default 20).
+
+  def get_relations(request, _stream) do
+    user_id    = request.user_id
+    room_id    = request.room_id
+    event_id   = request.event_id
+    rel_type   = request.rel_type   # empty = all relation types (Story 9-29)
+    event_type = request.event_type # empty = no event_type filter (Story 9-29)
+    dir        = if request.dir in ["f", "b"], do: request.dir, else: "b"
+    limit      = request.limit |> max(1) |> min(100)
+
+    # Room existence + membership — uses injected room_registry_module for testability.
+    # Archived and non-existent rooms have no running GenServer; {:noproc, _} → NOT_FOUND.
+    state =
+      try do
+        room_registry_module().get_state(room_id)
+      catch
+        :exit, {:noproc, _} ->
+          raise GRPC.RPCError,
+            status: GRPC.Status.not_found(),
+            message: "room not found: #{room_id}"
+      end
+
+    unless MapSet.member?(state.members, user_id) do
+      raise GRPC.RPCError,
+        status: GRPC.Status.permission_denied(),
+        message: "#{user_id} is not a member of #{room_id}"
+    end
+
+    # Unknown parent event (scoped to this room) → 404 NOT_FOUND.
+    # Room-scoped check prevents cross-room event-existence probing by room members.
+    case messages_db_module().event_in_room?(event_id, room_id) do
+      false ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "event not found: #{event_id}"
+
+      true ->
+        :ok
+    end
+
+    opts = %{
+      event_type: event_type,
+      dir:        dir
+    }
+
+    case messages_db_module().fetch_events_by_relation(room_id, event_id, rel_type, limit, opts) do
+      {:ok, events} ->
+        proto_events = Enum.map(events, &event_map_to_proto/1)
+        %Core.GetRelationsResponse{events: proto_events}
+
+      {:error, reason} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.internal(),
+          message: "fetch_events_by_relation failed: #{inspect(reason)}"
+    end
+  end
+
+  # ─── get_event — Story 11-8 ────────────────────────────────────────────────────
+  #
+  # Returns a single event by ID, scoped to a room.
+  # The calling user must be a joined member of the room.
+  # Used by Element Web's thread.ts fetchRootEvent() to load thread roots.
+
+  def get_event(request, stream) do
+    {user_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
+    room_id  = request.room_id
+    event_id = request.event_id
+
+    case Nebu.Room.RoomSupervisor.lookup_room(room_id) do
+      {:error, :not_found} ->
+        raise GRPC.RPCError,
+          status: GRPC.Status.not_found(),
+          message: "room not found: #{room_id}"
+
+      {:ok, _pid} ->
+        state = room_registry_module().get_state(room_id)
+
+        unless MapSet.member?(state.members, user_id) do
+          raise GRPC.RPCError,
+            status: GRPC.Status.permission_denied(),
+            message: "#{user_id} is not a member of #{room_id}"
+        end
+
+        case messages_db_module().fetch_event(event_id, room_id) do
+          {:ok, event_map} ->
+            %Core.GetEventResponse{event: event_map_to_proto(event_map)}
+
+          {:error, :not_found} ->
+            raise GRPC.RPCError,
+              status: GRPC.Status.not_found(),
+              message: "event not found: #{event_id}"
+
+          {:error, reason} ->
+            raise GRPC.RPCError,
+              status: GRPC.Status.internal(),
+              message: "fetch_event failed: #{inspect(reason)}"
+        end
+    end
+  end
+
+  # ─── attach_thread_aggregations — Story 9-28 ──────────────────────────────────
+  #
+  # For each timeline event that has thread children, attach bundled aggregations
+  # (unsigned_relations field) so Go can include them in the /sync response.
+  # Only m.room.message events can be thread roots — skip state events.
+  # N+1 for MVP (small rooms); acceptable until thread lists grow large.
+
+  defp attach_thread_aggregations(events, room_id, user_id) do
+    Enum.map(events, fn ev ->
+      # Only message events can be thread roots (skip state events).
+      if ev.event_type == "m.room.message" do
+        with {:ok, [latest | _]} <-
+               messages_db_module().fetch_events_by_relation(room_id, ev.event_id, "m.thread", 1, %{}),
+             {:ok, count} <- messages_db_module().count_thread_children(room_id, ev.event_id),
+             true <- count > 0 do
+          current_user_participated =
+            latest["sender"] == user_id or ev.sender_id == user_id
+
+          latest_event_map = %{
+            "event_id"         => latest["event_id"] || "",
+            "room_id"          => room_id,
+            "sender"           => latest["sender"] || "",
+            "type"             => latest["event_type"] || "",
+            "origin_server_ts" => latest["origin_server_ts"] || 0,
+            "content"          => normalise_content(latest["content"])
+          }
+
+          agg = %{
+            "m.thread" => %{
+              "count"                      => count,
+              "current_user_participated"  => current_user_participated,
+              "latest_event"               => latest_event_map
+            }
+          }
+
+          %{ev | unsigned_relations: Jason.encode!(agg)}
+        else
+          _ -> ev
+        end
+      else
+        ev
+      end
+    end)
+  end
+
+  # For each thread reply in the raw DB event batch, fetches the corresponding
+  # root event from DB (if not already in the delta) and returns those root events
+  # as proto Events with m.thread aggregations attached.
+  # Prepended to the timeline so Element Web creates Thread objects in real-time
+  # rather than only after a full page reload (initial sync).
+  defp thread_root_updates(db_events, room_id, user_id) do
+    delta_ids = MapSet.new(db_events, fn ev -> ev["event_id"] end)
+
+    db_events
+    |> Enum.flat_map(fn ev ->
+      content = normalise_db_content(ev["content"])
+
+      case content do
+        %{"m.relates_to" => %{"rel_type" => "m.thread", "event_id" => root_id}}
+            when is_binary(root_id) and byte_size(root_id) > 0 ->
+          if MapSet.member?(delta_ids, root_id) do
+            []
+          else
+            case messages_db_module().fetch_event(root_id, room_id) do
+              {:ok, root_ev} -> [event_map_to_proto(root_ev)]
+              _ -> []
+            end
+          end
+
+        _ ->
+          []
+      end
+    end)
+    |> Enum.uniq_by(fn ev -> ev.event_id end)
+    |> attach_thread_aggregations(room_id, user_id)
+  end
+
+  # Normalises a DB content value to a plain Elixir map.
+  # Handles Postgrex.JSONB structs (shape-matched), plain maps, and JSON strings.
+  defp normalise_db_content(raw) do
+    cond do
+      is_struct(raw) and Map.has_key?(raw, :decoded) and is_map(raw.decoded) -> raw.decoded
+      is_map(raw) -> raw
+      is_binary(raw) ->
+        case Jason.decode(raw) do
+          {:ok, map} when is_map(map) -> map
+          _ -> %{}
+        end
+      true -> %{}
+    end
+  end
+
+  # Normalises a content value from the DB (map or JSON string) to a plain map.
+  defp normalise_content(raw) do
+    cond do
+      is_map(raw) -> raw
+      is_binary(raw) ->
+        case Jason.decode(raw) do
+          {:ok, map} when is_map(map) -> map
+          _ -> %{}
+        end
+      true -> %{}
     end
   end
 end

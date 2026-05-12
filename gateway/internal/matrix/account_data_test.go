@@ -89,7 +89,7 @@ func buildAuthedAccountDataHandler(t *testing.T, db *mockAccountDataDB) (http.Ha
 	t.Cleanup(oidcSrv.Close)
 
 	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
-	jwtMiddleware := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")
+	jwtMiddleware := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")
 
 	handler := NewAccountDataHandler(AccountDataConfig{
 		ServerName: "test.local",

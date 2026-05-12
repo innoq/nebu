@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/nebu/nebu/internal/auth"
 )
 
 // fakeServerConfigReader is a test double for ServerConfigReader.
@@ -33,6 +35,18 @@ func (f *fakeServerConfigReader) LoadAdminGroupClaim(_ context.Context) (string,
 
 func (f *fakeServerConfigReader) SaveAdminGroupClaim(_ context.Context, _ string) error {
 	return nil
+}
+
+func (f *fakeServerConfigReader) LoadClaimMapping(_ context.Context) (string, string, string, error) {
+	return "sub", "name", "email", nil
+}
+
+func (f *fakeServerConfigReader) SaveClaimMapping(_ context.Context, _, _, _ string) error {
+	return nil
+}
+
+func (f *fakeServerConfigReader) LoadServerConfigKey(_ context.Context, _ string) (string, error) {
+	return "", nil
 }
 
 // newTestAdminAuthWithReader creates an AdminAuth with a fake ServerConfigReader and optional TemplateHandler.
@@ -276,5 +290,53 @@ func TestLoginStartHandler_DBError_Returns503(t *testing.T) {
 
 	if rr.Code != http.StatusServiceUnavailable {
 		t.Errorf("expected 503, got %d", rr.Code)
+	}
+}
+
+// TestLoginStartHandler_PromptLogin verifies that the OIDC auth URL contains prompt=login
+// so that Dex does not reuse a cached offline session after logout (regression: 9-14 offline_access
+// scope causes Dex to persist sessions; without prompt=login the re-login flow skips credential
+// entry and may return a stale token).
+func TestLoginStartHandler_PromptLogin(t *testing.T) {
+	srv, _ := setupAdminOIDCServer(t)
+
+	reader := &fakeServerConfigReader{
+		issuer:       srv.URL,
+		clientID:     "test-client-id",
+		clientSecret: "test-secret",
+	}
+	a := newTestAdminAuthWithReader(t, reader, nil)
+
+	req := httptest.NewRequest("GET", "/admin/login/start", nil)
+	req.Host = "localhost"
+	rr := httptest.NewRecorder()
+	a.LoginStartHandler(rr, req)
+
+	if rr.Code != http.StatusFound {
+		t.Fatalf("expected 302, got %d; body: %s", rr.Code, rr.Body.String())
+	}
+	location := rr.Header().Get("Location")
+	if !strings.Contains(location, "prompt=login") {
+		t.Errorf("OIDC auth URL missing prompt=login (Dex offline session reuse regression): %s", location)
+	}
+}
+
+// TestLoginHandler_PromptLogin verifies the legacy LoginHandler also includes prompt=login.
+func TestLoginHandler_PromptLogin(t *testing.T) {
+	srv, _ := setupAdminOIDCServer(t)
+	provider := auth.NewProvider(context.Background(), srv.URL)
+	a := newTestAdminAuth(t, provider)
+
+	req := httptest.NewRequest("GET", "/admin/auth/login", nil)
+	req.Host = "localhost"
+	rr := httptest.NewRecorder()
+	a.LoginHandler(rr, req)
+
+	if rr.Code != http.StatusFound {
+		t.Fatalf("expected 302, got %d; body: %s", rr.Code, rr.Body.String())
+	}
+	location := rr.Header().Get("Location")
+	if !strings.Contains(location, "prompt=login") {
+		t.Errorf("OIDC auth URL missing prompt=login (Dex offline session reuse regression): %s", location)
 	}
 }

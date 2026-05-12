@@ -22,6 +22,7 @@ defmodule Compliance.AuditWriter do
 
   # AC8 (Story 5.29c): allowlist of all valid audit action strings in Epic 5.
   # compliance_session_revoked was added by Story 5.29c (AC2).
+  # user_deactivated, user_reactivated, update_user_role added for Epic 9 (Story 9.1 HIGH-1 fix).
   @known_actions ~w(
     admin_login
     admin_login_failed
@@ -40,6 +41,13 @@ defmodule Compliance.AuditWriter do
     user_keys_deleted
     user_keys_deletion_attempted
     user_anonymized
+    user_deactivated
+    user_reactivated
+    update_user_role
+    room_archived
+    room_unarchived
+    server_config_updated
+    room_upgraded
   )
 
   # Configurable repo for test injection. Production uses Nebu.Repo.

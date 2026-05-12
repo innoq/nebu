@@ -1,0 +1,1610 @@
+{
+    "components": {
+        "securitySchemes": {
+            "homeserverAccessToken": {
+                "description": "The `Bearer` `hs_token` provided by the application service's registration.",
+                "scheme": "bearer",
+                "type": "http"
+            }
+        }
+    },
+    "info": {
+        "title": "Matrix Application Service API",
+        "version": "v1.18"
+    },
+    "openapi": "3.1.0",
+    "paths": {
+        "/_matrix/app/v1/ping": {
+            "post": {
+                "description": "This API is called by the homeserver to ensure that the connection works\nand the `hs_token` the homeserver has is correct.\n\nCurrently this is only called by the homeserver as a direct result of\nthe application service calling\n[`POST /_matrix/client/v1/appservice/{appserviceId}/ping`](#post_matrixclientv1appserviceappserviceidping).",
+                "operationId": "ping",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "example": {
+                                    "transaction_id": "mautrix-go_1683636478256400935_123"
+                                },
+                                "properties": {
+                                    "transaction_id": {
+                                        "description": "A transaction ID for the ping, copied directly from the\n`POST /_matrix/client/v1/appservice/{appserviceId}/ping` call.",
+                                        "type": "string"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    },
+                    "description": "Ping body with optional transaction ID."
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "examples": {
+                                    "response": {
+                                        "value": {}
+                                    }
+                                },
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "The provided `hs_token` is valid and the ping request was successful."
+                    }
+                },
+                "security": [
+                    {
+                        "homeserverAccessToken": []
+                    }
+                ],
+                "summary": "Ping the application service",
+                "x-addedInMatrixVersion": "1.7"
+            }
+        },
+        "/_matrix/app/v1/rooms/{roomAlias}": {
+            "get": {
+                "description": "This endpoint is invoked by the homeserver on an application service to query\nthe existence of a given room alias. The homeserver will only query room\naliases inside the application service's `aliases` namespace. The\nhomeserver will send this request when it receives a request to join a\nroom alias within the application service's namespace.",
+                "operationId": "queryRoomByAlias",
+                "parameters": [
+                    {
+                        "description": "The room alias being queried.",
+                        "example": "#magicforest:example.com",
+                        "in": "path",
+                        "name": "roomAlias",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "examples": {
+                                    "response": {
+                                        "value": {}
+                                    }
+                                },
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "The application service indicates that this room alias exists. The\napplication service MUST have created a room and associated it with\nthe queried room alias using the client-server API. Additional\ninformation about the room such as its name and topic can be set\nbefore responding."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "examples": {
+                                    "response": {
+                                        "value": {
+                                            "errcode": "COM.EXAMPLE.MYAPPSERVICE_UNAUTHORIZED"
+                                        }
+                                    }
+                                },
+                                "schema": {
+                                    "description": "A Matrix-level Error",
+                                    "properties": {
+                                        "errcode": {
+                                            "description": "An error code.",
+                                            "example": "M_UNKNOWN",
+                                            "type": "string"
+                                        },
+                                        "error": {
+                                            "description": "A human-readable error message.",
+                                            "example": "An unknown error occurred",
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "errcode"
+                                    ],
+                                    "title": "Error",
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "The homeserver has not supplied credentials to the application service.\nOptional error information can be included in the body of this response."
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "examples": {
+                                    "response": {
+                                        "value": {
+                                            "errcode": "COM.EXAMPLE.MYAPPSERVICE_FORBIDDEN"
+                                        }
+                                    }
+                                },
+                                "schema": {
+                                    "description": "A Matrix-level Error",
+                                    "properties": {
+                                        "errcode": {
+                                            "description": "An error code.",
+                                            "example": "M_UNKNOWN",
+                                            "type": "string"
+                                        },
+                                        "error": {
+                                            "description": "A human-readable error message.",
+                                            "example": "An unknown error occurred",
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "errcode"
+                                    ],
+                                    "title": "Error",
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "The credentials supplied by the homeserver were rejected."
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "examples": {
+                                    "response": {
+                                        "value": {
+                                            "errcode": "COM.EXAMPLE.MYAPPSERVICE_NOT_FOUND"
+                                        }
+                                    }
+                                },
+                                "schema": {
+                                    "description": "A Matrix-level Error",
+                                    "properties": {
+                                        "errcode": {
+                                            "description": "An error code.",
+                                            "example": "M_UNKNOWN",
+                                            "type": "string"
+                                        },
+                                        "error": {
+                                            "description": "A human-readable error message.",
+                                            "example": "An unknown error occurred",
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "errcode"
+                                    ],
+                                    "title": "Error",
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "The application service indicates that this room alias does not exist.\nOptional error information can be included in the body of this response."
+                    }
+                },
+                "security": [
+                    {
+                        "homeserverAccessToken": []
+                    }
+                ],
+                "summary": "Query if a room alias should exist on the application service."
+            }
+        },
+        "/_matrix/app/v1/thirdparty/location": {
+            "get": {
+                "description": "Retrieve an array of third-party network locations from a Matrix room\nalias.",
+                "operationId": "queryLocationByAlias",
+                "parameters": [
+                    {
+                        "description": "The Matrix room alias to look up.",
+                        "in": "query",
+                        "name": "alias",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "description": "List of matched third-party locations.",
+                                    "items": {
+                                        "properties": {
+                                            "alias": {
+                                                "description": "An alias for a matrix room.",
+                                                "example": "#freenode_#matrix:matrix.org",
+                                                "type": "string"
+                                            },
+                                            "fields": {
+                                                "description": "Information used to identify this third-party location.",
+                                                "example": {
+                                                    "channel": "#matrix",
+                                                    "network": "freenode"
+                                                },
+                                                "type": "object"
+                                            },
+                                            "protocol": {
+                                                "description": "The protocol ID that the third-party location is a part of.",
+                                                "example": "irc",
+                                                "type": "string"
+                                            }
+                                        },
+                                        "required": [
+                                            "alias",
+                                            "protocol",
+                                            "fields"
+                                        ],
+                                        "title": "Location",
+                                        "type": "object"
+                                    },
+                                    "type": "array"
+                                }
+                            }
+                        },
+                        "description": "All found third-party locations."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "examples": {
+                                    "response": {
+                                        "value": {
+                                            "errcode": "COM.EXAMPLE.MYAPPSERVICE_UNAUTHORIZED"
+                                        }
+                                    }
+                                },
+                                "schema": {
+                                    "description": "A Matrix-level Error",
+                                    "properties": {
+                                        "errcode": {
+                                            "description": "An error code.",
+                                            "example": "M_UNKNOWN",
+                                            "type": "string"
+                                        },
+                                        "error": {
+                                            "description": "A human-readable error message.",
+                                            "example": "An unknown error occurred",
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "errcode"
+                                    ],
+                                    "title": "Error",
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "The homeserver has not supplied credentials to the application service.\nOptional error information can be included in the body of this response."
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "examples": {
+                                    "response": {
+                                        "value": {
+                                            "errcode": "COM.EXAMPLE.MYAPPSERVICE_FORBIDDEN"
+                                        }
+                                    }
+                                },
+                                "schema": {
+                                    "description": "A Matrix-level Error",
+                                    "properties": {
+                                        "errcode": {
+                                            "description": "An error code.",
+                                            "example": "M_UNKNOWN",
+                                            "type": "string"
+                                        },
+                                        "error": {
+                                            "description": "A human-readable error message.",
+                                            "example": "An unknown error occurred",
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "errcode"
+                                    ],
+                                    "title": "Error",
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "The credentials supplied by the homeserver were rejected."
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "examples": {
+                                    "response": {
+                                        "value": {
+                                            "errcode": "COM.EXAMPLE.MYAPPSERVICE_NOT_FOUND"
+                                        }
+                                    }
+                                },
+                                "schema": {
+                                    "description": "A Matrix-level Error",
+                                    "properties": {
+                                        "errcode": {
+                                            "description": "An error code.",
+                                            "example": "M_UNKNOWN",
+                                            "type": "string"
+                                        },
+                                        "error": {
+                                            "description": "A human-readable error message.",
+                                            "example": "An unknown error occurred",
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "errcode"
+                                    ],
+                                    "title": "Error",
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "No mappings were found with the given parameters."
+                    }
+                },
+                "security": [
+                    {
+                        "homeserverAccessToken": []
+                    }
+                ],
+                "summary": "Reverse-lookup third-party locations given a Matrix room alias."
+            }
+        },
+        "/_matrix/app/v1/thirdparty/location/{protocol}": {
+            "get": {
+                "description": "Retrieve a list of Matrix portal rooms that lead to the matched third-party location.",
+                "operationId": "queryLocationByProtocol",
+                "parameters": [
+                    {
+                        "description": "The protocol ID.",
+                        "example": "irc",
+                        "in": "path",
+                        "name": "protocol",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "One or more custom fields that are passed to the application\nservice to help identify the third-party location.",
+                        "in": "query",
+                        "name": "fields",
+                        "schema": {
+                            "additionalProperties": {
+                                "type": "string"
+                            },
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "description": "List of matched third-party locations.",
+                                    "items": {
+                                        "properties": {
+                                            "alias": {
+                                                "description": "An alias for a matrix room.",
+                                                "example": "#freenode_#matrix:matrix.org",
+                                                "type": "string"
+                                            },
+                                            "fields": {
+                                                "description": "Information used to identify this third-party location.",
+                                                "example": {
+                                                    "channel": "#matrix",
+                                                    "network": "freenode"
+                                                },
+                                                "type": "object"
+                                            },
+                                            "protocol": {
+                                                "description": "The protocol ID that the third-party location is a part of.",
+                                                "example": "irc",
+                                                "type": "string"
+                                            }
+                                        },
+                                        "required": [
+                                            "alias",
+                                            "protocol",
+                                            "fields"
+                                        ],
+                                        "title": "Location",
+                                        "type": "object"
+                                    },
+                                    "type": "array"
+                                }
+                            }
+                        },
+                        "description": "At least one portal room was found."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "examples": {
+                                    "response": {
+                                        "value": {
+                                            "errcode": "COM.EXAMPLE.MYAPPSERVICE_UNAUTHORIZED"
+                                        }
+                                    }
+                                },
+                                "schema": {
+                                    "description": "A Matrix-level Error",
+                                    "properties": {
+                                        "errcode": {
+                                            "description": "An error code.",
+                                            "example": "M_UNKNOWN",
+                                            "type": "string"
+                                        },
+                                        "error": {
+                                            "description": "A human-readable error message.",
+                                            "example": "An unknown error occurred",
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "errcode"
+                                    ],
+                                    "title": "Error",
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "The homeserver has not supplied credentials to the application service.\nOptional error information can be included in the body of this response."
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "examples": {
+                                    "response": {
+                                        "value": {
+                                            "errcode": "COM.EXAMPLE.MYAPPSERVICE_FORBIDDEN"
+                                        }
+                                    }
+                                },
+                                "schema": {
+                                    "description": "A Matrix-level Error",
+                                    "properties": {
+                                        "errcode": {
+                                            "description": "An error code.",
+                                            "example": "M_UNKNOWN",
+                                            "type": "string"
+                                        },
+                                        "error": {
+                                            "description": "A human-readable error message.",
+                                            "example": "An unknown error occurred",
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "errcode"
+                                    ],
+                                    "title": "Error",
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "The credentials supplied by the homeserver were rejected."
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "examples": {
+                                    "response": {
+                                        "value": {
+                                            "errcode": "COM.EXAMPLE.MYAPPSERVICE_NOT_FOUND"
+                                        }
+                                    }
+                                },
+                                "schema": {
+                                    "description": "A Matrix-level Error",
+                                    "properties": {
+                                        "errcode": {
+                                            "description": "An error code.",
+                                            "example": "M_UNKNOWN",
+                                            "type": "string"
+                                        },
+                                        "error": {
+                                            "description": "A human-readable error message.",
+                                            "example": "An unknown error occurred",
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "errcode"
+                                    ],
+                                    "title": "Error",
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "No mappings were found with the given parameters."
+                    }
+                },
+                "security": [
+                    {
+                        "homeserverAccessToken": []
+                    }
+                ],
+                "summary": "Retrieve Matrix-side portal rooms leading to a third-party location."
+            }
+        },
+        "/_matrix/app/v1/thirdparty/protocol/{protocol}": {
+            "get": {
+                "description": "This API is called by the homeserver when it wants to present clients\nwith specific information about the various third-party networks that\nan application service supports.",
+                "operationId": "getProtocolMetadata",
+                "parameters": [
+                    {
+                        "description": "The protocol ID.",
+                        "example": "irc",
+                        "in": "path",
+                        "name": "protocol",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        {
+                                            "properties": {
+                                                "field_types": {
+                                                    "additionalProperties": {
+                                                        "description": "Definition of valid values for a field.",
+                                                        "properties": {
+                                                            "placeholder": {
+                                                                "description": "A placeholder serving as a valid example of the field value.",
+                                                                "type": "string"
+                                                            },
+                                                            "regexp": {
+                                                                "description": "A regular expression for validation of a field's value. This may be relatively\ncoarse to verify the value as the application service providing this protocol\nmay apply additional validation or filtering.",
+                                                                "type": "string"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "regexp",
+                                                            "placeholder"
+                                                        ],
+                                                        "title": "Field Type",
+                                                        "type": "object"
+                                                    },
+                                                    "description": "The type definitions for the fields defined in `user_fields` and\n`location_fields`. Each entry in those arrays MUST have an entry here.\nThe `string` key for this object is the field name itself.\n\nMay be an empty object if no fields are defined.",
+                                                    "example": {
+                                                        "channel": {
+                                                            "placeholder": "#foobar",
+                                                            "regexp": "#[^\\s]+"
+                                                        },
+                                                        "network": {
+                                                            "placeholder": "irc.example.org",
+                                                            "regexp": "([a-z0-9]+\\.)*[a-z0-9]+"
+                                                        },
+                                                        "nickname": {
+                                                            "placeholder": "username",
+                                                            "regexp": "[^\\s#]+"
+                                                        }
+                                                    },
+                                                    "type": "object"
+                                                },
+                                                "icon": {
+                                                    "description": "A content URI representing an icon for the third-party protocol.",
+                                                    "example": "mxc://example.org/aBcDeFgH",
+                                                    "type": "string"
+                                                },
+                                                "location_fields": {
+                                                    "description": "Fields which may be used to identify a third-party location. These should be\nordered to suggest the way that entities may be grouped, where higher\ngroupings are ordered first. For example, the name of a network should be\nsearched before the name of a channel.",
+                                                    "example": [
+                                                        "network",
+                                                        "channel"
+                                                    ],
+                                                    "items": {
+                                                        "description": "Field used to identify a third-party location.",
+                                                        "type": "string"
+                                                    },
+                                                    "type": "array"
+                                                },
+                                                "user_fields": {
+                                                    "description": "Fields which may be used to identify a third-party user. These should be\nordered to suggest the way that entities may be grouped, where higher\ngroupings are ordered first. For example, the name of a network should be\nsearched before the nickname of a user.",
+                                                    "example": [
+                                                        "network",
+                                                        "nickname"
+                                                    ],
+                                                    "items": {
+                                                        "description": "Field used to identify a third-party user.",
+                                                        "type": "string"
+                                                    },
+                                                    "type": "array"
+                                                }
+                                            },
+                                            "required": [
+                                                "user_fields",
+                                                "location_fields",
+                                                "icon",
+                                                "field_types"
+                                            ],
+                                            "title": "Protocol",
+                                            "type": "object"
+                                        },
+                                        {
+                                            "properties": {
+                                                "instances": {
+                                                    "description": "A list of objects representing independent instances of configuration.\nFor example, multiple networks on IRC if multiple are provided by the\nsame application service.",
+                                                    "items": {
+                                                        "properties": {
+                                                            "desc": {
+                                                                "description": "A human-readable description for the protocol, such as the name.",
+                                                                "example": "Freenode",
+                                                                "type": "string"
+                                                            },
+                                                            "fields": {
+                                                                "description": "Preset values for `fields` the client may use to search by.",
+                                                                "example": {
+                                                                    "network": "freenode"
+                                                                },
+                                                                "type": "object"
+                                                            },
+                                                            "icon": {
+                                                                "description": "An optional content URI representing the protocol. Overrides the one provided\nat the higher level Protocol object.",
+                                                                "example": "mxc://example.org/JkLmNoPq",
+                                                                "type": "string"
+                                                            },
+                                                            "network_id": {
+                                                                "description": "A unique identifier across all instances.",
+                                                                "example": "freenode",
+                                                                "type": "string"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "desc",
+                                                            "fields",
+                                                            "network_id"
+                                                        ],
+                                                        "title": "Protocol Instance",
+                                                        "type": "object"
+                                                    },
+                                                    "type": "array"
+                                                }
+                                            },
+                                            "required": [
+                                                "instances"
+                                            ],
+                                            "type": "object"
+                                        }
+                                    ]
+                                }
+                            }
+                        },
+                        "description": "The protocol was found and metadata returned."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "examples": {
+                                    "response": {
+                                        "value": {
+                                            "errcode": "COM.EXAMPLE.MYAPPSERVICE_UNAUTHORIZED"
+                                        }
+                                    }
+                                },
+                                "schema": {
+                                    "description": "A Matrix-level Error",
+                                    "properties": {
+                                        "errcode": {
+                                            "description": "An error code.",
+                                            "example": "M_UNKNOWN",
+                                            "type": "string"
+                                        },
+                                        "error": {
+                                            "description": "A human-readable error message.",
+                                            "example": "An unknown error occurred",
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "errcode"
+                                    ],
+                                    "title": "Error",
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "The homeserver has not supplied credentials to the application service.\nOptional error information can be included in the body of this response."
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "examples": {
+                                    "response": {
+                                        "value": {
+                                            "errcode": "COM.EXAMPLE.MYAPPSERVICE_FORBIDDEN"
+                                        }
+                                    }
+                                },
+                                "schema": {
+                                    "description": "A Matrix-level Error",
+                                    "properties": {
+                                        "errcode": {
+                                            "description": "An error code.",
+                                            "example": "M_UNKNOWN",
+                                            "type": "string"
+                                        },
+                                        "error": {
+                                            "description": "A human-readable error message.",
+                                            "example": "An unknown error occurred",
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "errcode"
+                                    ],
+                                    "title": "Error",
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "The credentials supplied by the homeserver were rejected."
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "examples": {
+                                    "response": {
+                                        "value": {
+                                            "errcode": "COM.EXAMPLE.MYAPPSERVICE_NOT_FOUND"
+                                        }
+                                    }
+                                },
+                                "schema": {
+                                    "description": "A Matrix-level Error",
+                                    "properties": {
+                                        "errcode": {
+                                            "description": "An error code.",
+                                            "example": "M_UNKNOWN",
+                                            "type": "string"
+                                        },
+                                        "error": {
+                                            "description": "A human-readable error message.",
+                                            "example": "An unknown error occurred",
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "errcode"
+                                    ],
+                                    "title": "Error",
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "No protocol was found with the given path."
+                    }
+                },
+                "security": [
+                    {
+                        "homeserverAccessToken": []
+                    }
+                ],
+                "summary": "Retrieve metadata about a specific protocol that the application service supports."
+            }
+        },
+        "/_matrix/app/v1/thirdparty/user": {
+            "get": {
+                "description": "Retrieve an array of third-party users from a Matrix User ID.",
+                "operationId": "queryUserByID",
+                "parameters": [
+                    {
+                        "description": "The Matrix User ID to look up.",
+                        "in": "query",
+                        "name": "userid",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "description": "List of matched third-party users.",
+                                    "items": {
+                                        "properties": {
+                                            "fields": {
+                                                "description": "Information used to identify this third-party location.",
+                                                "example": {
+                                                    "user": "jim"
+                                                },
+                                                "type": "object"
+                                            },
+                                            "protocol": {
+                                                "description": "The protocol ID that the third-party location is a part of.",
+                                                "example": "gitter",
+                                                "type": "string"
+                                            },
+                                            "userid": {
+                                                "description": "A Matrix User ID representing a third-party user.",
+                                                "example": "@_gitter_jim:matrix.org",
+                                                "type": "string"
+                                            }
+                                        },
+                                        "required": [
+                                            "userid",
+                                            "protocol",
+                                            "fields"
+                                        ],
+                                        "title": "User",
+                                        "type": "object"
+                                    },
+                                    "type": "array"
+                                }
+                            }
+                        },
+                        "description": "An array of third-party users."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "examples": {
+                                    "response": {
+                                        "value": {
+                                            "errcode": "COM.EXAMPLE.MYAPPSERVICE_UNAUTHORIZED"
+                                        }
+                                    }
+                                },
+                                "schema": {
+                                    "description": "A Matrix-level Error",
+                                    "properties": {
+                                        "errcode": {
+                                            "description": "An error code.",
+                                            "example": "M_UNKNOWN",
+                                            "type": "string"
+                                        },
+                                        "error": {
+                                            "description": "A human-readable error message.",
+                                            "example": "An unknown error occurred",
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "errcode"
+                                    ],
+                                    "title": "Error",
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "The homeserver has not supplied credentials to the application service.\nOptional error information can be included in the body of this response."
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "examples": {
+                                    "response": {
+                                        "value": {
+                                            "errcode": "COM.EXAMPLE.MYAPPSERVICE_UNAUTHORIZED"
+                                        }
+                                    }
+                                },
+                                "schema": {
+                                    "description": "A Matrix-level Error",
+                                    "properties": {
+                                        "errcode": {
+                                            "description": "An error code.",
+                                            "example": "M_UNKNOWN",
+                                            "type": "string"
+                                        },
+                                        "error": {
+                                            "description": "A human-readable error message.",
+                                            "example": "An unknown error occurred",
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "errcode"
+                                    ],
+                                    "title": "Error",
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "The credentials supplied by the homeserver were rejected."
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "examples": {
+                                    "response": {
+                                        "value": {
+                                            "errcode": "COM.EXAMPLE.MYAPPSERVICE_NOT_FOUND"
+                                        }
+                                    }
+                                },
+                                "schema": {
+                                    "description": "A Matrix-level Error",
+                                    "properties": {
+                                        "errcode": {
+                                            "description": "An error code.",
+                                            "example": "M_UNKNOWN",
+                                            "type": "string"
+                                        },
+                                        "error": {
+                                            "description": "A human-readable error message.",
+                                            "example": "An unknown error occurred",
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "errcode"
+                                    ],
+                                    "title": "Error",
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "No mappings were found with the given parameters."
+                    }
+                },
+                "security": [
+                    {
+                        "homeserverAccessToken": []
+                    }
+                ],
+                "summary": "Reverse-lookup third-party users given a Matrix User ID."
+            }
+        },
+        "/_matrix/app/v1/thirdparty/user/{protocol}": {
+            "get": {
+                "description": "This API is called by the homeserver in order to retrieve a Matrix\nUser ID linked to a user on the third-party network, given a set of\nuser parameters.",
+                "operationId": "queryUserByProtocol",
+                "parameters": [
+                    {
+                        "description": "The protocol ID.",
+                        "example": "irc",
+                        "in": "path",
+                        "name": "protocol",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "One or more custom fields that are passed to the application\nservice to help identify the user.",
+                        "in": "query",
+                        "name": "fields",
+                        "schema": {
+                            "additionalProperties": {
+                                "type": "string"
+                            },
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "description": "List of matched third-party users.",
+                                    "items": {
+                                        "properties": {
+                                            "fields": {
+                                                "description": "Information used to identify this third-party location.",
+                                                "example": {
+                                                    "user": "jim"
+                                                },
+                                                "type": "object"
+                                            },
+                                            "protocol": {
+                                                "description": "The protocol ID that the third-party location is a part of.",
+                                                "example": "gitter",
+                                                "type": "string"
+                                            },
+                                            "userid": {
+                                                "description": "A Matrix User ID representing a third-party user.",
+                                                "example": "@_gitter_jim:matrix.org",
+                                                "type": "string"
+                                            }
+                                        },
+                                        "required": [
+                                            "userid",
+                                            "protocol",
+                                            "fields"
+                                        ],
+                                        "title": "User",
+                                        "type": "object"
+                                    },
+                                    "type": "array"
+                                }
+                            }
+                        },
+                        "description": "The Matrix User IDs found with the given parameters."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "examples": {
+                                    "response": {
+                                        "value": {
+                                            "errcode": "COM.EXAMPLE.MYAPPSERVICE_UNAUTHORIZED"
+                                        }
+                                    }
+                                },
+                                "schema": {
+                                    "description": "A Matrix-level Error",
+                                    "properties": {
+                                        "errcode": {
+                                            "description": "An error code.",
+                                            "example": "M_UNKNOWN",
+                                            "type": "string"
+                                        },
+                                        "error": {
+                                            "description": "A human-readable error message.",
+                                            "example": "An unknown error occurred",
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "errcode"
+                                    ],
+                                    "title": "Error",
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "The homeserver has not supplied credentials to the application service.\nOptional error information can be included in the body of this response."
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "examples": {
+                                    "response": {
+                                        "value": {
+                                            "errcode": "COM.EXAMPLE.MYAPPSERVICE_FORBIDDEN"
+                                        }
+                                    }
+                                },
+                                "schema": {
+                                    "description": "A Matrix-level Error",
+                                    "properties": {
+                                        "errcode": {
+                                            "description": "An error code.",
+                                            "example": "M_UNKNOWN",
+                                            "type": "string"
+                                        },
+                                        "error": {
+                                            "description": "A human-readable error message.",
+                                            "example": "An unknown error occurred",
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "errcode"
+                                    ],
+                                    "title": "Error",
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "The credentials supplied by the homeserver were rejected."
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "examples": {
+                                    "response": {
+                                        "value": {
+                                            "errcode": "COM.EXAMPLE.MYAPPSERVICE_NOT_FOUND"
+                                        }
+                                    }
+                                },
+                                "schema": {
+                                    "description": "A Matrix-level Error",
+                                    "properties": {
+                                        "errcode": {
+                                            "description": "An error code.",
+                                            "example": "M_UNKNOWN",
+                                            "type": "string"
+                                        },
+                                        "error": {
+                                            "description": "A human-readable error message.",
+                                            "example": "An unknown error occurred",
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "errcode"
+                                    ],
+                                    "title": "Error",
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "No users were found with the given parameters."
+                    }
+                },
+                "security": [
+                    {
+                        "homeserverAccessToken": []
+                    }
+                ],
+                "summary": "Retrieve the Matrix User ID of a corresponding third-party user."
+            }
+        },
+        "/_matrix/app/v1/transactions/{txnId}": {
+            "put": {
+                "description": "This API is called by the homeserver when it wants to push an event\n(or batch of events) to the application service.\n\nNote that the application service should distinguish state events\nfrom message events via the presence of a `state_key`, rather than\nvia the event type.",
+                "operationId": "sendTransaction",
+                "parameters": [
+                    {
+                        "description": "The transaction ID for this set of events. Homeservers generate\nthese IDs and they are used to ensure idempotency of requests.",
+                        "example": "35",
+                        "in": "path",
+                        "name": "txnId",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "example": {
+                                    "ephemeral": [
+                                        {
+                                            "content": {
+                                                "$1435641916114394fHBLK:matrix.org": {
+                                                    "m.read": {
+                                                        "@erikj:jki.re": {
+                                                            "ts": 1436451550453
+                                                        }
+                                                    },
+                                                    "m.read.private": {
+                                                        "@self:example.org": {
+                                                            "ts": 1661384801651
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            "room_id": "!jEsUZKDJdhlrceRyVU:example.org",
+                                            "type": "m.receipt"
+                                        },
+                                        {
+                                            "content": {
+                                                "avatar_url": "mxc://localhost/wefuiwegh8742w",
+                                                "currently_active": false,
+                                                "last_active_ago": 2478593,
+                                                "presence": "online",
+                                                "status_msg": "Making cupcakes"
+                                            },
+                                            "sender": "@example:localhost",
+                                            "type": "m.presence"
+                                        }
+                                    ],
+                                    "events": [
+                                        {
+                                            "content": {
+                                                "avatar_url": "mxc://example.org/SEsfnsuifSDFSSEF",
+                                                "displayname": "Alice Margatroid",
+                                                "membership": "join",
+                                                "reason": "Looking for support"
+                                            },
+                                            "event_id": "$143273582443PhrSn:example.org",
+                                            "origin_server_ts": 1432735824653,
+                                            "room_id": "!jEsUZKDJdhlrceRyVU:example.org",
+                                            "sender": "@alice:example.org",
+                                            "state_key": "@alice:example.org",
+                                            "type": "m.room.member",
+                                            "unsigned": {
+                                                "age": 1234,
+                                                "membership": "join"
+                                            }
+                                        },
+                                        {
+                                            "content": {
+                                                "body": "This is an example text message",
+                                                "format": "org.matrix.custom.html",
+                                                "formatted_body": "<b>This is an example text message</b>",
+                                                "msgtype": "m.text"
+                                            },
+                                            "event_id": "$143273582443PhrSn:example.org",
+                                            "origin_server_ts": 1432735824653,
+                                            "room_id": "!jEsUZKDJdhlrceRyVU:example.org",
+                                            "sender": "@example:example.org",
+                                            "type": "m.room.message",
+                                            "unsigned": {
+                                                "age": 1234,
+                                                "membership": "join"
+                                            }
+                                        }
+                                    ]
+                                },
+                                "properties": {
+                                    "ephemeral": {
+                                        "description": "A list of ephemeral data, if the `receive_ephemeral` setting was enabled in the\n[registration](https://spec.matrix.org/v1.18/application-service-api/#registration) file.\n\nThere are only three event types that can currently occur in this list: `m.presence`,\n`m.typing`, and `m.receipt`. Room-scoped ephemeral data (`m.typing` and\n`m.receipt`) MUST include a `room_id` property to identify the room that they\nwere sent in.\n\nThis property can be omitted if it would be empty.",
+                                        "items": {
+                                            "$schema": "https://json-schema.org/draft/2020-12/schema",
+                                            "description": "The basic set of fields all events must have.",
+                                            "properties": {
+                                                "content": {
+                                                    "description": "The fields in this object will vary depending on the type of event. When interacting with the REST API, this is the HTTP body.",
+                                                    "type": "object"
+                                                },
+                                                "type": {
+                                                    "description": "The type of event, as defined by [the event type specification](https://spec.matrix.org/v1.18/client-server-api/#types-of-room-events).",
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "type",
+                                                "content"
+                                            ],
+                                            "title": "Event",
+                                            "type": "object"
+                                        },
+                                        "type": "array",
+                                        "x-addedInMatrixVersion": "1.13"
+                                    },
+                                    "events": {
+                                        "description": "A list of events, formatted as per the Client-Server API.",
+                                        "items": {
+                                            "allOf": [
+                                                {
+                                                    "description": "The format used for events when they are returned from\nAPI endpoints such as `/sync`, where the `room_id` is implied elsewhere\nin the response.",
+                                                    "properties": {
+                                                        "content": {
+                                                            "description": "The body of this event, as created by the client which sent it.",
+                                                            "example": {
+                                                                "membership": "join"
+                                                            },
+                                                            "type": "object"
+                                                        },
+                                                        "event_id": {
+                                                            "description": "The globally unique identifier for this event.",
+                                                            "example": "$26RqwJMLw-yds1GAH_QxjHRC1Da9oasK0e5VLnck_45",
+                                                            "type": "string"
+                                                        },
+                                                        "origin_server_ts": {
+                                                            "description": "Timestamp (in milliseconds since the unix epoch) on originating homeserver\nwhen this event was sent.",
+                                                            "example": 1632489532305,
+                                                            "format": "int64",
+                                                            "type": "integer"
+                                                        },
+                                                        "sender": {
+                                                            "description": "Contains the fully-qualified ID of the user who sent this event.",
+                                                            "example": "@example:example.org",
+                                                            "type": "string"
+                                                        },
+                                                        "state_key": {
+                                                            "description": "Present if, and only if, this event is a *state* event. The key making\nthis piece of state unique in the room. Note that it is often an empty\nstring.\n\nState keys starting with an `@` are reserved for referencing user IDs, such\nas room members. With the exception of a few events, state events set with a\ngiven user's ID as the state key MUST only be set by that user.",
+                                                            "example": "@user:example.org",
+                                                            "type": "string"
+                                                        },
+                                                        "type": {
+                                                            "description": "The type of the event.",
+                                                            "example": "m.room.member",
+                                                            "type": "string"
+                                                        },
+                                                        "unsigned": {
+                                                            "description": "Contains optional extra information about the event.",
+                                                            "properties": {
+                                                                "age": {
+                                                                    "description": "The time in milliseconds that has elapsed since the event was sent. This field is generated by the local homeserver, and may be incorrect if the local time on at least one of the two servers is out of sync, which can cause the age to either be negative or greater than it actually is.",
+                                                                    "example": 1567437,
+                                                                    "format": "int64",
+                                                                    "type": "integer"
+                                                                },
+                                                                "membership": {
+                                                                    "description": "The room membership of the user making the request, at the time of the event.\n\nThis property is the value of the `membership` property of the\nrequesting user's [`m.room.member`](https://spec.matrix.org/v1.18/client-server-api#mroommember)\nstate at the point of the event, including any changes caused by the\nevent. If the user had yet to join the room at the time of the event\n(i.e, they have no `m.room.member` state), this property is set to\n`leave`.\n\nHomeservers SHOULD populate this property\nwherever practical, but they MAY omit it if necessary (for example,\nif calculating the value is expensive, servers might choose to only\nimplement it in encrypted rooms). The property is *not* normally populated\nin events pushed to application services via the application service transaction API\n(where there is no clear definition of \"requesting user\").\n",
+                                                                    "example": "join",
+                                                                    "type": "string",
+                                                                    "x-addedInMatrixVersion": "1.11"
+                                                                },
+                                                                "prev_content": {
+                                                                    "description": "The previous `content` for this event. This field is generated\nby the local homeserver, and is only returned if the event is a state event,\nand the client has permission to see the previous content.\n",
+                                                                    "title": "EventContent",
+                                                                    "type": "object",
+                                                                    "x-changedInMatrixVersion": {
+                                                                        "1.2": "Previously, this field was specified at the top level of returned\nevents rather than in `unsigned` (with the exception of the [`GET\n.../notifications`](https://spec.matrix.org/v1.18/client-server-api/#get_matrixclientv3notifications)\nendpoint), though in practice no known server implementations honoured\nthis.\n"
+                                                                    }
+                                                                },
+                                                                "redacted_because": {
+                                                                    "description": "The event that redacted this event, if any.",
+                                                                    "example": {
+                                                                        "content": {
+                                                                            "reason": "spam"
+                                                                        },
+                                                                        "event_id": "$Nhl3rsgHMjk-DjMJANawr9HHAhLg4GcoTYrSiYYGqEE",
+                                                                        "origin_server_ts": 1632491098485,
+                                                                        "redacts": "$26RqwJMLw-yds1GAH_QxjHRC1Da9oasK0e5VLnck_45",
+                                                                        "sender": "@moderator:example.org",
+                                                                        "type": "m.room.redaction",
+                                                                        "unsigned": {
+                                                                            "age": 1257,
+                                                                            "membership": "leave"
+                                                                        }
+                                                                    },
+                                                                    "title": "ClientEventWithoutRoomID",
+                                                                    "type": "object"
+                                                                },
+                                                                "transaction_id": {
+                                                                    "description": "The client-supplied [transaction ID](https://spec.matrix.org/v1.18/client-server-api/#transaction-identifiers), for example, provided via\n`PUT /_matrix/client/v3/rooms/{roomId}/send/{eventType}/{txnId}`,\nif the client being given the event is the same one which sent it.\n",
+                                                                    "type": "string"
+                                                                }
+                                                            },
+                                                            "title": "UnsignedData",
+                                                            "type": "object"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "event_id",
+                                                        "type",
+                                                        "sender",
+                                                        "origin_server_ts",
+                                                        "content"
+                                                    ],
+                                                    "title": "ClientEventWithoutRoomID",
+                                                    "type": "object"
+                                                },
+                                                {
+                                                    "properties": {
+                                                        "room_id": {
+                                                            "description": "The ID of the room associated with this event.",
+                                                            "example": "!jEsUZKDJdhlrceRyVU:example.org",
+                                                            "type": "string"
+                                                        },
+                                                        "unsigned": {
+                                                            "properties": {
+                                                                "redacted_because": {
+                                                                    "example": {
+                                                                        "content": {
+                                                                            "reason": "spam"
+                                                                        },
+                                                                        "event_id": "$Nhl3rsgHMjk-DjMJANawr9HHAhLg4GcoTYrSiYYGqEE",
+                                                                        "origin_server_ts": 1632491098485,
+                                                                        "redacts": "$26RqwJMLw-yds1GAH_QxjHRC1Da9oasK0e5VLnck_45",
+                                                                        "room_id": "!jEsUZKDJdhlrceRyVU:example.org",
+                                                                        "sender": "@moderator:example.org",
+                                                                        "type": "m.room.redaction",
+                                                                        "unsigned": {
+                                                                            "age": 1257
+                                                                        }
+                                                                    },
+                                                                    "title": "ClientEvent"
+                                                                }
+                                                            }
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "room_id"
+                                                    ],
+                                                    "type": "object"
+                                                }
+                                            ],
+                                            "description": "The format used for events when they are returned from a homeserver to a client\nvia the Client-Server API, or sent to an Application Service via the Application Services API.",
+                                            "title": "ClientEvent",
+                                            "type": "object"
+                                        },
+                                        "type": "array"
+                                    }
+                                },
+                                "required": [
+                                    "events"
+                                ],
+                                "type": "object"
+                            }
+                        }
+                    },
+                    "description": "Transaction information"
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "examples": {
+                                    "response": {
+                                        "value": {}
+                                    }
+                                },
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "The transaction was processed successfully."
+                    }
+                },
+                "security": [
+                    {
+                        "homeserverAccessToken": []
+                    }
+                ],
+                "summary": "Send some events to the application service."
+            }
+        },
+        "/_matrix/app/v1/users/{userId}": {
+            "get": {
+                "description": "This endpoint is invoked by the homeserver on an application service to query\nthe existence of a given user ID. The homeserver will only query user IDs\ninside the application service's `users` namespace. The homeserver will\nsend this request when it receives an event for an unknown user ID in\nthe application service's namespace, such as a room invite.",
+                "operationId": "queryUserById",
+                "parameters": [
+                    {
+                        "description": "The user ID being queried.",
+                        "example": "@alice:example.com",
+                        "in": "path",
+                        "name": "userId",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "examples": {
+                                    "response": {
+                                        "value": {}
+                                    }
+                                },
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "The application service indicates that this user exists. The application\nservice MUST create the user using the client-server API."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "examples": {
+                                    "response": {
+                                        "value": {
+                                            "errcode": "COM.EXAMPLE.MYAPPSERVICE_UNAUTHORIZED"
+                                        }
+                                    }
+                                },
+                                "schema": {
+                                    "description": "A Matrix-level Error",
+                                    "properties": {
+                                        "errcode": {
+                                            "description": "An error code.",
+                                            "example": "M_UNKNOWN",
+                                            "type": "string"
+                                        },
+                                        "error": {
+                                            "description": "A human-readable error message.",
+                                            "example": "An unknown error occurred",
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "errcode"
+                                    ],
+                                    "title": "Error",
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "The homeserver has not supplied credentials to the application service.\nOptional error information can be included in the body of this response."
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "examples": {
+                                    "response": {
+                                        "value": {
+                                            "errcode": "COM.EXAMPLE.MYAPPSERVICE_FORBIDDEN"
+                                        }
+                                    }
+                                },
+                                "schema": {
+                                    "description": "A Matrix-level Error",
+                                    "properties": {
+                                        "errcode": {
+                                            "description": "An error code.",
+                                            "example": "M_UNKNOWN",
+                                            "type": "string"
+                                        },
+                                        "error": {
+                                            "description": "A human-readable error message.",
+                                            "example": "An unknown error occurred",
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "errcode"
+                                    ],
+                                    "title": "Error",
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "The credentials supplied by the homeserver were rejected."
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "examples": {
+                                    "response": {
+                                        "value": {
+                                            "errcode": "COM.EXAMPLE.MYAPPSERVICE_NOT_FOUND"
+                                        }
+                                    }
+                                },
+                                "schema": {
+                                    "description": "A Matrix-level Error",
+                                    "properties": {
+                                        "errcode": {
+                                            "description": "An error code.",
+                                            "example": "M_UNKNOWN",
+                                            "type": "string"
+                                        },
+                                        "error": {
+                                            "description": "A human-readable error message.",
+                                            "example": "An unknown error occurred",
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "errcode"
+                                    ],
+                                    "title": "Error",
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "The application service indicates that this user does not exist.\nOptional error information can be included in the body of this response."
+                    }
+                },
+                "security": [
+                    {
+                        "homeserverAccessToken": []
+                    }
+                ],
+                "summary": "Query if a user should exist on the application service."
+            }
+        }
+    },
+    "servers": [
+        {
+            "url": "https://matrix.org"
+        },
+        {
+            "url": "https://{homeserver_address}",
+            "variables": {
+                "homeserver_address": {
+                    "default": "matrix-client.matrix.org",
+                    "description": "The base URL for your homeserver"
+                }
+            }
+        }
+    ]
+}

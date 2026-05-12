@@ -64,8 +64,17 @@ cross-referenced with the Matrix Client-Server API specification.
 | PUT | `/_matrix/client/v3/rooms/{roomId}/state/{eventType}` | ✅ | Set state (no stateKey) |
 | GET | `/_matrix/client/v3/rooms/{roomId}/state` | ✅ | Get all state events |
 | GET | `/_matrix/client/v3/rooms/{roomId}/state/{eventType}/{stateKey}` | ✅ | Get single state event |
+| GET | `/_matrix/client/v3/rooms/{roomId}/event/{eventId}` | ✅ | Single event fetch by ID; membership-enforced via Horde state (Story 11-8) |
 | GET | `/_matrix/client/v3/rooms/{roomId}/context/{eventId}` | ✅ | Event context (before/after) |
 | POST | `/_matrix/client/v3/rooms/{roomId}/read_markers` | 🔶 | Acknowledged, not persisted |
+
+## Event Relations and Threads
+
+| Method | Endpoint | Status | Notes |
+|---|---|---|---|
+| GET | `/_matrix/client/v1/rooms/{roomId}/relations/{eventId}` | ✅ | Base route — all relation types; dir/limit/recurse/from params; prev_batch in response (Story 9-29) |
+| GET | `/_matrix/client/v1/rooms/{roomId}/relations/{eventId}/{relType}` | ✅ | Filter by relation type; same params (Story 9-28 / 9-29) |
+| GET | `/_matrix/client/v1/rooms/{roomId}/relations/{eventId}/{relType}/{eventType}` | ✅ | Filter by relation type and event type (Story 9-29) |
 
 ## Room Members
 
@@ -183,9 +192,9 @@ identity services.
 
 | Namespace | Reason |
 |---|---|
-| `/_matrix/federation/*` | No federation — see ADR-002 and README §No Federation |
+| `/_matrix/federation/*` | No federation — see [README §No Federation](../README.md#no-federation) (closed-network data-sovereignty model; Phase 3 vision) |
 | `/_matrix/identity/*` | No identity server — email/phone binding not supported |
 | `/_matrix/key/v2/server` | Server key exchange only needed for federation |
 | `POST /_matrix/client/v3/search` | Requires ADR-010 (FTS strategy) decision first — see [ADR-010](architecture/adr/ADR-010-fts-strategy.md) |
 
-_Source: `gateway/cmd/gateway/main.go` route registrations; `CLAUDE.md`, §Matrix API Scope; `_bmad-output/planning-artifacts/prd.md`, §Endpoint Specification_
+_Source: `gateway/cmd/gateway/main.go` route registrations; `CLAUDE.md`, §Matrix API Scope; `_bmad-output/planning-artifacts/prd.md`, §Endpoint Specification; Story 9-28 (GET /_matrix/client/v1/rooms/{roomId}/relations/{eventId}/{relType}); Story 9-29 (base /relations/{eventId} route, three-segment /{relType}/{eventType} route, dir/recurse/from query params, prev_batch response field); Story 11-8 (GET /_matrix/client/v3/rooms/{roomId}/event/{eventId} — previously unregistered, now implemented with membership enforcement)_

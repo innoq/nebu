@@ -7,7 +7,7 @@ DOCKER_ELIXIR = docker run --rm -v $(PWD):/workspace -w /workspace elixir:1.19-a
 DOCKER_BUF    = docker run --rm -v $(PWD):/workspace -w /workspace bufbuild/buf
 DOCKER_NODE   = docker run --rm -v $(PWD):/workspace -w /workspace node:22-alpine
 
-.PHONY: build-gateway build-core build-admin-css download-fonts download-vendor dev setup test-unit-go test-unit-elixir test-integration test-integration-ci test-e2e test-matrix-compat test-load-silber build-element-e2e test-e2e-element build-fluffychat-e2e test-e2e-fluffychat proto gen-api test-compose-ports
+.PHONY: build-gateway build-core redeploy build-admin-css download-fonts download-vendor dev setup test-unit-go test-unit-elixir test-integration test-integration-elixir test-integration-ci test-e2e test-matrix-compat test-load-silber build-element-e2e test-e2e-element build-fluffychat-e2e test-e2e-fluffychat proto gen-api test-compose-ports
 
 ## download-fonts: Download Inter + JetBrains Mono WOFF2 fonts (run once; commit results)
 download-fonts:
@@ -47,9 +47,20 @@ build-admin-css:
 build-gateway: gen-api build-admin-css download-vendor
 	docker build -t nebu-gateway:dev ./gateway
 
-## build-core: Compile the Elixir/OTP Core inside container (mix compile)
+## build-core: Compile the Elixir/OTP Core inside container (mix compile — does NOT rebuild the Docker image)
 build-core:
 	$(DOCKER_ELIXIR) sh -c "cd core && mix local.hex --force && mix deps.get && mix compile"
+
+## redeploy: Rebuild gateway + core Docker images (via docker compose) and restart containers.
+## Use this after committing code changes — make build-gateway / make build-core do NOT update
+## the images used by docker compose. Always use --no-cache to avoid stale layer reuse.
+## Build args are computed here so deployed images always carry real version metadata.
+redeploy:
+	GIT_COMMIT=$$(git rev-parse --short HEAD) \
+	BUILD_TIME=$$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+	RELEASE_VERSION=$$(git describe --tags --always 2>/dev/null || echo dev) \
+	docker compose build --no-cache gateway core
+	docker compose up -d --force-recreate gateway core
 
 ## dev: Start the full local development stack (gateway, core, postgres, dex)
 dev:
@@ -78,9 +89,10 @@ test-unit-go: download-vendor
 test-unit-elixir:
 	$(DOCKER_ELIXIR) sh -c "cd core && mix local.hex --force && mix deps.get && mix test --warnings-as-errors"
 
-## test-integration: Run full stack integration tests (Godog / Gherkin)
-## The test runner joins the nebu_default compose network so it can reach
+## test-integration: Run full stack integration tests (Godog / Gherkin + Elixir integration tests).
+## The Go test runner joins the nebu_default compose network so it can reach
 ## gateway:8080 and core:4000 by service name — works locally and in DinD CI.
+## Elixir integration tests (mix test --include integration) also run against the live stack.
 test-integration: setup
 	docker compose up -d --wait && \
 	docker run --rm -v $(PWD):/workspace -w /workspace \
@@ -95,6 +107,26 @@ test-integration: setup
 		-e NEBU_TEST_INTERNAL_SECRET=$$(cat .secrets/internal_secret) \
 		golang:1.26-alpine \
 		sh -c "apk add -q --no-cache gcc musl-dev && cd gateway && go test -v -tags integration ./test/integration/..."; \
+	GO_EXIT=$$?; \
+	docker run --rm -v $(PWD):/workspace -w /workspace \
+		--network=nebu_default \
+		-e NEBU_DB_URL=postgresql://nebu_app:nebu_app_dev_pw@postgres:5432/nebu \
+		elixir:1.19-alpine \
+		sh -c "cd core && mix local.hex --force && mix deps.get && mix test --include integration --warnings-as-errors"; \
+	ELIXIR_EXIT=$$?; \
+	docker compose down; \
+	[ $$GO_EXIT -eq 0 ] && [ $$ELIXIR_EXIT -eq 0 ]
+
+## test-integration-elixir: Run Elixir integration tests only (mix test --include integration).
+## Requires the full stack to be running (docker compose up -d --wait).
+## Connects to the nebu_default network to reach PostgreSQL at postgres:5432.
+test-integration-elixir: setup
+	docker compose up -d --wait && \
+	docker run --rm -v $(PWD):/workspace -w /workspace \
+		--network=nebu_default \
+		-e NEBU_DB_URL=postgresql://nebu_app:nebu_app_dev_pw@postgres:5432/nebu \
+		elixir:1.19-alpine \
+		sh -c "cd core && mix local.hex --force && mix deps.get && mix test --include integration --warnings-as-errors"; \
 	EXIT=$$?; docker compose down; exit $$EXIT
 
 ## test-integration-ci: Run full stack integration tests using pre-built registry images (CI only).
@@ -139,8 +171,9 @@ test-load-silber:
 		-e NEBU_DEX_URL=$${NEBU_DEX_URL:-http://dex:5556} \
 		grafana/k6:0.50.0 run /scripts/k6_chat.js
 
-## test-e2e: Run Playwright E2E tests against a running stack (make dev must be up)
+## test-e2e: Run all Playwright E2E tests (BDD + legacy) against a running stack.
 ## Requires: 127.0.0.1 dex in /etc/hosts for OIDC redirect flows
+## Story 9-26 AC5: runs bddgen first, then all projects including element-web + admin-ui.
 ## Reset DB to bootstrap state first:
 ##   docker compose exec postgres psql -U nebu -d nebu -c \
 ##     "DELETE FROM server_config WHERE key IN ('bootstrap_completed','oidc_issuer','oidc_client_id','oidc_client_secret','instance_name');"
@@ -148,23 +181,40 @@ test-e2e:
 	cd e2e && \
 	npm install --silent && \
 	npx playwright install chromium --with-deps --quiet && \
-	npx playwright test tests/bootstrap*.spec.ts
+	npx bddgen && \
+	npx playwright test --reporter=list
 
 ## build-element-e2e: Build the Element Web E2E Docker image (uses official vectorim/element-web)
 ## Fast build (~5s) — no Rust/Flutter compilation required.
 build-element-e2e:
 	docker build -t nebu-element-e2e:dev -f docker/Dockerfile.element-e2e .
 
-## test-e2e-element: Run Playwright E2E tests against Element Web (real Matrix client)
-## Requires: 127.0.0.1 dex in /etc/hosts (for SSO redirect via Dex)
-## Starts full stack + element sidecar via --profile e2e.
-## Does NOT run docker compose down after tests — leaves stack for debugging.
+## test-e2e-element: Run Element Web Browser-First BDD tests (story 9-26, Phase 2).
+## Story 9-26 AC5: canonical target name (also aliased as test-e2e-element-bdd).
+## Requires: stack running (`make dev`) + `127.0.0.1 dex` in /etc/hosts
 test-e2e-element:
+	cd e2e && npm install --silent && \
+	npx playwright install chromium --with-deps --quiet && \
+	npx bddgen && \
+	npx playwright test --project=element-web --reporter=list
+
+## test-e2e-element-legacy: Run old Element Web E2E tests (non-BDD, pre-story-9-26).
+## Requires: stack running + element sidecar via --profile e2e.
+test-e2e-element-legacy:
 	docker compose --profile e2e up -d --wait && \
 	cd e2e && npm install --silent && \
 	npx playwright install chromium --with-deps --quiet && \
 	npx playwright test tests/element_e2e.spec.ts; \
 	EXIT=$$?; exit $$EXIT
+
+## test-e2e-admin: Run Admin UI BDD tests (story 9-26, Phase 3).
+## Story 9-26 AC5: canonical target name (also aliased as test-e2e-admin-bdd).
+## Requires: playwright-bdd installed + stack running
+test-e2e-admin:
+	cd e2e && npm install --silent && \
+	npx playwright install chromium --with-deps --quiet && \
+	npx bddgen && \
+	npx playwright test --project=admin-ui --reporter=list
 
 ## build-fluffychat-e2e: Build the FluffyChat Web E2E Docker image (Flutter multi-stage — slow first build)
 ## Requires: tmp/fluffychat/ to contain the FluffyChat source checkout.
@@ -181,6 +231,15 @@ test-e2e-fluffychat:
 	npx playwright install chromium --with-deps --quiet && \
 	npx playwright test tests/fluffychat_e2e.spec.ts; \
 	EXIT=$$?; exit $$EXIT
+
+## test-e2e-element-bdd: Alias for test-e2e-element (story 9-26 AC5 compatibility).
+test-e2e-element-bdd: test-e2e-element
+
+## test-e2e-admin-bdd: Alias for test-e2e-admin (story 9-26 AC5 compatibility).
+test-e2e-admin-bdd: test-e2e-admin
+
+## test-e2e-all: Alias for test-e2e (runs all BDD + legacy tests).
+test-e2e-all: test-e2e
 
 ## test-compose-ports: CI smoke test — assert that port 9000 is NOT published by the core service.
 ## Story 5.29a AC8: gRPC port must not be bound to the host.

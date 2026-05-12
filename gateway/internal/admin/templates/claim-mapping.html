@@ -1,0 +1,95 @@
+{{ template "base" . }}
+{{ define "title" }}Claim Mapping — Nebu Admin{{ end }}
+
+{{ define "content" }}
+<div class="max-w-2xl mx-auto flex flex-col gap-6">
+  <h1 class="text-2xl font-bold">Claim Mapping</h1>
+
+  {{ if .Flash.Message }}{{ template "alert_banner" .Flash }}{{ end }}
+
+  <div role="alert" aria-live="assertive" class="alert alert-warning">
+    <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+    </svg>
+    <span class="text-sm">
+      <strong>Identity stability warning:</strong>
+      Changing <em>Matrix User ID Source Claim</em> after bootstrap will generate different Matrix user IDs
+      for the same OIDC users, permanently breaking all their existing room memberships.
+      Only change this setting on a fresh instance or after a planned migration.
+    </span>
+  </div>
+
+  <form method="POST" action="/admin/config/claim-mapping" class="flex flex-col gap-4">
+    <input type="hidden" name="_csrf" value="{{ .CSRFToken }}">
+
+    <div class="form-control">
+      <label class="label" for="oidc_user_id_claim">
+        <span class="label-text">Matrix User ID Source Claim</span>
+      </label>
+      <input type="text" id="oidc_user_id_claim" name="oidc_user_id_claim"
+             value="{{ .UserIDClaim }}"
+             class="input input-bordered w-full"
+             required maxlength="50"
+             placeholder="e.g. sub, preferred_username, email"
+             list="user-id-claim-options"
+             {{ if index .Errors "oidc_user_id_claim" }}aria-describedby="err-oidc_user_id_claim" aria-invalid="true"{{ end }}>
+      <datalist id="user-id-claim-options">
+        <option value="email">email (default — human-readable)</option>
+        <option value="preferred_username">preferred_username (human-readable)</option>
+        <option value="sub">sub (stable opaque ID)</option>
+      </datalist>
+      <p class="text-xs text-base-content/60 mt-1">
+        The OIDC claim used to derive the Matrix local part.
+        Defaults to <code>email</code> for human-readable IDs.
+        Use <code>sub</code> for a stable opaque ID that survives email changes.
+      </p>
+      {{ if index .Errors "oidc_user_id_claim" }}
+      <p class="text-error text-sm mt-1" id="err-oidc_user_id_claim" role="alert" data-field="oidc_user_id_claim">{{ index .Errors "oidc_user_id_claim" }}</p>
+      {{ end }}
+    </div>
+
+    <div class="form-control">
+      <label class="label" for="oidc_displayname_claim">
+        <span class="label-text">Display Name Source Claim</span>
+      </label>
+      <input type="text" id="oidc_displayname_claim" name="oidc_displayname_claim"
+             value="{{ .DisplaynameClaim }}"
+             class="input input-bordered w-full"
+             required maxlength="50"
+             placeholder="e.g. name, preferred_username"
+             {{ if index .Errors "oidc_displayname_claim" }}aria-describedby="err-oidc_displayname_claim" aria-invalid="true"{{ end }}>
+      <p class="text-xs text-base-content/60 mt-1">
+        The OIDC claim used as the Matrix display name (shown in chat clients).
+        Defaults to <code>name</code>.
+      </p>
+      {{ if index .Errors "oidc_displayname_claim" }}
+      <p class="text-error text-sm mt-1" id="err-oidc_displayname_claim" role="alert" data-field="oidc_displayname_claim">{{ index .Errors "oidc_displayname_claim" }}</p>
+      {{ end }}
+    </div>
+
+    <div class="form-control">
+      <label class="label" for="oidc_email_claim">
+        <span class="label-text">Email Profile Field Claim</span>
+      </label>
+      <input type="text" id="oidc_email_claim" name="oidc_email_claim"
+             value="{{ .EmailClaim }}"
+             class="input input-bordered w-full"
+             required maxlength="50"
+             placeholder="e.g. email, user.email"
+             {{ if index .Errors "oidc_email_claim" }}aria-describedby="err-oidc_email_claim" aria-invalid="true"{{ end }}>
+      <p class="text-xs text-base-content/60 mt-1">
+        The OIDC claim used to populate the Matrix profile email field.
+        Dots are allowed for nested claims (e.g. <code>user.email</code>).
+      </p>
+      {{ if index .Errors "oidc_email_claim" }}
+      <p class="text-error text-sm mt-1" id="err-oidc_email_claim" role="alert" data-field="oidc_email_claim">{{ index .Errors "oidc_email_claim" }}</p>
+      {{ end }}
+    </div>
+
+    <div class="flex justify-end mt-4">
+      <button type="submit" class="btn btn-primary">Save</button>
+    </div>
+  </form>
+</div>
+{{ end }}

@@ -46,6 +46,7 @@ defmodule Nebu.Room.DBBehaviourTest do
         {:insert_event, 1},
         {:set_power_levels, 2},
         {:get_rooms_for_user, 1},
+        {:get_recently_left_rooms_for_user, 1},
         {:fetch_events, 4},
         {:fetch_events_since, 3},
         {:get_event_timestamp, 1},
@@ -53,7 +54,11 @@ defmodule Nebu.Room.DBBehaviourTest do
         # Story 6.8: load_room_settings/1 callback for max_members recovery on restart.
         {:load_room_settings, 1},
         # Story 6.9: get_room_status/1 callback for archived room guard in init/1.
-        {:get_room_status, 1}
+        {:get_room_status, 1},
+        # Story 9-9: check_room_status_for_update/1 — SELECT FOR UPDATE TOCTOU fix.
+        {:check_room_status_for_update, 1},
+        # Story 11-8: fetch_event/2 — single-event lookup by (event_id, room_id).
+        {:fetch_event, 2}
       ]
 
       for {fun, arity} <- required do

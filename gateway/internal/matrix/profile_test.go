@@ -112,7 +112,7 @@ func buildAuthedProfileHandler(t *testing.T, coreMock *mockProfileCoreClient, db
 		DB:         dbMock,
 	})
 
-	jwtMiddleware := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")
+	jwtMiddleware := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")
 
 	mux := http.NewServeMux()
 	mux.Handle("PUT /profile/{userId}/displayname",

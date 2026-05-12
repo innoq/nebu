@@ -94,7 +94,14 @@ make proto                        # buf generate (in container)
 make dev                          # docker compose up (gateway, core, postgres, keycloak)
 make setup                        # first-time setup: generate .secrets/internal_secret + test keys
 make test-integration             # full stack + Godog Gherkin tests
+make redeploy                     # rebuild gateway + core Docker images and restart containers
 ```
+
+**After committing code changes, always use `make redeploy`** — not `make build-gateway` or `make build-core`.
+
+- `make build-gateway` builds `nebu-gateway:dev` — a different tag than what docker compose uses (`nebu-gateway:latest`).
+- `make build-core` only runs `mix compile` inside a throw-away container — it does NOT build a Docker image at all.
+- `make redeploy` runs `docker compose build --no-cache gateway core && docker compose up -d --force-recreate gateway core`, which correctly rebuilds the images docker compose uses and restarts the containers.
 
 Environment variables for gateway (prefix: `NEBU_`):
 - `NEBU_CORE_GRPC_ADDR` — gRPC address of the Elixir core (default: `core:9000`)
@@ -230,13 +237,23 @@ Use the `context7` MCP server before implementing any story that touches externa
 **How:** Call `mcp__context7__resolve-library-id` → `mcp__context7__query-docs` before writing implementation code.
 
 ### Playwright — HTML/UI E2E Tests
-Use the `playwright` MCP server for all E2E tests that involve HTML pages, forms, buttons, or browser navigation (Admin UI, Bootstrap Wizard, Dashboard).
+Use the `playwright` MCP server for all E2E tests that involve HTML pages, forms, buttons, or browser navigation (Admin UI, Bootstrap Wizard, Dashboard, Matrix web client flows).
 
 **Split:**
-- **Playwright MCP** → browser-level tests (HTML pages, form submits, button clicks, redirects)
-- **Godog + net/http** → HTTP/gRPC-level tests (REST API, Matrix API, gRPC endpoints)
+- **Playwright + Cucumber/Gherkin** → browser-level tests (HTML pages, form submits, button clicks, redirects, Matrix web client E2E)
+- **Godog + net/http** → HTTP/gRPC-level tests (REST API, Matrix API protocol, gRPC endpoints)
 
-**Why:** Godog HTTP-level navigation of Authorization Code flows is complex and brittle. Playwright handles real browser flows correctly.
+**E2E test format (mandatory):** All Playwright E2E tests MUST be written as Gherkin feature files with a Cucumber-based framework (`playwright-bdd` or `@cucumber/cucumber` + Playwright). Plain `.spec.ts` files without a `.feature` counterpart are not accepted.
+
+Structure:
+```
+e2e/features/<feature>.feature   ← Gherkin scenarios (written first, failing)
+e2e/steps/<feature>.steps.ts     ← Cucumber step definitions
+```
+
+**Why:** Godog HTTP-level navigation of Authorization Code flows is complex and brittle. Playwright handles real browser flows correctly. Gherkin keeps scenarios readable and directly traceable to acceptance criteria.
+
+**Migration note:** Existing `.spec.ts` files are being migrated to the Gherkin format. New stories must use `.feature` + step definitions from day one — no new plain `.spec.ts` files.
 
 ### TDD/ATDD — Tests First, Always
 
@@ -264,14 +281,16 @@ Write **Godog scenario first** (failing), then implement:
 2. The handler returns `501 Not Implemented` initially
 3. Implement handler until Godog scenario is green
 4. Add edge case unit tests (Go httptest)
+5. **Additionally:** if the API behavior is visible through a web client (send message, join room, sync, etc.), also write a Playwright+Gherkin scenario in `e2e/features/` that tests through a real browser session. Godog alone does not cover the browser-level behavior.
 
-#### For Admin UI Stories (HTML/browser):
+#### For Admin UI Stories (HTML/browser) and Matrix Web Client Stories:
 
-Write **Playwright feature file first** (failing), then implement:
+Write **Gherkin feature file first** (failing), then implement:
 
-1. Write `e2e/features/<feature>.spec.ts` before any HTML/Go template code
-2. Use real browser flows — no cookie forging, no DB seeding shortcuts
-3. Playwright tests run against the real running stack (no mocks)
+1. Write `e2e/features/<feature>.feature` (Gherkin scenarios) before any HTML/Go template code
+2. Write `e2e/steps/<feature>.steps.ts` (Cucumber step definitions) — initially failing
+3. Use real browser flows — no cookie forging, no DB seeding shortcuts
+4. Tests run against the real running stack (no mocks) via `playwright-bdd` or `@cucumber/cucumber` + Playwright
 
 **Epic 3 retrospective:** Story 3-8 went through 3 code review rounds because an upfront acceptance test would have revealed the restart-resilience requirement. Story 3-15 forged cookies instead of testing real flows because the test was written last.
 
@@ -284,7 +303,7 @@ Every story document MUST contain an **"Acceptance Tests"** section (written by 
 
 ### Tests written FIRST (before implementation code):
 
-1. [Test name] — [ExUnit/Godog/Playwright]
+1. [Test name] — [ExUnit / Godog (.feature) / Playwright+Cucumber (.feature + .steps.ts)]
    - Given: [starting state]
    - When: [action]
    - Then: [expected outcome]
@@ -305,6 +324,7 @@ Every story document MUST contain an **"Acceptance Tests"** section (written by 
 | During implementation, for complex tests | `/bmad-tea` | Dev | On demand |
 | During code review | `/bmad-testarch-test-review` | Reviewer | **Yes** |
 | End of epic | `/bmad-testarch-trace` | SM | **Yes** |
+| End of epic | `/bmad-generate-arc42` | SM | **Yes** |
 | When test strategy needed for a new epic | `/bmad-testarch-test-design` | SM/Arch | On demand |
 | When NFRs need validation | `/bmad-testarch-nfr` | Dev/Arch | On demand |
 

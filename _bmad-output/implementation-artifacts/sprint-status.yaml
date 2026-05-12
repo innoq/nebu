@@ -1,6 +1,94 @@
 # generated: 2026-03-20
-# last_updated: 2026-05-04
+# last_updated: 2026-05-12
+# story 11-11 done (pipeline: ATDD+Code CLEAN 1 cycle+noproc guard added): 2026-05-12
+# story 11-10 done (pipeline: ATDD+Dev+Code CLEAN (3 cycles, 3 MAJOR fixed: configReader, claims wired, TTL cache)+UX 6 violations fixed+Kassandra CLEAN): 2026-05-12
+# story 11-10 created: 11-10 → ready-for-dev: 2026-05-12 (OIDC Claim Mapping — Bootstrap Wizard step 3 + Admin UI settings page + FormatUserIDFromClaims refactor; security_review required)
+# story 11-9 done (pipeline: ATDD+Dev+Code CLEAN (2 cycles, 2 MAJOR fixed: error-page footer, make redeploy args) + UX gate ADV-1/ADV-2 fixed + Kassandra skipped (not-needed)): 2026-05-12
+# story bug-thread-redeliver done (pipeline: Bug fix: thread root re-delivery in incremental sync): 2026-05-11
+# story 11-8 done (pipeline: ATDD+Dev+Code CLEAN (2 cycles) + Kassandra CLEAN): 2026-05-11
+# story 11-7 done (pipeline: ATDD+Code CLEAN 2 cycles+Kassandra CLEAN): 2026-05-11
+# story 11-6 done (pipeline: ATDD+Code CLEAN — 5 Godog + 3 Playwright E2E search tests): 2026-05-11
+# story 11-6 created: 11-6 → ready-for-dev: 2026-05-11 (Gherkin E2E Search Flow — 5 Godog scenarios + 3 Playwright+Cucumber scenarios; security_review not-needed)
+# story 11-5 done (pipeline: ATDD+Dev+Code CLEAN; Kassandra CLEAN (0 findings)): 2026-05-11
+# story 11-4 done (pipeline: ATDD+Dev+Code CLEAN (1 cycle, 2 MINOR fixed); Kassandra CLEAN): 2026-05-11
+# story 11-3 done (pipeline: ATDD+Dev+Code CLEAN; Kassandra CLEAN (MEDIUM offset-cap fixed inline)): 2026-05-08
+# story 11-3 created: 11-3 → ready-for-dev: 2026-05-08 (SearchMessages gRPC Handler — proto SearchMessages RPC + SearchResult + ProfileInfo, server.ex handler, user_id from metadata (Kassandra M-2), FakeSearchDB injection, 6 acceptance tests; security_review required)
+# story 11-2 done (pipeline: ATDD+Code CLEAN 2 cycles+Kassandra CLEAN (2 MEDIUM fixed inline: state_key NULL + IDOR docstring)): 2026-05-08
+# story 11-2 created: 11-2 → ready-for-dev: 2026-05-08 (Search Membership Enforcement — Nebu.Search.DB + canonical SQL contract; security_review required)
+# story 9-30 done (pipeline: ATDD+Code CLEAN 2 cycles+Kassandra CLEAN): 2026-05-08
+# story 9-29 done (pipeline: ATDD+Dev+Code CLEAN 1 cycle (MINORs fixed)+Kassandra CLEAN): 2026-05-08
+# story 9-28 done (pipeline: ATDD+Dev+Code+Kassandra CLEAN — 1 cycle (MAJOR-1 noproc pattern, MAJOR-3 index, MINOR-1 event_in_room?)): 2026-05-08
+# story 11-1 done (pipeline: ATDD+Code CLEAN — tsvector GIN index, trigger, backfill; ADR-010 accepted): 2026-05-08
+# story 9-27 done (pipeline: ATDD+Code CLEAN 3 cycles — MatchError→500 fixed, §11.35.1 compliant, Kassandra CLEAN): 2026-05-08
+# story 9-26 done (pipeline: ATDD+9MAJ fixed(9-26a)+IndexedDB fix(9-26b)+AdminBootstrap(9-26c)+Code CLEAN 3 cycles): 2026-05-07
+# story 9-26 done (pipeline: ATDD+Dev+Test-Review CLEAN — 14/15 pass (1 skip: bootstrap-wizard correctly skipped on non-fresh DB), M-1 regression stable; 13 BUG-E2E fixes including BUG-E2E-11 core auto-bootstrap preemption; security_review not-needed): 2026-05-07
+# story 9-26 created: Element Web E2E Browser-First Suite (Phase 1: Framework + Phase 2: 8 Feature-Specs; security_review not-needed): 2026-05-07
+# epic-9 SEC Gate 2 final (stories 9-19..9-25) — CLEAN (0 HIGH, 2 MEDIUM non-blocking: forgotten_rooms RLS + querySinceTsMs device-unaware; follow-ups needed in epic-10): 2026-05-06
+# story 9-25 done (pipeline: ATDD+Dev+Code-Review CLEAN 1 cycle (3 MINOR doc fixes); security_review not-needed): 2026-05-06
+# story 9-24 done (pipeline: ATDD+Dev+Test-Review 2 MAJOR fixed+Code-Review CLEAN+RLS fix in CI; security_review not-needed): 2026-05-06
+# story 9-23 done (pipeline: ATDD+Dev+Test-Review CLEAN+Code-Review CLEAN; security_review not-needed): 2026-05-06
+# story 9-22 done (pipeline: 4 MAJOR fixed 3 cycles+Code CLEAN; security_review not-needed): 2026-05-06
+# story 9-21 done (pipeline: ATDD+Dev+Test-Review CLEAN+Code-Review CLEAN; security_review not-needed): 2026-05-06
+# story 9-20 done (pipeline: ATDD+Dev+Test-Review CLEAN+Code-Review CLEAN; security_review not-needed): 2026-05-06
+# story 9-20 created: 9-20 → ready-for-dev: 2026-05-06 (GAP-PREV-BATCH — delta sync missing prev_batch when limited:true; fix fetch_delta_rooms to derive prev_batch from List.first(events)["event_id"]; security_review not-needed)
+# story 9-19 done (pipeline: ATDD+Dev+Test-Review (1 MAJOR fixed: buildInviteRooms forgotten exclusion)+Code-Review (3 MINOR auto-fixed: DEBUG logs, forgotten_rooms error log, polling loop replaced)+security_review not-needed): 2026-05-06
+# story 9-18 done (pipeline: ATDD+Dev+Test-Review (1 MAJOR fixed: AC5 gRPC-error test)+Code-Review (2 MAJOR fixed: dedup state_key bug+ExUnit coverage; 2 MINOR fixed)+Kassandra CLEAN (0 HIGH, 4 INFO)): 2026-05-05
+# story 9-17 done (pipeline: ATDD+Dev+Test-Review CLEAN (0 MAJOR)+Code-Review CLEAN (2 MINOR fixed: t.Parallel+maxMembersLimit const); security_review not-needed): 2026-05-05
+# story 9-16 done (pipeline: ATDD+Dev+Test-Review CLEAN+Code-Review (1 MAJOR fixed: join_rules seed step added) security_review not-needed): 2026-05-05
+# story 9-15 done (pipeline: ATDD+Dev+Test-Review CLEAN (0 MAJOR)+Code-Review (1 MAJOR inline: test-regression, 3 MINOR inline: confirm-dialog fallback, avatar initial, story File List); security_review not-needed): 2026-05-05
+# story 9-15 created: 9-15 → ready-for-dev: 2026-05-05 (Admin UI Bug-Fixes — Select-Dropdown-Sichtbarkeit bg-base-200, Compliance-Button-Kontrast btn-outline, Room-Fallback-Name (Direct Chat · N members); security_review not-needed)
+# story 9-14 done (pipeline: ATDD+Dev+Test-Review (4 MAJOR fixed: AC3 encrypt test, AC5 pre-expiry, AC8 no-session, AC9 audit)+Code-Review CLEAN+Kassandra CLEAN (0 HIGH, 2 MEDIUM non-blocking); OIDC silent refresh, AES-GCM RT storage; security_review required): 2026-05-05
+# story 9-13 done (pipeline: ATDD+Dev+Test-Review (2 MAJOR fixed: AC9 missing test + AC14 badge-info path)+Code-Review CLEAN; 17 UI/UX fixes: logo, nav, SSE guard, btn-error, border-l-4, badges, timestamps; security_review not-needed): 2026-05-05
+# story 9-12 done (pipeline: ATDD+Dev+Test-Review (3 MINOR fixed: redundant-grep, precise-60d-check, trap-cleanup)+Code-Review CLEAN; CI gate hardened allow_failure→false, verify-docs 60d threshold, bmad-maintain-arc42 skill, CLAUDE.md gate; security_review not-needed): 2026-05-05
+# story 9-11 done (pipeline: pre-committed impl (commit 5b41398)+Test-Review (3 MINOR: story-ref×5, DRY accepted, T1 dual-concern)+Code-Review (5 MINOR fixed: story-refs, make-setup facts, ADR-002 ref, building-blocks compliance/, DRY comment); security_review not-needed): 2026-05-05
+# story 9-10b done (pipeline: ATDD(pre-existing stubs from 9-10a)+Dev+Test-Review (2 MINOR fixed: matrixURL, vacuous-pass note)+Code-Review CLEAN; unsigned.age fix in sync.go + 10 Godog step defs; security_review not-needed): 2026-05-05
+# story 9-10b created: 9-10b → ready-for-dev: 2026-05-05 (Matrix Event Correctness Godog Scenarios & Fixes — implement 10 new Godog step defs, fix unsigned.age HIGH deviation in sync.go; 1 production fix + step infra for all 6 scenarios green)
+# story 9-10a done (pipeline: ATDD+Dev+Code-Review CLEAN — audit doc + 6 Godog stubs; 1 HIGH DEVIATION (unsigned.age missing from timeline events), 3 PASS; security_review not-needed): 2026-05-05
+# story 9-10a created: 9-10a → ready-for-dev: 2026-05-05 (Matrix Event Correctness Spike — DM-loop root cause investigation: /agent-oracle audit of keys/query format, m.room.encryption, unsigned.age, device_lists/OTK count; audit doc + failing Godog stubs for 9-10b)
+# story 9-9 done (pipeline: ATDD+Dev+Test-Review (2 MAJOR fixed: FAILED_PRECONDITION ExUnit+double-archive AC5)+Code-Review CLEAN (6 INFO only)+Kassandra CLEAN (0 HIGH, 1 MEDIUM non-blocking)): 2026-05-05
+# story 9-9 created: 9-9 → ready-for-dev: 2026-05-05 (Archive TOCTOU Fix — SELECT FOR UPDATE in send_event, FAILED_PRECONDITION propagation, gateway FailedPrecondition→403 M_ROOM_ARCHIVED; SEC Gate 2 HIGH-2 follow-up from epic-6)
+# story 9-8 done (pipeline: ATDD+Dev+Test-Review (5 MAJOR fixed: AC4+ExUnit+crash/restart+ordering+audit)+Code-Review (3 MAJOR fixed: m.room.name lost+predecessor missing+create-before-member order)+Kassandra HIGH-1 fixed (requester_id from gRPC metadata); 3 MEDIUM follow-up stories): 2026-05-05
+# story 9-8 created: 9-8 → ready-for-dev: 2026-05-05 (Room Version Upgrade — new UpgradeRoom gRPC RPC, tombstone+new room+state copy+invitations, capabilities version 10)
+# story 9-7 done (pipeline: ATDD+Dev+Test-Review (3 MAJOR fixed: AC3 sync+AC5 GET/state+Elixir state_key test)+Code-Review (2 MAJOR fixed: txn_id dedup+state_key NULL)+Kassandra CRITICAL fixed (state events `:change_state` power level)): 2026-05-05
+# story 9-7 created: 9-7 → ready-for-dev: 2026-05-05 (Room State Event Types Full Implementation — replace 501 fallback with SendEvent gRPC, add state_key to proto, extend build_state_events)
+# story 9-6 done (pipeline: ATDD+Dev+Test-Review CLEAN+Code-Review (1 MINOR gofmt)+Kassandra CLEAN): 2026-05-04
+# story 9-6 created: 9-6 → ready-for-dev: 2026-05-04
+# story 9-5 done (pipeline: ATDD+Dev+Test-Review (0 MAJOR)+Code-Review (2 HIGH fixed: four-eyes self-approval + note length cap)+Kassandra CLEAN): 2026-05-04
+# story 9-5 created: 9-5 → ready-for-dev: 2026-05-04
+# story 9-4 done (pipeline: ATDD+Dev+Test-Review (0 MAJOR)+Code-Review (1 MEDIUM fixed: flash allowlist)+Kassandra CLEAN): 2026-05-04
+# story 9-4 created: 9-4 → ready-for-dev: 2026-05-04
+# story 9-3 done (pipeline: ATDD+Dev+Test-Review (2 MAJOR fixed: Playwright strict-mode selector + audit archive test)+Code-Review (1 MAJOR fixed: UpdateRoomNameHandler 404)+Kassandra HIGH-1-fixed (actor_id via contextWithAdminIdentity; 6 identity-propagation tests added)): 2026-05-04
+# story 9-3 created: 9-3 → ready-for-dev: 2026-05-04
+# story 9-2 done (pipeline: ATDD+Dev+Test-Review (0 MAJOR + 5 MINOR; M-1 loginAsAdmin extracted + M-3 double login removed)+Code-Review CLEAN+Kassandra HIGH-1-fixed (audit log: deactivate/reactivate/role in Core server.ex + audit_writer allowlist)): 2026-05-04
+# story 9-2 created: 9-2 → ready-for-dev: 2026-05-04
+# story 9-1 done (pipeline: ATDD+Dev+Test-Review (0 MAJOR + 5 MINOR; M-4 nil stubs fixed inline)+Code-Review (5 MAJOR SQL bugs fixed: nonce cols, room_members table, bigint epoch, set_at, @spec)+Kassandra CLEAN (3 MEDIUM, 1 LOW)): 2026-05-04
+# story 9-1 created: epic-9 → in-progress, 9-1 → ready-for-dev: 2026-05-04
 # story 8-11 done (pipeline: ATDD+Dev+Code CLEAN — WaitAndRunMigrations retry loop, wait-for-stack.sh, integration-test-k8s job): 2026-05-04
+# story 8-10a done (pipeline: ATDD+Dev+Test-Review (2 MAJOR fixed inline: AC4b sync wakeup test + AC5b E2E-only note, 2 MINOR fixed: pg.leave on_exit + ollama unstage)+Code-Review CLEAN (1 MINOR inline: unrelated script unstaged)+Kassandra CLEAN (0 MEDIUM, 2 INFO)): 2026-04-29
+# story 8-10a created (pre-release bug fixes: invite :pg notification + profile upsert on login): 2026-04-29
+# strategic pivot (2026-04-28): dual-host publication — github.com/innoq/nebu (GitHub Actions) + gitlab.opencode.de/nebu/nebu-server (GitLab CI). 8-6 NOT skipped. 8-7 expanded to .github/ + .gitlab/ templates. 8-10 pushes to both remotes. Retro-fix for GitHub-only references in 8-1/8-3/8-4 deferred to dedicated chore commit before 8-10.
+# story 8-9 done (pipeline: ATDD+Dev+Test-Review (0 MAJOR + 3 MINOR; M-1 mode-field assertion + INFO-2 umlaut fixed inline)+Code-Review (3 MINOR markdownlint fixed inline)+Kassandra CLEAN (2 MEDIUM, M-1 --quick warning banner fixed inline)): 2026-04-28 — pipeline stops here per maintainer instruction; 8-10 (Initial Public Push) requires manual go-ahead.
+# story 8-8 done (pipeline: ATDD+Dev+Test-Review (0 MAJOR + 4 MINOR; 2 fixed inline: 10d/e topics+description checks, 11d fallback section)+Code-Review CLEAN (2 MINOR maintainer-decision)+Security skipped (optional → heuristic not-needed)): 2026-04-28
+# story 8-7 done (pipeline: ATDD+Dev+Test-Review (4 MAJOR + 4 MINOR fixed inline: yml struct validation for bug+feature, GitLab MR prohibition+sections, verify-script in emoji-array, -x bit check)+Code-Review (1 MINOR fixed: dependabot gomod /gateway+/media)+Security skipped (optional → heuristic not-needed)): 2026-04-28
+# story 8-6 done (pipeline: ATDD+Dev+Test-Review (4 MAJOR + 4 MINOR fixed inline: verify-scripts all-3, partial-SHA detection, AC5 cache, AC7 triggers, /tmp→mktemp, if-no-files-found)+Code-Review (3 MINOR: ci-local --help, image-tag, permissions block)+Kassandra HIGH H-1 fixed (gitleaks SHA256 verification on both CIs) + M-2 cache narrowed + M-3 timeout/concurrency; M-1 ci-local.sh Docker hardening deferred): 2026-04-28
+# story 8-5 done (pipeline: ATDD+Dev+Test-Review (0 MAJOR + 4 MINOR fixed inline: F1 null-JSON false-pass, F2 runbook AC test added, F3 dead sandbox copies removed, F4 secretGroup=1)+Code-Review (1 MINOR fixed: test-count 8→9)+Kassandra CLEAN (2 MEDIUM, MEDIUM-2 pre-push hook bug fixed inline)): 2026-04-28
+# story 8-4 done (pipeline: ATDD+Dev+Test-Review (0 MAJOR + 2 MINOR fixed inline: F1 weak prohibition sub-assert, F3 Security tab link)+Code-Review CLEAN+Security skipped (optional → heuristic not-needed)): 2026-04-28
+# story 8-3 done (pipeline: ATDD (via create-story)+Dev+Test-Review (0 MAJOR + 2 MINOR fixed inline: AC10 npx absolute-path false-negative)+Code-Review (1 MINOR + 2 INFO fixed inline: CoC contradiction, AC8b prohibition phrase, AC5b OpenAPI mention, AC4 anchored heading)+Security skipped (not-needed)): 2026-04-28
+# story 8-2 done (pipeline: ATDD+Dev+Test-Review (1 MAJOR + 3 MINOR fixed inline: AC6 BSD-grep emoji false-positive, AC3/AC4 section-scoping, link-syntax)+Code-Review (tempfile trap added)+Security skipped (not-needed)): 2026-04-29
+# story 8-1 done (pipeline: ATDD+Dev (1 fix-iteration: 3 MAJOR)+Test-Review CLEAN+Code-Review (5 MINOR fixed inline + F6 detached-HEAD added)+Kassandra CLEAN, force-with-lease in runbook): 2026-04-28
+# story 8-11 done (pipeline: ATDD+Dev+Code CLEAN — WaitAndRunMigrations retry loop, wait-for-stack.sh, integration-test-k8s job): 2026-05-04
+# story 8-10a done (pipeline: ATDD+Dev+Test-Review (2 MAJOR fixed inline: AC4b sync wakeup test + AC5b E2E-only note, 2 MINOR fixed: pg.leave on_exit + ollama unstage)+Code-Review CLEAN (1 MINOR inline: unrelated script unstaged)+Kassandra CLEAN (0 MEDIUM, 2 INFO)): 2026-04-29
+# story 8-10a created (pre-release bug fixes: invite :pg notification + profile upsert on login): 2026-04-29
+# strategic pivot (2026-04-28): dual-host publication — github.com/innoq/nebu (GitHub Actions) + gitlab.opencode.de/nebu/nebu-server (GitLab CI). 8-6 NOT skipped. 8-7 expanded to .github/ + .gitlab/ templates. 8-10 pushes to both remotes. Retro-fix for GitHub-only references in 8-1/8-3/8-4 deferred to dedicated chore commit before 8-10.
+# story 8-9 done (pipeline: ATDD+Dev+Test-Review (0 MAJOR + 3 MINOR; M-1 mode-field assertion + INFO-2 umlaut fixed inline)+Code-Review (3 MINOR markdownlint fixed inline)+Kassandra CLEAN (2 MEDIUM, M-1 --quick warning banner fixed inline)): 2026-04-28 — pipeline stops here per maintainer instruction; 8-10 (Initial Public Push) requires manual go-ahead.
+# story 8-8 done (pipeline: ATDD+Dev+Test-Review (0 MAJOR + 4 MINOR; 2 fixed inline: 10d/e topics+description checks, 11d fallback section)+Code-Review CLEAN (2 MINOR maintainer-decision)+Security skipped (optional → heuristic not-needed)): 2026-04-28
+# story 8-7 done (pipeline: ATDD+Dev+Test-Review (4 MAJOR + 4 MINOR fixed inline: yml struct validation for bug+feature, GitLab MR prohibition+sections, verify-script in emoji-array, -x bit check)+Code-Review (1 MINOR fixed: dependabot gomod /gateway+/media)+Security skipped (optional → heuristic not-needed)): 2026-04-28
+# story 8-6 done (pipeline: ATDD+Dev+Test-Review (4 MAJOR + 4 MINOR fixed inline: verify-scripts all-3, partial-SHA detection, AC5 cache, AC7 triggers, /tmp→mktemp, if-no-files-found)+Code-Review (3 MINOR: ci-local --help, image-tag, permissions block)+Kassandra HIGH H-1 fixed (gitleaks SHA256 verification on both CIs) + M-2 cache narrowed + M-3 timeout/concurrency; M-1 ci-local.sh Docker hardening deferred): 2026-04-28
+# story 8-5 done (pipeline: ATDD+Dev+Test-Review (0 MAJOR + 4 MINOR fixed inline: F1 null-JSON false-pass, F2 runbook AC test added, F3 dead sandbox copies removed, F4 secretGroup=1)+Code-Review (1 MINOR fixed: test-count 8→9)+Kassandra CLEAN (2 MEDIUM, MEDIUM-2 pre-push hook bug fixed inline)): 2026-04-28
+# story 8-4 done (pipeline: ATDD+Dev+Test-Review (0 MAJOR + 2 MINOR fixed inline: F1 weak prohibition sub-assert, F3 Security tab link)+Code-Review CLEAN+Security skipped (optional → heuristic not-needed)): 2026-04-28
+# story 8-3 done (pipeline: ATDD (via create-story)+Dev+Test-Review (0 MAJOR + 2 MINOR fixed inline: AC10 npx absolute-path false-negative)+Code-Review (1 MINOR + 2 INFO fixed inline: CoC contradiction, AC8b prohibition phrase, AC5b OpenAPI mention, AC4 anchored heading)+Security skipped (not-needed)): 2026-04-28
+# story 8-2 done (pipeline: ATDD+Dev+Test-Review (1 MAJOR + 3 MINOR fixed inline: AC6 BSD-grep emoji false-positive, AC3/AC4 section-scoping, link-syntax)+Code-Review (tempfile trap added)+Security skipped (not-needed)): 2026-04-29
+# story 8-1 done (pipeline: ATDD+Dev (1 fix-iteration: 3 MAJOR)+Test-Review CLEAN+Code-Review (5 MINOR fixed inline + F6 detached-HEAD added)+Kassandra CLEAN, force-with-lease in runbook): 2026-04-28
 # story 6-11 created: 6-11 → ready-for-dev: 2026-05-01 (Gherkin: Admin API CRUD Flow — 3 Godog scenarios: user lifecycle deactivate/reactivate, role grant/revoke, room archive, new gateway/features/admin_api.feature + gateway/test/integration/admin_api_steps_test.go)
 # story 6-9 created: 6-9 → ready-for-dev: 2026-05-01 (Room Archivierung — POST /admin/rooms/{roomId}/archive + unarchive, proto ArchiveRoom/UnarchiveRoom, Room.Server archived init guard, SendEvent archive check, audit log)
 # story 6-8 created: 6-8 → ready-for-dev: 2026-05-01 (Room Settings Update API — PATCH /admin/rooms/{roomId}, PUT /admin/config/room-defaults, migration 000037 room_defaults, proto UpdateRoomSettings, max_members enforcement in Room GenServer, audit log)
@@ -131,7 +219,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-20
-last_updated: 2026-05-03
+last_updated: 2026-05-08
 # story 6-10 created: 6-10 → ready-for-dev: 2026-05-01 (Server Config API + Metrics API — GET/PATCH /admin/config, GET /admin/metrics, proto InvalidateAllAdminSessions, ServerConfigRepository, MetricsRepository, oidc_client_secret encryption, session invalidation on OIDC change)
 # story 6-1 created: epic-6 → in-progress, 6-1 → ready-for-dev: 2026-05-01
 # story 5-1 review: 2026-04-23 (audit-log schema + RLS + retention cleanup)
@@ -418,7 +506,7 @@ development_status:
   # ─────────────────────────────────────────────────────────────────────────
   # Epic 1: Operators Can Deploy and Observe a Running Nebu Instance
   # ─────────────────────────────────────────────────────────────────────────
-  epic-1: in-progress
+  epic-1: done
   1-1-go-gateway-media-gateway-repository-scaffolding: done
   1-2-elixir-otp-core-umbrella-repository-scaffolding: done
   1-3-golang-migrate-setup-postgresql-docker-service: done
@@ -443,7 +531,7 @@ development_status:
   # ─────────────────────────────────────────────────────────────────────────
   # Epic 2: Users Can Authenticate with SSO and Have a Verified Cryptographic Identity
   # ─────────────────────────────────────────────────────────────────────────
-  epic-2: in-progress
+  epic-2: done
   2-1-users-user-keys-schema-migration: done
   2-2-sessions-schema-migration: done
   2-3-oidc-provider-configuration: done
@@ -470,7 +558,7 @@ development_status:
   # ─────────────────────────────────────────────────────────────────────────
   # Epic 3: Operators Have a Minimal Admin UI for Bootstrap and Debugging
   # ─────────────────────────────────────────────────────────────────────────
-  epic-3: in-progress
+  epic-3: done
   3-1-go-template-engine-setup-go-embed: done
   3-2-tailwind-css-daisyui-build-pipeline: done
   3-3-self-hosted-woff2-fonts-static-asset-serving: done
@@ -491,7 +579,7 @@ development_status:
   # ─────────────────────────────────────────────────────────────────────────
   # Epic 4: End-Users Can Chat in Rooms Using Any Standard Matrix Client
   # ─────────────────────────────────────────────────────────────────────────
-  epic-4: in-progress
+  epic-4: done
   4-1-horde-registry-dynamicsupervisor-setup: done
   4-2-room-genserver-lifecycle-create-join-leave: done
   4-3-ed25519-unit-tests-nebu-eventid-content-hash-module: done
@@ -528,7 +616,7 @@ development_status:
   #         + Gateway Security Hardening (stories 5-10 … 5-28, added 2026-04-20
   #         based on security audit of gateway/ — see review notes in epic-4 retro folder)
   # ─────────────────────────────────────────────────────────────────────────
-  epic-5: in-progress
+  epic-5: done
   5-1-audit-log-schema-rls-aufbewahrungskonfiguration: done
   5-2-audit-log-writer-generisch-alle-admin-aktionen-atomare-garantie: done
   5-3-compliance-access-request-api: done
@@ -580,24 +668,25 @@ development_status:
   # Epic 6: Instance Admins Can Manage the Instance Programmatically via Admin API
   # (skipped by user decision 2026-04-29 — Epic 7 UI is MVP priority; Epic 6 API stays backlog)
   # ─────────────────────────────────────────────────────────────────────────
-  epic-6: in-progress
+  epic-6: done
   6-1-openapi-spec-first-setup-codegen-pipeline-strictserverinterface-live-endpoint: done
   6-2-admin-api-response-format-cursor-pagination: done
   6-3-admin-api-router-role-auth-middleware: done
   6-4-user-list-get-api: done
   6-5-user-deactivation-reactivation-session-invalidierung: done
   6-6-user-role-assignment-api-role-overrides-tabelle-middleware-integration: done
-  6-7-room-list-get-api: review
-  6-8-room-settings-update-api-max-members-visibility-serverweite-defaults: review
-  6-9-room-archivierung-kein-physisches-loschen-events-bleiben-erhalten: review
-  6-10-server-config-api-metrics-api: review
+  6-7-room-list-get-api: done
+  6-8-room-settings-update-api-max-members-visibility-serverweite-defaults: done
+  6-9-room-archivierung-kein-physisches-loschen-events-bleiben-erhalten: done
+  6-10-server-config-api-metrics-api: done
   6-11-gherkin-admin-api-crud-flow: done
+  6-9b-archive-race-core-send-event: ready-for-dev  # SEC Gate 2 HIGH-2 follow-up; created 2026-05-02, tracking added 2026-05-04
   epic-6-retrospective: optional
 
   # ─────────────────────────────────────────────────────────────────────────
   # Epic 7: Instance Admins Have a Full Admin UI for Day-to-Day Operations
   # ─────────────────────────────────────────────────────────────────────────
-  epic-7: in-progress
+  epic-7: done
   7-1-obsidian-color-system-vollstandig-typography-ux-dr1-ux-dr2: done
   7-2-masterdetaillayout-detailpanel-c4-c5-bookmarkbare-url-routen: done
   7-3-interaction-components-c6-wizardstepper-c7-c10: done  # ~380k tokens
@@ -649,18 +738,106 @@ development_status:
   # ─────────────────────────────────────────────────────────────────────────
   # Epic 8: Project Is Published as a Public Open-Source Repository on GitHub
   # ─────────────────────────────────────────────────────────────────────────
-  epic-8: in-progress
-  8-1-commit-history-rewrite-co-authored-by-trailer-entfernen: ready-for-dev
-  8-2-readme-bmad-claude-attribution-development-methodology: ready-for-dev
-  8-3-contributing-md-bmad-workflow-und-conventions: ready-for-dev
-  8-4-security-md-vulnerability-disclosure-policy: ready-for-dev
-  8-5-secret-scan-gate-gitleaks-history-ci-integration: ready-for-dev
-  8-6-ci-migration-gitlab-ci-github-actions: ready-for-dev
-  8-7-github-issue-pr-templates-github-infrastructure: ready-for-dev
-  8-8-repo-metadaten-license-check-topics-description-badges: ready-for-dev
-  8-9-release-readiness-gate-full-stack-test-epic-weiter-security-review: ready-for-dev
-  8-10a-pre-release-bugfixes-invite-notification-profile-provisioning: ready-for-dev
+  epic-8: done
+  8-1-commit-history-rewrite-co-authored-by-trailer-entfernen: done  # Tooling delivered (scripts/rewrite-coauthored-trailer.sh + REWRITE_HISTORY_RUNBOOK.md). Rewrite-Execution is manual, after Epic 5 done on main.
+  8-2-readme-bmad-claude-attribution-development-methodology: done  # Development Methodology section added to README.md, attribution to Claude + BMAD methodology, link to CONTRIBUTING.md (8-3). Verify tool: scripts/verify-readme-attribution.sh.
+  8-3-contributing-md-bmad-workflow-und-conventions: done  # CONTRIBUTING.md expanded with Reporting Bugs, PR workflow (Conventional Commits + branch naming), BMAD section with external-contributor escape hatch, Testing, License/DCO, no-CoAuthored-By rule. Verify tool: scripts/verify-contributing.sh.
+  8-4-security-md-vulnerability-disclosure-policy: done  # SECURITY.md rewritten with 8 sections (Supported Versions, Reporting via GitHub Security Advisories, 72h/7d/14d Response SLA, 90-day Disclosure, 7-category Scope, 5-category Out-of-Scope, honest no-bounty Recognition, References). Verify tool: scripts/verify-security-policy.sh.
+  8-5-secret-scan-gate-gitleaks-history-ci-integration: done  # gitleaks integration: scan-secrets.sh (history/staged/ci) + .gitleaks.toml + SECRET_SCAN_RUNBOOK.md + .gitignore. 9/9 tests, Kassandra CLEAN. Tool is platform-agnostic (works on GitHub Actions + GitLab CI per Story 8.6).
+  8-6-ci-migration-gitlab-ci-github-actions: done  # Dual CI sovereign-OSS: .github/workflows/ci.yml (5 jobs, SHA-pinned, permissions read, concurrency, timeout-30m, gitleaks SHA256-verified) + .gitlab-ci.yml expanded (lint/unit/scan/verify stages, default timeout 30m + interruptible, gitleaks SHA256-verified). DRY: same 5 scripts on both. scripts/ci-local.sh + scripts/verify-ci-config.sh (20 tests). _bmad-output/planning-artifacts/badges-spec.md prepared for 8-8. Kassandra HIGH H-1 fixed inline; M-1 (ci-local.sh Docker hardening) deferred.
+  8-7-github-issue-pr-templates-github-infrastructure: done  # .github/ISSUE_TEMPLATE/{bug_report,feature_request,config}.yml + pull_request_template.md + CODEOWNERS + dependabot.yml (4 ecosystems, weekly) + .gitlab/issue_templates/{Bug,Feature}.md + .gitlab/merge_request_templates/Default.md. Verify tool: scripts/verify-issue-pr-templates.sh (13/13 pass).
+  8-8-repo-metadaten-license-check-topics-description-badges: done  # README.md badge block (15 badges, scope-limited markdownlint-disable, correct gitlab.opencode.de URLs) + scripts/setup-repo-metadata.sh (--github/--gitlab/--all via gh/glab CLIs, 10 topics, description) + scripts/REPO_METADATA_RUNBOOK.md (4 sections: when, install, run, fallback). Verify tool: scripts/verify-repo-metadata.sh (12/12 pass). LICENSE preserved (Apache-2.0 already existed).
+  8-9-release-readiness-gate-full-stack-test-epic-weiter-security-review: done  # Master gate: scripts/release-readiness-gate.sh (--all/--quick/--report, pre-flight on 7 sub-scripts, JSON report with date+mode+overall_status+suites, --quick warning banner) + scripts/PUBLIC_PUSH_CHECKLIST.md (6 steps with --force-with-lease) + security-reports/INDEX.md (3 Kassandra reports + epic-end gate note) + .gitignore. Verify tool: scripts/verify-release-readiness.sh (12/12 pass). Live-fire --quick: 6 sub-suites PASS. Kassandra CLEAN (2 MEDIUM: M-1 --quick warning fixed inline, M-2 TOCTOU window deferred — not exploitable in trust model).
+  8-10a-pre-release-bugfixes-invite-notification-profile-provisioning: done  # invite :pg broadcast (invite_user/2) + user-level :pg wakeup (do_incremental_sync) + profile upsert (validate_token/2) + E2E timeout 35s→10s
+  8-10-initial-public-push-branch-protection-required-reviews: done
   8-11-service-startup-resilience-dind-free-integration-test: done
+  epic-8-retrospective: optional
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Epic 9: Post-MVP API & Admin Completeness
+  # Pre-Epic-TODO: — (keine ADR-Vorarbeit nötig)
+  # ─────────────────────────────────────────────────────────────────────────
+  epic-9: done
+  9-1-admin-grpc-rpcs-core-user-room-management: done
+  9-2-admin-ui-users-api-integration: done
+  9-3-admin-ui-rooms-api-integration: done
+  9-4-admin-ui-config-role-mapping-api-integration: done  # story 9-4 created: 9-4 → ready-for-dev: 2026-05-04
+  9-5-admin-ui-compliance-api-integration: done
+  9-6-state-event-type-whitelist-gateway-middleware: done
+  9-7-room-state-event-types-full-implementation: done
+  9-8-room-version-upgrade-full-implementation: done
+  9-9-archive-toctou-fix: done
+  9-10a-matrix-event-correctness-spike-dm-loop-root-cause: done
+  9-10b-matrix-event-correctness-godog-scenarios-and-fixes: done
+  9-11-arc42-docs-generation-from-bmad-artifacts: done  # pipeline: Test-Review 94/100 + Code-Review 5 MINOR fixed; security_review not-needed
+  9-12-arc42-pipeline-gate-doc-maintenance-agent: done  # CI allow_failure→false, 60d threshold, bmad-maintain-arc42 skill, CLAUDE.md gate; security_review not-needed
+  9-13-admin-ui-ux-bug-fixes-visual-polish: done  # story 9-13 created: 9-13 → ready-for-dev: 2026-05-05 (Admin UI UX Bug Fixes — 17 bugs from Sally's audit: logo color, login nav, SSE status guard, btn-error, border-l-4, empty state, badge colors, timestamp format, etc.)
+  9-14-admin-ui-oidc-token-refresh: done  # story 9-14 created: 9-14 → ready-for-dev: 2026-05-05 (OIDC Token Refresh — store encrypted refresh_token in admin_sessions, offline_access scope, silent renewal in SessionGuardWithStore; security_review: required)
+  9-15-admin-ui-bug-fixes-select-dropdown-compliance-buttons-room-names: done  # story 9-15 done: 2026-05-05 (Admin UI Bug-Fixes — Select-Dropdown bg-base-200, Compliance btn-outline, Room-Fallback-Name; security_review: not-needed)
+  9-16-upgrade-room-state-event-order-test: done  # story 9-16 created: 2026-05-05 (GAP-9-001 — Room Upgrade State Event Copy Order Test; security_review: not-needed)
+  9-17-admin-rooms-patch-max-members-visibility-test: done  # story 9-17 done: 2026-05-05 (GAP-9-002 — 8 unit tests for UpdateRoomSettingsHandler; code-review CLEAN with 2 MINOR auto-fixed: t.Parallel() + maxMembersLimit constant; security_review: not-needed)
+  9-18-admin-room-detail-member-list: done  # story 9-18 done: 2026-05-05 (Admin UI — Room Detail: Member-Liste anzeigen; new ListAdminRoomMembers gRPC RPC, Elixir DB query, Go client, page_data.go, template; security_review: required)
+  9-19-sync-gap-fixes-join-public-leave-once-forget: done  # story 9-19 done: 2026-05-06 (Sync Gap Fixes: GAP-JOIN-PUBLIC {:new_join} :pg broadcast, GAP-LEAVE-ONCE sinceMs filter, GAP-FORGET forgotten_rooms table; security_review: not-needed)
+  9-21-sync-gap-state-position: done
+  9-20-sync-gap-prev-batch: done
+  9-23-sync-gap-invite-state-stripped-events: done
+  9-25-sync-gap-buffer-next-batch: done
+  9-22-sync-gap-since-ignored-per-device-tokens: done
+  9-24-sync-gap-global-account-data: done
+  9-26-element-web-e2e-browser-first-suite: done
+  9-29-matrix-relations-api-base-route-query-params: review  # story 9-29: 2026-05-08 (Bug Fix: Matrix Relations API base route + query params; all 3 route variants, dir/recurse/event_type, proto extended; security_review: not-needed)
+  epic-9-retrospective: optional
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Epic 10: Managed E2EE — Key Escrow
+  # Pre-Epic-TODO: ADR-011 finalisieren (Threat Model, Key-Escrow-Architektur,
+  #   DB-Schema, Security Assumptions) — vor Sprint-Start
+  # ─────────────────────────────────────────────────────────────────────────
+  epic-10: backlog
+  10-1-key-material-memory-hygiene: backlog
+  10-2-escrow-audit-log-immutability: backlog
+  10-3-keys-upload-device-key-persistence: backlog
+  10-4-keys-query-device-keys-from-database: backlog
+  10-5-keys-claim-one-time-key-claiming: backlog
+  10-6-keys-changes-key-change-tracking: backlog
+  10-7-cross-signing-keys-device-signing-upload-signatures-upload: backlog
+  10-8-room-keys-key-backup-endpoints: backlog
+  10-9-escrow-compliance-integration: backlog
+  10-10-otk-rotation-one-time-key-replenishment: backlog
+  epic-10-retrospective: optional
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Epic 11: Full-Text Search
+  # Pre-Epic-TODO: ADR-010 finalisieren (tsvector vs. pgvector, PoC-Query)
+  #   — vor Sprint-Start; Story 7-31 bleibt backlog bis ADR accepted
+  # ─────────────────────────────────────────────────────────────────────────
+  epic-11: done
+  11-1-db-migration-search-index: done
+  11-2-search-membership-enforcement: done
+  11-3-elixir-core-searchmessages-grpc-handler: done
+  11-4-gateway-post-search-handler: done
+  11-5-search-rate-limiting: done
+  11-6-gherkin-e2e-search-flow: done
+  11-7-safari-relogin-fix: done
+  11-9-build-info-endpoint: done  # story file: 11-9-build-info-endpoint.md (was mistakenly numbered 11-8 in sprint-status; actual story/commit uses 11-9; Build-Info Endpoint GET /info — ldflags in Go, ARG→ENV in Elixir, pubMux+health port 4000, no auth; security_review: not-needed)
+  11-10-oidc-claim-mapping: done
+  11-11-receipt-404-fix: review  # story file: 11-11-receipt-404-fix.md (Bug: send_receipt returns 404 after stack restart — replace lookup_room with start_room; security_review: not-needed)
+  epic-11-retrospective: optional
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Epic 12: Media Gateway Phase 2 — Object Storage & Thumbnails
+  # Pre-Epic-TODO: ADR-013 finalisieren (MinIO, Thumbnail-Library, Pre-Signed-URL-Policy)
+  #   — vor Sprint-Start
+  # ─────────────────────────────────────────────────────────────────────────
+  epic-12: backlog
+  12-1-minio-docker-compose-credentials-via-secrets: backlog
+  12-2-storage-interface-refactor: backlog
+  12-3-media-upload-minio-backend-iam-hardening: backlog
+  12-4-media-download-minio-backend-pre-signed-url-security: backlog
+  12-5-thumbnail-generation-on-demand-sandboxed: backlog
+  12-6-blurhash-pass-through-animated-thumbnail-correctness: backlog
+  epic-12-retrospective: optional
+
 # story 6-11 done (pipeline: ATDD+Dev+CodeReview CLEAN — Godog E2E admin lifecycle/role/archive, compliance officer auth): 2026-05-02
 # story 6-10 done (pipeline: ATDD+Dev+CodeReview+Kassandra HIGH-1-fixed (CWE-209 ResponseErrorHandlerFunc) — GET/PATCH /admin/config + GET /admin/metrics + AES-256-GCM oidc_client_secret): 2026-05-02
 # story 6-9 done (pipeline: ATDD+Dev+CodeReview+Kassandra HIGH-1 (archive race window) as follow-up 6-9b — archive/unarchive endpoints, Horde GenServer guard): 2026-05-02

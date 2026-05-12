@@ -92,7 +92,7 @@ func buildAuthedUserDirectoryHandler(t *testing.T, db *mockUserDirectoryDB) (htt
 		ServerName: "test.local",
 	})
 
-	jwtMiddleware := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")
+	jwtMiddleware := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")
 
 	mux := http.NewServeMux()
 	mux.Handle("POST /user_directory/search",
@@ -688,7 +688,7 @@ func buildFilteringHandler(t *testing.T, db *filteringUserDirectoryDB) (http.Han
 		DB:         db,
 		ServerName: "test.local",
 	})
-	jwtMiddleware := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")
+	jwtMiddleware := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")
 	mux := http.NewServeMux()
 	mux.Handle("POST /user_directory/search",
 		jwtMiddleware(http.HandlerFunc(handler.Search)))

@@ -1,0 +1,441 @@
+
+
+<!doctype html>
+<html itemscope itemtype="http://schema.org/WebPage" lang="en" class="no-js">
+  <head>
+    <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+<link rel="alternate" type="text/markdown" href="/v1.18/changelog/v1.12/checklist.md">
+<meta name="robots" content="index, follow">
+<link rel="shortcut icon" href="/v1.18/icons/favicon.ico">
+<link rel="icon" type="image/svg+xml" href="/v1.18/icons/favicon.svg">
+
+<title>v1.12 Changelog | Matrix Specification</title>
+<meta name="description" content="Client-Server API Deprecations
+Deprecate the server_name query parameter on POST /_matrix/client/v3/join/{roomIdOrAlias} and POST /_matrix/client/v3/knock/{roomIdOrAlias}, as per MSC4156. (#1933) Removed Endpoints
+Remove references to device-specific push rules. (#1842) Remove the deprecated name attribute on HTML anchor elements, as per MSC4159. (#1870) Backwards Compatible Changes
+Add 403 responses on GET /_matrix/client/v3/profile/{userId}/avatar_url and GET /_matrix/client/v3/profile/{userId}/displayname, as per MSC4170. (#1867) Add support for marking rooms as unread, as per MSC2867. (#1895, #1941) Add via query parameter on POST /_matrix/client/v3/join/{roomIdOrAlias} and POST /_matrix/client/v3/knock/{roomIdOrAlias}, as per MSC4156. (#1933) Add account locking, as per MSC3939. (#1934) Guest accounts can now download/thumbnail media from the new authenticated endpoints, as per MSC4189. (#1959) Spec Clarifications">
+<meta property="og:url" content="/v1.18/changelog/v1.12/">
+  <meta property="og:site_name" content="Matrix Specification">
+  <meta property="og:title" content="v1.12 Changelog">
+  <meta property="og:description" content="Client-Server API Deprecations
+Deprecate the server_name query parameter on POST /_matrix/client/v3/join/{roomIdOrAlias} and POST /_matrix/client/v3/knock/{roomIdOrAlias}, as per MSC4156. (#1933) Removed Endpoints
+Remove references to device-specific push rules. (#1842) Remove the deprecated name attribute on HTML anchor elements, as per MSC4159. (#1870) Backwards Compatible Changes
+Add 403 responses on GET /_matrix/client/v3/profile/{userId}/avatar_url and GET /_matrix/client/v3/profile/{userId}/displayname, as per MSC4170. (#1867) Add support for marking rooms as unread, as per MSC2867. (#1895, #1941) Add via query parameter on POST /_matrix/client/v3/join/{roomIdOrAlias} and POST /_matrix/client/v3/knock/{roomIdOrAlias}, as per MSC4156. (#1933) Add account locking, as per MSC3939. (#1934) Guest accounts can now download/thumbnail media from the new authenticated endpoints, as per MSC4189. (#1959) Spec Clarifications">
+  <meta property="og:locale" content="en">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="changelog">
+    <meta property="article:published_time" content="2024-10-07T00:00:00+00:00">
+    <meta property="article:modified_time" content="2024-10-07T00:00:00+00:00">
+
+  <meta itemprop="name" content="v1.12 Changelog">
+  <meta itemprop="description" content="Client-Server API Deprecations
+Deprecate the server_name query parameter on POST /_matrix/client/v3/join/{roomIdOrAlias} and POST /_matrix/client/v3/knock/{roomIdOrAlias}, as per MSC4156. (#1933) Removed Endpoints
+Remove references to device-specific push rules. (#1842) Remove the deprecated name attribute on HTML anchor elements, as per MSC4159. (#1870) Backwards Compatible Changes
+Add 403 responses on GET /_matrix/client/v3/profile/{userId}/avatar_url and GET /_matrix/client/v3/profile/{userId}/displayname, as per MSC4170. (#1867) Add support for marking rooms as unread, as per MSC2867. (#1895, #1941) Add via query parameter on POST /_matrix/client/v3/join/{roomIdOrAlias} and POST /_matrix/client/v3/knock/{roomIdOrAlias}, as per MSC4156. (#1933) Add account locking, as per MSC3939. (#1934) Guest accounts can now download/thumbnail media from the new authenticated endpoints, as per MSC4189. (#1959) Spec Clarifications">
+  <meta itemprop="datePublished" content="2024-10-07T00:00:00+00:00">
+  <meta itemprop="dateModified" content="2024-10-07T00:00:00+00:00">
+  <meta itemprop="wordCount" content="575">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="v1.12 Changelog">
+  <meta name="twitter:description" content="Client-Server API Deprecations
+Deprecate the server_name query parameter on POST /_matrix/client/v3/join/{roomIdOrAlias} and POST /_matrix/client/v3/knock/{roomIdOrAlias}, as per MSC4156. (#1933) Removed Endpoints
+Remove references to device-specific push rules. (#1842) Remove the deprecated name attribute on HTML anchor elements, as per MSC4159. (#1870) Backwards Compatible Changes
+Add 403 responses on GET /_matrix/client/v3/profile/{userId}/avatar_url and GET /_matrix/client/v3/profile/{userId}/displayname, as per MSC4170. (#1867) Add support for marking rooms as unread, as per MSC2867. (#1895, #1941) Add via query parameter on POST /_matrix/client/v3/join/{roomIdOrAlias} and POST /_matrix/client/v3/knock/{roomIdOrAlias}, as per MSC4156. (#1933) Add account locking, as per MSC3939. (#1934) Guest accounts can now download/thumbnail media from the new authenticated endpoints, as per MSC4189. (#1959) Spec Clarifications">
+<link rel="preload" href="/v1.18/scss/main.min.62a23be07591046a7b1074b2961f859c3e6cf6751335c54a0d081a76bbb47720.css" as="style" integrity="sha256-YqI74HWRBGp7EHSylh+FnD5s9nUTNcVKDQgadru0dyA=" crossorigin="anonymous">
+<link href="/v1.18/scss/main.min.62a23be07591046a7b1074b2961f859c3e6cf6751335c54a0d081a76bbb47720.css" rel="stylesheet" integrity="sha256-YqI74HWRBGp7EHSylh+FnD5s9nUTNcVKDQgadru0dyA=" crossorigin="anonymous">
+<script
+  src="/v1.18/jquery-3.7.1.min_1232160679860847782.js"
+  integrity="sha512-v2CJ7UaYy4JwqLDIrZUI/4hqeoQieOmAZNXBeQyjo21dadnwR+8ZaIJVT8EE2iyI61OV8e6M8PP2/4hpQINQ/g=="
+  crossorigin="anonymous"></script>
+
+
+
+<link rel="preload" href="/v1.18/css/fonts/Inter.css" as="style">
+<link rel="stylesheet" href="/v1.18/css/fonts/Inter.css">
+
+  </head>
+  <body class="td-page">
+    <header>
+      <nav class="td-navbar js-navbar-scroll">
+<div class="td-navbar-container container-fluid flex-column flex-md-row">
+  <a class="navbar-brand" href="/v1.18/"><span class="navbar-brand__logo navbar-logo"><svg width="75" height="32" xmlns="http://www.w3.org/2000/svg"><g fill="#000" fill-rule="nonzero"><path d="M.936.732V31.25H3.13v.732H.095V0h3.034v.732zm8.45 9.675v1.544h.044a4.461 4.461.0 011.487-1.368c.58-.323 1.245-.485 1.993-.485.72.0 1.377.14 1.972.42.595.279 1.047.771 1.355 1.477.338-.5.796-.941 1.377-1.323.58-.383 1.266-.574 2.06-.574.602.0 1.16.074 1.674.22.514.148.954.383 1.322.707.366.323.653.746.859 1.268.205.522.308 1.15.308 1.887v7.633H20.71v-6.464c0-.383-.015-.743-.044-1.082a2.305 2.305.0 00-.242-.882 1.473 1.473.0 00-.584-.596c-.257-.146-.606-.22-1.047-.22-.44.0-.796.085-1.068.253-.272.17-.485.39-.639.662a2.654 2.654.0 00-.308.927 7.074 7.074.0 00-.078 1.048v6.354h-3.128v-6.398c0-.338-.007-.673-.021-1.004a2.825 2.825.0 00-.188-.916 1.411 1.411.0 00-.55-.673c-.258-.168-.636-.253-1.135-.253a2.33 2.33.0 00-.584.1 1.94 1.94.0 00-.705.374c-.228.184-.422.449-.584.794-.161.346-.242.798-.242 1.357v6.619H6.434V10.407h2.952zm16.456 1.677a3.751 3.751.0 011.233-1.17 5.37 5.37.0 011.685-.629 9.579 9.579.0 011.884-.187c.573.0 1.153.04 1.74.121.588.081 1.124.24 1.609.475.484.235.88.562 1.19.981.308.42.462.975.462 1.666v5.934c0 .516.03 1.008.088 1.478.058.471.161.824.308 1.06H32.87a4.435 4.435.0 01-.22-1.104c-.5.515-1.087.876-1.762 1.081a7.084 7.084.0 01-2.071.31c-.544.0-1.05-.067-1.52-.2a3.472 3.472.0 01-1.234-.617 2.87 2.87.0 01-.826-1.059c-.199-.426-.298-.934-.298-1.522.0-.647.114-1.18.342-1.6.227-.419.52-.753.881-1.004.36-.25.771-.437 1.234-.562.462-.125.929-.224 1.399-.298.47-.073.932-.132 1.387-.176.456-.044.86-.11 1.212-.199.353-.088.631-.217.837-.386.206-.169.301-.415.287-.74.0-.337-.055-.606-.166-.804a1.217 1.217.0 00-.44-.464 1.737 1.737.0 00-.639-.22 5.292 5.292.0 00-.782-.055c-.617.0-1.101.132-1.454.397-.352.264-.558.706-.617 1.323h-3.128c.044-.735.227-1.345.55-1.83zm6.179 4.423a5.095 5.095.0 01-.639.165 9.68 9.68.0 01-.716.11c-.25.03-.5.067-.749.11a5.616 5.616.0 00-.694.177 2.057 2.057.0 00-.594.298c-.17.125-.305.284-.408.474-.103.192-.154.434-.154.728.0.28.051.515.154.706.103.192.242.342.419.453.176.11.381.187.617.231.234.044.477.066.726.066.617.0 1.094-.102 1.432-.309.338-.205.587-.452.75-.739.16-.286.26-.576.297-.87.036-.295.055-.53.055-.707v-1.17a1.4 1.4.0 01-.496.277zm11.863-6.1v2.096h-2.291v5.647c0 .53.088.883.264 1.059.176.177.529.265 1.057.265.177.0.345-.007.507-.022.161-.015.316-.037.463-.066v2.426a7.49 7.49.0 01-.882.089 21.67 21.67.0 01-.947.022c-.484.0-.944-.034-1.377-.1a3.233 3.233.0 01-1.145-.386 2.04 2.04.0 01-.782-.816c-.191-.353-.287-.816-.287-1.39v-6.728H36.57v-2.096h1.894v-3.42h3.129v3.42h2.29zm4.471.0v2.118h.044a3.907 3.907.0 011.454-1.754 4.213 4.213.0 011.036-.497 3.734 3.734.0 011.145-.176c.206.0.433.037.683.11v2.912a5.862 5.862.0 00-.528-.077 5.566 5.566.0 00-.595-.033c-.573.0-1.058.096-1.454.287a2.52 2.52.0 00-.958.783 3.143 3.143.0 00-.518 1.158 6.32 6.32.0 00-.154 1.434v5.14h-3.128V10.407h2.973zM54.039 8.642V6.06h3.128v2.582H54.04zm3.128 1.765v11.405H54.04V10.407h3.128zm1.63.0h3.569l2.005 2.978 1.982-2.978h3.459l-3.745 5.339 4.208 6.067h-3.57l-2.378-3.596-2.38 3.596h-3.502l4.097-6.001zM74.094 31.25V.732H71.9V0h3.035v31.982H71.9v-.732z"/></g></svg></span><span class="navbar-brand__name">
+      specification
+    </span><span class="navbar-version"> &mdash; version v1.18</span></a>
+  <div class="td-navbar-nav-scroll td-navbar-nav-scroll--indicator" id="main_navbar">
+    <div class="scroll-indicator scroll-left"></div>
+    <ul class="navbar-nav">
+      <li class="nav-item">
+        <a class="nav-link" href="https://matrix.org/foundation/about/" target="_blank" rel="noopener"><span>Foundation</span></a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="https://matrix.org/docs/" target="_blank" rel="noopener"><span>User Docs</span></a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="https://matrix.org/blog/" target="_blank" rel="noopener"><span>Blog</span></a>
+      </li>
+      <li class="nav-item dropdown d-none d-lg-block td-navbar__version-menu">
+        
+
+
+<div class="dropdown">
+    <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+        All Versions
+    </a>
+    <ul class="dropdown-menu" id="version-selector"></ul>
+</div>
+</li>
+      </ul>
+    <div class="scroll-indicator scroll-right"></div>
+  </div>
+  <div class="d-none d-lg-block td-navbar__search">
+    
+  </div>
+</div>
+</nav>
+    </header>
+    <div class="container-fluid td-outer">
+      <div class="td-main" data-bs-spy="scroll" data-bs-target=".td-toc" data-bs-root-margin="0px 0px -10%">
+        <div class="row flex-xl-nowrap">
+          <aside class="col-12 col-md-3 col-xl-2 td-sidebar d-print-none">
+            <div id="td-sidebar-menu" class="td-sidebar__inner">
+  <div id="content-mobile">
+  <form class="td-sidebar__search d-flex align-items-center">
+    
+    <button class="btn btn-link td-sidebar__toggle" type="button" data-bs-toggle="collapse" data-bs-target="#td-section-nav" aria-controls="td-section-nav" aria-expanded="false" aria-label="Toggle section navigation">
+    </button>
+  </form>
+  </div>
+  <div id="content-desktop"></div>
+  <nav class="td-sidebar-nav collapse td-sidebar-nav--search-disabled" id="td-section-nav">
+    <ul class="td-sidebar-nav__section pe-md-3 ul-0">
+      <li class="td-sidebar-nav__section-title td-sidebar-nav__section with-child active-path" id="m-v118-li">
+    <a href="/v1.18/" class="align-left ps-0 td-sidebar-link td-sidebar-link__section tree-root" id="m-v118"><span class="">Matrix Specification</span></a>
+    <ul class="ul-1">
+      <li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-v118client-server-api-li">
+    <a href="/v1.18/client-server-api/" class="align-left ps-0 td-sidebar-link td-sidebar-link__section" id="m-v118client-server-api"><span class="">Client-Server API</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-v118server-server-api-li">
+    <a href="/v1.18/server-server-api/" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118server-server-api"><span class="">Server-Server API</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-v118application-service-api-li">
+    <a href="/v1.18/application-service-api/" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118application-service-api"><span class="">Application Service API</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-v118identity-service-api-li">
+    <a href="/v1.18/identity-service-api/" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118identity-service-api"><span class="">Identity Service API</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-v118push-gateway-api-li">
+    <a href="/v1.18/push-gateway-api/" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118push-gateway-api"><span class="">Push Gateway API</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section with-child" id="m-v118rooms-li">
+    <a href="/v1.18/rooms/" class="align-left ps-0 td-sidebar-link td-sidebar-link__section" id="m-v118rooms"><span class="">Room Versions</span></a>
+    <ul class="ul-2 foldable">
+      <li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child collapse" id="m-v118roomsv1-li">
+    <a href="/v1.18/rooms/v1/" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118roomsv1"><span class="">Room Version 1</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child collapse" id="m-v118roomsv2-li">
+    <a href="/v1.18/rooms/v2/" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118roomsv2"><span class="">Room Version 2</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child collapse" id="m-v118roomsv3-li">
+    <a href="/v1.18/rooms/v3/" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118roomsv3"><span class="">Room Version 3</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child collapse" id="m-v118roomsv4-li">
+    <a href="/v1.18/rooms/v4/" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118roomsv4"><span class="">Room Version 4</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child collapse" id="m-v118roomsv5-li">
+    <a href="/v1.18/rooms/v5/" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118roomsv5"><span class="">Room Version 5</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child collapse" id="m-v118roomsv6-li">
+    <a href="/v1.18/rooms/v6/" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118roomsv6"><span class="">Room Version 6</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child collapse" id="m-v118roomsv7-li">
+    <a href="/v1.18/rooms/v7/" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118roomsv7"><span class="">Room Version 7</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child collapse" id="m-v118roomsv8-li">
+    <a href="/v1.18/rooms/v8/" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118roomsv8"><span class="">Room Version 8</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child collapse" id="m-v118roomsv9-li">
+    <a href="/v1.18/rooms/v9/" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118roomsv9"><span class="">Room Version 9</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child collapse" id="m-v118roomsv10-li">
+    <a href="/v1.18/rooms/v10/" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118roomsv10"><span class="">Room Version 10</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child collapse" id="m-v118roomsv11-li">
+    <a href="/v1.18/rooms/v11/" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118roomsv11"><span class="">Room Version 11</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child collapse" id="m-v118roomsv12-li">
+    <a href="/v1.18/rooms/v12/" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118roomsv12"><span class="">Room Version 12</span></a>
+  </li>
+    </ul>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section with-child" id="m-v118olm-megolm-li">
+    <a href="/v1.18/olm-megolm/" class="align-left ps-0 td-sidebar-link td-sidebar-link__section" id="m-v118olm-megolm"><span class="">Olm &amp; Megolm</span></a>
+    <ul class="ul-2 foldable">
+      <li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child collapse" id="m-v118olm-megolmolm-li">
+    <a href="/v1.18/olm-megolm/olm/" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118olm-megolmolm"><span class="">Olm: A Cryptographic Ratchet</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child collapse" id="m-v118olm-megolmmegolm-li">
+    <a href="/v1.18/olm-megolm/megolm/" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118olm-megolmmegolm"><span class="">Megolm group ratchet</span></a>
+  </li>
+    </ul>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-v118proposals-li">
+    <a href="/v1.18/proposals/" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118proposals"><span class="">Spec Change Proposals</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-v118appendices-li">
+    <a href="/v1.18/appendices/" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118appendices"><span class="">Appendices</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section with-child active-path" id="m-v118changelog-li">
+    <a href="/v1.18/changelog/" class="align-left ps-0 td-sidebar-link td-sidebar-link__section" id="m-v118changelog"><span class="">Changelog</span></a>
+    <ul class="ul-2 foldable">
+      <li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-v118changelogv118-li">
+    <a href="/v1.18/changelog/v1.18/" title="v1.18 Changelog" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118changelogv118"><span class="">v1.18</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-v118changelogv117-li">
+    <a href="/v1.18/changelog/v1.17/" title="v1.17 Changelog" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118changelogv117"><span class="">v1.17</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-v118changelogv116-li">
+    <a href="/v1.18/changelog/v1.16/" title="v1.16 Changelog" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118changelogv116"><span class="">v1.16</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-v118changelogv115-li">
+    <a href="/v1.18/changelog/v1.15/" title="v1.15 Changelog" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118changelogv115"><span class="">v1.15</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-v118changelogv114-li">
+    <a href="/v1.18/changelog/v1.14/" title="v1.14 Changelog" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118changelogv114"><span class="">v1.14</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-v118changelogv113-li">
+    <a href="/v1.18/changelog/v1.13/" title="v1.13 Changelog" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118changelogv113"><span class="">v1.13</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child active-path" id="m-v118changelogv112-li">
+    <a href="/v1.18/changelog/v1.12/" title="v1.12 Changelog" class="align-left ps-0 active td-sidebar-link td-sidebar-link__page" id="m-v118changelogv112"><span class="td-sidebar-nav-active-item">v1.12</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-v118changelogv111-li">
+    <a href="/v1.18/changelog/v1.11/" title="v1.11 Changelog" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118changelogv111"><span class="">v1.11</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-v118changelogv110-li">
+    <a href="/v1.18/changelog/v1.10/" title="v1.10 Changelog" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118changelogv110"><span class="">v1.10</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-v118changelogv19-li">
+    <a href="/v1.18/changelog/v1.9/" title="v1.9 Changelog" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118changelogv19"><span class="">v1.9</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-v118changelogv18-li">
+    <a href="/v1.18/changelog/v1.8/" title="v1.8 Changelog" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118changelogv18"><span class="">v1.8</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-v118changelogv17-li">
+    <a href="/v1.18/changelog/v1.7/" title="v1.7 Changelog" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118changelogv17"><span class="">v1.7</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-v118changelogv16-li">
+    <a href="/v1.18/changelog/v1.6/" title="v1.6 Changelog" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118changelogv16"><span class="">v1.6</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-v118changelogv15-li">
+    <a href="/v1.18/changelog/v1.5/" title="v1.5 Changelog" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118changelogv15"><span class="">v1.5</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-v118changelogv14-li">
+    <a href="/v1.18/changelog/v1.4/" title="v1.4 Changelog" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118changelogv14"><span class="">v1.4</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-v118changelogv13-li">
+    <a href="/v1.18/changelog/v1.3/" title="v1.3 Changelog" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118changelogv13"><span class="">v1.3</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-v118changelogv12-li">
+    <a href="/v1.18/changelog/v1.2/" title="v1.2 Changelog" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118changelogv12"><span class="">v1.2</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-v118changelogv11-li">
+    <a href="/v1.18/changelog/v1.1/" title="v1.1 Changelog" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118changelogv11"><span class="">v1.1</span></a>
+  </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-v118changeloghistorical-li">
+    <a href="/v1.18/changelog/historical/" class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id="m-v118changeloghistorical"><span class="">Historical versions</span></a>
+  </li>
+    </ul>
+  </li>
+    </ul>
+  </li>
+    </ul>
+    <div class="td-toc" data-proofer-ignore>
+<div class="td-toc-title">
+      <span class="td-toc-title__text">v1.12 Changelog</span>
+      <a class="td-toc-title__link" title="Top of page" href="#"></a>
+    </div>
+    <nav id="TableOfContents">
+  <ol>
+    <li><a href="#client-server-api">Client-Server API</a></li>
+    <li><a href="#server-server-api">Server-Server API</a></li>
+    <li><a href="#application-service-api">Application Service API</a></li>
+    <li><a href="#identity-service-api">Identity Service API</a></li>
+    <li><a href="#push-gateway-api">Push Gateway API</a></li>
+    <li><a href="#room-versions">Room Versions</a></li>
+    <li><a href="#appendices">Appendices</a></li>
+    <li><a href="#internal-changestooling">Internal Changes/Tooling</a></li>
+  </ol>
+</nav>
+  </div>
+
+  </nav>
+</div>
+
+          </aside>
+          <main class="col-12 col-md-9 col-xl-8 ps-md-5" role="main">
+            
+
+
+
+
+
+
+
+            
+
+<nav aria-label="breadcrumb" class="td-breadcrumbs">
+  <ol class="breadcrumb">
+  <li class="breadcrumb-item">
+    <a href="/v1.18/">Matrix Specification</a></li>
+  <li class="breadcrumb-item">
+    <a href="/v1.18/changelog/">Changelog</a></li>
+  <li class="breadcrumb-item active"aria-current="page">
+    v1.12</li>
+  </ol>
+</nav>
+
+    <div class="td-content">
+    <h1>v1.12 Changelog</h1>
+
+    <table class="release-info">
+        
+        <tr><th>Git commit</th><td><a href="https://github.com/matrix-org/matrix-spec/tree/v1.12">https://github.com/matrix-org/matrix-spec/tree/v1.12</a></td>
+        
+        <tr><th>Release date</th><td>October 7, 2024</td>
+        <tr><th>Checklist</th><td><a href="/v1.18/changelog/v1.12/checklist.md">checklist.md</a></td>
+    </table>
+
+    <h2 id="client-server-api">Client-Server API<a class="td-heading-self-link" href="#client-server-api" aria-label="Heading self-link"></a></h2>
+<p><strong>Deprecations</strong></p>
+<ul>
+<li>Deprecate the <code>server_name</code> query parameter on <code>POST /_matrix/client/v3/join/{roomIdOrAlias}</code> and <code>POST /_matrix/client/v3/knock/{roomIdOrAlias}</code>, as per <a href="https://github.com/matrix-org/matrix-spec-proposals/pull/4156">MSC4156</a>. (<a href="https://github.com/matrix-org/matrix-spec/issues/1933">#1933</a>)</li>
+</ul>
+<p><strong>Removed Endpoints</strong></p>
+<ul>
+<li>Remove references to device-specific push rules. (<a href="https://github.com/matrix-org/matrix-spec/issues/1842">#1842</a>)</li>
+<li>Remove the deprecated name attribute on HTML anchor elements, as per <a href="https://github.com/matrix-org/matrix-spec-proposals/pull/4159">MSC4159</a>. (<a href="https://github.com/matrix-org/matrix-spec/issues/1870">#1870</a>)</li>
+</ul>
+<p><strong>Backwards Compatible Changes</strong></p>
+<ul>
+<li>Add 403 responses on <code>GET /_matrix/client/v3/profile/{userId}/avatar_url</code> and <code>GET /_matrix/client/v3/profile/{userId}/displayname</code>, as per <a href="https://github.com/matrix-org/matrix-spec-proposals/pull/4170">MSC4170</a>. (<a href="https://github.com/matrix-org/matrix-spec/issues/1867">#1867</a>)</li>
+<li>Add support for marking rooms as unread, as per <a href="https://github.com/matrix-org/matrix-spec-proposals/pull/2867">MSC2867</a>. (<a href="https://github.com/matrix-org/matrix-spec/issues/1895">#1895</a>, <a href="https://github.com/matrix-org/matrix-spec/issues/1941">#1941</a>)</li>
+<li>Add <code>via</code> query parameter on <code>POST /_matrix/client/v3/join/{roomIdOrAlias}</code> and <code>POST /_matrix/client/v3/knock/{roomIdOrAlias}</code>, as per <a href="https://github.com/matrix-org/matrix-spec-proposals/pull/4156">MSC4156</a>. (<a href="https://github.com/matrix-org/matrix-spec/issues/1933">#1933</a>)</li>
+<li>Add account locking, as per <a href="https://github.com/matrix-org/matrix-spec-proposals/pull/3939">MSC3939</a>. (<a href="https://github.com/matrix-org/matrix-spec/issues/1934">#1934</a>)</li>
+<li>Guest accounts can now download/thumbnail media from the new authenticated endpoints, as per <a href="https://github.com/matrix-org/matrix-spec-proposals/pull/4189">MSC4189</a>. (<a href="https://github.com/matrix-org/matrix-spec/issues/1959">#1959</a>)</li>
+</ul>
+<p><strong>Spec Clarifications</strong></p>
+<ul>
+<li>Rename and sort the modules in the feature profiles table for easier skimming. (<a href="https://github.com/matrix-org/matrix-spec/issues/1855">#1855</a>)</li>
+<li>Clarify that room avatars cannot be encrypted. (<a href="https://github.com/matrix-org/matrix-spec/issues/1871">#1871</a>)</li>
+<li>Document the acronyms and alternate names for the &ldquo;Secrets&rdquo; section. (<a href="https://github.com/matrix-org/matrix-spec/issues/1875">#1875</a>)</li>
+<li>Improve recommendation for how to form transaction IDs. (<a href="https://github.com/matrix-org/matrix-spec/issues/1888">#1888</a>)</li>
+<li>Clarify that the deprecated <code>dont_notify</code> and <code>coalesce</code> push rule actions MUST be ignored, not rejected. (<a href="https://github.com/matrix-org/matrix-spec/issues/1890">#1890</a>)</li>
+<li>Fix various typos throughout the specification. (<a href="https://github.com/matrix-org/matrix-spec/issues/1892">#1892</a>)</li>
+<li>Add missing references to <code>m.set_displayname</code>, <code>m.set_avatar_url</code>, and <code>m.3pid_changes</code> in capabilities table. (<a href="https://github.com/matrix-org/matrix-spec/issues/1897">#1897</a>)</li>
+<li>Clarify that the fallback login page calls <code>window.matrixLogin.onLogin</code> instead of <code>window.onLogin</code>. (<a href="https://github.com/matrix-org/matrix-spec/issues/1899">#1899</a>)</li>
+<li>Remove confusing description of restricted rooms with no valid conditions. (<a href="https://github.com/matrix-org/matrix-spec/issues/1903">#1903</a>)</li>
+<li>Clarify that <code>window.matrixLogin.onLogin</code> is called with the response body of <code>POST /_matrix/client/v3/login</code>. (<a href="https://github.com/matrix-org/matrix-spec/issues/1905">#1905</a>)</li>
+<li>Document the <code>m.get_login_token</code> capability, as per <a href="https://github.com/matrix-org/matrix-spec-proposals/pull/3882">MSC3882</a>. (<a href="https://github.com/matrix-org/matrix-spec/issues/1908">#1908</a>)</li>
+<li>Clarify that the <code>User identifier</code> object in <code>POST /_matrix/client/v3/login</code> contains additional properties that depend on the identification type. (<a href="https://github.com/matrix-org/matrix-spec/issues/1909">#1909</a>)</li>
+<li>Don&rsquo;t mention that <code>GET /_matrix/client/v3/profile/{userId}</code> can return additional properties because this is true for almost every endpoint. (<a href="https://github.com/matrix-org/matrix-spec/issues/1910">#1910</a>)</li>
+<li>Improve wording of the unauthenticated media deprecation box. Contributed by @HarHarLinks. (<a href="https://github.com/matrix-org/matrix-spec/issues/1916">#1916</a>)</li>
+<li>Additional properties in <code>GET /.well-known/matrix/client</code> don&rsquo;t have to be objects. (<a href="https://github.com/matrix-org/matrix-spec/issues/1920">#1920</a>)</li>
+<li>Document that the spec uses <a href="https://datatracker.ietf.org/doc/html/rfc2119">RFC 2119</a> keywords. Contributed by @HarHarLinks. (<a href="https://github.com/matrix-org/matrix-spec/issues/1928">#1928</a>)</li>
+<li>Specify <code>Content-Type</code> and <code>Content-Disposition</code> usage in the media repo, as per <a href="https://github.com/matrix-org/matrix-spec-proposals/pull/2701">MSC2701</a> and <a href="https://github.com/matrix-org/matrix-spec-proposals/pull/2702">MSC2702</a>. (<a href="https://github.com/matrix-org/matrix-spec/issues/1935">#1935</a>)</li>
+<li>Additional keys in <code>GET /_matrix/client/v3/capabilities</code> don&rsquo;t have to be objects. (<a href="https://github.com/matrix-org/matrix-spec/issues/1945">#1945</a>)</li>
+</ul>
+<h2 id="server-server-api">Server-Server API<a class="td-heading-self-link" href="#server-server-api" aria-label="Heading self-link"></a></h2>
+<p><strong>Backwards Compatible Changes</strong></p>
+<ul>
+<li>Add 403 response on <code>GET /_matrix/federation/v1/query/profile</code>, as per <a href="https://github.com/matrix-org/matrix-spec-proposals/pull/4170">MSC4170</a>. (<a href="https://github.com/matrix-org/matrix-spec/issues/1867">#1867</a>)</li>
+</ul>
+<p><strong>Spec Clarifications</strong></p>
+<ul>
+<li>Remove <code>origin</code> field from PDU example because it doesn&rsquo;t exist in the schema anymore. (<a href="https://github.com/matrix-org/matrix-spec/issues/1918">#1918</a>)</li>
+<li>Document that the spec uses <a href="https://datatracker.ietf.org/doc/html/rfc2119">RFC 2119</a> keywords. Contributed by @HarHarLinks. (<a href="https://github.com/matrix-org/matrix-spec/issues/1928">#1928</a>)</li>
+<li>Fix required fields in <code>GET /_matrix/key/v2/server</code> response schema. (<a href="https://github.com/matrix-org/matrix-spec/issues/1930">#1930</a>)</li>
+<li>Use &ldquo;server name&rdquo; instead of &ldquo;DNS name&rdquo; to avoid confusion with the &ldquo;DNS name&rdquo; component of &ldquo;server names&rdquo; as defined in the appendices. (<a href="https://github.com/matrix-org/matrix-spec/issues/1946">#1946</a>)</li>
+</ul>
+<h2 id="application-service-api">Application Service API<a class="td-heading-self-link" href="#application-service-api" aria-label="Heading self-link"></a></h2>
+<p><strong>Spec Clarifications</strong></p>
+<ul>
+<li>Document that the spec uses <a href="https://datatracker.ietf.org/doc/html/rfc2119">RFC 2119</a> keywords. Contributed by @HarHarLinks. (<a href="https://github.com/matrix-org/matrix-spec/issues/1928">#1928</a>)</li>
+</ul>
+<h2 id="identity-service-api">Identity Service API<a class="td-heading-self-link" href="#identity-service-api" aria-label="Heading self-link"></a></h2>
+<p><strong>Spec Clarifications</strong></p>
+<ul>
+<li>Document that the spec uses <a href="https://datatracker.ietf.org/doc/html/rfc2119">RFC 2119</a> keywords. Contributed by @HarHarLinks. (<a href="https://github.com/matrix-org/matrix-spec/issues/1928">#1928</a>)</li>
+</ul>
+<h2 id="push-gateway-api">Push Gateway API<a class="td-heading-self-link" href="#push-gateway-api" aria-label="Heading self-link"></a></h2>
+<p><strong>Spec Clarifications</strong></p>
+<ul>
+<li>Document that the spec uses <a href="https://datatracker.ietf.org/doc/html/rfc2119">RFC 2119</a> keywords. Contributed by @HarHarLinks. (<a href="https://github.com/matrix-org/matrix-spec/issues/1928">#1928</a>)</li>
+</ul>
+<h2 id="room-versions">Room Versions<a class="td-heading-self-link" href="#room-versions" aria-label="Heading self-link"></a></h2>
+<p><strong>Spec Clarifications</strong></p>
+<ul>
+<li>Fix a formatting issue in state resolution v2. (<a href="https://github.com/matrix-org/matrix-spec/issues/1896">#1896</a>)</li>
+<li>Document that the spec uses <a href="https://datatracker.ietf.org/doc/html/rfc2119">RFC 2119</a> keywords. Contributed by @HarHarLinks. (<a href="https://github.com/matrix-org/matrix-spec/issues/1928">#1928</a>)</li>
+</ul>
+<h2 id="appendices">Appendices<a class="td-heading-self-link" href="#appendices" aria-label="Heading self-link"></a></h2>
+<p><strong>Spec Clarifications</strong></p>
+<ul>
+<li>Document that the spec uses <a href="https://datatracker.ietf.org/doc/html/rfc2119">RFC 2119</a> keywords. Contributed by @HarHarLinks. (<a href="https://github.com/matrix-org/matrix-spec/issues/1928">#1928</a>)</li>
+</ul>
+<h2 id="internal-changestooling">Internal Changes/Tooling<a class="td-heading-self-link" href="#internal-changestooling" aria-label="Heading self-link"></a></h2>
+<p><strong>Spec Clarifications</strong></p>
+<ul>
+<li>The Matrix.org Foundation no longer requires &ldquo;real&rdquo; or &ldquo;legally identifiable&rdquo; names in order to contribute to projects. (<a href="https://github.com/matrix-org/matrix-spec/issues/1886">#1886</a>, <a href="https://github.com/matrix-org/matrix-spec/issues/1914">#1914</a>)</li>
+<li>Document the <code>removal</code> changelog category. (<a href="https://github.com/matrix-org/matrix-spec/issues/1907">#1907</a>)</li>
+<li>Use dedicated fonts for better support of mathematical symbols. (<a href="https://github.com/matrix-org/matrix-spec/issues/1919">#1919</a>)</li>
+<li>Document that the spec uses <a href="https://datatracker.ietf.org/doc/html/rfc2119">RFC 2119</a> keywords. Contributed by @HarHarLinks. (<a href="https://github.com/matrix-org/matrix-spec/issues/1928">#1928</a>)</li>
+<li>Provide markdown checklists for changelogs under <code>/changelog/$VERSION/checklist.md</code>. (<a href="https://github.com/matrix-org/matrix-spec/issues/1937">#1937</a>, <a href="https://github.com/matrix-org/matrix-spec/issues/1954">#1954</a>)</li>
+<li>Add the <code>deprecated</code> field to properties of OpenAPI definitions and JSON Schemas. (<a href="https://github.com/matrix-org/matrix-spec/issues/1940">#1940</a>)</li>
+<li>Use relative permalink to redirect to latest changelog. (<a href="https://github.com/matrix-org/matrix-spec/issues/1956">#1956</a>)</li>
+</ul>
+
+</div>
+
+          </main>
+        </div>
+      </div>
+      <footer class="td-footer row d-print-none">
+  <div class="container-fluid">
+    <div class="row mx-md-2">
+      <div class="td-footer__left col-6 col-sm-4 order-sm-1">
+        
+      </div><div class="td-footer__right col-6 col-sm-4 order-sm-3">
+        
+      </div><div class="td-footer__center col-12 col-sm-4 py-2 order-sm-2">
+        <ul class="td-footer__links-list">
+  
+  <li class="td-footer__links-item" data-bs-toggle="tooltip" title="GitHub" aria-label="GitHub">
+    <a target="_blank" rel="noopener" href="https://github.com/matrix-org" aria-label="GitHub">
+      <i class="fab fa-github"></i>
+    </a>
+  </li>
+  
+  <li class="td-footer__links-item" data-bs-toggle="tooltip" title="GitLab" aria-label="GitLab">
+    <a target="_blank" rel="noopener" href="https://gitlab.matrix.org/matrix-org" aria-label="GitLab">
+      <i class="fab fa-gitlab"></i>
+    </a>
+  </li>
+  
+  <li class="td-footer__links-item" data-bs-toggle="tooltip" title="Mastodon" aria-label="Mastodon">
+    <a target="_blank" rel="noopener" href="https://mastodon.matrix.org/@matrix" aria-label="Mastodon">
+      <i class="fab fa-mastodon"></i>
+    </a>
+  </li>
+  
+  <li class="td-footer__links-item" data-bs-toggle="tooltip" title="Bluesky" aria-label="Bluesky">
+    <a target="_blank" rel="noopener" href="https://bsky.app/profile/matrix.org" aria-label="Bluesky">
+      <i class="fab fa-bluesky"></i>
+    </a>
+  </li>
+  
+  <li class="td-footer__links-item" data-bs-toggle="tooltip" title="LinkedIn" aria-label="LinkedIn">
+    <a target="_blank" rel="noopener" href="https://www.linkedin.com/company/matrix-org/" aria-label="LinkedIn">
+      <i class="fab fa-linkedin"></i>
+    </a>
+  </li>
+  
+  <li class="td-footer__links-item" data-bs-toggle="tooltip" title="YouTube" aria-label="YouTube">
+    <a target="_blank" rel="noopener" href="https://www.youtube.com/channel/UCVFkW-chclhuyYRbmmfwt6w" aria-label="YouTube">
+      <i class="fab fa-youtube"></i>
+    </a>
+  </li>
+  
+  <li class="td-footer__links-item" data-bs-toggle="tooltip" title="Matrix.org Blog Feed" aria-label="Matrix.org Blog Feed">
+    <a target="_blank" rel="noopener" href="https://matrix.org/atom.xml" aria-label="Matrix.org Blog Feed">
+      <i class="fas fa-rss"></i>
+    </a>
+  </li>
+  
+</ul>
+<div class="mt-2 mb-3">
+<span class="td-footer__copyright">&copy;
+    2026
+    <span class="td-footer__authors">The Matrix.org Foundation C.I.C.</span></span><span class="td-footer__all_rights_reserved">All Rights Reserved</span></div>
+
+
+      </div>
+    </div>
+  </div>
+</footer>
+
+    </div>
+    <script src="/v1.18/js/main.min.37d922fe401368c4d0b29e7bc67e96105295d9e545b0d21552ba5cb112d2c01b.js" integrity="sha256-N9ki/kATaMTQsp57xn6WEFKV2eVFsNIVUrpcsRLSwBs=" crossorigin="anonymous"></script>
+<script defer src="/v1.18/js/click-to-copy.min.73478a7d4807698aed7e355eb23f9890ca18fea3158604c8471746d046702bad.js" integrity="sha256-c0eKfUgHaYrtfjVesj&#43;YkMoY/qMVhgTIRxdG0EZwK60=" crossorigin="anonymous"></script>
+<script src='/v1.18/js/tabpane-persist.js'></script>
+
+<script defer src="/v1.18/js/toc.js"></script>
+  
+    <script defer src="/v1.18/js/versions.js"></script>
+  
+
+
+  </body>
+</html>

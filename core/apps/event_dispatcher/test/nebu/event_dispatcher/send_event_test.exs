@@ -74,6 +74,9 @@ defmodule Nebu.EventDispatcher.SendEventTest do
 
     # Story 6.9: get_room_status/1 — returns {:ok, "active"} so normal rooms start correctly.
     def get_room_status(_room_id), do: {:ok, "active"}
+
+    # Story 9-9: TOCTOU fix — returns {:ok, "active"} for normal rooms.
+    def check_room_status_for_update(_room_id), do: {:ok, "active"}
   end
 
   # ─── Setup / Teardown ────────────────────────────────────────────────────────
@@ -318,6 +321,218 @@ defmodule Nebu.EventDispatcher.SendEventTest do
       # To enable: refactor server.ex to call room_registry_module().send_event/5
       # and inject a fake module that returns {:error, :db_failure}.
       flunk("not yet testable without injecting send_event via room_registry_module")
+    end
+  end
+
+  # ─── FakeDBWithArchivedForSend ───────────────────────────────────────────────
+  #
+  # Simulates the TOCTOU scenario for the EventDispatcher.Server.send_event/2 handler:
+  # - get_room_status/1 returns {:ok, "active"} → Room.Server.init/1 succeeds (room starts).
+  # - check_room_status_for_update/1 returns {:ok, "archived"} → TOCTOU guard fires.
+  # Expected: Server.send_event/2 raises GRPC.RPCError with status failed_precondition
+  # and message containing "M_ROOM_ARCHIVED".
+
+  defmodule FakeDBWithArchivedForSend do
+    def load_members(room_id) do
+      case :ets.lookup(:send_event_test_db, {:room, room_id}) do
+        [] ->
+          {:error, :not_found}
+
+        [{_, created_at_ms}] ->
+          members =
+            :ets.match(:send_event_test_db, {{:member, room_id, :"$1"}, :active})
+
+          {:ok, Enum.map(members, fn [uid] -> uid end), created_at_ms}
+      end
+    end
+
+    def insert_room(room_id) do
+      now_ms = System.system_time(:millisecond)
+      :ets.insert(:send_event_test_db, {{:room, room_id}, now_ms})
+      {:ok, now_ms}
+    end
+
+    def insert_member(room_id, user_id) do
+      :ets.insert(:send_event_test_db, {{:member, room_id, user_id}, :active})
+      :ok
+    end
+
+    def delete_member(room_id, user_id) do
+      :ets.delete(:send_event_test_db, {:member, room_id, user_id})
+      :ok
+    end
+
+    def insert_event(event) do
+      :ets.insert(:send_event_test_db, {{:event, event["event_id"]}, event})
+      :ok
+    end
+
+    def load_room_settings(_room_id), do: {:ok, 0}
+
+    # init/1 guard — "active" so GenServer starts normally.
+    def get_room_status(_room_id), do: {:ok, "active"}
+
+    # TOCTOU fix: returns {:ok, "archived"} to simulate the race window.
+    def check_room_status_for_update(_room_id), do: {:ok, "archived"}
+  end
+
+  # ─── FakeDBWithDBError ────────────────────────────────────────────────────────
+  #
+  # Simulates a DB error from check_room_status_for_update/1 to verify
+  # the fail-open behaviour: the error is logged and send_event proceeds.
+
+  defmodule FakeDBWithDBError do
+    def load_members(room_id) do
+      case :ets.lookup(:send_event_test_db, {:room, room_id}) do
+        [] ->
+          {:error, :not_found}
+
+        [{_, created_at_ms}] ->
+          members =
+            :ets.match(:send_event_test_db, {{:member, room_id, :"$1"}, :active})
+
+          {:ok, Enum.map(members, fn [uid] -> uid end), created_at_ms}
+      end
+    end
+
+    def insert_room(room_id) do
+      now_ms = System.system_time(:millisecond)
+      :ets.insert(:send_event_test_db, {{:room, room_id}, now_ms})
+      {:ok, now_ms}
+    end
+
+    def insert_member(room_id, user_id) do
+      :ets.insert(:send_event_test_db, {{:member, room_id, user_id}, :active})
+      :ok
+    end
+
+    def delete_member(room_id, user_id) do
+      :ets.delete(:send_event_test_db, {:member, room_id, user_id})
+      :ok
+    end
+
+    def insert_event(event) do
+      :ets.insert(:send_event_test_db, {{:event, event["event_id"]}, event})
+      :ok
+    end
+
+    def load_room_settings(_room_id), do: {:ok, 0}
+
+    def get_room_status(_room_id), do: {:ok, "active"}
+
+    # Simulates a transient DB error during the TOCTOU status check.
+    def check_room_status_for_update(_room_id), do: {:error, :db_timeout}
+  end
+
+  # ─── Story 9-9 MAJOR-1: FAILED_PRECONDITION when room is archived ─────────────
+  #
+  # AC — Server.send_event/2 must raise GRPC.RPCError with:
+  #   - status: GRPC.Status.failed_precondition()
+  #   - message containing "M_ROOM_ARCHIVED"
+  # when Room.Server.send_event/6 returns {:error, :room_archived}.
+  #
+  # Given: Room GenServer running (get_room_status="active"), @alice is a member
+  #        FakeDBWithArchivedForSend: check_room_status_for_update returns {:ok, "archived"}
+  # When: Server.send_event/2 is called with a valid SendEventRequest
+  # Then: raises GRPC.RPCError{status: failed_precondition, message: "M_ROOM_ARCHIVED..."}
+
+  describe "Server.send_event/2 — archived room raises FAILED_PRECONDITION" do
+    test "raises GRPC.RPCError with failed_precondition and M_ROOM_ARCHIVED message" do
+      Application.put_env(:room_manager, :db_module, FakeDBWithArchivedForSend)
+
+      room_id = "!archived-send:test.local"
+      alice = "@alice:test.local"
+
+      :ok = setup_room_with_member(room_id, alice)
+
+      content_bytes = Jason.encode!(%{"msgtype" => "m.text", "body" => "This must fail"})
+
+      request = %Core.SendEventRequest{
+        room_id: room_id,
+        sender_id: alice,
+        event_type: "m.room.message",
+        txn_id: "txn-archived-precondition-1",
+        content: content_bytes,
+        origin_ts: System.system_time(:millisecond)
+      }
+
+      error =
+        try do
+          Server.send_event(request, build_stream())
+          flunk("expected GRPC.RPCError to be raised, but no exception was raised")
+        rescue
+          e in GRPC.RPCError -> e
+        end
+
+      assert error.status == GRPC.Status.failed_precondition(),
+             "expected status failed_precondition (#{GRPC.Status.failed_precondition()}), got: #{error.status}"
+
+      assert String.contains?(error.message, "M_ROOM_ARCHIVED"),
+             "expected message to contain 'M_ROOM_ARCHIVED', got: #{inspect(error.message)}"
+
+      # No message event should have been written to ETS.
+      all_entries = :ets.match_object(:send_event_test_db, {{:event, :_}, :_})
+
+      message_events =
+        Enum.reject(all_entries, fn {{:event, _}, ev} -> ev["type"] == "m.room.member" end)
+
+      assert length(message_events) == 0,
+             "expected 0 message events in FakeDB after archived-room rejection, got #{length(message_events)}"
+    end
+  end
+
+  # ─── Story 9-9 MAJOR-1: Logger.warning emitted on DB error (fail-open branch) ──
+  #
+  # AC — when check_room_status_for_update/1 returns {:error, reason}, the
+  # fail-open branch in Room.Server must:
+  #   1. Emit a Logger.warning containing the room_id and reason
+  #   2. Proceed with send_event (not reject the event)
+  #
+  # Given: Room GenServer running, FakeDBWithDBError: check_room_status_for_update
+  #        returns {:error, :db_timeout}
+  # When: Server.send_event/2 is called
+  # Then: a Logger.warning is emitted AND the response is a valid SendEventResponse
+
+  describe "Server.send_event/2 — DB error on status check emits Logger.warning (fail-open)" do
+    test "logs warning and proceeds when check_room_status_for_update returns {:error, reason}" do
+      Application.put_env(:room_manager, :db_module, FakeDBWithDBError)
+
+      room_id = "!db-error-send:test.local"
+      alice = "@alice:test.local"
+
+      :ok = setup_room_with_member(room_id, alice)
+
+      content_bytes = Jason.encode!(%{"msgtype" => "m.text", "body" => "Fail-open send"})
+
+      request = %Core.SendEventRequest{
+        room_id: room_id,
+        sender_id: alice,
+        event_type: "m.room.message",
+        txn_id: "txn-failopen-1",
+        content: content_bytes,
+        origin_ts: System.system_time(:millisecond)
+      }
+
+      # Capture Logger messages during the call.
+      log_output =
+        ExUnit.CaptureLog.capture_log(fn ->
+          response = Server.send_event(request, build_stream())
+
+          # Fail-open: event must succeed despite DB error on status check.
+          assert %Core.SendEventResponse{} = response,
+                 "expected SendEventResponse on DB error (fail-open), got: #{inspect(response)}"
+
+          assert String.starts_with?(response.event_id, "$"),
+                 "expected event_id to start with '$', got: #{response.event_id}"
+        end)
+
+      # A Logger.warning must have been emitted with the room_id and error reason.
+      assert String.contains?(log_output, "check_room_status_for_update failed"),
+             "expected Logger.warning containing 'check_room_status_for_update failed', " <>
+               "got log output: #{inspect(log_output)}"
+
+      assert String.contains?(log_output, room_id),
+             "expected Logger.warning to include room_id #{room_id}, got: #{inspect(log_output)}"
     end
   end
 

@@ -185,7 +185,7 @@ func buildAuthedDevicesHandler(t *testing.T, db *mockDevicesDB) (http.Handler, f
 		ServerName: "test.local",
 	})
 
-	jwt := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")
+	jwt := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")
 
 	mux := http.NewServeMux()
 	mux.Handle("GET /_matrix/client/v3/devices",

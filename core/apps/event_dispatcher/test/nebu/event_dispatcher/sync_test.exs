@@ -124,6 +124,8 @@ defmodule Nebu.EventDispatcher.SyncTest do
       {:ok, Enum.map(rooms, fn [room_id] -> room_id end)}
     end
 
+    def get_recently_left_rooms_for_user(_user_id), do: {:ok, []}
+
     # ── fetch_events/4 (existing signature — used by get_messages handler too) ─
     #
     # Simplified implementation: returns all events for the room in descending
@@ -201,7 +203,24 @@ defmodule Nebu.EventDispatcher.SyncTest do
 
     # Story 6.9: get_room_status/1 — returns {:ok, "active"} so normal rooms start correctly.
     def get_room_status(_room_id), do: {:ok, "active"}
+    # Story 9-9: TOCTOU fix — returns {:ok, "active"} for normal rooms.
+    def check_room_status_for_update(_room_id), do: {:ok, "active"}
     def get_room_creator(_room_id), do: {:error, :not_found}
+    # Story 9-7: returns empty list (no generic state events in unit tests).
+    def get_generic_state_events(_room_id), do: {:ok, []}
+    # MAJOR-2 fix: no persisted create event in sync unit tests; synthesized fallback used.
+    def get_room_create_event(_room_id), do: {:error, :not_found}
+    # Story 9-28: no thread relations in sync unit tests — return empty list.
+    def fetch_events_by_relation(_room_id, _event_id, _rel_type, _limit, _opts), do: {:ok, []}
+    # Story 9-28: no thread children in sync unit tests — return 0.
+    def count_thread_children(_room_id, _event_id), do: {:ok, 0}
+    def event_in_room?(_event_id, _room_id), do: true
+    def fetch_event(event_id, room_id) do
+      case :ets.lookup(:sync_test_db, {:event, event_id}) do
+        [{_, ev}] -> if ev["room_id"] == room_id, do: {:ok, ev}, else: {:error, :not_found}
+        [] -> {:error, :not_found}
+      end
+    end
   end
 
   # ─── SyncTestFakeInviteDB ────────────────────────────────────────────────────
@@ -703,10 +722,18 @@ defmodule Nebu.EventDispatcher.SyncTest do
   # The ETS table :sync_test_pg_store_calls is already created in setup/0 above.
 
   defmodule SyncDeltaFakePgStore do
-    # Configurable response for get_since_token/1.
+    # Configurable response for get_since_token/1 and get_since_token/2.
     # Set via: :ets.insert(:sync_delta_pg_store_config, {:get_since_token_response, result})
     # Default: {:error, :not_found}
     def get_since_token(_user_id) do
+      case :ets.lookup(:sync_delta_pg_store_config, :get_since_token_response) do
+        [{_, response}] -> response
+        [] -> {:error, :not_found}
+      end
+    end
+
+    # Per-device variant (Story 9-22): delegates to the same configurable response.
+    def get_since_token(_user_id, _device_id) do
       case :ets.lookup(:sync_delta_pg_store_config, :get_since_token_response) do
         [{_, response}] -> response
         [] -> {:error, :not_found}
@@ -719,7 +746,18 @@ defmodule Nebu.EventDispatcher.SyncTest do
       :ok
     end
 
+    # Per-device variant (Story 9-22): records the 4-arg call form.
+    def persist_since_token(user_id, device_id, since_token, last_event_id) do
+      idx = :ets.info(:sync_test_pg_store_calls, :size)
+      :ets.insert(:sync_test_pg_store_calls, {{:call, idx}, {user_id, device_id, since_token, last_event_id}})
+      :ok
+    end
+
     def invalidate_session(_user_id) do
+      :ok
+    end
+
+    def invalidate_session(_user_id, _device_id) do
       :ok
     end
 
@@ -750,6 +788,7 @@ defmodule Nebu.EventDispatcher.SyncTest do
     defdelegate insert_event(event), to: SyncTestFakeDB
     defdelegate set_power_levels(room_id, power_levels_json), to: SyncTestFakeDB
     defdelegate get_rooms_for_user(user_id), to: SyncTestFakeDB
+    defdelegate get_recently_left_rooms_for_user(user_id), to: SyncTestFakeDB
     defdelegate fetch_events(room_id, direction, limit, from_token), to: SyncTestFakeDB
     defdelegate get_room_name(room_id), to: SyncTestFakeDB
     # Story 6.8: delegate load_room_settings/1 to SyncTestFakeDB (returns {:ok, 0}).
@@ -757,6 +796,10 @@ defmodule Nebu.EventDispatcher.SyncTest do
     # Story 6.9: delegate get_room_status/1 to SyncTestFakeDB (returns {:ok, "active"}).
     defdelegate get_room_status(room_id), to: SyncTestFakeDB
     defdelegate get_room_creator(room_id), to: SyncTestFakeDB
+    # Story 9-7: delegate get_generic_state_events/1 to SyncTestFakeDB (returns {:ok, []}).
+    defdelegate get_generic_state_events(room_id), to: SyncTestFakeDB
+    # MAJOR-2 fix: delegate get_room_create_event/1 to SyncTestFakeDB (returns {:error, :not_found}).
+    defdelegate get_room_create_event(room_id), to: SyncTestFakeDB
 
     # ── New: fetch_events_since/3 (Story 4-15) ────────────────────────────────
     #
@@ -805,6 +848,85 @@ defmodule Nebu.EventDispatcher.SyncTest do
         [] ->
           {:error, :not_found}
       end
+    end
+
+    # Story 9-28: no thread relations in sync delta unit tests — return empty list / 0.
+    def fetch_events_by_relation(_room_id, _event_id, _rel_type, _limit, _opts), do: {:ok, []}
+    def count_thread_children(_room_id, _event_id), do: {:ok, 0}
+    def event_in_room?(_event_id, _room_id), do: true
+    def check_room_status_for_update(_room_id), do: {:ok, "active"}
+    defdelegate fetch_event(event_id, room_id), to: SyncTestFakeDB
+  end
+
+  # ─── SyncDeltaThreadFakeDB ────────────────────────────────────────────────────
+  #
+  # Extends SyncDeltaFakeDB with thread-aware behaviour for Story N-N:
+  #   - fetch_event/2: returns the root event from ETS by event_id + room_id
+  #   - fetch_events_by_relation/5: returns thread replies for a given root event
+  #   - count_thread_children/2: counts thread replies in ETS for a given root event
+  #
+  # Used by the "thread root re-delivered in delta" regression test.
+
+  defmodule SyncDeltaThreadFakeDB do
+    defdelegate load_members(room_id), to: SyncTestFakeDB
+    defdelegate insert_room(room_id), to: SyncTestFakeDB
+    defdelegate insert_member(room_id, user_id), to: SyncTestFakeDB
+    defdelegate delete_member(room_id, user_id), to: SyncTestFakeDB
+    defdelegate insert_event(event), to: SyncTestFakeDB
+    defdelegate set_power_levels(room_id, power_levels_json), to: SyncTestFakeDB
+    defdelegate get_rooms_for_user(user_id), to: SyncTestFakeDB
+    defdelegate get_recently_left_rooms_for_user(user_id), to: SyncTestFakeDB
+    defdelegate fetch_events(room_id, direction, limit, from_token), to: SyncTestFakeDB
+    defdelegate get_room_name(room_id), to: SyncTestFakeDB
+    defdelegate load_room_settings(room_id), to: SyncTestFakeDB
+    defdelegate get_room_status(room_id), to: SyncTestFakeDB
+    defdelegate check_room_status_for_update(room_id), to: SyncDeltaFakeDB
+    defdelegate get_room_creator(room_id), to: SyncTestFakeDB
+    defdelegate get_generic_state_events(room_id), to: SyncTestFakeDB
+    defdelegate get_room_create_event(room_id), to: SyncTestFakeDB
+    defdelegate fetch_events_since(room_id, last_event_id, limit), to: SyncDeltaFakeDB
+    defdelegate get_event_timestamp(event_id), to: SyncDeltaFakeDB
+    def event_in_room?(_event_id, _room_id), do: true
+
+    def fetch_event(event_id, room_id) do
+      case :ets.lookup(:sync_test_db, {:event, event_id}) do
+        [{_, ev}] ->
+          if ev["room_id"] == room_id, do: {:ok, ev}, else: {:error, :not_found}
+
+        [] ->
+          {:error, :not_found}
+      end
+    end
+
+    def fetch_events_by_relation(room_id, root_event_id, "m.thread", _limit, _opts) do
+      replies =
+        :ets.match(:sync_test_db, {{:event, :"$1"}, :"$2"})
+        |> Enum.map(fn [_id, ev] -> ev end)
+        |> Enum.filter(fn ev ->
+          ev["room_id"] == room_id and
+            is_map(ev["content"]) and
+            get_in(ev, ["content", "m.relates_to", "rel_type"]) == "m.thread" and
+            get_in(ev, ["content", "m.relates_to", "event_id"]) == root_event_id
+        end)
+        |> Enum.sort_by(fn ev -> ev["origin_server_ts"] end, :desc)
+
+      {:ok, replies}
+    end
+
+    def fetch_events_by_relation(_room_id, _event_id, _rel_type, _limit, _opts), do: {:ok, []}
+
+    def count_thread_children(room_id, root_event_id) do
+      count =
+        :ets.match(:sync_test_db, {{:event, :"$1"}, :"$2"})
+        |> Enum.map(fn [_id, ev] -> ev end)
+        |> Enum.count(fn ev ->
+          ev["room_id"] == room_id and
+            is_map(ev["content"]) and
+            get_in(ev, ["content", "m.relates_to", "rel_type"]) == "m.thread" and
+            get_in(ev, ["content", "m.relates_to", "event_id"]) == root_event_id
+        end)
+
+      {:ok, count}
     end
   end
 
@@ -1086,6 +1208,78 @@ defmodule Nebu.EventDispatcher.SyncTest do
     end
   end
 
+  # ─── Story 9-22 MAJOR-T: get_sync_delta — token mismatch → fallback ──────────
+  #
+  # AC2 (Story 9-22): when get_since_token returns a stored token that does NOT
+  # match the since_token sent by the client, the server returns a full initial
+  # sync with fallback_to_initial: true (stale/replayed token detected).
+  #
+  # Given: SyncDeltaFakePgStore.get_since_token returns {:ok, %{since_token: "stored_v1", …}};
+  #        @alice:test.local is a member of !delta_mismatch:test.local with 2 events
+  # When:  Server.get_sync_delta/2 called with since_token: "stale_client_token" (different)
+  # Then:  response.fallback_to_initial is true;
+  #        response.rooms is non-empty (full sync);
+  #        response.since_token is a freshly-minted token (not "stored_v1")
+
+  describe "Server.get_sync_delta/2 — client token mismatch falls back to initial sync" do
+    test "returns full initial sync with fallback_to_initial: true when stored token differs from client token" do
+      alice = "@alice:test.local"
+      room_id = "!delta_mismatch:test.local"
+
+      :ets.new(:sync_delta_pg_store_config, [:named_table, :public, :set])
+
+      on_exit(fn ->
+        if :ets.info(:sync_delta_pg_store_config) != :undefined do
+          :ets.delete(:sync_delta_pg_store_config)
+        end
+      end)
+
+      Application.put_env(:event_dispatcher, :pg_store_module, SyncDeltaFakePgStore)
+      Application.put_env(:event_dispatcher, :messages_db_module, SyncDeltaFakeDB)
+      Application.put_env(:event_dispatcher, :rooms_db_module, SyncDeltaFakeDB)
+
+      on_exit(fn ->
+        Application.delete_env(:event_dispatcher, :pg_store_module)
+        Application.delete_env(:event_dispatcher, :messages_db_module)
+        Application.delete_env(:event_dispatcher, :rooms_db_module)
+      end)
+
+      :ok = setup_room_with_member(room_id, alice)
+      seed_events(room_id, alice, 2)
+
+      # The server has stored "stored_v1" for this user; the client sends a different token.
+      :ets.insert(
+        :sync_delta_pg_store_config,
+        {:get_since_token_response, {:ok, %{since_token: "stored_v1", last_event_id: nil}}}
+      )
+
+      request = %Core.GetSyncDeltaRequest{
+        user_id: alice,
+        since_token: "stale_client_token",
+        timeout_ms: 0
+      }
+
+      response = Server.get_sync_delta(request, build_stream())
+
+      assert %Core.GetSyncDeltaResponse{} = response,
+             "expected GetSyncDeltaResponse struct, got: #{inspect(response)}"
+
+      assert response.fallback_to_initial == true,
+             "expected fallback_to_initial=true on token mismatch, got: #{inspect(response.fallback_to_initial)}"
+
+      room_ids = Enum.map(response.rooms, & &1.room_id)
+
+      assert room_id in room_ids,
+             "expected #{room_id} in fallback response rooms (full sync), got: #{inspect(room_ids)}"
+
+      assert is_binary(response.since_token) and response.since_token != "",
+             "expected non-empty since_token in fallback response"
+
+      assert response.since_token != "stored_v1",
+             "expected a freshly-minted since_token, not the stored value"
+    end
+  end
+
   # ─── Story 4-15 AT #4: :pg cleanup after handler exits ────────────────────────
   #
   # AC #13 (Story 4-15): :pg cleanup — after get_sync_delta handler exits, the
@@ -1309,6 +1503,748 @@ defmodule Nebu.EventDispatcher.SyncTest do
              "Expected empty rooms on {:new_invite, _} wakeup, got: #{inspect(response.rooms)}"
 
       assert %Core.GetSyncDeltaResponse{} = response
+    end
+  end
+
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # Story 9-20: GAP-PREV-BATCH — prev_batch correctness in fetch_delta_rooms
+  # ═══════════════════════════════════════════════════════════════════════════════
+  #
+  # These tests FAIL before the story 9-20 fix because fetch_delta_rooms always
+  # sets prev_batch: "" even when limited: true.
+  #
+  # AC1: limited:true (≥20 events) → prev_batch == event_id of oldest event in batch
+  # AC2: limited:false (<20 events) → prev_batch == ""  (regression guard)
+  # AC3: no new events → room NOT included in response (existing behaviour guard)
+
+  describe "Server.get_sync_delta/2 — prev_batch correctness (Story 9-20)" do
+    test "AC1: sets prev_batch to oldest event_id when limited: true (20 events)" do
+      alice = "@alice:test.local"
+      room_id = "!prevbatch1:test.local"
+
+      :ets.new(:sync_delta_pg_store_config, [:named_table, :public, :set])
+
+      on_exit(fn ->
+        if :ets.info(:sync_delta_pg_store_config) != :undefined do
+          :ets.delete(:sync_delta_pg_store_config)
+        end
+      end)
+
+      Application.put_env(:event_dispatcher, :pg_store_module, SyncDeltaFakePgStore)
+      Application.put_env(:event_dispatcher, :messages_db_module, SyncDeltaFakeDB)
+      Application.put_env(:event_dispatcher, :rooms_db_module, SyncDeltaFakeDB)
+
+      on_exit(fn ->
+        Application.delete_env(:event_dispatcher, :pg_store_module)
+        Application.delete_env(:event_dispatcher, :messages_db_module)
+        Application.delete_env(:event_dispatcher, :rooms_db_module)
+      end)
+
+      :ok = setup_room_with_member(room_id, alice)
+
+      SyncDeltaFakeDB.insert_event(%{
+        "event_id" => "$pb_anchor",
+        "room_id" => room_id,
+        "sender" => alice,
+        "event_type" => "m.room.message",
+        "content" => %{"msgtype" => "m.text", "body" => "anchor"},
+        "origin_server_ts" => 1_700_000_000_000
+      })
+
+      # Seed exactly 20 new events — triggers limited: true
+      for idx <- 1..20 do
+        SyncDeltaFakeDB.insert_event(%{
+          "event_id" => "$pb_new#{idx}",
+          "room_id" => room_id,
+          "sender" => alice,
+          "event_type" => "m.room.message",
+          "content" => %{"msgtype" => "m.text", "body" => "msg #{idx}"},
+          "origin_server_ts" => 1_700_000_001_000 + idx * 1000
+        })
+      end
+
+      :ets.insert(:sync_delta_pg_store_config,
+        {:get_since_token_response,
+         {:ok, %{since_token: "s_pb_anchor", last_event_id: "$pb_anchor"}}})
+
+      request = %Core.GetSyncDeltaRequest{
+        user_id: alice,
+        since_token: "s_pb_anchor",
+        timeout_ms: 5000
+      }
+
+      response = Server.get_sync_delta(request, build_stream())
+      room = Enum.find(response.rooms, fn r -> r.room_id == room_id end)
+
+      assert room != nil, "expected room #{room_id} in response"
+
+      assert room.limited == true,
+             "expected limited=true when 20 events returned, got: #{inspect(room.limited)}"
+
+      # $pb_new1 has the lowest origin_server_ts among the 20 new events —
+      # it is the correct backward-pagination anchor (Spec §6.3.3).
+      assert room.prev_batch == "$pb_new1",
+             "expected prev_batch=$pb_new1 (oldest event in batch), got: #{inspect(room.prev_batch)}"
+    end
+
+    test "AC2: sets prev_batch to empty string when limited: false (fewer than 20 events)" do
+      alice = "@alice:test.local"
+      room_id = "!prevbatch2:test.local"
+
+      :ets.new(:sync_delta_pg_store_config, [:named_table, :public, :set])
+
+      on_exit(fn ->
+        if :ets.info(:sync_delta_pg_store_config) != :undefined do
+          :ets.delete(:sync_delta_pg_store_config)
+        end
+      end)
+
+      Application.put_env(:event_dispatcher, :pg_store_module, SyncDeltaFakePgStore)
+      Application.put_env(:event_dispatcher, :messages_db_module, SyncDeltaFakeDB)
+      Application.put_env(:event_dispatcher, :rooms_db_module, SyncDeltaFakeDB)
+
+      on_exit(fn ->
+        Application.delete_env(:event_dispatcher, :pg_store_module)
+        Application.delete_env(:event_dispatcher, :messages_db_module)
+        Application.delete_env(:event_dispatcher, :rooms_db_module)
+      end)
+
+      :ok = setup_room_with_member(room_id, alice)
+
+      SyncDeltaFakeDB.insert_event(%{
+        "event_id" => "$pb2_anchor",
+        "room_id" => room_id,
+        "sender" => alice,
+        "event_type" => "m.room.message",
+        "content" => %{"msgtype" => "m.text", "body" => "anchor"},
+        "origin_server_ts" => 1_700_000_000_000
+      })
+
+      # Seed 5 new events — not enough to trigger limited: true
+      for idx <- 1..5 do
+        SyncDeltaFakeDB.insert_event(%{
+          "event_id" => "$pb2_ev#{idx}",
+          "room_id" => room_id,
+          "sender" => alice,
+          "event_type" => "m.room.message",
+          "content" => %{"msgtype" => "m.text", "body" => "msg #{idx}"},
+          "origin_server_ts" => 1_700_000_001_000 + idx * 1000
+        })
+      end
+
+      :ets.insert(:sync_delta_pg_store_config,
+        {:get_since_token_response,
+         {:ok, %{since_token: "s_pb2_anchor", last_event_id: "$pb2_anchor"}}})
+
+      request = %Core.GetSyncDeltaRequest{
+        user_id: alice,
+        since_token: "s_pb2_anchor",
+        timeout_ms: 5000
+      }
+
+      response = Server.get_sync_delta(request, build_stream())
+      room = Enum.find(response.rooms, fn r -> r.room_id == room_id end)
+
+      assert room != nil, "expected room #{room_id} in response"
+
+      assert room.limited == false,
+             "expected limited=false when 5 events returned, got: #{inspect(room.limited)}"
+
+      assert room.prev_batch == "",
+             "expected prev_batch=\"\" when not limited, got: #{inspect(room.prev_batch)}"
+    end
+
+    test "AC3: room not included in response when no new events (empty list guard)" do
+      alice = "@alice:test.local"
+      room_id = "!prevbatch3:test.local"
+
+      :ets.new(:sync_delta_pg_store_config, [:named_table, :public, :set])
+
+      on_exit(fn ->
+        if :ets.info(:sync_delta_pg_store_config) != :undefined do
+          :ets.delete(:sync_delta_pg_store_config)
+        end
+      end)
+
+      Application.put_env(:event_dispatcher, :pg_store_module, SyncDeltaFakePgStore)
+      Application.put_env(:event_dispatcher, :messages_db_module, SyncDeltaFakeDB)
+      Application.put_env(:event_dispatcher, :rooms_db_module, SyncDeltaFakeDB)
+
+      on_exit(fn ->
+        Application.delete_env(:event_dispatcher, :pg_store_module)
+        Application.delete_env(:event_dispatcher, :messages_db_module)
+        Application.delete_env(:event_dispatcher, :rooms_db_module)
+      end)
+
+      :ok = setup_room_with_member(room_id, alice)
+
+      # Only the anchor event — no newer events exist
+      SyncDeltaFakeDB.insert_event(%{
+        "event_id" => "$pb3_anchor",
+        "room_id" => room_id,
+        "sender" => alice,
+        "event_type" => "m.room.message",
+        "content" => %{"msgtype" => "m.text", "body" => "anchor"},
+        "origin_server_ts" => 1_700_000_000_000
+      })
+
+      :ets.insert(:sync_delta_pg_store_config,
+        {:get_since_token_response,
+         {:ok, %{since_token: "s_pb3_anchor", last_event_id: "$pb3_anchor"}}})
+
+      request = %Core.GetSyncDeltaRequest{
+        user_id: alice,
+        since_token: "s_pb3_anchor",
+        timeout_ms: 100
+      }
+
+      response = Server.get_sync_delta(request, build_stream())
+      room_ids = Enum.map(response.rooms, & &1.room_id)
+
+      refute room_id in room_ids,
+             "expected room #{room_id} NOT in response when no new events"
+    end
+  end
+
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # Story 9-21: GAP-STATE-POSITION — state.events must not duplicate timeline state
+  # ═══════════════════════════════════════════════════════════════════════════════
+  #
+  # Matrix Spec §6.3.3: state.events = room state BEFORE the timeline window.
+  # Any {type, state_key} pair in timeline_events must NOT appear in state_events.
+  #
+  # These tests FAIL before the story 9-21 fix because build_state_events returns
+  # the current (post-timeline) state — the same state event appears in both
+  # state_events and timeline_events, causing the SDK to compute "no change".
+  #
+  # AC1: m.room.power_levels in timeline → NOT in state_events
+  # AC2: m.room.name in timeline → NOT in state_events
+  # AC3: unrelated state events (m.room.create) are KEPT in state_events
+  # AC4: m.room.member dedup regression guard (still excluded via existing path)
+
+  describe "Server.get_sync_delta/2 — state.events position correctness (Story 9-21)" do
+    test "AC1: excludes m.room.power_levels from state when it appears in timeline" do
+      alice = "@alice:test.local"
+      room_id = "!statepos1:test.local"
+
+      :ets.new(:sync_delta_pg_store_config, [:named_table, :public, :set])
+
+      on_exit(fn ->
+        if :ets.info(:sync_delta_pg_store_config) != :undefined do
+          :ets.delete(:sync_delta_pg_store_config)
+        end
+      end)
+
+      Application.put_env(:event_dispatcher, :pg_store_module, SyncDeltaFakePgStore)
+      Application.put_env(:event_dispatcher, :messages_db_module, SyncDeltaFakeDB)
+      Application.put_env(:event_dispatcher, :rooms_db_module, SyncDeltaFakeDB)
+
+      on_exit(fn ->
+        Application.delete_env(:event_dispatcher, :pg_store_module)
+        Application.delete_env(:event_dispatcher, :messages_db_module)
+        Application.delete_env(:event_dispatcher, :rooms_db_module)
+      end)
+
+      :ok = setup_room_with_member(room_id, alice)
+
+      # Anchor event (last_event_id reference point)
+      SyncDeltaFakeDB.insert_event(%{
+        "event_id" => "$sp1_anchor",
+        "room_id" => room_id,
+        "sender" => alice,
+        "event_type" => "m.room.message",
+        "content" => %{"msgtype" => "m.text", "body" => "anchor"},
+        "origin_server_ts" => 1_700_000_000_000
+      })
+
+      # New power_levels state event in the timeline
+      SyncDeltaFakeDB.insert_event(%{
+        "event_id" => "$sp1_pl_change",
+        "room_id" => room_id,
+        "sender" => alice,
+        "event_type" => "m.room.power_levels",
+        "state_key" => "",
+        "content" => %{"users_default" => 0},
+        "origin_server_ts" => 1_700_000_001_000
+      })
+
+      :ets.insert(:sync_delta_pg_store_config,
+        {:get_since_token_response,
+         {:ok, %{since_token: "s_sp1_anchor", last_event_id: "$sp1_anchor"}}})
+
+      request = %Core.GetSyncDeltaRequest{
+        user_id: alice,
+        since_token: "s_sp1_anchor",
+        timeout_ms: 5000
+      }
+
+      response = Server.get_sync_delta(request, build_stream())
+      room = Enum.find(response.rooms, fn r -> r.room_id == room_id end)
+
+      assert room != nil, "expected room #{room_id} in response"
+
+      pl_in_timeline =
+        Enum.any?(room.timeline_events, fn ev -> ev.event_type == "m.room.power_levels" end)
+
+      assert pl_in_timeline, "expected m.room.power_levels in timeline_events (precondition)"
+
+      pl_in_state =
+        Enum.any?(room.state_events, fn ev -> ev.type == "m.room.power_levels" end)
+
+      refute pl_in_state,
+             "expected m.room.power_levels NOT in state_events when it appears in timeline (Spec §6.3.3)"
+    end
+
+    test "AC2: excludes m.room.name from state when it appears in timeline" do
+      alice = "@alice:test.local"
+      room_id = "!statepos2:test.local"
+
+      :ets.new(:sync_delta_pg_store_config, [:named_table, :public, :set])
+
+      on_exit(fn ->
+        if :ets.info(:sync_delta_pg_store_config) != :undefined do
+          :ets.delete(:sync_delta_pg_store_config)
+        end
+      end)
+
+      Application.put_env(:event_dispatcher, :pg_store_module, SyncDeltaFakePgStore)
+      Application.put_env(:event_dispatcher, :messages_db_module, SyncDeltaFakeDB)
+      Application.put_env(:event_dispatcher, :rooms_db_module, SyncDeltaFakeDB)
+
+      on_exit(fn ->
+        Application.delete_env(:event_dispatcher, :pg_store_module)
+        Application.delete_env(:event_dispatcher, :messages_db_module)
+        Application.delete_env(:event_dispatcher, :rooms_db_module)
+      end)
+
+      :ok = setup_room_with_member(room_id, alice)
+
+      # A pre-existing name event — stored with "type" key so get_room_name/1 finds it,
+      # but WITHOUT "event_type" so fetch_events_since/3 ignores it (not a timeline event).
+      SyncDeltaFakeDB.insert_event(%{
+        "event_id" => "$sp2_name_old",
+        "room_id" => room_id,
+        "type" => "m.room.name",
+        "content" => %{"name" => "Old Room Name"},
+        "origin_server_ts" => 1_699_000_000_000
+      })
+
+      # Anchor event
+      SyncDeltaFakeDB.insert_event(%{
+        "event_id" => "$sp2_anchor",
+        "room_id" => room_id,
+        "sender" => alice,
+        "event_type" => "m.room.message",
+        "content" => %{"msgtype" => "m.text", "body" => "anchor"},
+        "origin_server_ts" => 1_700_000_000_000
+      })
+
+      # Name change in timeline — has "event_type" AND "state_key" to mark it as a state event
+      SyncDeltaFakeDB.insert_event(%{
+        "event_id" => "$sp2_name_change",
+        "room_id" => room_id,
+        "sender" => alice,
+        "event_type" => "m.room.name",
+        "state_key" => "",
+        "content" => %{"name" => "New Room Name"},
+        "origin_server_ts" => 1_700_000_001_000
+      })
+
+      :ets.insert(:sync_delta_pg_store_config,
+        {:get_since_token_response,
+         {:ok, %{since_token: "s_sp2_anchor", last_event_id: "$sp2_anchor"}}})
+
+      request = %Core.GetSyncDeltaRequest{
+        user_id: alice,
+        since_token: "s_sp2_anchor",
+        timeout_ms: 5000
+      }
+
+      response = Server.get_sync_delta(request, build_stream())
+      room = Enum.find(response.rooms, fn r -> r.room_id == room_id end)
+
+      assert room != nil, "expected room #{room_id} in response"
+
+      name_in_state =
+        Enum.any?(room.state_events, fn ev -> ev.type == "m.room.name" end)
+
+      refute name_in_state,
+             "expected m.room.name NOT in state_events when it appears in timeline (Spec §6.3.3)"
+    end
+
+    test "AC3: keeps unrelated state events in state when they do not appear in timeline" do
+      alice = "@alice:test.local"
+      room_id = "!statepos3:test.local"
+
+      :ets.new(:sync_delta_pg_store_config, [:named_table, :public, :set])
+
+      on_exit(fn ->
+        if :ets.info(:sync_delta_pg_store_config) != :undefined do
+          :ets.delete(:sync_delta_pg_store_config)
+        end
+      end)
+
+      Application.put_env(:event_dispatcher, :pg_store_module, SyncDeltaFakePgStore)
+      Application.put_env(:event_dispatcher, :messages_db_module, SyncDeltaFakeDB)
+      Application.put_env(:event_dispatcher, :rooms_db_module, SyncDeltaFakeDB)
+
+      on_exit(fn ->
+        Application.delete_env(:event_dispatcher, :pg_store_module)
+        Application.delete_env(:event_dispatcher, :messages_db_module)
+        Application.delete_env(:event_dispatcher, :rooms_db_module)
+      end)
+
+      :ok = setup_room_with_member(room_id, alice)
+
+      SyncDeltaFakeDB.insert_event(%{
+        "event_id" => "$sp3_anchor",
+        "room_id" => room_id,
+        "sender" => alice,
+        "event_type" => "m.room.message",
+        "content" => %{"msgtype" => "m.text", "body" => "anchor"},
+        "origin_server_ts" => 1_700_000_000_000
+      })
+
+      # Only a power_levels state event in the timeline — m.room.create is unrelated
+      SyncDeltaFakeDB.insert_event(%{
+        "event_id" => "$sp3_pl_change",
+        "room_id" => room_id,
+        "sender" => alice,
+        "event_type" => "m.room.power_levels",
+        "state_key" => "",
+        "content" => %{"users_default" => 0},
+        "origin_server_ts" => 1_700_000_001_000
+      })
+
+      :ets.insert(:sync_delta_pg_store_config,
+        {:get_since_token_response,
+         {:ok, %{since_token: "s_sp3_anchor", last_event_id: "$sp3_anchor"}}})
+
+      request = %Core.GetSyncDeltaRequest{
+        user_id: alice,
+        since_token: "s_sp3_anchor",
+        timeout_ms: 5000
+      }
+
+      response = Server.get_sync_delta(request, build_stream())
+      room = Enum.find(response.rooms, fn r -> r.room_id == room_id end)
+
+      assert room != nil, "expected room #{room_id} in response"
+
+      create_in_state =
+        Enum.any?(room.state_events, fn ev -> ev.type == "m.room.create" end)
+
+      assert create_in_state,
+             "expected m.room.create still in state_events (unrelated to power_levels timeline change)"
+
+      pl_in_state =
+        Enum.any?(room.state_events, fn ev -> ev.type == "m.room.power_levels" end)
+
+      refute pl_in_state,
+             "expected m.room.power_levels NOT in state_events (it changed in timeline)"
+    end
+
+    test "AC4: m.room.member dedup regression — member in timeline excluded from state" do
+      alice = "@alice:test.local"
+      bob = "@bob:test.local"
+      room_id = "!statepos4:test.local"
+
+      :ets.new(:sync_delta_pg_store_config, [:named_table, :public, :set])
+
+      on_exit(fn ->
+        if :ets.info(:sync_delta_pg_store_config) != :undefined do
+          :ets.delete(:sync_delta_pg_store_config)
+        end
+      end)
+
+      Application.put_env(:event_dispatcher, :pg_store_module, SyncDeltaFakePgStore)
+      Application.put_env(:event_dispatcher, :messages_db_module, SyncDeltaFakeDB)
+      Application.put_env(:event_dispatcher, :rooms_db_module, SyncDeltaFakeDB)
+
+      on_exit(fn ->
+        Application.delete_env(:event_dispatcher, :pg_store_module)
+        Application.delete_env(:event_dispatcher, :messages_db_module)
+        Application.delete_env(:event_dispatcher, :rooms_db_module)
+      end)
+
+      # Both alice (existing) and bob (newly joined) are members
+      :ok = setup_room_with_member(room_id, alice)
+      :ok = Nebu.Room.Server.join(room_id, bob)
+      :ets.insert(:sync_test_db, {{:member_for_user, bob, room_id}, :active})
+
+      SyncDeltaFakeDB.insert_event(%{
+        "event_id" => "$sp4_anchor",
+        "room_id" => room_id,
+        "sender" => alice,
+        "event_type" => "m.room.message",
+        "content" => %{"msgtype" => "m.text", "body" => "anchor"},
+        "origin_server_ts" => 1_700_000_000_000
+      })
+
+      # Bob's join event in the timeline
+      SyncDeltaFakeDB.insert_event(%{
+        "event_id" => "$sp4_bob_join",
+        "room_id" => room_id,
+        "sender" => bob,
+        "event_type" => "m.room.member",
+        "state_key" => bob,
+        "content" => %{"membership" => "join"},
+        "origin_server_ts" => 1_700_000_001_000
+      })
+
+      :ets.insert(:sync_delta_pg_store_config,
+        {:get_since_token_response,
+         {:ok, %{since_token: "s_sp4_anchor", last_event_id: "$sp4_anchor"}}})
+
+      request = %Core.GetSyncDeltaRequest{
+        user_id: alice,
+        since_token: "s_sp4_anchor",
+        timeout_ms: 5000
+      }
+
+      response = Server.get_sync_delta(request, build_stream())
+      room = Enum.find(response.rooms, fn r -> r.room_id == room_id end)
+
+      assert room != nil, "expected room #{room_id} in response"
+
+      bob_in_state =
+        Enum.any?(room.state_events, fn ev ->
+          ev.type == "m.room.member" and ev.state_key == bob
+        end)
+
+      refute bob_in_state,
+             "expected bob's m.room.member NOT in state_events when bob's join appears in timeline"
+
+      alice_in_state =
+        Enum.any?(room.state_events, fn ev ->
+          ev.type == "m.room.member" and ev.state_key == alice
+        end)
+
+      assert alice_in_state,
+             "expected alice's m.room.member still in state_events (alice not in timeline)"
+    end
+  end
+
+  # ─── Story 9-22 MINOR-3: incremental sync with device_id calls persist_since_token/4 ──
+  #
+  # AC1 (Story 9-22): when get_sync_delta runs a successful incremental sync with
+  # device_id != "", it must call persist_since_token/4 (user_id, device_id,
+  # new_token, last_event_id), NOT the 3-arity legacy form.
+  #
+  # Given: SyncDeltaFakePgStore returns a matching token for (user_id, device_id);
+  #        @alice:test.local is in !delta_device:test.local with 1 new event;
+  #        request.device_id = "DEVICE_D1"
+  # When:  Server.get_sync_delta/2 is called
+  # Then:  SyncDeltaFakePgStore.recorded_calls() contains a 4-tuple
+  #        {user_id, "DEVICE_D1", new_token, last_event_id} — not a 3-tuple
+
+  describe "Server.get_sync_delta/2 — incremental sync with device_id calls persist_since_token/4 (MINOR-3)" do
+    test "calls persist_since_token/4 with (user_id, device_id, token, event_id) when device_id != \"\"" do
+      alice = "@alice:test.local"
+      room_id = "!delta_device:test.local"
+      device_id = "DEVICE_D1"
+
+      :ets.new(:sync_delta_pg_store_config, [:named_table, :public, :set])
+
+      on_exit(fn ->
+        if :ets.info(:sync_delta_pg_store_config) != :undefined do
+          :ets.delete(:sync_delta_pg_store_config)
+        end
+      end)
+
+      Application.put_env(:event_dispatcher, :pg_store_module, SyncDeltaFakePgStore)
+      Application.put_env(:event_dispatcher, :messages_db_module, SyncDeltaFakeDB)
+      Application.put_env(:event_dispatcher, :rooms_db_module, SyncDeltaFakeDB)
+
+      on_exit(fn ->
+        Application.delete_env(:event_dispatcher, :pg_store_module)
+        Application.delete_env(:event_dispatcher, :messages_db_module)
+        Application.delete_env(:event_dispatcher, :rooms_db_module)
+      end)
+
+      :ok = setup_room_with_member(room_id, alice)
+
+      # Anchor event (= last_event_id)
+      SyncDeltaFakeDB.insert_event(%{
+        "event_id" => "$dev_anchor",
+        "room_id" => room_id,
+        "sender" => alice,
+        "event_type" => "m.room.message",
+        "content" => %{"msgtype" => "m.text", "body" => "anchor"},
+        "origin_server_ts" => 1_700_000_000_000
+      })
+
+      # New event after the anchor
+      SyncDeltaFakeDB.insert_event(%{
+        "event_id" => "$dev_new",
+        "room_id" => room_id,
+        "sender" => alice,
+        "event_type" => "m.room.message",
+        "content" => %{"msgtype" => "m.text", "body" => "new"},
+        "origin_server_ts" => 1_700_000_001_000
+      })
+
+      # Configure stored token to match what the client will send (valid incremental path)
+      :ets.insert(
+        :sync_delta_pg_store_config,
+        {:get_since_token_response, {:ok, %{since_token: "s_dev_anchor", last_event_id: "$dev_anchor"}}}
+      )
+
+      request = %Core.GetSyncDeltaRequest{
+        user_id: alice,
+        since_token: "s_dev_anchor",
+        timeout_ms: 5000,
+        device_id: device_id
+      }
+
+      _response = Server.get_sync_delta(request, build_stream())
+
+      calls = SyncDeltaFakePgStore.recorded_calls()
+
+      # There must be at least one 4-arity call with the correct device_id
+      four_arity_calls =
+        Enum.filter(calls, fn
+          {^alice, ^device_id, _token, _event_id} -> true
+          _ -> false
+        end)
+
+      assert length(four_arity_calls) >= 1,
+             "expected at least one 4-arity persist_since_token call with device_id=#{device_id}, got: #{inspect(calls)}"
+
+      # There must be NO 3-arity call for this user when device_id != ""
+      three_arity_calls =
+        Enum.filter(calls, fn
+          {^alice, _token, _event_id} -> true
+          _ -> false
+        end)
+
+      assert three_arity_calls == [],
+             "expected no 3-arity persist_since_token call when device_id is set, got: #{inspect(three_arity_calls)}"
+    end
+  end
+
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # Bug fix: thread root re-delivered with m.thread aggregation on incremental sync
+  # ═══════════════════════════════════════════════════════════════════════════════
+  #
+  # Bug: when a thread reply arrives in the incremental sync delta, the root event
+  # (which predates the since_token) is NOT re-delivered. Element Web never creates
+  # or updates the Thread object in real-time — the thread indicator only appears
+  # after a full page reload (which triggers an initial sync that includes the root
+  # event with updated unsigned.m.relations.m.thread).
+  #
+  # Root cause: fetch_delta_rooms calls attach_thread_aggregations only on the delta
+  # events. The root event is not in the delta, so it never gets updated aggregations.
+  #
+  # Fix: in fetch_delta_rooms, detect thread replies in the delta, fetch their root
+  # events from DB via fetch_event/2, attach m.thread aggregations to them, and
+  # prepend them to the timeline (de-duplicated).
+  #
+  # Given: !thread_root_redeliver:test.local has root event $root (ts=1_700_000_000_000)
+  #        and thread reply $reply (ts=1_700_000_001_000); since_token points to $root;
+  # When:  Server.get_sync_delta/2 is called (only $reply is in the delta)
+  # Then:  response.rooms[room].timeline_events contains BOTH $root and $reply;
+  #        $root has unsigned_relations with m.thread.count >= 1
+
+  describe "Server.get_sync_delta/2 — thread root re-delivered with m.thread aggregation" do
+    test "root event appears in delta timeline with m.thread aggregation when thread reply arrives" do
+      alice = "@alice_thread_redeliver:test.local"
+      kai   = "@kai_thread_redeliver:test.local"
+      room_id = "!thread_root_redeliver:test.local"
+
+      :ets.new(:sync_delta_pg_store_config, [:named_table, :public, :set])
+
+      on_exit(fn ->
+        if :ets.info(:sync_delta_pg_store_config) != :undefined do
+          :ets.delete(:sync_delta_pg_store_config)
+        end
+      end)
+
+      Application.put_env(:event_dispatcher, :pg_store_module, SyncDeltaFakePgStore)
+      Application.put_env(:event_dispatcher, :messages_db_module, SyncDeltaThreadFakeDB)
+      Application.put_env(:event_dispatcher, :rooms_db_module, SyncDeltaThreadFakeDB)
+
+      on_exit(fn ->
+        Application.delete_env(:event_dispatcher, :pg_store_module)
+        Application.delete_env(:event_dispatcher, :messages_db_module)
+        Application.delete_env(:event_dispatcher, :rooms_db_module)
+      end)
+
+      :ok = setup_room_with_member(room_id, alice)
+      :ok = Nebu.Room.Server.join(room_id, kai)
+
+      root_event = %{
+        "event_id"         => "$root_redeliver:test.local",
+        "room_id"          => room_id,
+        "sender"           => kai,
+        "event_type"       => "m.room.message",
+        "content"          => %{"msgtype" => "m.text", "body" => "Hello from kai"},
+        "origin_server_ts" => 1_700_000_000_000
+      }
+
+      thread_reply = %{
+        "event_id"         => "$reply_redeliver:test.local",
+        "room_id"          => room_id,
+        "sender"           => alice,
+        "event_type"       => "m.room.message",
+        "content"          => %{
+          "msgtype"      => "m.text",
+          "body"         => "First thread reply",
+          "m.relates_to" => %{
+            "rel_type" => "m.thread",
+            "event_id" => "$root_redeliver:test.local"
+          }
+        },
+        "origin_server_ts" => 1_700_000_001_000
+      }
+
+      SyncDeltaThreadFakeDB.insert_event(root_event)
+      SyncDeltaThreadFakeDB.insert_event(thread_reply)
+
+      # since_token points to the root event — client has seen root but not the reply
+      :ets.insert(
+        :sync_delta_pg_store_config,
+        {:get_since_token_response,
+         {:ok, %{since_token: "s_at_root_redeliver", last_event_id: "$root_redeliver:test.local"}}}
+      )
+
+      request = %Core.GetSyncDeltaRequest{
+        user_id:    alice,
+        since_token: "s_at_root_redeliver",
+        timeout_ms: 5000
+      }
+
+      response = Server.get_sync_delta(request, build_stream())
+
+      assert %Core.GetSyncDeltaResponse{} = response,
+             "expected GetSyncDeltaResponse, got: #{inspect(response)}"
+
+      delta_room = Enum.find(response.rooms, fn r -> r.room_id == room_id end)
+      assert delta_room != nil,
+             "expected room #{room_id} in response, got: #{inspect(Enum.map(response.rooms, & &1.room_id))}"
+
+      timeline_event_ids = Enum.map(delta_room.timeline_events, & &1.event_id)
+
+      assert "$reply_redeliver:test.local" in timeline_event_ids,
+             "expected thread reply in delta timeline, got: #{inspect(timeline_event_ids)}"
+
+      assert "$root_redeliver:test.local" in timeline_event_ids,
+             "expected root event to be re-delivered in delta (with m.thread aggregation), got: #{inspect(timeline_event_ids)}"
+
+      root_proto = Enum.find(delta_room.timeline_events, fn ev ->
+        ev.event_id == "$root_redeliver:test.local"
+      end)
+
+      assert is_binary(root_proto.unsigned_relations) and root_proto.unsigned_relations != "",
+             "expected root event unsigned_relations to be set, got: #{inspect(root_proto.unsigned_relations)}"
+
+      {:ok, relations} = Jason.decode(root_proto.unsigned_relations)
+
+      assert is_map(relations["m.thread"]),
+             "expected unsigned_relations[m.thread] to be a map, got: #{inspect(relations)}"
+
+      assert relations["m.thread"]["count"] >= 1,
+             "expected m.thread.count >= 1, got: #{inspect(relations["m.thread"]["count"])}"
     end
   end
 end

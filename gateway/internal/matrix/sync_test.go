@@ -101,7 +101,7 @@ func buildAuthedSyncHandler(t *testing.T, mock *mockGetSyncCoreClient, opts ...t
 	}
 	handler := NewGetSyncHandler(cfg)
 
-	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
 		http.HandlerFunc(handler.GetSync),
 	)
 
@@ -422,7 +422,7 @@ func buildAuthedSyncDeltaHandler(t *testing.T, mock *mockGetSyncDeltaCoreClient,
 	}
 	handler := NewGetSyncHandler(cfg)
 
-	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
 		http.HandlerFunc(handler.GetSync),
 	)
 
@@ -1014,7 +1014,7 @@ func buildAuthedSyncBufferHandler(t *testing.T, mock *mockGetSyncDeltaCoreClient
 	}
 	handler := NewGetSyncHandler(cfg)
 
-	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, "test.local")(
+	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
 		http.HandlerFunc(handler.GetSync),
 	)
 
@@ -1236,6 +1236,17 @@ func openTestDB(t *testing.T) *sql.DB {
 			rejected_at  BIGINT,
 			PRIMARY KEY (room_id, invitee_id)
 		);
+		CREATE TABLE IF NOT EXISTS forgotten_rooms (
+			user_id         TEXT    NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+			room_id         TEXT    NOT NULL,
+			forgotten_at_ms BIGINT  NOT NULL DEFAULT (EXTRACT(EPOCH FROM now()) * 1000)::BIGINT,
+			PRIMARY KEY (user_id, room_id)
+		);
+		CREATE TABLE IF NOT EXISTS sync_tokens (
+			user_id    TEXT    PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+			token      TEXT    NOT NULL,
+			updated_at BIGINT  NOT NULL
+		);
 	`
 	if _, err := db.Exec(schema); err != nil {
 		t.Fatalf("openTestDB: schema creation failed: %v", err)
@@ -1323,7 +1334,7 @@ func TestBuildLeaveRooms_ReturnsLeaveEventInStateEvents(t *testing.T) {
 
 	h := &GetSyncHandler{db: db}
 
-	leaves := h.buildLeaveRooms(context.Background(), userID)
+	leaves := h.buildLeaveRooms(context.Background(), userID, 0)
 
 	// AC #1: rooms.leave must contain an entry for the left room
 	roomEntry, ok := leaves[roomID]
@@ -1436,7 +1447,7 @@ func TestBuildLeaveRooms_GracefulDegradation_NoLeaveEvent(t *testing.T) {
 	h := &GetSyncHandler{db: db}
 
 	// Must not panic
-	leaves := h.buildLeaveRooms(context.Background(), userID)
+	leaves := h.buildLeaveRooms(context.Background(), userID, 0)
 
 	// The room entry must be present
 	roomEntry, ok := leaves[roomID]
@@ -1552,7 +1563,7 @@ func TestBuildLeaveRooms_RejectedInvite_IncludesLeaveEventIfPresent(t *testing.T
 
 	h := &GetSyncHandler{db: db}
 
-	leaves := h.buildLeaveRooms(context.Background(), userID)
+	leaves := h.buildLeaveRooms(context.Background(), userID, 0)
 
 	// Room must appear in rooms.leave
 	roomEntry, ok := leaves[roomID]
@@ -1587,5 +1598,2046 @@ func TestBuildLeaveRooms_RejectedInvite_IncludesLeaveEventIfPresent(t *testing.T
 
 	if eventsRaw == nil {
 		t.Fatal("buildLeaveRooms (rejected invite): state.events is nil — must be a slice")
+	}
+}
+
+// ─── Test: unsigned.age in timeline events (spec §8.4.3) ─────────────────────
+//
+// Story 9-10b AC3: every syncTimelineEvent in the sync response MUST carry
+// unsigned.age > 0.  matrix-js-sdk uses this field for event deduplication and
+// lag detection; missing or zero unsigned.age causes sporadic re-polling of
+// already-seen events during DM creation.
+//
+// Given: Core returns one room with two timeline events (OriginTs in the past)
+// When:  GET /_matrix/client/v3/sync (initial sync, no ?since param)
+// Then:  200; every timeline event in rooms.join has unsigned.age > 0
+
+func TestGetSync_TimelineEvents_HavePositiveUnsignedAge(t *testing.T) {
+	// Use a timestamp clearly in the past so age is guaranteed > 0.
+	pastTs := time.Now().Add(-5 * time.Second).UnixMilli()
+
+	mock := &mockGetSyncCoreClient{
+		resp: &pb.GetInitialSyncResponse{
+			SinceToken: "age_test_token",
+			Rooms: []*pb.SyncRoom{
+				{
+					RoomId: "!ageroom:test.local",
+					StateEvents: []*pb.SyncRoomStateEvent{},
+					TimelineEvents: []*pb.Event{
+						{
+							EventId:   "$age1:test.local",
+							RoomId:    "!ageroom:test.local",
+							SenderId:  "@alice:test.local",
+							EventType: "m.room.message",
+							Content:   []byte(`{"msgtype":"m.text","body":"hello"}`),
+							OriginTs:  pastTs,
+						},
+						{
+							EventId:   "$age2:test.local",
+							RoomId:    "!ageroom:test.local",
+							SenderId:  "@alice:test.local",
+							EventType: "m.room.message",
+							Content:   []byte(`{"msgtype":"m.text","body":"world"}`),
+							OriginTs:  pastTs + 1000,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	handler, _, makeToken := buildAuthedSyncHandler(t, mock)
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync", nil)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	// Parse response to inspect unsigned.age on timeline events.
+	var resp struct {
+		Rooms struct {
+			Join map[string]struct {
+				Timeline struct {
+					Events []struct {
+						EventID  string `json:"event_id"`
+						Unsigned struct {
+							Age int64 `json:"age"`
+						} `json:"unsigned"`
+					} `json:"events"`
+				} `json:"timeline"`
+			} `json:"join"`
+		} `json:"rooms"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode sync response: %v", err)
+	}
+
+	room, ok := resp.Rooms.Join["!ageroom:test.local"]
+	if !ok {
+		t.Fatal("expected !ageroom:test.local in rooms.join")
+	}
+	if len(room.Timeline.Events) != 2 {
+		t.Fatalf("expected 2 timeline events, got %d", len(room.Timeline.Events))
+	}
+	for _, ev := range room.Timeline.Events {
+		if ev.Unsigned.Age <= 0 {
+			t.Errorf("expected unsigned.age > 0 for event %q, got %d", ev.EventID, ev.Unsigned.Age)
+		}
+	}
+}
+
+// ─── Story 9-19 Fix 2 (GAP-LEAVE-ONCE): buildLeaveRooms sinceMs filter ────────
+//
+// AC: buildLeaveRooms with sinceMs set to a time AFTER the leave event should NOT
+// return the room (i.e. the room already left before this sync cycle).
+//
+// Given: a room_members row with left_at = T (Unix-ms)
+// When:  buildLeaveRooms(ctx, userID, sinceMs = T+1) is called
+// Then:  the room is NOT in the result (left_at ≤ sinceMs → filtered out)
+
+func TestGetSyncHandler_BuildLeaveRooms_SinceFilter(t *testing.T) {
+	db := openTestDB(t)
+
+	userID := "@sincefilter-user:test.local"
+	roomID := "!sincefilter-room:test.local"
+	leftAt := int64(1700000005000)
+
+	now := int64(1700000000000)
+
+	// Insert user
+	_, err := db.Exec(`INSERT INTO users (user_id, system_role, is_active, created_at) VALUES ($1, 'user', true, $2) ON CONFLICT DO NOTHING`, userID, now)
+	if err != nil {
+		t.Fatalf("sinceFilter: insert user: %v", err)
+	}
+
+	// Insert room
+	_, err = db.Exec(`INSERT INTO rooms (room_id, visibility, created_at) VALUES ($1, 'private', $2) ON CONFLICT DO NOTHING`, roomID, now)
+	if err != nil {
+		t.Fatalf("sinceFilter: insert room: %v", err)
+	}
+
+	// Insert room_members with left_at = leftAt
+	_, err = db.Exec(
+		`INSERT INTO room_members (room_id, user_id, joined_at, left_at) VALUES ($1, $2, $3, $4) ON CONFLICT (room_id, user_id) DO UPDATE SET left_at = EXCLUDED.left_at`,
+		roomID, userID, now, leftAt,
+	)
+	if err != nil {
+		t.Fatalf("sinceFilter: insert room_members: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = db.Exec(`DELETE FROM room_members WHERE room_id = $1 AND user_id = $2`, roomID, userID)
+		_, _ = db.Exec(`DELETE FROM rooms WHERE room_id = $1`, roomID)
+		_, _ = db.Exec(`DELETE FROM users WHERE user_id = $1`, userID)
+	})
+
+	h := &GetSyncHandler{db: db}
+
+	// sinceMs = leftAt + 1: the leave event happened BEFORE this sync window.
+	leaves := h.buildLeaveRooms(context.Background(), userID, leftAt+1)
+
+	if _, found := leaves[roomID]; found {
+		t.Errorf("GAP-LEAVE-ONCE: room %q must NOT appear in rooms.leave when left_at (%d) <= sinceMs (%d)", roomID, leftAt, leftAt+1)
+	}
+}
+
+// ─── Story 9-19 Fix 2 (GAP-LEAVE-ONCE): sinceMs=0 → backward-compat ──────────
+//
+// AC: buildLeaveRooms with sinceMs=0 must return ALL left rooms (no filter).
+// This is the initial sync case.
+//
+// Given: a room_members row with left_at = T
+// When:  buildLeaveRooms(ctx, userID, 0) is called
+// Then:  the room IS in the result
+
+func TestGetSyncHandler_BuildLeaveRooms_ZeroSinceMs(t *testing.T) {
+	db := openTestDB(t)
+
+	userID := "@zerosince-user:test.local"
+	roomID := "!zerosince-room:test.local"
+
+	now := int64(1700000010000)
+
+	// Insert user
+	_, err := db.Exec(`INSERT INTO users (user_id, system_role, is_active, created_at) VALUES ($1, 'user', true, $2) ON CONFLICT DO NOTHING`, userID, now)
+	if err != nil {
+		t.Fatalf("zeroSinceMs: insert user: %v", err)
+	}
+
+	// Insert room
+	_, err = db.Exec(`INSERT INTO rooms (room_id, visibility, created_at) VALUES ($1, 'private', $2) ON CONFLICT DO NOTHING`, roomID, now)
+	if err != nil {
+		t.Fatalf("zeroSinceMs: insert room: %v", err)
+	}
+
+	// Insert room_members with left_at set
+	_, err = db.Exec(
+		`INSERT INTO room_members (room_id, user_id, joined_at, left_at) VALUES ($1, $2, $3, $4) ON CONFLICT (room_id, user_id) DO UPDATE SET left_at = EXCLUDED.left_at`,
+		roomID, userID, now-1000, now,
+	)
+	if err != nil {
+		t.Fatalf("zeroSinceMs: insert room_members: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = db.Exec(`DELETE FROM room_members WHERE room_id = $1 AND user_id = $2`, roomID, userID)
+		_, _ = db.Exec(`DELETE FROM rooms WHERE room_id = $1`, roomID)
+		_, _ = db.Exec(`DELETE FROM users WHERE user_id = $1`, userID)
+	})
+
+	h := &GetSyncHandler{db: db}
+
+	// sinceMs = 0 → no filter → room must appear
+	leaves := h.buildLeaveRooms(context.Background(), userID, 0)
+
+	if _, found := leaves[roomID]; !found {
+		t.Errorf("GAP-LEAVE-ONCE backward-compat: room %q MUST appear in rooms.leave when sinceMs=0", roomID)
+	}
+}
+
+// ─── Story 9-19 Fix 3 (GAP-FORGET): forgotten rooms excluded from rooms.leave ──
+//
+// AC: buildLeaveRooms must exclude rooms that the user has forgotten (present in
+// forgotten_rooms table), even when sinceMs=0.
+//
+// Given: a room_members row with left_at set AND a forgotten_rooms row for the same room
+// When:  buildLeaveRooms(ctx, userID, 0) is called
+// Then:  the room is NOT in the result
+
+// TestBuildInviteRooms_ForgottenExcluded verifies that a pending invitation for a
+// forgotten room is excluded from rooms.invite (GAP-FORGET AC3: no join/leave/invite).
+func TestBuildInviteRooms_ForgottenExcluded(t *testing.T) {
+	db := openTestDB(t)
+
+	userID := "@invite-forgotten-user:test.local"
+	inviterID := "@invite-forgotten-inviter:test.local"
+	roomID := "!invite-forgotten-room:test.local"
+
+	now := int64(1700000030000)
+
+	// Insert users
+	for _, uid := range []string{userID, inviterID} {
+		_, err := db.Exec(`INSERT INTO users (user_id, system_role, is_active, created_at) VALUES ($1, 'user', true, $2) ON CONFLICT DO NOTHING`, uid, now)
+		if err != nil {
+			t.Fatalf("inviteForgotten: insert user %s: %v", uid, err)
+		}
+	}
+
+	// Insert room
+	_, err := db.Exec(`INSERT INTO rooms (room_id, visibility, created_at) VALUES ($1, 'private', $2) ON CONFLICT DO NOTHING`, roomID, now)
+	if err != nil {
+		t.Fatalf("inviteForgotten: insert room: %v", err)
+	}
+
+	// Insert a pending invitation (accepted_at and rejected_at both NULL)
+	_, err = db.Exec(
+		`INSERT INTO room_invitations (room_id, inviter_id, invitee_id, created_at)
+		 VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
+		roomID, inviterID, userID, now,
+	)
+	if err != nil {
+		t.Fatalf("inviteForgotten: insert invitation: %v", err)
+	}
+
+	// Insert forgotten_rooms entry — the invite must be excluded
+	_, err = db.Exec(
+		`INSERT INTO forgotten_rooms (user_id, room_id, forgotten_at_ms) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+		userID, roomID, now,
+	)
+	if err != nil {
+		t.Fatalf("inviteForgotten: insert forgotten_rooms: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = db.Exec(`DELETE FROM forgotten_rooms WHERE user_id = $1 AND room_id = $2`, userID, roomID)
+		_, _ = db.Exec(`DELETE FROM room_invitations WHERE room_id = $1 AND invitee_id = $2`, roomID, userID)
+		_, _ = db.Exec(`DELETE FROM rooms WHERE room_id = $1`, roomID)
+		_, _ = db.Exec(`DELETE FROM users WHERE user_id = $1 OR user_id = $2`, userID, inviterID)
+	})
+
+	h := &GetSyncHandler{db: db}
+	invites := h.buildInviteRooms(context.Background(), userID)
+
+	if _, found := invites[roomID]; found {
+		t.Errorf("GAP-FORGET: room %q MUST NOT appear in rooms.invite after user has forgotten it", roomID)
+	}
+}
+
+func TestGetSyncHandler_BuildLeaveRooms_ForgottenExcluded(t *testing.T) {
+	db := openTestDB(t)
+
+	userID := "@forgotten-user:test.local"
+	roomID := "!forgotten-room:test.local"
+
+	now := int64(1700000020000)
+
+	// Insert user
+	_, err := db.Exec(`INSERT INTO users (user_id, system_role, is_active, created_at) VALUES ($1, 'user', true, $2) ON CONFLICT DO NOTHING`, userID, now)
+	if err != nil {
+		t.Fatalf("forgottenExcluded: insert user: %v", err)
+	}
+
+	// Insert room
+	_, err = db.Exec(`INSERT INTO rooms (room_id, visibility, created_at) VALUES ($1, 'private', $2) ON CONFLICT DO NOTHING`, roomID, now)
+	if err != nil {
+		t.Fatalf("forgottenExcluded: insert room: %v", err)
+	}
+
+	// Insert room_members with left_at set
+	_, err = db.Exec(
+		`INSERT INTO room_members (room_id, user_id, joined_at, left_at) VALUES ($1, $2, $3, $4) ON CONFLICT (room_id, user_id) DO UPDATE SET left_at = EXCLUDED.left_at`,
+		roomID, userID, now-2000, now-1000,
+	)
+	if err != nil {
+		t.Fatalf("forgottenExcluded: insert room_members: %v", err)
+	}
+
+	// Insert forgotten_rooms entry — this is what should suppress the leave room from sync
+	_, err = db.Exec(
+		`INSERT INTO forgotten_rooms (user_id, room_id, forgotten_at_ms) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+		userID, roomID, now,
+	)
+	if err != nil {
+		t.Fatalf("forgottenExcluded: insert forgotten_rooms: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = db.Exec(`DELETE FROM forgotten_rooms WHERE user_id = $1 AND room_id = $2`, userID, roomID)
+		_, _ = db.Exec(`DELETE FROM room_members WHERE room_id = $1 AND user_id = $2`, roomID, userID)
+		_, _ = db.Exec(`DELETE FROM rooms WHERE room_id = $1`, roomID)
+		_, _ = db.Exec(`DELETE FROM users WHERE user_id = $1`, userID)
+	})
+
+	h := &GetSyncHandler{db: db}
+
+	// sinceMs = 0 → no time filter, but forgotten_rooms should still exclude it
+	leaves := h.buildLeaveRooms(context.Background(), userID, 0)
+
+	if _, found := leaves[roomID]; found {
+		t.Errorf("GAP-FORGET: room %q MUST NOT appear in rooms.leave after user has forgotten it", roomID)
+	}
+}
+
+// ─── Story 9-22: GAP-SINCE-IGNORED — per-device sync token ───────────────────
+
+// buildAuthedSyncDeltaHandlerWithClaims is a test helper that returns a handler
+// plus a makeToken function that accepts extra JWT claims (e.g. "did" for device_id).
+// Unlike buildAuthedSyncDeltaHandler, it does not return the oidcSrv separately.
+func buildAuthedSyncDeltaHandlerWithClaims(t *testing.T, mock *mockGetSyncDeltaCoreClient) (http.Handler, func(map[string]any) string) {
+	t.Helper()
+
+	oidcSrv, privateKey := setupOIDCServer(t)
+	t.Cleanup(oidcSrv.Close)
+
+	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
+
+	cfg := GetSyncConfig{
+		CoreClient: mock,
+		ServerName: "test.local",
+	}
+	handler := NewGetSyncHandler(cfg)
+
+	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
+		http.HandlerFunc(handler.GetSync),
+	)
+
+	makeToken := func(extraClaims map[string]any) string {
+		return signJWT(t, oidcSrv.URL, privateKey, time.Now().Add(time.Hour), extraClaims)
+	}
+
+	return authed, makeToken
+}
+
+// TestGetSync_PerDevice_DeviceIdForwardedToCore verifies that the device_id from
+// the JWT "did" claim is forwarded as GetSyncDeltaRequest.DeviceId to the Core.
+//
+// AC6 (Story 9-22): This test FAILS before the fix because handleIncrementalSync
+// constructs GetSyncDeltaRequest without DeviceId (field stays empty "").
+//
+// Given:  JWT "did" claim = "TEST_DEVICE_D1"
+// When:   GET /_matrix/client/v3/sync?since=s_token_abc&timeout=0
+// Then:   capturedDeltaReq.DeviceId == "TEST_DEVICE_D1"
+func TestGetSync_PerDevice_DeviceIdForwardedToCore(t *testing.T) {
+	mock := &mockGetSyncDeltaCoreClient{
+		deltaResp: &pb.GetSyncDeltaResponse{
+			SinceToken:        "next_batch_device_test",
+			FallbackToInitial: false,
+			Rooms:             []*pb.SyncRoom{},
+		},
+	}
+
+	handler, makeToken := buildAuthedSyncDeltaHandlerWithClaims(t, mock)
+	token := makeToken(map[string]any{"did": "TEST_DEVICE_D1"})
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync?since=s_token_abc&timeout=0", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	if mock.capturedDeltaReq == nil {
+		t.Fatal("expected GetSyncDelta to be called, but capturedDeltaReq is nil")
+	}
+
+	if mock.capturedDeltaReq.DeviceId != "TEST_DEVICE_D1" {
+		t.Errorf("expected DeviceId=%q forwarded to Core, got %q",
+			"TEST_DEVICE_D1", mock.capturedDeltaReq.DeviceId)
+	}
+}
+
+// ─── Story 9-22 AC1: Per-device token independence ───────────────────────────
+//
+// TestSyncTokens_PerDevice_NoOverwrite verifies that two devices (D1 and D2)
+// each forward their own device_id independently to Core. The gateway correctly
+// isolates device contexts — the Core is responsible for per-device storage,
+// but the gateway must pass the right device_id so each device's checkpoint is
+// independently scoped.
+//
+// Given:  two devices D1 and D2 with distinct since_tokens S1 and S2
+// When:   GET /sync?since=S1 is called with device D1, then GET /sync?since=S2
+//         is called with device D2 (two separate requests)
+// Then:   each request forwards its own device_id and since_token to Core;
+//         D1 request has DeviceId="D1" and SinceToken="S1",
+//         D2 request has DeviceId="D2" and SinceToken="S2"
+func TestSyncTokens_PerDevice_NoOverwrite(t *testing.T) {
+	mockD1 := &mockGetSyncDeltaCoreClient{
+		deltaResp: &pb.GetSyncDeltaResponse{
+			SinceToken:        "next_batch_d1",
+			FallbackToInitial: false,
+			Rooms:             []*pb.SyncRoom{},
+		},
+	}
+	mockD2 := &mockGetSyncDeltaCoreClient{
+		deltaResp: &pb.GetSyncDeltaResponse{
+			SinceToken:        "next_batch_d2",
+			FallbackToInitial: false,
+			Rooms:             []*pb.SyncRoom{},
+		},
+	}
+
+	handlerD1, makeTokenWithClaims := buildAuthedSyncDeltaHandlerWithClaims(t, mockD1)
+	tokenD1 := makeTokenWithClaims(map[string]any{"did": "D1"})
+
+	handlerD2, makeTokenWithClaims2 := buildAuthedSyncDeltaHandlerWithClaims(t, mockD2)
+	tokenD2 := makeTokenWithClaims2(map[string]any{"did": "D2"})
+
+	// Device D1 syncs with since=S1
+	reqD1 := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync?since=S1&timeout=0", nil)
+	reqD1.Header.Set("Authorization", "Bearer "+tokenD1)
+	wD1 := httptest.NewRecorder()
+	handlerD1.ServeHTTP(wD1, reqD1)
+
+	if wD1.Code != http.StatusOK {
+		t.Fatalf("D1: expected 200, got %d; body: %s", wD1.Code, wD1.Body.String())
+	}
+	if mockD1.capturedDeltaReq == nil {
+		t.Fatal("D1: expected GetSyncDelta to be called")
+	}
+	if mockD1.capturedDeltaReq.DeviceId != "D1" {
+		t.Errorf("D1: expected DeviceId=%q, got %q", "D1", mockD1.capturedDeltaReq.DeviceId)
+	}
+	if mockD1.capturedDeltaReq.SinceToken != "S1" {
+		t.Errorf("D1: expected SinceToken=%q, got %q", "S1", mockD1.capturedDeltaReq.SinceToken)
+	}
+
+	// Device D2 syncs with since=S2 — must use its own device_id, not D1
+	reqD2 := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync?since=S2&timeout=0", nil)
+	reqD2.Header.Set("Authorization", "Bearer "+tokenD2)
+	wD2 := httptest.NewRecorder()
+	handlerD2.ServeHTTP(wD2, reqD2)
+
+	if wD2.Code != http.StatusOK {
+		t.Fatalf("D2: expected 200, got %d; body: %s", wD2.Code, wD2.Body.String())
+	}
+	if mockD2.capturedDeltaReq == nil {
+		t.Fatal("D2: expected GetSyncDelta to be called")
+	}
+	if mockD2.capturedDeltaReq.DeviceId != "D2" {
+		t.Errorf("D2: expected DeviceId=%q, got %q", "D2", mockD2.capturedDeltaReq.DeviceId)
+	}
+	if mockD2.capturedDeltaReq.SinceToken != "S2" {
+		t.Errorf("D2: expected SinceToken=%q, got %q", "S2", mockD2.capturedDeltaReq.SinceToken)
+	}
+
+	// AC1: D1 and D2 produced independent requests with separate device_ids and since_tokens.
+	// The gateway does not mix up the two device contexts.
+	if mockD1.capturedDeltaReq.DeviceId == mockD2.capturedDeltaReq.DeviceId {
+		t.Errorf("AC1 violation: D1 and D2 forwarded the same DeviceId %q — device contexts not isolated",
+			mockD1.capturedDeltaReq.DeviceId)
+	}
+}
+
+// ─── Story 9-22 AC2: Token mismatch → FallbackToInitial ──────────────────────
+//
+// TestSyncTokens_TokenMismatch_FallsBackToInitial verifies that when Core returns
+// FallbackToInitial=true (e.g. because the client sent a stale ?since token that
+// doesn't match the stored per-device token), the gateway falls back to
+// GetInitialSync and returns the initial sync response to the client.
+//
+// Given:  device D2 sends ?since=S1 (the token for D1, not D2)
+//         Core returns FallbackToInitial=true for the delta request
+//         Core returns a full initial sync response when GetInitialSync is called
+// When:   GET /sync?since=S1 with device D2's JWT
+// Then:   server returns 200 with rooms from the initial sync (not the delta);
+//         GetInitialSync WAS called; next_batch == "initial_token_for_d2"
+func TestSyncTokens_TokenMismatch_FallsBackToInitial(t *testing.T) {
+	stateContentBytes := []byte(`{"membership":"join"}`)
+
+	mock := &mockGetSyncDeltaCoreClient{
+		// Core signals token mismatch: FallbackToInitial=true
+		deltaResp: &pb.GetSyncDeltaResponse{
+			SinceToken:        "",
+			FallbackToInitial: true,
+			Rooms:             []*pb.SyncRoom{},
+		},
+		// Core returns a full initial sync response
+		initialResp: &pb.GetInitialSyncResponse{
+			SinceToken: "initial_token_for_d2",
+			Rooms: []*pb.SyncRoom{
+				{
+					RoomId: "!room_d2:test.local",
+					StateEvents: []*pb.SyncRoomStateEvent{
+						{
+							Type:     "m.room.member",
+							StateKey: "@alice:test.local",
+							Content:  stateContentBytes,
+							Sender:   "@alice:test.local",
+						},
+					},
+					TimelineEvents: []*pb.Event{},
+				},
+			},
+		},
+	}
+
+	// Device D2 sends S1 (wrong token — mismatch at Core)
+	handler, makeTokenWithClaims := buildAuthedSyncDeltaHandlerWithClaims(t, mock)
+	token := makeTokenWithClaims(map[string]any{"did": "D2"})
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync?since=S1&timeout=0", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("AC2: expected 200 after token mismatch fallback, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		NextBatch string `json:"next_batch"`
+		Rooms     struct {
+			Join map[string]json.RawMessage `json:"join"`
+		} `json:"rooms"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("AC2: failed to decode response: %v", err)
+	}
+
+	// next_batch must come from the initial sync response, not the empty delta
+	if resp.NextBatch != "initial_token_for_d2" {
+		t.Errorf("AC2: expected next_batch=%q (initial sync), got %q", "initial_token_for_d2", resp.NextBatch)
+	}
+
+	// GetInitialSync must have been called (fallback path taken)
+	if mock.capturedInitialReq == nil {
+		t.Error("AC2: expected GetInitialSync to be called after FallbackToInitial=true")
+	}
+
+	// GetSyncDelta must also have been called (it triggered the fallback)
+	if mock.capturedDeltaReq == nil {
+		t.Error("AC2: expected GetSyncDelta to be called with the stale token")
+	}
+	if mock.capturedDeltaReq.DeviceId != "D2" {
+		t.Errorf("AC2: expected DeviceId=%q forwarded to Core, got %q", "D2", mock.capturedDeltaReq.DeviceId)
+	}
+
+	// The room from the initial sync must be in rooms.join
+	if _, ok := resp.Rooms.Join["!room_d2:test.local"]; !ok {
+		t.Errorf("AC2: expected rooms.join to contain !room_d2:test.local after fallback, got: %v", resp.Rooms.Join)
+	}
+}
+
+// ─── Story 9-22 AC3: Unknown device → FallbackToInitial ──────────────────────
+//
+// TestSyncTokens_UnknownDevice_FallsBackToInitial verifies that when a device
+// has no stored sync_tokens row (e.g. first request after re-login), Core returns
+// FallbackToInitial=true and the gateway correctly serves a full initial sync.
+// The gateway must NOT crash or return a 5xx — it must return 200 with a full sync.
+//
+// Given:  no sync_tokens row for (user_id, device_id) — Core signals fallback
+//         Core returns FallbackToInitial=true for the delta request
+//         Core returns a full initial sync response
+// When:   GET /sync?since=<any_token>&device=<unknown_device>
+// Then:   200 response; GetInitialSync WAS called; no 500 error
+func TestSyncTokens_UnknownDevice_FallsBackToInitial(t *testing.T) {
+	stateContentBytes := []byte(`{"membership":"join"}`)
+
+	mock := &mockGetSyncDeltaCoreClient{
+		// Core returns fallback for unknown device
+		deltaResp: &pb.GetSyncDeltaResponse{
+			SinceToken:        "",
+			FallbackToInitial: true,
+			Rooms:             []*pb.SyncRoom{},
+		},
+		initialResp: &pb.GetInitialSyncResponse{
+			SinceToken: "initial_token_unknown_device",
+			Rooms: []*pb.SyncRoom{
+				{
+					RoomId: "!some_room:test.local",
+					StateEvents: []*pb.SyncRoomStateEvent{
+						{
+							Type:     "m.room.member",
+							StateKey: "@alice:test.local",
+							Content:  stateContentBytes,
+							Sender:   "@alice:test.local",
+						},
+					},
+					TimelineEvents: []*pb.Event{},
+				},
+			},
+		},
+	}
+
+	// Unknown device — no stored sync_tokens row; Core returns fallback
+	handler, makeTokenWithClaims := buildAuthedSyncDeltaHandlerWithClaims(t, mock)
+	token := makeTokenWithClaims(map[string]any{"did": "UNKNOWN_DEVICE_XYZ"})
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync?since=stale_token&timeout=0", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	// AC3: Must NOT crash with 500 — unknown device results in full initial sync (200)
+	if w.Code != http.StatusOK {
+		t.Fatalf("AC3: expected 200 for unknown device (not 500), got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		NextBatch string `json:"next_batch"`
+		Rooms     struct {
+			Join map[string]json.RawMessage `json:"join"`
+		} `json:"rooms"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("AC3: failed to decode response: %v", err)
+	}
+
+	// next_batch must come from the initial sync, not empty
+	if resp.NextBatch == "" {
+		t.Error("AC3: expected non-empty next_batch after fallback for unknown device")
+	}
+	if resp.NextBatch != "initial_token_unknown_device" {
+		t.Errorf("AC3: expected next_batch=%q, got %q", "initial_token_unknown_device", resp.NextBatch)
+	}
+
+	// GetInitialSync must have been called — unknown device triggers full sync
+	if mock.capturedInitialReq == nil {
+		t.Error("AC3: expected GetInitialSync to be called for unknown device")
+	}
+
+	// GetSyncDelta must have been called first (it returned fallback)
+	if mock.capturedDeltaReq == nil {
+		t.Error("AC3: expected GetSyncDelta to be called before fallback")
+	}
+	if mock.capturedDeltaReq.DeviceId != "UNKNOWN_DEVICE_XYZ" {
+		t.Errorf("AC3: expected DeviceId=%q forwarded to Core, got %q",
+			"UNKNOWN_DEVICE_XYZ", mock.capturedDeltaReq.DeviceId)
+	}
+}
+
+// ─── Story 9-23: GAP-INVITE-STATE — invite_state Missing join_rules, avatar, create ──
+//
+// These tests are written FIRST (ATDD red phase), before any implementation code exists.
+// ALL tests in this block are expected to FAIL until Story 9-23 is implemented.
+//
+// Spec §4.4.4: Stripped state events — each event MUST contain type, sender, state_key,
+// and content ONLY. The following events SHOULD be included in invite_state.events:
+//   - m.room.join_rules  (AC1)
+//   - m.room.avatar      (AC2 — omitted entirely when url is empty/missing)
+//   - m.room.create      (AC3)
+//   - m.room.member      (AC4 regression)
+//   - m.room.name        (AC4 regression)
+//
+// DB error / missing event → silently omit (never propagate as API error).
+// JSONB double-encoding: content stored as string-escaped JSON must parse correctly
+// using the CASE guard pattern already used for m.room.name.
+//
+// Test helper: insertInviteFixture sets up users + room + room_invitations row.
+// Each test inserts its own events rows and cleans up via t.Cleanup.
+
+// insertInviteFixture inserts a minimal pending-invite fixture:
+//   - inviterID user row
+//   - inviteeID user row
+//   - room row
+//   - room_invitations row (pending: accepted_at and rejected_at both NULL)
+//
+// Returns a cleanup function that removes all inserted rows.
+func insertInviteFixture(t *testing.T, db *sql.DB, inviterID, inviteeID, roomID string) func() {
+	t.Helper()
+	now := int64(1700001000000)
+
+	for _, uid := range []string{inviterID, inviteeID} {
+		_, err := db.Exec(
+			`INSERT INTO users (user_id, system_role, is_active, created_at) VALUES ($1, 'user', true, $2) ON CONFLICT DO NOTHING`,
+			uid, now,
+		)
+		if err != nil {
+			t.Fatalf("insertInviteFixture: insert user %s: %v", uid, err)
+		}
+	}
+
+	_, err := db.Exec(
+		`INSERT INTO rooms (room_id, visibility, created_at) VALUES ($1, 'private', $2) ON CONFLICT DO NOTHING`,
+		roomID, now,
+	)
+	if err != nil {
+		t.Fatalf("insertInviteFixture: insert room: %v", err)
+	}
+
+	_, err = db.Exec(
+		`INSERT INTO room_invitations (room_id, inviter_id, invitee_id, invited_at)
+		 VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
+		roomID, inviterID, inviteeID, now,
+	)
+	if err != nil {
+		t.Fatalf("insertInviteFixture: insert invitation: %v", err)
+	}
+
+	return func() {
+		_, _ = db.Exec(`DELETE FROM room_invitations WHERE room_id = $1 AND invitee_id = $2`, roomID, inviteeID)
+		_, _ = db.Exec(`DELETE FROM rooms WHERE room_id = $1`, roomID)
+		for _, uid := range []string{inviterID, inviteeID} {
+			_, _ = db.Exec(`DELETE FROM users WHERE user_id = $1`, uid)
+		}
+	}
+}
+
+// findInviteEvent is a helper that searches invite_state.events for an event of the
+// given type and returns it plus a found flag.
+func findInviteEvent(t *testing.T, invites map[string]interface{}, roomID, eventType string) (map[string]interface{}, bool) {
+	t.Helper()
+	roomRaw, ok := invites[roomID]
+	if !ok {
+		return nil, false
+	}
+	roomMap, ok := roomRaw.(map[string]interface{})
+	if !ok {
+		t.Fatalf("findInviteEvent: room entry is not map[string]interface{}, got %T", roomRaw)
+	}
+	inviteStateRaw, ok := roomMap["invite_state"]
+	if !ok {
+		return nil, false
+	}
+	inviteStateMap, ok := inviteStateRaw.(map[string]interface{})
+	if !ok {
+		t.Fatalf("findInviteEvent: invite_state is not map[string]interface{}, got %T", inviteStateRaw)
+	}
+	eventsRaw, ok := inviteStateMap["events"]
+	if !ok {
+		return nil, false
+	}
+	// Handle both []map[string]interface{} (our concrete type) and []interface{}
+	// (e.g. when the slice has been round-tripped through JSON or an interface{}
+	// container). This is consistent with how other helpers in sync_test.go work.
+	switch ev := eventsRaw.(type) {
+	case []map[string]interface{}:
+		for _, e := range ev {
+			if e["type"] == eventType {
+				return e, true
+			}
+		}
+	case []interface{}:
+		for _, eRaw := range ev {
+			e, ok := eRaw.(map[string]interface{})
+			if !ok {
+				t.Fatalf("findInviteEvent: events[i] is not map[string]interface{}, got %T", eRaw)
+			}
+			if e["type"] == eventType {
+				return e, true
+			}
+		}
+	default:
+		t.Fatalf("findInviteEvent: events is not a recognized slice type, got %T", eventsRaw)
+	}
+	return nil, false
+}
+
+// assertStrippedStateFields verifies that a stripped state event (Matrix spec §4.4.4)
+// contains ONLY the four allowed fields: type, sender, state_key, content.
+// The following fields MUST be absent: event_id, unsigned, origin_server_ts, room_id.
+// MINOR-3: added per pre-dev test quality review to enforce Matrix spec §4.4.4 MUST.
+func assertStrippedStateFields(t *testing.T, ev map[string]interface{}, eventType string) {
+	t.Helper()
+	forbidden := []string{"event_id", "unsigned", "origin_server_ts", "room_id"}
+	for _, field := range forbidden {
+		if _, present := ev[field]; present {
+			t.Errorf("spec §4.4.4 MUST: stripped state event %q MUST NOT contain field %q", eventType, field)
+		}
+	}
+}
+
+// TestBuildInviteRooms_JoinRulesPresent — AC1
+//
+// Given: a pending invite and a m.room.join_rules event with join_rule="public" in the
+//
+//	events table (JSONB object form)
+//
+// When:  buildInviteRooms is called for the invitee
+// Then:  invite_state.events contains an event with type="m.room.join_rules" and
+//
+//	content.join_rule="public"
+//
+// RED: this test MUST FAIL until buildInviteRooms queries m.room.join_rules.
+func TestBuildInviteRooms_JoinRulesPresent(t *testing.T) {
+	db := openTestDB(t)
+
+	inviterID := "@9-23-jr-inviter:test.local"
+	inviteeID := "@9-23-jr-invitee:test.local"
+	roomID := "!9-23-jr-room:test.local"
+	eventID := "$9-23-jr-ev1:test.local"
+
+	cleanup := insertInviteFixture(t, db, inviterID, inviteeID, roomID)
+	t.Cleanup(cleanup)
+
+	// Insert m.room.join_rules event (JSONB object form)
+	_, err := db.Exec(
+		`INSERT INTO events (event_id, room_id, sender, event_type, content, origin_server_ts)
+		 VALUES ($1, $2, $3, 'm.room.join_rules', '{"join_rule":"public"}'::jsonb, $4)
+		 ON CONFLICT DO NOTHING`,
+		eventID, roomID, inviterID, int64(1700001001000),
+	)
+	if err != nil {
+		t.Fatalf("JoinRulesPresent: insert event: %v", err)
+	}
+	t.Cleanup(func() { _, _ = db.Exec(`DELETE FROM events WHERE event_id = $1`, eventID) })
+
+	h := &GetSyncHandler{db: db}
+	invites := h.buildInviteRooms(context.Background(), inviteeID)
+
+	ev, found := findInviteEvent(t, invites, roomID, "m.room.join_rules")
+	if !found {
+		t.Fatalf("AC1: invite_state.events MUST contain m.room.join_rules when event is in DB; got events: %v", invites[roomID])
+	}
+
+	content, ok := ev["content"].(map[string]string)
+	if !ok {
+		t.Fatalf("AC1: m.room.join_rules content is not map[string]string, got %T", ev["content"])
+	}
+	if content["join_rule"] != "public" {
+		t.Errorf("AC1: expected content.join_rule=%q, got %q", "public", content["join_rule"])
+	}
+	// MINOR-3: verify stripped-state field exclusion (spec §4.4.4 MUST)
+	assertStrippedStateFields(t, ev, "m.room.join_rules")
+}
+
+// TestBuildInviteRooms_JoinRulesMissing — AC1 (absent branch)
+//
+// Given: a pending invite but NO m.room.join_rules event in the events table for that room
+// When:  buildInviteRooms is called
+// Then:  no m.room.join_rules entry appears in invite_state.events (graceful omission, no error)
+//
+// RED: this test MUST FAIL until buildInviteRooms correctly omits the event on sql.ErrNoRows.
+func TestBuildInviteRooms_JoinRulesMissing(t *testing.T) {
+	db := openTestDB(t)
+
+	inviterID := "@9-23-jrm-inviter:test.local"
+	inviteeID := "@9-23-jrm-invitee:test.local"
+	roomID := "!9-23-jrm-room:test.local"
+
+	cleanup := insertInviteFixture(t, db, inviterID, inviteeID, roomID)
+	t.Cleanup(cleanup)
+
+	// Deliberately do NOT insert a m.room.join_rules event.
+
+	h := &GetSyncHandler{db: db}
+	invites := h.buildInviteRooms(context.Background(), inviteeID)
+
+	// Room must still appear in invites (the invite itself is present)
+	if _, ok := invites[roomID]; !ok {
+		t.Fatalf("JoinRulesMissing: room %q must appear in rooms.invite even without join_rules event", roomID)
+	}
+
+	_, found := findInviteEvent(t, invites, roomID, "m.room.join_rules")
+	if found {
+		t.Errorf("AC1 (absent): m.room.join_rules MUST NOT appear in invite_state.events when no event is in DB")
+	}
+}
+
+// TestBuildInviteRooms_AvatarPresentWhenUrlSet — AC2
+//
+// Given: a pending invite and a m.room.avatar event with url="mxc://example.com/abc" in
+//
+//	the events table (JSONB object form)
+//
+// When:  buildInviteRooms is called
+// Then:  invite_state.events contains an event with type="m.room.avatar" and
+//
+//	content.url="mxc://example.com/abc"
+//
+// RED: this test MUST FAIL until buildInviteRooms queries m.room.avatar.
+func TestBuildInviteRooms_AvatarPresentWhenUrlSet(t *testing.T) {
+	db := openTestDB(t)
+
+	inviterID := "@9-23-av-inviter:test.local"
+	inviteeID := "@9-23-av-invitee:test.local"
+	roomID := "!9-23-av-room:test.local"
+	eventID := "$9-23-av-ev1:test.local"
+
+	cleanup := insertInviteFixture(t, db, inviterID, inviteeID, roomID)
+	t.Cleanup(cleanup)
+
+	// Insert m.room.avatar event with a non-empty url (JSONB object form)
+	_, err := db.Exec(
+		`INSERT INTO events (event_id, room_id, sender, event_type, content, origin_server_ts)
+		 VALUES ($1, $2, $3, 'm.room.avatar', '{"url":"mxc://example.com/abc"}'::jsonb, $4)
+		 ON CONFLICT DO NOTHING`,
+		eventID, roomID, inviterID, int64(1700001002000),
+	)
+	if err != nil {
+		t.Fatalf("AvatarPresentWhenUrlSet: insert event: %v", err)
+	}
+	t.Cleanup(func() { _, _ = db.Exec(`DELETE FROM events WHERE event_id = $1`, eventID) })
+
+	h := &GetSyncHandler{db: db}
+	invites := h.buildInviteRooms(context.Background(), inviteeID)
+
+	ev, found := findInviteEvent(t, invites, roomID, "m.room.avatar")
+	if !found {
+		t.Fatalf("AC2: invite_state.events MUST contain m.room.avatar when url is set; got events: %v", invites[roomID])
+	}
+
+	content, ok := ev["content"].(map[string]string)
+	if !ok {
+		t.Fatalf("AC2: m.room.avatar content is not map[string]string, got %T", ev["content"])
+	}
+	if content["url"] != "mxc://example.com/abc" {
+		t.Errorf("AC2: expected content.url=%q, got %q", "mxc://example.com/abc", content["url"])
+	}
+	// MINOR-3: verify stripped-state field exclusion (spec §4.4.4 MUST)
+	assertStrippedStateFields(t, ev, "m.room.avatar")
+}
+
+// TestBuildInviteRooms_AvatarAbsentWhenNoUrl — AC2 (absent branch)
+//
+// Given: a pending invite but no m.room.avatar event (or event with empty url)
+// When:  buildInviteRooms is called
+// Then:  no m.room.avatar entry appears in invite_state.events (graceful omission)
+//
+// Spec: "Rooms with no avatar are silently omitted — Element Web handles the missing
+// event gracefully."
+//
+// RED: this test MUST FAIL until buildInviteRooms correctly omits avatar on empty url.
+func TestBuildInviteRooms_AvatarAbsentWhenNoUrl(t *testing.T) {
+	db := openTestDB(t)
+
+	inviterID := "@9-23-avn-inviter:test.local"
+	inviteeID := "@9-23-avn-invitee:test.local"
+	roomID := "!9-23-avn-room:test.local"
+	eventID := "$9-23-avn-ev1:test.local"
+
+	cleanup := insertInviteFixture(t, db, inviterID, inviteeID, roomID)
+	t.Cleanup(cleanup)
+
+	// Insert m.room.avatar event with EMPTY url — must be omitted by buildInviteRooms
+	_, err := db.Exec(
+		`INSERT INTO events (event_id, room_id, sender, event_type, content, origin_server_ts)
+		 VALUES ($1, $2, $3, 'm.room.avatar', '{"url":""}'::jsonb, $4)
+		 ON CONFLICT DO NOTHING`,
+		eventID, roomID, inviterID, int64(1700001003000),
+	)
+	if err != nil {
+		t.Fatalf("AvatarAbsentWhenNoUrl: insert event: %v", err)
+	}
+	t.Cleanup(func() { _, _ = db.Exec(`DELETE FROM events WHERE event_id = $1`, eventID) })
+
+	h := &GetSyncHandler{db: db}
+	invites := h.buildInviteRooms(context.Background(), inviteeID)
+
+	if _, ok := invites[roomID]; !ok {
+		t.Fatalf("AvatarAbsentWhenNoUrl: room %q must appear in rooms.invite even without avatar url", roomID)
+	}
+
+	_, found := findInviteEvent(t, invites, roomID, "m.room.avatar")
+	if found {
+		t.Errorf("AC2 (absent): m.room.avatar MUST NOT appear in invite_state.events when url is empty")
+	}
+}
+
+// TestBuildInviteRooms_CreatePresent — AC3
+//
+// Given: a pending invite and a m.room.create event with creator="@alice:example.com" in
+//
+//	the events table (JSONB object form)
+//
+// When:  buildInviteRooms is called
+// Then:  invite_state.events contains an event with type="m.room.create" and
+//
+//	content.creator="@alice:example.com"
+//
+// RED: this test MUST FAIL until buildInviteRooms queries m.room.create.
+func TestBuildInviteRooms_CreatePresent(t *testing.T) {
+	db := openTestDB(t)
+
+	inviterID := "@9-23-cr-inviter:test.local"
+	inviteeID := "@9-23-cr-invitee:test.local"
+	roomCreator := "@alice:example.com"
+	roomID := "!9-23-cr-room:test.local"
+	eventID := "$9-23-cr-ev1:test.local"
+
+	cleanup := insertInviteFixture(t, db, inviterID, inviteeID, roomID)
+	t.Cleanup(cleanup)
+
+	// Insert m.room.create event (JSONB object form)
+	_, err := db.Exec(
+		`INSERT INTO events (event_id, room_id, sender, event_type, content, origin_server_ts)
+		 VALUES ($1, $2, $3, 'm.room.create', $4::jsonb, $5)
+		 ON CONFLICT DO NOTHING`,
+		eventID, roomID, roomCreator, fmt.Sprintf(`{"creator":"%s"}`, roomCreator), int64(1700001004000),
+	)
+	if err != nil {
+		t.Fatalf("CreatePresent: insert event: %v", err)
+	}
+	t.Cleanup(func() { _, _ = db.Exec(`DELETE FROM events WHERE event_id = $1`, eventID) })
+
+	h := &GetSyncHandler{db: db}
+	invites := h.buildInviteRooms(context.Background(), inviteeID)
+
+	ev, found := findInviteEvent(t, invites, roomID, "m.room.create")
+	if !found {
+		t.Fatalf("AC3: invite_state.events MUST contain m.room.create when event is in DB; got events: %v", invites[roomID])
+	}
+
+	content, ok := ev["content"].(map[string]string)
+	if !ok {
+		t.Fatalf("AC3: m.room.create content is not map[string]string, got %T", ev["content"])
+	}
+	if content["creator"] != roomCreator {
+		t.Errorf("AC3: expected content.creator=%q, got %q", roomCreator, content["creator"])
+	}
+	// MINOR-3: verify stripped-state field exclusion (spec §4.4.4 MUST)
+	assertStrippedStateFields(t, ev, "m.room.create")
+}
+
+// TestBuildInviteRooms_RegressionMemberStillPresent — AC4 regression
+//
+// Given: a pending invite (no name/join_rules/avatar/create events in DB)
+// When:  buildInviteRooms is called
+// Then:  invite_state.events still contains m.room.member with content.membership="invite"
+//
+// Regression guard: new events (join_rules, avatar, create) MUST NOT displace the
+// mandatory m.room.member event that was already present before Story 9-23.
+//
+// RED: this test MUST FAIL until buildInviteRooms is implemented in 9-23 and still
+// preserves m.room.member.
+func TestBuildInviteRooms_RegressionMemberStillPresent(t *testing.T) {
+	db := openTestDB(t)
+
+	inviterID := "@9-23-reg-inviter:test.local"
+	inviteeID := "@9-23-reg-invitee:test.local"
+	roomID := "!9-23-reg-room:test.local"
+
+	cleanup := insertInviteFixture(t, db, inviterID, inviteeID, roomID)
+	t.Cleanup(cleanup)
+
+	// No additional events — only the mandatory m.room.member must be present.
+
+	h := &GetSyncHandler{db: db}
+	invites := h.buildInviteRooms(context.Background(), inviteeID)
+
+	ev, found := findInviteEvent(t, invites, roomID, "m.room.member")
+	if !found {
+		t.Fatalf("AC4 regression: invite_state.events MUST always contain m.room.member; got: %v", invites[roomID])
+	}
+
+	content, ok := ev["content"].(map[string]string)
+	if !ok {
+		t.Fatalf("AC4 regression: m.room.member content is not map[string]string, got %T", ev["content"])
+	}
+	if content["membership"] != "invite" {
+		t.Errorf("AC4 regression: expected content.membership=%q, got %q", "invite", content["membership"])
+	}
+	if ev["state_key"] != inviteeID {
+		t.Errorf("AC4 regression: expected state_key=%q (invitee), got %q", inviteeID, ev["state_key"])
+	}
+}
+
+// TestBuildInviteRooms_RegressionNameStillPresent — AC4 regression
+//
+// Given: a pending invite with a m.room.name event in the events table
+// When:  buildInviteRooms is called
+// Then:  invite_state.events still contains m.room.name with the correct room name
+//
+// Regression guard: the addition of join_rules, avatar, create queries MUST NOT break
+// the existing m.room.name behaviour introduced before Story 9-23.
+//
+// RED: this test MUST FAIL until buildInviteRooms is implemented in 9-23 and still
+// includes m.room.name.
+func TestBuildInviteRooms_RegressionNameStillPresent(t *testing.T) {
+	db := openTestDB(t)
+
+	inviterID := "@9-23-regn-inviter:test.local"
+	inviteeID := "@9-23-regn-invitee:test.local"
+	roomID := "!9-23-regn-room:test.local"
+	eventID := "$9-23-regn-ev1:test.local"
+
+	cleanup := insertInviteFixture(t, db, inviterID, inviteeID, roomID)
+	t.Cleanup(cleanup)
+
+	// Insert m.room.name event (JSONB object form)
+	_, err := db.Exec(
+		`INSERT INTO events (event_id, room_id, sender, event_type, content, origin_server_ts)
+		 VALUES ($1, $2, $3, 'm.room.name', '{"name":"ATDD Room 9-23"}'::jsonb, $4)
+		 ON CONFLICT DO NOTHING`,
+		eventID, roomID, inviterID, int64(1700001005000),
+	)
+	if err != nil {
+		t.Fatalf("RegressionNameStillPresent: insert event: %v", err)
+	}
+	t.Cleanup(func() { _, _ = db.Exec(`DELETE FROM events WHERE event_id = $1`, eventID) })
+
+	h := &GetSyncHandler{db: db}
+	invites := h.buildInviteRooms(context.Background(), inviteeID)
+
+	ev, found := findInviteEvent(t, invites, roomID, "m.room.name")
+	if !found {
+		t.Fatalf("AC4 regression: invite_state.events MUST still contain m.room.name after 9-23 changes; got: %v", invites[roomID])
+	}
+
+	content, ok := ev["content"].(map[string]string)
+	if !ok {
+		t.Fatalf("AC4 regression: m.room.name content is not map[string]string, got %T", ev["content"])
+	}
+	if content["name"] != "ATDD Room 9-23" {
+		t.Errorf("AC4 regression: expected content.name=%q, got %q", "ATDD Room 9-23", content["name"])
+	}
+}
+
+// ─── Story 9-24: GAP-GLOBAL-ACCOUNT-DATA — Top-level account_data in sync ────
+//
+// These tests are written FIRST (ATDD gate), before any Story 9-24 implementation
+// exists. ALL tests in this section MUST FAIL to compile until:
+//   - GlobalAccountDataDB interface is added to account_data.go
+//   - GetSyncConfig.GlobalAccountDataDB field is added to sync.go
+//   - syncResponse.AccountData field (type syncAccountDataSection) is added to sync.go
+//   - injectGlobalAccountData helper is implemented in sync.go
+//
+// Test strategy:
+//   - mockGlobalAccountDataDB implements the GlobalAccountDataDB interface
+//     (consumer-defined, defined here alongside the tests per Go convention).
+//   - buildAuthedSyncGlobalAccountDataHandler wires JWTMiddleware → GetSyncHandler
+//     with both a mockGetSyncCoreClient and a mockGlobalAccountDataDB injected.
+//   - Tests cover: initial sync, incremental sync, empty case, DB error degradation,
+//     and per-room regression (global rows must NOT appear in rooms.join).
+//
+// AC coverage:
+//   AC1 → TestGetSync_GlobalAccountData_InitialSync
+//   AC2 → TestGetSync_GlobalAccountData_IncrementalSync
+//   AC1+AC2 empty branch → TestGetSync_GlobalAccountData_Empty
+//   AC6 → TestGetSync_GlobalAccountData_DBError_Degrades
+//   AC4 regression → TestGetSync_PerRoomAccountData_NotAffectedByGlobal
+//   AC5 (struct shape) → tested implicitly by all tests above (json:"account_data" key)
+
+// mockGlobalAccountDataDB implements GlobalAccountDataDB for Story 9-24 tests.
+// Defined here (consumer-defined interface, Go convention per ADR-009).
+// This type references GlobalAccountDataDB and GlobalAccountDataRow which do NOT
+// exist yet — every test in this section MUST fail with a compilation error until
+// Story 9-24 adds those types to account_data.go.
+type mockGlobalAccountDataDB struct {
+	rows []GlobalAccountDataRow
+	err  error
+}
+
+func (m *mockGlobalAccountDataDB) ListGlobalAccountData(_ context.Context, _ string) ([]GlobalAccountDataRow, error) {
+	if m.err != nil {
+		return []GlobalAccountDataRow{}, m.err
+	}
+	if m.rows == nil {
+		return []GlobalAccountDataRow{}, nil
+	}
+	return m.rows, nil
+}
+
+// buildAuthedSyncGlobalAccountDataHandler wires JWTMiddleware → GetSyncHandler with
+// a mockGetSyncCoreClient (initial sync) and an optional mockGlobalAccountDataDB.
+// Used by all Story 9-24 unit tests.
+// This function references GetSyncConfig.GlobalAccountDataDB which does NOT exist
+// yet — compilation MUST fail until sync.go is updated in Story 9-24.
+func buildAuthedSyncGlobalAccountDataHandler(
+	t *testing.T,
+	coreMock *mockGetSyncCoreClient,
+	globalDB *mockGlobalAccountDataDB,
+) (http.Handler, func() string) {
+	t.Helper()
+
+	oidcSrv, privateKey := setupOIDCServer(t)
+	t.Cleanup(oidcSrv.Close)
+
+	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
+
+	cfg := GetSyncConfig{
+		CoreClient:          coreMock,
+		ServerName:          "test.local",
+		GlobalAccountDataDB: globalDB, // Story 9-24: GlobalAccountDataDB field DOES NOT EXIST YET
+	}
+	handler := NewGetSyncHandler(cfg)
+
+	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
+		http.HandlerFunc(handler.GetSync),
+	)
+
+	makeToken := func() string {
+		return signJWT(t, oidcSrv.URL, privateKey, time.Now().Add(time.Hour), nil)
+	}
+
+	return authed, makeToken
+}
+
+// buildAuthedSyncGlobalAccountDataDeltaHandler is the incremental-sync counterpart.
+// Uses mockGetSyncDeltaCoreClient so both initial (FallbackToInitial) and delta paths
+// are exercised together with GlobalAccountDataDB injection.
+func buildAuthedSyncGlobalAccountDataDeltaHandler(
+	t *testing.T,
+	coreMock *mockGetSyncDeltaCoreClient,
+	globalDB *mockGlobalAccountDataDB,
+) (http.Handler, func() string) {
+	t.Helper()
+
+	oidcSrv, privateKey := setupOIDCServer(t)
+	t.Cleanup(oidcSrv.Close)
+
+	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
+
+	cfg := GetSyncConfig{
+		CoreClient:          coreMock,
+		ServerName:          "test.local",
+		GlobalAccountDataDB: globalDB, // Story 9-24: GlobalAccountDataDB field DOES NOT EXIST YET
+	}
+	handler := NewGetSyncHandler(cfg)
+
+	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
+		http.HandlerFunc(handler.GetSync),
+	)
+
+	makeToken := func() string {
+		return signJWT(t, oidcSrv.URL, privateKey, time.Now().Add(time.Hour), nil)
+	}
+
+	return authed, makeToken
+}
+
+// ─── Story 9-24 Test 1 [P0]: Initial sync — top-level account_data.events ────
+//
+// AC1 — GET /sync (no ?since) must return top-level account_data.events containing
+// all global account data rows for the authenticated user.
+//
+// Given: mockGlobalAccountDataDB returns [{type:"m.direct", content:{...}}]
+// When:  GET /_matrix/client/v3/sync (no ?since)
+// Then:  200; top-level "account_data".events contains 1 entry with type="m.direct"
+//        and the expected content; the "account_data" key is present (never absent)
+//
+// RED: MUST FAIL until syncResponse.AccountData field exists and injectGlobalAccountData
+// is called in GetSync (initial sync path).
+func TestGetSync_GlobalAccountData_InitialSync(t *testing.T) {
+	directContent := json.RawMessage(`{"@bob:nebu.test":["!room1:nebu.test"]}`)
+
+	coreMock := &mockGetSyncCoreClient{
+		resp: &pb.GetInitialSyncResponse{
+			SinceToken: "next_batch_global_ac1",
+			Rooms:      []*pb.SyncRoom{},
+		},
+	}
+
+	globalDB := &mockGlobalAccountDataDB{
+		rows: []GlobalAccountDataRow{
+			{EventType: "m.direct", Content: directContent},
+		},
+	}
+
+	handler, makeToken := buildAuthedSyncGlobalAccountDataHandler(t, coreMock, globalDB)
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync", nil)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("AC1: expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	// Capture raw body before decoding — json.NewDecoder consumes the buffer.
+	rawBody := w.Body.String()
+
+	var resp struct {
+		NextBatch   string `json:"next_batch"`
+		AccountData struct {
+			Events []struct {
+				Type    string          `json:"type"`
+				Content json.RawMessage `json:"content"`
+			} `json:"events"`
+		} `json:"account_data"`
+	}
+	if err := json.NewDecoder(strings.NewReader(rawBody)).Decode(&resp); err != nil {
+		t.Fatalf("AC1: failed to decode response: %v", err)
+	}
+
+	// AC1: top-level account_data must be present (never absent) and contain 1 entry
+	if resp.AccountData.Events == nil {
+		t.Fatal("AC1: top-level account_data.events must not be nil (absent) — Story 9-24: syncResponse.AccountData field missing")
+	}
+	if len(resp.AccountData.Events) != 1 {
+		t.Fatalf("AC1: expected 1 entry in account_data.events, got %d (body: %s)", len(resp.AccountData.Events), rawBody)
+	}
+	if resp.AccountData.Events[0].Type != "m.direct" {
+		t.Errorf("AC1: expected account_data.events[0].type=%q, got %q", "m.direct", resp.AccountData.Events[0].Type)
+	}
+	// Verify content round-trips correctly
+	var gotContent map[string]interface{}
+	if err := json.Unmarshal(resp.AccountData.Events[0].Content, &gotContent); err != nil {
+		t.Fatalf("AC1: failed to unmarshal content: %v", err)
+	}
+	if _, ok := gotContent["@bob:nebu.test"]; !ok {
+		t.Errorf("AC1: expected content to contain @bob:nebu.test key, got: %v", gotContent)
+	}
+
+	// AC5: verify the JSON key is "account_data" (not omitted) via raw body check
+	if !strings.Contains(rawBody, `"account_data"`) {
+		t.Errorf("AC5: response must contain JSON key \"account_data\" (top-level), raw body: %s", rawBody)
+	}
+}
+
+// ─── Story 9-24 Test 2 [P0]: Incremental sync — account_data.events ──────────
+//
+// AC2 — GET /sync?since=<token> must return top-level account_data.events
+// containing all global account data rows. Same always-present guarantee as AC1.
+//
+// Given: mockGlobalAccountDataDB returns [{type:"m.push_rules", content:{...}}]
+// When:  GET /_matrix/client/v3/sync?since=s_token_9_24
+// Then:  200; top-level "account_data".events contains type="m.push_rules"
+//
+// RED: MUST FAIL until GetSyncConfig.GlobalAccountDataDB is wired into
+// handleIncrementalSync and the delta sync path.
+func TestGetSync_GlobalAccountData_IncrementalSync(t *testing.T) {
+	pushRulesContent := json.RawMessage(`{"global":{"content":[],"override":[]}}`)
+
+	coreMock := &mockGetSyncDeltaCoreClient{
+		deltaResp: &pb.GetSyncDeltaResponse{
+			SinceToken:        "next_batch_incr_global_ac2",
+			FallbackToInitial: false,
+			Rooms:             []*pb.SyncRoom{},
+		},
+	}
+
+	globalDB := &mockGlobalAccountDataDB{
+		rows: []GlobalAccountDataRow{
+			{EventType: "m.push_rules", Content: pushRulesContent},
+		},
+	}
+
+	handler, makeToken := buildAuthedSyncGlobalAccountDataDeltaHandler(t, coreMock, globalDB)
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync?since=s_token_9_24", nil)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("AC2: expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	// Capture raw body before decoding — json.NewDecoder consumes the buffer.
+	rawBody := w.Body.String()
+
+	var resp struct {
+		AccountData struct {
+			Events []struct {
+				Type string `json:"type"`
+			} `json:"events"`
+		} `json:"account_data"`
+	}
+	if err := json.NewDecoder(strings.NewReader(rawBody)).Decode(&resp); err != nil {
+		t.Fatalf("AC2: failed to decode response: %v", err)
+	}
+
+	// AC2: account_data must be present and contain the m.push_rules entry
+	if resp.AccountData.Events == nil {
+		t.Fatal("AC2: top-level account_data.events must not be nil — incremental sync path missing GlobalAccountDataDB injection")
+	}
+	if len(resp.AccountData.Events) != 1 {
+		t.Fatalf("AC2: expected 1 entry in account_data.events, got %d", len(resp.AccountData.Events))
+	}
+	if resp.AccountData.Events[0].Type != "m.push_rules" {
+		t.Errorf("AC2: expected account_data.events[0].type=%q, got %q", "m.push_rules", resp.AccountData.Events[0].Type)
+	}
+
+	// AC5: verify "account_data" key present in incremental sync response
+	if !strings.Contains(rawBody, `"account_data"`) {
+		t.Errorf("AC5: incremental sync response must contain JSON key \"account_data\" (top-level), raw body: %s", rawBody)
+	}
+}
+
+// ─── Story 9-24 Test 2b [P0]: Incremental sync FallbackToInitial path ────────
+//
+// AC2 FallbackToInitial — GET /sync?since=<token> when Core returns
+// FallbackToInitial=true MUST also inject top-level account_data.events from
+// GlobalAccountDataDB. This covers the case where the developer wires injection
+// in the normal delta path but forgets the FallbackToInitial branch.
+//
+// Given: mockGetSyncDeltaCoreClient with FallbackToInitial=true and empty rooms;
+//        mockGlobalAccountDataDB returns [{type:"m.ignored_user_list", content:{...}}]
+// When:  GET /_matrix/client/v3/sync?since=s_stale_token_9_24_fallback
+// Then:  200; top-level "account_data".events contains type="m.ignored_user_list"
+//
+// RED: MUST FAIL until the FallbackToInitial branch in GetSync also calls
+// injectGlobalAccountData (not just the normal incremental-sync branch).
+func TestGetSync_GlobalAccountData_IncrementalSync_FallbackToInitial(t *testing.T) {
+	ignoredUserContent := json.RawMessage(`{"ignored_users":{"@spam:nebu.test":{}}}`)
+
+	coreMock := &mockGetSyncDeltaCoreClient{
+		deltaResp: &pb.GetSyncDeltaResponse{
+			SinceToken:        "next_batch_fallback_ac2b",
+			FallbackToInitial: true,
+			Rooms:             []*pb.SyncRoom{},
+		},
+		// initialResp is returned when FallbackToInitial triggers a GetInitialSync call
+		initialResp: &pb.GetInitialSyncResponse{
+			SinceToken: "next_batch_fallback_initial_ac2b",
+			Rooms:      []*pb.SyncRoom{},
+		},
+	}
+
+	globalDB := &mockGlobalAccountDataDB{
+		rows: []GlobalAccountDataRow{
+			{EventType: "m.ignored_user_list", Content: ignoredUserContent},
+		},
+	}
+
+	handler, makeToken := buildAuthedSyncGlobalAccountDataDeltaHandler(t, coreMock, globalDB)
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync?since=s_stale_token_9_24_fallback", nil)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("AC2 FallbackToInitial: expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	// Capture raw body before decoding — json.NewDecoder consumes the buffer.
+	rawBodyFallback := w.Body.String()
+
+	var resp struct {
+		AccountData struct {
+			Events []struct {
+				Type string `json:"type"`
+			} `json:"events"`
+		} `json:"account_data"`
+	}
+	if err := json.NewDecoder(strings.NewReader(rawBodyFallback)).Decode(&resp); err != nil {
+		t.Fatalf("AC2 FallbackToInitial: failed to decode response: %v", err)
+	}
+
+	// AC2 FallbackToInitial: account_data must be present and contain the m.ignored_user_list entry
+	if resp.AccountData.Events == nil {
+		t.Fatal("AC2 FallbackToInitial: top-level account_data.events must not be nil — FallbackToInitial path missing GlobalAccountDataDB injection")
+	}
+	if len(resp.AccountData.Events) != 1 {
+		t.Fatalf("AC2 FallbackToInitial: expected 1 entry in account_data.events, got %d", len(resp.AccountData.Events))
+	}
+	if resp.AccountData.Events[0].Type != "m.ignored_user_list" {
+		t.Errorf("AC2 FallbackToInitial: expected account_data.events[0].type=%q, got %q", "m.ignored_user_list", resp.AccountData.Events[0].Type)
+	}
+
+	// AC5: verify "account_data" key present in FallbackToInitial response
+	if !strings.Contains(rawBodyFallback, `"account_data"`) {
+		t.Errorf("AC5 FallbackToInitial: response must contain JSON key \"account_data\" (top-level), raw body: %s", rawBodyFallback)
+	}
+}
+
+// ─── Story 9-24 Test 3 [P0]: Empty case — account_data.events is [] ──────────
+//
+// Spec: when no global account data exists, account_data.events MUST be [] —
+// never absent, never null. This is a MUST per Matrix spec §6.3.
+//
+// Given: mockGlobalAccountDataDB returns [] (no global account data)
+// When:  GET /_matrix/client/v3/sync (initial sync)
+// Then:  200; response body contains "account_data":{"events":[]} (not absent, not null)
+//
+// RED: MUST FAIL until syncResponse.AccountData is always populated (empty slice,
+// not omitempty).
+func TestGetSync_GlobalAccountData_Empty(t *testing.T) {
+	coreMock := &mockGetSyncCoreClient{
+		resp: &pb.GetInitialSyncResponse{
+			SinceToken: "next_batch_empty_global",
+			Rooms:      []*pb.SyncRoom{},
+		},
+	}
+
+	globalDB := &mockGlobalAccountDataDB{
+		rows: []GlobalAccountDataRow{}, // empty — no global account data
+	}
+
+	handler, makeToken := buildAuthedSyncGlobalAccountDataHandler(t, coreMock, globalDB)
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync", nil)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("empty case: expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	rawBody := w.Body.String()
+
+	// Spec MUST: "account_data" key must be present in the JSON response
+	if !strings.Contains(rawBody, `"account_data"`) {
+		t.Errorf("empty case: response MUST contain top-level \"account_data\" key even when empty; raw body: %s", rawBody)
+	}
+
+	// Spec MUST: account_data.events must be [] — not null, not absent
+	var resp struct {
+		AccountData *struct {
+			Events []json.RawMessage `json:"events"`
+		} `json:"account_data"`
+	}
+	if err := json.NewDecoder(strings.NewReader(rawBody)).Decode(&resp); err != nil {
+		t.Fatalf("empty case: failed to decode response: %v", err)
+	}
+	if resp.AccountData == nil {
+		t.Fatal("empty case: top-level \"account_data\" key must not be absent (omitempty not allowed for this field)")
+	}
+	if resp.AccountData.Events == nil {
+		t.Fatal("empty case: account_data.events must be [] (not null) when no global account data exists")
+	}
+	if len(resp.AccountData.Events) != 0 {
+		t.Errorf("empty case: expected account_data.events to be empty [], got %d entries", len(resp.AccountData.Events))
+	}
+}
+
+// ─── Story 9-24 Test 4 [P0]: DB error → HTTP 200 + account_data.events:[] ────
+//
+// AC6 — when ListGlobalAccountData returns an error, the sync response MUST still
+// be returned with HTTP 200. account_data.events MUST be [] (graceful degradation).
+// The DB error is logged as WARN but not surfaced to the client.
+//
+// Given: mockGlobalAccountDataDB.ListGlobalAccountData returns an error
+// When:  GET /_matrix/client/v3/sync
+// Then:  HTTP 200; "account_data":{"events":[]}; no 500/503 returned
+//
+// RED: MUST FAIL until injectGlobalAccountData degrades gracefully on error.
+func TestGetSync_GlobalAccountData_DBError_Degrades(t *testing.T) {
+	coreMock := &mockGetSyncCoreClient{
+		resp: &pb.GetInitialSyncResponse{
+			SinceToken: "next_batch_dberr_global",
+			Rooms:      []*pb.SyncRoom{},
+		},
+	}
+
+	globalDB := &mockGlobalAccountDataDB{
+		err: fmt.Errorf("simulated DB connection error for Story 9-24 AC6"),
+	}
+
+	handler, makeToken := buildAuthedSyncGlobalAccountDataHandler(t, coreMock, globalDB)
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync", nil)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	// AC6: MUST return 200 even when DB fails — error must not be surfaced to client
+	if w.Code != http.StatusOK {
+		t.Fatalf("AC6 DB error degradation: expected HTTP 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	rawBody := w.Body.String()
+
+	// AC6: account_data must still be present with empty events []
+	var resp struct {
+		AccountData *struct {
+			Events []json.RawMessage `json:"events"`
+		} `json:"account_data"`
+	}
+	if err := json.NewDecoder(strings.NewReader(rawBody)).Decode(&resp); err != nil {
+		t.Fatalf("AC6: failed to decode response: %v", err)
+	}
+	if resp.AccountData == nil {
+		t.Fatal("AC6: \"account_data\" must be present in response even on DB error (graceful degradation)")
+	}
+	if resp.AccountData.Events == nil {
+		t.Fatal("AC6: account_data.events must be [] (not null) on DB error")
+	}
+	if len(resp.AccountData.Events) != 0 {
+		t.Errorf("AC6: expected account_data.events to be [] on DB error, got %d entries", len(resp.AccountData.Events))
+	}
+}
+
+// ─── Story 9-24 Test 5 [P1]: Per-room account_data unaffected by global data ─
+//
+// AC4 regression — global account data (room_id = '') MUST NOT appear in per-room
+// sections (rooms.join.{roomId}.account_data.events). Per-room account data MUST
+// remain unaffected.
+//
+// Given: globalDB returns [{type:"m.direct"}]; per-room account data for !room1
+//        is provided via AccountDataDB (m.fully_read)
+// When:  GET /_matrix/client/v3/sync
+// Then:
+//   - top-level account_data.events contains ONLY m.direct
+//   - rooms.join.!room1.account_data.events contains ONLY m.fully_read
+//   - m.direct does NOT appear in rooms.join.!room1.account_data.events
+//   - m.fully_read does NOT appear in top-level account_data.events
+//
+// RED: MUST FAIL until both GlobalAccountDataDB and AccountDataDB are wired
+// independently and their results are placed in the correct sections.
+func TestGetSync_PerRoomAccountData_NotAffectedByGlobal(t *testing.T) {
+	roomID := "!room1:test.local"
+	stateContentBytes := []byte(`{"membership":"join"}`)
+	directContent := json.RawMessage(`{"@bob:nebu.test":["!room1:nebu.test"]}`)
+	fullyReadContent := json.RawMessage(`{"event_id":"$some-event-id"}`)
+
+	coreMock := &mockGetSyncCoreClient{
+		resp: &pb.GetInitialSyncResponse{
+			SinceToken: "next_batch_regression_ac4",
+			Rooms: []*pb.SyncRoom{
+				{
+					RoomId: roomID,
+					StateEvents: []*pb.SyncRoomStateEvent{
+						{
+							Type:     "m.room.member",
+							StateKey: "@test-sub-123:test.local",
+							Content:  stateContentBytes,
+							Sender:   "@test-sub-123:test.local",
+						},
+					},
+					TimelineEvents: []*pb.Event{},
+					Limited:        false,
+				},
+			},
+		},
+	}
+
+	// Global DB returns m.direct (must go to top-level account_data only)
+	globalDB := &mockGlobalAccountDataDB{
+		rows: []GlobalAccountDataRow{
+			{EventType: "m.direct", Content: directContent},
+		},
+	}
+
+	// Per-room DB returns m.fully_read for !room1 (must go to rooms.join only)
+	perRoomDB := &mockSyncAccountDataDB{
+		dataByRoomAndType: map[string]map[string]json.RawMessage{
+			roomID: {
+				"m.fully_read": fullyReadContent,
+			},
+		},
+	}
+
+	oidcSrv, privateKey := setupOIDCServer(t)
+	t.Cleanup(oidcSrv.Close)
+	provider := auth.NewProvider(context.Background(), oidcSrv.URL)
+
+	cfg := GetSyncConfig{
+		CoreClient:          coreMock,
+		ServerName:          "test.local",
+		AccountDataDB:       perRoomDB,       // per-room account data
+		GlobalAccountDataDB: globalDB,        // Story 9-24: global account data
+	}
+	handler := NewGetSyncHandler(cfg)
+
+	authed := middleware.JWTMiddleware(provider, "nebu-gateway", "nebu_role", nil, nil, "test.local")(
+		http.HandlerFunc(handler.GetSync),
+	)
+	makeToken := func() string {
+		return signJWT(t, oidcSrv.URL, privateKey, time.Now().Add(time.Hour), nil)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync", nil)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	authed.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("AC4 regression: expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		AccountData struct {
+			Events []struct {
+				Type string `json:"type"`
+			} `json:"events"`
+		} `json:"account_data"`
+		Rooms struct {
+			Join map[string]struct {
+				AccountData struct {
+					Events []struct {
+						Type string `json:"type"`
+					} `json:"events"`
+				} `json:"account_data"`
+			} `json:"join"`
+		} `json:"rooms"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("AC4 regression: failed to decode response: %v", err)
+	}
+
+	// AC4: top-level account_data.events must contain m.direct and NOT m.fully_read
+	var topLevelTypes []string
+	for _, ev := range resp.AccountData.Events {
+		topLevelTypes = append(topLevelTypes, ev.Type)
+	}
+	foundMDirect := false
+	for _, evType := range topLevelTypes {
+		if evType == "m.direct" {
+			foundMDirect = true
+		}
+		if evType == "m.fully_read" {
+			t.Errorf("AC4 regression: m.fully_read (per-room) must NOT appear in top-level account_data.events, got: %v", topLevelTypes)
+		}
+	}
+	if !foundMDirect {
+		t.Errorf("AC4 regression: m.direct (global) must appear in top-level account_data.events, got: %v", topLevelTypes)
+	}
+
+	// AC4: per-room account_data must contain m.fully_read and NOT m.direct
+	roomData, ok := resp.Rooms.Join[roomID]
+	if !ok {
+		t.Fatalf("AC4 regression: room %q must appear in rooms.join", roomID)
+	}
+	var perRoomTypes []string
+	for _, ev := range roomData.AccountData.Events {
+		perRoomTypes = append(perRoomTypes, ev.Type)
+	}
+	foundFullyRead := false
+	for _, evType := range perRoomTypes {
+		if evType == "m.fully_read" {
+			foundFullyRead = true
+		}
+		if evType == "m.direct" {
+			t.Errorf("AC4 regression: m.direct (global) must NOT appear in rooms.join.%s.account_data.events, got: %v", roomID, perRoomTypes)
+		}
+	}
+	if !foundFullyRead {
+		t.Errorf("AC4 regression: m.fully_read (per-room) must appear in rooms.join.%s.account_data.events, got: %v", roomID, perRoomTypes)
+	}
+}
+
+// mockSyncAccountDataDB is a minimal AccountDataDB mock for Story 9-24 regression tests.
+// It supports per-room lookups by (roomID, eventType).
+// Returns ErrAccountDataNotFound when the key does not exist.
+type mockSyncAccountDataDB struct {
+	dataByRoomAndType map[string]map[string]json.RawMessage
+}
+
+func (m *mockSyncAccountDataDB) GetAccountData(_ context.Context, _, roomID, eventType string) (json.RawMessage, error) {
+	if m.dataByRoomAndType == nil {
+		return nil, ErrAccountDataNotFound
+	}
+	byType, ok := m.dataByRoomAndType[roomID]
+	if !ok {
+		return nil, ErrAccountDataNotFound
+	}
+	content, ok := byType[eventType]
+	if !ok {
+		return nil, ErrAccountDataNotFound
+	}
+	return content, nil
+}
+
+func (m *mockSyncAccountDataDB) PutAccountData(_ context.Context, _, _, _ string, _ json.RawMessage) error {
+	return nil
+}
+
+// ─── Story 9-25: GAP-BUFFER-NEXT-BATCH — synthetic next_batch for buffer path ──
+//
+// These tests are written FIRST (ATDD gate), before implementation exists.
+// ALL tests in this section MUST FAIL (compilation or assertion error) until
+// Story 9-25 is implemented:
+//   - syntheticNextBatch() helper does not exist yet → compile error
+//   - buildResponseFromBufferedEvents still echoes sinceToken as NextBatch → assertion failure
+//
+// Test strategy:
+//   - AC1/AT1: unit-level: buildResponseFromBufferedEvents returns NextBatch != sinceToken
+//     and NextBatch has prefix "buf_"
+//   - AC2/AT2: unit-level: two sequential calls return distinct tokens (monotonic)
+//   - Sub-millisecond burst variant: same as AC2 but explicitly documented as
+//     the same-millisecond edge case — relies on the seq counter suffix.
+//   - AC3/AT3: HTTP-level (httptest): GET /sync?since=s42_1 with buffer events →
+//     JSON next_batch starts with "buf_", is not "s42_1"
+//   - AC4/AT4: non-regression (httptest): Core path returns SinceToken="s99_2" →
+//     next_batch == "s99_2" (unchanged — no synthetic token on Core path)
+//
+// AC coverage:
+//   AC1 → TestBuildResponseFromBufferedEvents_NextBatchAdvances
+//   AC2 → TestBuildResponseFromBufferedEvents_NextBatchIsMonotonic
+//   AC2 → TestBuildResponseFromBufferedEvents_NextBatchMonotonic_SubMillisecondBurst
+//   AC3 → TestHandleIncrementalSync_BufferPath_NextBatchAdvances
+//   AC4 → TestHandleIncrementalSync_CorePath_NextBatchUnchanged
+
+// TestBuildResponseFromBufferedEvents_NextBatchAdvances — AC1/AT1
+//
+// Given: a GetSyncHandler with a mock buffer returning one event, sinceToken = "s42_1"
+// When:  buildResponseFromBufferedEvents(events) is called directly (sinceToken no longer a parameter)
+// Then:  resp.NextBatch != "s42_1" AND strings.HasPrefix(resp.NextBatch, "buf_") is true
+//
+// RED PHASE: buildResponseFromBufferedEvents currently returns NextBatch: sinceToken.
+// This test MUST FAIL until syntheticNextBatch() replaces the echoed sinceToken.
+func TestBuildResponseFromBufferedEvents_NextBatchAdvances(t *testing.T) {
+	const sinceToken = "s42_1"
+
+	h := &GetSyncHandler{
+		serverName: "test.local",
+	}
+
+	events := []*pb.Event{
+		{
+			EventId:   "$ev_buf_9_25_1",
+			RoomId:    "!room1:test.local",
+			SenderId:  "@alice:test.local",
+			EventType: "m.room.message",
+			Content:   []byte(`{"msgtype":"m.text","body":"hello from buffer"}`),
+			OriginTs:  1700000001000,
+		},
+	}
+
+	resp := h.buildResponseFromBufferedEvents(events)
+
+	// AC1a: NextBatch MUST NOT echo back the sinceToken
+	if resp.NextBatch == sinceToken {
+		t.Errorf("AC1 FAIL: NextBatch must not equal sinceToken %q, but got %q (stuck-token loop)", sinceToken, resp.NextBatch)
+	}
+
+	// AC1b: NextBatch MUST start with "buf_" (synthetic token format)
+	if !strings.HasPrefix(resp.NextBatch, "buf_") {
+		t.Errorf("AC1 FAIL: NextBatch must start with %q, got %q", "buf_", resp.NextBatch)
+	}
+
+	// AC1c: The numeric part after "buf_" must be a positive integer (unix_ms)
+	// Format is "buf_<ms>_<seq>" — verify both the timestamp and sequence parts are present
+	parts := strings.SplitN(resp.NextBatch[len("buf_"):], "_", 2)
+	if len(parts) < 2 || parts[0] == "" {
+		t.Errorf("AC1 FAIL: synthetic token %q has no numeric suffix after 'buf_'", resp.NextBatch)
+	} else {
+		var ts int64
+		n, err := fmt.Sscanf(parts[0], "%d", &ts)
+		if err != nil || n != 1 || ts <= 0 {
+			t.Errorf("AC1 FAIL: synthetic token %q — timestamp part %q is not a valid positive integer", resp.NextBatch, parts[0])
+		}
+	}
+}
+
+// TestBuildResponseFromBufferedEvents_NextBatchIsMonotonic — AC2/AT2
+//
+// Given: two sequential calls to buildResponseFromBufferedEvents on the same handler
+// When:  both calls complete within the same test (potentially sub-millisecond apart)
+// Then:  the two returned NextBatch values are distinct
+//
+// RED PHASE: Current implementation returns the same sinceToken for both calls →
+// both tokens are identical → test FAILS.
+func TestBuildResponseFromBufferedEvents_NextBatchIsMonotonic(t *testing.T) {
+	h := &GetSyncHandler{
+		serverName: "test.local",
+	}
+
+	events := []*pb.Event{
+		{
+			EventId:   "$ev_mono_1",
+			RoomId:    "!room1:test.local",
+			SenderId:  "@alice:test.local",
+			EventType: "m.room.message",
+			Content:   []byte(`{"msgtype":"m.text","body":"first"}`),
+			OriginTs:  1700000002000,
+		},
+	}
+
+	resp1 := h.buildResponseFromBufferedEvents(events)
+	resp2 := h.buildResponseFromBufferedEvents(events)
+
+	// AC2: the two tokens must be distinct
+	if resp1.NextBatch == resp2.NextBatch {
+		t.Errorf("AC2 FAIL: two sequential buffer-path calls returned identical NextBatch %q — tokens must be distinct (monotonic)", resp1.NextBatch)
+	}
+
+	// Both must start with "buf_" prefix
+	if !strings.HasPrefix(resp1.NextBatch, "buf_") {
+		t.Errorf("AC2 FAIL: first token %q does not start with 'buf_'", resp1.NextBatch)
+	}
+	if !strings.HasPrefix(resp2.NextBatch, "buf_") {
+		t.Errorf("AC2 FAIL: second token %q does not start with 'buf_'", resp2.NextBatch)
+	}
+}
+
+// TestBuildResponseFromBufferedEvents_NextBatchMonotonic_SubMillisecondBurst — AC2 edge case
+//
+// Sub-millisecond burst variant: two calls that arrive so close in time they share
+// the same time.Now().UnixMilli() value MUST still produce distinct tokens via the
+// atomic sequence counter suffix.
+//
+// Given: two calls to syntheticNextBatch() directly (calls syntheticNextBatch() directly
+//        to keep timing tight), within the same goroutine, well under 1 ms apart
+// When:  both calls complete
+// Then:  the two NextBatch values are distinct (sequence counter differentiates them)
+//
+// RED PHASE: syntheticNextBatch() does not exist yet → compile error.
+func TestBuildResponseFromBufferedEvents_NextBatchMonotonic_SubMillisecondBurst(t *testing.T) {
+	// Call syntheticNextBatch() directly to exercise the sub-millisecond path.
+	// This function does not exist yet — compile error is the expected red-phase failure.
+	tok1 := syntheticNextBatch()
+	tok2 := syntheticNextBatch()
+
+	if tok1 == tok2 {
+		t.Errorf("sub-millisecond burst FAIL: syntheticNextBatch() returned identical tokens %q — sequence counter must differentiate", tok1)
+	}
+	if !strings.HasPrefix(tok1, "buf_") {
+		t.Errorf("sub-millisecond burst FAIL: token1 %q does not start with 'buf_'", tok1)
+	}
+	if !strings.HasPrefix(tok2, "buf_") {
+		t.Errorf("sub-millisecond burst FAIL: token2 %q does not start with 'buf_'", tok2)
+	}
+}
+
+// TestHandleIncrementalSync_BufferPath_NextBatchAdvances — AC3/AT3
+//
+// HTTP-level test: GET /_matrix/client/v3/sync?since=s42_1 with a buffer that
+// holds one event → JSON response next_batch starts with "buf_" and is not "s42_1".
+//
+// Given: GetSyncHandler wired with a buffer pre-populated with one event for
+//        @test-sub-123:test.local; mock Core's GetSyncDelta is never called
+// When:  GET /_matrix/client/v3/sync?since=s42_1 with a valid JWT
+// Then:  HTTP 200; resp.next_batch starts with "buf_" and != "s42_1"
+//
+// RED PHASE: current buildResponseFromBufferedEvents echoes sinceToken as
+// NextBatch → next_batch == "s42_1" → second assertion fails.
+func TestHandleIncrementalSync_BufferPath_NextBatchAdvances(t *testing.T) {
+	const sinceToken = "s42_1"
+	const userID = "@test-sub-123:test.local"
+	const roomID = "!room1:test.local"
+
+	buf := buffer.NewMessageBuffer(10, prometheus.NewRegistry())
+	buf.Put(userID, &pb.Event{
+		EventId:   "$ev_9_25_buf",
+		RoomId:    roomID,
+		SenderId:  userID,
+		EventType: "m.room.message",
+		Content:   []byte(`{"msgtype":"m.text","body":"story 9-25 buffer event"}`),
+		OriginTs:  1700000003000,
+	})
+
+	mock := &mockGetSyncDeltaCoreClient{
+		// GetSyncDelta must NOT be called — buffer hit short-circuits
+	}
+
+	handler, makeToken := buildAuthedSyncBufferHandler(t, mock, buf)
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync?since="+sinceToken, nil)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("AC3 FAIL: expected HTTP 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		NextBatch string `json:"next_batch"`
+		Rooms     struct {
+			Join map[string]json.RawMessage `json:"join"`
+		} `json:"rooms"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("AC3 FAIL: failed to decode response body: %v", err)
+	}
+
+	// AC3a: next_batch MUST NOT be the sinceToken (no stuck-token loop)
+	if resp.NextBatch == sinceToken {
+		t.Errorf("AC3 FAIL: next_batch must not echo sinceToken %q back to client (stuck-token loop), got %q", sinceToken, resp.NextBatch)
+	}
+
+	// AC3b: next_batch MUST start with "buf_" (synthetic token, buffer fast-path)
+	if !strings.HasPrefix(resp.NextBatch, "buf_") {
+		t.Errorf("AC3 FAIL: next_batch must start with 'buf_' on buffer path, got %q", resp.NextBatch)
+	}
+
+	// Sanity: rooms.join must contain the buffered room (buffer hit)
+	if _, ok := resp.Rooms.Join[roomID]; !ok {
+		t.Errorf("AC3 sanity: rooms.join must contain %q from buffer, got: %v", roomID, resp.Rooms.Join)
+	}
+
+	// Sanity: Core's GetSyncDelta must NOT have been called (buffer hit short-circuits)
+	if mock.capturedDeltaReq != nil {
+		t.Error("AC3 sanity: GetSyncDelta must NOT be called on buffer hit, but capturedDeltaReq is set")
+	}
+}
+
+// TestHandleIncrementalSync_CorePath_NextBatchUnchanged — AC4/AT4 (non-regression)
+//
+// Core path must continue to use deltaResp.GetSinceToken() unchanged.
+// Synthetic tokens must ONLY appear on the buffer fast-path.
+//
+// Given: empty buffer (buffer miss); mock Core returns GetSyncDeltaResponse
+//        with SinceToken = "s99_2"
+// When:  GET /_matrix/client/v3/sync?since=s42_1 with a valid JWT
+// Then:  HTTP 200; next_batch == "s99_2" (Core token, no synthetic substitution)
+//
+// RED PHASE: this test should pass even before Story 9-25, confirming non-regression.
+// It is included here to make the non-regression guarantee explicit and machine-checked.
+func TestHandleIncrementalSync_CorePath_NextBatchUnchanged(t *testing.T) {
+	const sinceToken = "s42_1"
+	const coreToken = "s99_2"
+
+	// nil buffer exercises the canonical no-buffer code path directly,
+	// avoiding the 100ms buffer wait timeout.
+	var buf *buffer.MessageBuffer
+
+	mock := &mockGetSyncDeltaCoreClient{
+		deltaResp: &pb.GetSyncDeltaResponse{
+			SinceToken: coreToken,
+			Rooms:      []*pb.SyncRoom{},
+		},
+	}
+
+	handler, makeToken := buildAuthedSyncBufferHandler(t, mock, buf, 5*time.Second)
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync?since="+sinceToken, nil)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("AC4 FAIL: expected HTTP 200 on Core path, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		NextBatch string `json:"next_batch"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("AC4 FAIL: failed to decode response body: %v", err)
+	}
+
+	// AC4: Core path must return the unmodified SinceToken from Elixir — no synthetic substitution
+	if resp.NextBatch != coreToken {
+		t.Errorf("AC4 FAIL: Core path next_batch must equal Core's SinceToken %q, got %q (unexpected synthetic token injection)", coreToken, resp.NextBatch)
+	}
+
+	// Sanity: next_batch must NOT start with "buf_" on Core path
+	if strings.HasPrefix(resp.NextBatch, "buf_") {
+		t.Errorf("AC4 FAIL: Core path next_batch must not start with 'buf_', got %q", resp.NextBatch)
 	}
 }

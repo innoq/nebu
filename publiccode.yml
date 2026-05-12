@@ -8,7 +8,7 @@ softwareVersion: "0.1.0-pre-alpha"
 releaseDate: "2026-05-02"
 
 
-logo: "docs/icons/icon.svg"
+logo: "gateway/internal/admin/static/icons/icon.svg"
 
 platforms:
   - web
@@ -114,9 +114,13 @@ maintenance:
     - name: "Philipp Beyerlein"
       email: "philipp.beyerlein@innoq.com"
       affiliation: "innoQ Deutschland GmbH"
-
+  contractors:
+    - name: "innoQ Deutschland GmbH"
+      email: "info@innoq.com"
+      website: "https://www.innoq.com"
+      until: "2028-05-02"
 localisation:
-  localisationReady: false
+  localisationReady: true
   availableLanguages:
     - de
     - en

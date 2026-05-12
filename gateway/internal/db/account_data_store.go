@@ -62,3 +62,45 @@ func (p *PostgresAccountDataDB) PutAccountData(ctx context.Context, userID, room
 		return err
 	})
 }
+
+// ListGlobalAccountData returns all global account data rows for userID
+// (room_id = '' in room_account_data). Returns an empty slice on no rows.
+//
+// Story 9-24: implements matrix.GlobalAccountDataDB interface.
+// Uses withUserDB to set set_config('app.user_id', userID, true) inside a
+// transaction — required to satisfy the RLS policy on room_account_data
+// (migration 000033 uses current_setting('app.user_id', true) for row filtering).
+// Without this GUC the RLS policy silently returns zero rows.
+func (p *PostgresAccountDataDB) ListGlobalAccountData(ctx context.Context, userID string) ([]matrix.GlobalAccountDataRow, error) {
+	var result []matrix.GlobalAccountDataRow
+	err := withUserDB(ctx, p.db, userID, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx,
+			`SELECT event_type, content FROM room_account_data
+			 WHERE user_id = $1 AND room_id = ''`,
+			userID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var r matrix.GlobalAccountDataRow
+			var content []byte
+			if scanErr := rows.Scan(&r.EventType, &content); scanErr != nil {
+				continue
+			}
+			r.Content = json.RawMessage(content)
+			result = append(result, r)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return []matrix.GlobalAccountDataRow{}, err
+	}
+	if result == nil {
+		result = []matrix.GlobalAccountDataRow{}
+	}
+	return result, nil
+}
+
+// Compile-time interface satisfaction check: *PostgresAccountDataDB must implement GlobalAccountDataDB.
+var _ matrix.GlobalAccountDataDB = (*PostgresAccountDataDB)(nil)

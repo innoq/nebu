@@ -17,14 +17,32 @@ defmodule Nebu.Session.PgStoreTest do
     @impl Nebu.Session.PgStore
     def persist_since_token(user_id, since_token, last_event_id) do
       now_ms = System.system_time(:millisecond)
-      :ets.insert(:pg_store_test, {user_id, since_token, last_event_id, now_ms})
+      :ets.insert(:pg_store_test, {{user_id, ""}, since_token, last_event_id, now_ms})
+      :ok
+    end
+
+    @impl Nebu.Session.PgStore
+    def persist_since_token(user_id, device_id, since_token, last_event_id) do
+      now_ms = System.system_time(:millisecond)
+      :ets.insert(:pg_store_test, {{user_id, device_id}, since_token, last_event_id, now_ms})
       :ok
     end
 
     @impl Nebu.Session.PgStore
     def get_since_token(user_id) do
-      case :ets.lookup(:pg_store_test, user_id) do
-        [{^user_id, since_token, last_event_id, _ts}] ->
+      case :ets.lookup(:pg_store_test, {user_id, ""}) do
+        [{{^user_id, ""}, since_token, last_event_id, _ts}] ->
+          {:ok, %{since_token: since_token, last_event_id: last_event_id}}
+
+        [] ->
+          {:error, :not_found}
+      end
+    end
+
+    @impl Nebu.Session.PgStore
+    def get_since_token(user_id, device_id) do
+      case :ets.lookup(:pg_store_test, {user_id, device_id}) do
+        [{{^user_id, ^device_id}, since_token, last_event_id, _ts}] ->
           {:ok, %{since_token: since_token, last_event_id: last_event_id}}
 
         [] ->
@@ -36,9 +54,15 @@ defmodule Nebu.Session.PgStoreTest do
     def invalidate_session(user_id) do
       # Simulates: delete from sync_tokens + sessions in a single transaction,
       # then evict from ETS — ETS eviction happens ONLY after DB success.
-      :ets.delete(:pg_store_test, user_id)
+      :ets.delete(:pg_store_test, {user_id, ""})
       :ets.delete(:pg_sessions_test, user_id)
       Nebu.Session.EtsStore.delete_session(user_id)
+      :ok
+    end
+
+    @impl Nebu.Session.PgStore
+    def invalidate_session(user_id, device_id) do
+      :ets.delete(:pg_store_test, {user_id, device_id})
       :ok
     end
   end
@@ -142,15 +166,15 @@ defmodule Nebu.Session.PgStoreTest do
 
       :ok = Nebu.Session.EtsStore.put_session(user_id, session)
 
-      # Set up fake PG sync_token row
-      :ets.insert(:pg_store_test, {user_id, "some_token", "$last_evt", System.system_time(:millisecond)})
+      # Set up fake PG sync_token row — key is now {user_id, device_id} composite
+      :ets.insert(:pg_store_test, {{user_id, ""}, "some_token", "$last_evt", System.system_time(:millisecond)})
 
       # Set up fake PG sessions row
       :ets.insert(:pg_sessions_test, {user_id, "session_data"})
 
       # Verify pre-conditions
       assert {:ok, _} = Nebu.Session.EtsStore.get_session(user_id)
-      assert [{^user_id, _, _, _}] = :ets.lookup(:pg_store_test, user_id)
+      assert [{{^user_id, ""}, _, _, _}] = :ets.lookup(:pg_store_test, {user_id, ""})
       assert [{^user_id, _}] = :ets.lookup(:pg_sessions_test, user_id)
 
       # Invalidate
@@ -160,7 +184,7 @@ defmodule Nebu.Session.PgStoreTest do
       assert {:error, :not_found} = Nebu.Session.EtsStore.get_session(user_id)
 
       # sync_tokens row is gone
-      assert [] = :ets.lookup(:pg_store_test, user_id)
+      assert [] = :ets.lookup(:pg_store_test, {user_id, ""})
 
       # sessions row is gone
       assert [] = :ets.lookup(:pg_sessions_test, user_id)
@@ -227,7 +251,7 @@ defmodule Nebu.Session.PgStoreTest do
 
       # Only one row in the fake PG table — no duplicate
       all_rows = :ets.tab2list(:pg_store_test)
-      user_rows = Enum.filter(all_rows, fn {uid, _, _, _} -> uid == user_id end)
+      user_rows = Enum.filter(all_rows, fn {{uid, _dev}, _, _, _} -> uid == user_id end)
       assert length(user_rows) == 1
     end
   end
@@ -260,6 +284,67 @@ defmodule Nebu.Session.PgStoreTest do
 
       # ETS must NOT have been evicted — session survives the DB failure
       assert {:ok, ^session} = Nebu.Session.EtsStore.get_session(user_id)
+    end
+  end
+
+  # ════════════════════════════════════════════════════════════════════════
+  # Story 9-22: GAP-SINCE-IGNORED — Per-Device Sync Token Storage
+  # ════════════════════════════════════════════════════════════════════════
+  #
+  # These tests FAIL before story 9-22 because Nebu.Session.PgStore
+  # does not yet have /2 or /4 arities for per-device token functions.
+  #
+  # AC4: persist_since_token/4 stores a row per (user_id, device_id)
+  # AC5: get_since_token/2 returns :not_found for unknown (user_id, device_id)
+  # AC6: invalidate_session/2 deletes the (user_id, device_id) row
+
+  describe "Nebu.Session.PgStore — per-device token storage (Story 9-22)" do
+    test "AC4: persist_since_token/4 stores independent rows per device" do
+      user_id = "@alice:nebu.local"
+
+      assert :ok =
+               Nebu.Session.PgStore.persist_since_token(user_id, "D1", "token_d1", "$ev_d1")
+
+      assert :ok =
+               Nebu.Session.PgStore.persist_since_token(user_id, "D2", "token_d2", "$ev_d2")
+
+      # Each device has its own row
+      assert {:ok, %{since_token: "token_d1", last_event_id: "$ev_d1"}} =
+               Nebu.Session.PgStore.get_since_token(user_id, "D1")
+
+      assert {:ok, %{since_token: "token_d2", last_event_id: "$ev_d2"}} =
+               Nebu.Session.PgStore.get_since_token(user_id, "D2")
+    end
+
+    test "AC4b: second persist_since_token/4 for same (user_id, device_id) upserts" do
+      user_id = "@bob:nebu.local"
+
+      assert :ok = Nebu.Session.PgStore.persist_since_token(user_id, "D1", "token_v1", "$ev1")
+      assert :ok = Nebu.Session.PgStore.persist_since_token(user_id, "D1", "token_v2", "$ev2")
+
+      assert {:ok, %{since_token: "token_v2", last_event_id: "$ev2"}} =
+               Nebu.Session.PgStore.get_since_token(user_id, "D1")
+    end
+
+    test "AC5: get_since_token/2 returns :not_found for unknown (user_id, device_id)" do
+      assert {:error, :not_found} =
+               Nebu.Session.PgStore.get_since_token("@unknown:nebu.local", "NO_SUCH_DEVICE")
+    end
+
+    test "AC6: invalidate_session/2 removes the device row; other devices unaffected" do
+      user_id = "@carol:nebu.local"
+
+      assert :ok = Nebu.Session.PgStore.persist_since_token(user_id, "D1", "tok_d1", "$ev_d1")
+      assert :ok = Nebu.Session.PgStore.persist_since_token(user_id, "D2", "tok_d2", "$ev_d2")
+
+      assert :ok = Nebu.Session.PgStore.invalidate_session(user_id, "D1")
+
+      # D1 deleted; D2 still present
+      assert {:error, :not_found} =
+               Nebu.Session.PgStore.get_since_token(user_id, "D1")
+
+      assert {:ok, %{since_token: "tok_d2"}} =
+               Nebu.Session.PgStore.get_since_token(user_id, "D2")
     end
   end
 end

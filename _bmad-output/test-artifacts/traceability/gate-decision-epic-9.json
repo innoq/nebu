@@ -1,0 +1,68 @@
+{
+  "schema_version": "0.1.0",
+  "evaluated_at": "2026-05-05T00:00:00.000Z",
+  "repo": "open-chat",
+  "target": {
+    "type": "epic",
+    "id": "9",
+    "label": "Epic 9: Post-MVP API & Admin Completeness"
+  },
+  "collection_status": "COLLECTED",
+  "gate_basis": "priority_thresholds",
+  "gate_status": "PASS",
+  "rationale": "P0 coverage is 100%, P1 coverage is 94% (target: 90%), and overall FULL coverage is 94% (minimum: 80%). Single P1 NONE gap (9.8-AC3: state copy order in room upgrade) does not block the epic gate.",
+  "p0_status": "MET",
+  "p1_status": "MET",
+  "overall_status": "MET",
+  "critical_open": 0,
+  "coverage_statistics": {
+    "total_requirements": 64,
+    "fully_covered": 60,
+    "partially_covered": 3,
+    "uncovered": 1,
+    "overall_coverage_percentage": 94,
+    "priority_breakdown": {
+      "P0": { "total": 14, "covered": 14, "percentage": 100 },
+      "P1": { "total": 33, "covered": 31, "percentage": 94 },
+      "P2": { "total": 16, "covered": 14, "percentage": 88 },
+      "P3": { "total": 1, "covered": 1, "percentage": 100 }
+    }
+  },
+  "gate_criteria": {
+    "p0_coverage_required": "100%",
+    "p0_coverage_actual": "100%",
+    "p0_status": "MET",
+    "p1_coverage_target": "90%",
+    "p1_coverage_minimum": "80%",
+    "p1_coverage_actual": "94%",
+    "p1_status": "MET",
+    "overall_coverage_minimum": "80%",
+    "overall_coverage_actual": "94%",
+    "overall_status": "MET"
+  },
+  "gaps": [
+    {
+      "id": "GAP-9-001",
+      "story": "9.8",
+      "ac": "AC-9.8-3",
+      "description": "State copy order in room upgrade not tested (spec-mandated sequence: m.room.create → m.room.member → others → m.room.power_levels → m.room.join_rules)",
+      "priority": "P1",
+      "coverage": "NONE",
+      "risk": "MEDIUM",
+      "blocking": false
+    },
+    {
+      "id": "GAP-9-002",
+      "story": "9.3",
+      "ac": "AC-9.3-3",
+      "description": "Room settings PATCH: max_members and visibility fields not covered (only room name tested)",
+      "priority": "P1",
+      "coverage": "PARTIAL",
+      "risk": "LOW",
+      "blocking": false
+    }
+  ],
+  "links": {
+    "trace_report_path": "_bmad-output/test-artifacts/traceability-matrix-epic-9.md"
+  }
+}

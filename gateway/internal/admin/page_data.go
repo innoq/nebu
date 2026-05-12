@@ -1,13 +1,49 @@
 package admin
 
+// gBuildVersion, gGitCommit, gBuildTime hold gateway build metadata set by main.go
+// via SetBuildInfo. All authenticated admin handlers read these to populate
+// PageData.BuildVersion / .GitCommit / .BuildTime for the footer template (Story 11-9).
+var (
+	gBuildVersion = "unknown"
+	gGitCommit    = "unknown"
+	gBuildTime    = "unknown"
+)
+
+// SetBuildInfo stores gateway build metadata for injection into admin page templates.
+// Called once from main.go after the build-time ldflag vars are set.
+func SetBuildInfo(version, commit, btime string) {
+	gBuildVersion = version
+	gGitCommit = commit
+	gBuildTime = btime
+}
+
+// newPageData returns a PageData pre-populated with the global build info.
+// All authenticated admin handlers should use this instead of constructing
+// PageData literals with empty build fields.
+func newPageData() PageData {
+	return PageData{
+		BuildVersion: gBuildVersion,
+		GitCommit:    gGitCommit,
+		BuildTime:    gBuildTime,
+	}
+}
+
 // PageData holds template data passed to all Admin UI page renders.
 // BootstrapMode controls sidebar Bootstrap nav item visibility.
+// LoginMode suppresses authenticated navigation on the login page (Story 9.13 AC2).
 // ActiveNav identifies the current page for nav highlight (keys: "bootstrap", "dashboard", "logout").
 // TopbarStatus and TopbarLabel are set by the dashboard handler to show real system status;
-// zero values (empty string) cause base.html to render the default "Connecting..." placeholder.
+// zero values (empty string) cause base.html to render nothing (guarded by {{ if .TopbarStatus }}).
 type PageData struct {
 	BootstrapMode bool
-	ActiveNav     string
+	// LoginMode suppresses the authenticated sidebar nav and topbar status on the login page.
+	// Set to true only by LoginPageHandler. All other handlers leave it false (zero value).
+	LoginMode bool
+	// ErrorMode suppresses the build-info footer on error pages (401, 403, 404, 500).
+	// Error pages are not authenticated admin pages — they do not show the footer.
+	// Set to true only by the error handlers in errors.go. All other handlers leave it false.
+	ErrorMode bool
+	ActiveNav string
 	// TopbarStatus is a DaisyUI semantic color name ("success", "warning", "error").
 	// Empty string → base.html renders the default "Connecting..." placeholder.
 	TopbarStatus string
@@ -20,6 +56,12 @@ type PageData struct {
 	// Only DashboardHandler populates this; all other handlers leave it at 0 (badge hidden).
 	// Placed on PageData (not DashboardPageData) so base.html can access it on all pages.
 	CompliancePendingCount int
+	// BuildVersion, GitCommit, BuildTime hold gateway build metadata (Story 11-9).
+	// Populated by all authenticated admin handlers from the package-level ldflags vars in main.go.
+	// Rendered in the footer of every authenticated page; not shown on the login page (LoginMode guard).
+	BuildVersion string
+	GitCommit    string
+	BuildTime    string
 }
 
 // DashboardPageData holds data for the Dashboard page.
@@ -56,7 +98,8 @@ type LoginPageData struct {
 }
 
 // BootstrapPageData holds data for the Bootstrap Wizard page.
-// Step is 1–2 (OIDC connect replaces steps 3+4). All field values carry accumulated state.
+// Step is 1–3 (Steps 1-2: Instance + OIDC; Step 3: Claim Mapping; then OIDC redirect).
+// All field values carry accumulated state.
 type BootstrapPageData struct {
 	PageData     // embed for BootstrapMode + ActiveNav
 	Step         int
@@ -70,6 +113,10 @@ type BootstrapPageData struct {
 	Errors map[string]string
 	// Warnings carries per-field non-blocking warnings (e.g. HTTP issuer in dev)
 	Warnings map[string]string
+	// Claim Mapping fields for Step 3 (Story 11-10).
+	OIDCUserIDClaim      string
+	OIDCDisplaynameClaim string
+	OIDCEmailClaim       string
 }
 
 // DiscoveredClaim is a single claim key+values pair extracted from an OIDC token
@@ -159,11 +206,14 @@ type UsersPageData struct {
 
 // StubRoom is a fake room record used for the Rooms master-detail page until
 // Epic 6 implements the real Room Management API.
+// MaxMembers (0 = no limit) and Visibility are populated by the detail handler from
+// AdminRoomDetailProto (Story 9.3 — gRPC integration).
 type StubRoom struct {
 	ID          string
 	Name        string
 	Visibility  string // "public" | "private"
 	MemberCount int
+	MaxMembers  int    // 0 = no limit; populated in detail view only
 	Status      string // "active" | "archived"
 }
 
@@ -210,6 +260,16 @@ type RoomsPageData struct {
 	// Pre-computed by DetailHandler to avoid UTF-8 byte-slice edge cases in templates.
 	// TODO: use rune-aware initials helper in production when multi-char initials are needed.
 	ActiveRoomInitial string
+	// ActiveRoomMembers is the list of current members for the selected room (Story 9.18).
+	// Nil/empty in list mode or when the gRPC call fails (detail panel still renders).
+	ActiveRoomMembers []RoomMemberData
+}
+
+// RoomMemberData holds one member row for the Room Detail member list (Story 9.18).
+type RoomMemberData struct {
+	UserID      string
+	DisplayName string // empty string if unavailable
+	JoinedAt    int64  // Unix milliseconds
 }
 
 // ConfigPageData holds data for the Server Configuration page (Story 7.10).
@@ -232,6 +292,21 @@ type RoleMappingPageData struct {
 	Config StubRoleMappingConfig
 	Errors map[string]string
 	Flash  AlertBannerData
+}
+
+// ClaimMappingPageData holds data for the OIDC Claim Mapping configuration page (Story 11-10).
+// Embeds PageData for ActiveNav, topbar status, and CSRF token.
+// UserIDClaim, DisplaynameClaim, EmailClaim hold the current or submitted values.
+// Defaults (sub, name, email) are pre-filled by ClaimMappingHandler.Handler when keys are absent.
+// Errors carries per-field validation error messages (only on POST re-render, HTTP 422).
+// Flash is populated when ?flash= query param is present (PRG pattern).
+type ClaimMappingPageData struct {
+	PageData
+	UserIDClaim      string
+	DisplaynameClaim string
+	EmailClaim       string
+	Errors           map[string]string
+	Flash            AlertBannerData
 }
 
 // CompliancePageData holds data for the Compliance Access Requests page (Story 7.11).

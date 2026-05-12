@@ -51,6 +51,20 @@ const (
 	CoreService_ArchiveRoom_FullMethodName                = "/core.CoreService/ArchiveRoom"
 	CoreService_UnarchiveRoom_FullMethodName              = "/core.CoreService/UnarchiveRoom"
 	CoreService_InvalidateAllAdminSessions_FullMethodName = "/core.CoreService/InvalidateAllAdminSessions"
+	CoreService_ListAdminUsers_FullMethodName             = "/core.CoreService/ListAdminUsers"
+	CoreService_GetAdminUser_FullMethodName               = "/core.CoreService/GetAdminUser"
+	CoreService_DeactivateUser_FullMethodName             = "/core.CoreService/DeactivateUser"
+	CoreService_ReactivateUser_FullMethodName             = "/core.CoreService/ReactivateUser"
+	CoreService_UpdateUserRole_FullMethodName             = "/core.CoreService/UpdateUserRole"
+	CoreService_ListAdminRooms_FullMethodName             = "/core.CoreService/ListAdminRooms"
+	CoreService_GetAdminRoom_FullMethodName               = "/core.CoreService/GetAdminRoom"
+	CoreService_GetServerConfig_FullMethodName            = "/core.CoreService/GetServerConfig"
+	CoreService_UpdateServerConfig_FullMethodName         = "/core.CoreService/UpdateServerConfig"
+	CoreService_UpgradeRoom_FullMethodName                = "/core.CoreService/UpgradeRoom"
+	CoreService_ListAdminRoomMembers_FullMethodName       = "/core.CoreService/ListAdminRoomMembers"
+	CoreService_GetRelations_FullMethodName               = "/core.CoreService/GetRelations"
+	CoreService_GetEvent_FullMethodName                   = "/core.CoreService/GetEvent"
+	CoreService_SearchMessages_FullMethodName             = "/core.CoreService/SearchMessages"
 )
 
 // CoreServiceClient is the client API for CoreService service.
@@ -134,6 +148,47 @@ type CoreServiceClient interface {
 	// Iterates EtsStore.list_user_ids/0 and calls SessionSupervisor.destroy_session/1 for each.
 	// Returns ok=true always (best-effort — OIDC config is already updated in DB).
 	InvalidateAllAdminSessions(ctx context.Context, in *InvalidateAllAdminSessionsRequest, opts ...grpc.CallOption) (*InvalidateAllAdminSessionsResponse, error)
+	// Story 9.1: Admin gRPC RPCs — User + Room Management
+	// ListAdminUsers — paginated user listing for Admin UI.
+	ListAdminUsers(ctx context.Context, in *ListAdminUsersRequest, opts ...grpc.CallOption) (*ListAdminUsersResponse, error)
+	// GetAdminUser — fetch a single user by user_id for Admin UI.
+	GetAdminUser(ctx context.Context, in *GetAdminUserRequest, opts ...grpc.CallOption) (*GetAdminUserResponse, error)
+	// DeactivateUser — set is_active=false and invalidate all sessions.
+	DeactivateUser(ctx context.Context, in *DeactivateUserRequest, opts ...grpc.CallOption) (*DeactivateUserResponse, error)
+	// ReactivateUser — set is_active=true.
+	ReactivateUser(ctx context.Context, in *ReactivateUserRequest, opts ...grpc.CallOption) (*ReactivateUserResponse, error)
+	// UpdateUserRole — update system_role for a user.
+	UpdateUserRole(ctx context.Context, in *UpdateUserRoleRequest, opts ...grpc.CallOption) (*UpdateUserRoleResponse, error)
+	// ListAdminRooms — paginated room listing for Admin UI.
+	ListAdminRooms(ctx context.Context, in *ListAdminRoomsRequest, opts ...grpc.CallOption) (*ListAdminRoomsResponse, error)
+	// GetAdminRoom — fetch a single room by room_id for Admin UI.
+	GetAdminRoom(ctx context.Context, in *GetAdminRoomRequest, opts ...grpc.CallOption) (*GetAdminRoomResponse, error)
+	// GetServerConfig — fetch current server configuration (oidc_client_secret is intentionally excluded).
+	GetServerConfig(ctx context.Context, in *GetServerConfigRequest, opts ...grpc.CallOption) (*GetServerConfigResponse, error)
+	// UpdateServerConfig — upsert server configuration fields.
+	UpdateServerConfig(ctx context.Context, in *UpdateServerConfigRequest, opts ...grpc.CallOption) (*UpdateServerConfigResponse, error)
+	// UpgradeRoom — Story 9.8: atomic room version upgrade.
+	// Creates tombstone in old room, creates new room with predecessor,
+	// copies state, and invites all old members.
+	UpgradeRoom(ctx context.Context, in *UpgradeRoomRequest, opts ...grpc.CallOption) (*UpgradeRoomResponse, error)
+	// ListAdminRoomMembers — Story 9.18: fetch current members of a room for Admin UI.
+	// Returns all members where left_at IS NULL, ordered by joined_at ASC.
+	// Returns empty list (not an error) when the room has no current members.
+	ListAdminRoomMembers(ctx context.Context, in *ListAdminRoomMembersRequest, opts ...grpc.CallOption) (*ListAdminRoomMembersResponse, error)
+	// GetRelations — Story 9-28: returns events that relate to a given parent event
+	// via the specified rel_type (e.g. "m.thread").
+	// Returns PERMISSION_DENIED if user is not a room member.
+	// Returns NOT_FOUND if the parent event does not exist.
+	GetRelations(ctx context.Context, in *GetRelationsRequest, opts ...grpc.CallOption) (*GetRelationsResponse, error)
+	// GetEvent — Story 11-8: fetches a single event by ID, scoped to a room.
+	// Implements GET /_matrix/client/v3/rooms/{roomId}/event/{eventId}.
+	// Returns PERMISSION_DENIED if user is not a room member.
+	// Returns NOT_FOUND if the event does not exist in the room.
+	GetEvent(ctx context.Context, in *GetEventRequest, opts ...grpc.CallOption) (*GetEventResponse, error)
+	// SearchMessages — Story 11.3: Full-text search over rooms the user is a member of.
+	// user_id in the request is for documentation/auditing only — the handler MUST use
+	// x-user-id from gRPC metadata, never from the request body.
+	SearchMessages(ctx context.Context, in *SearchMessagesRequest, opts ...grpc.CallOption) (*SearchMessagesResponse, error)
 }
 
 type coreServiceClient struct {
@@ -473,6 +528,146 @@ func (c *coreServiceClient) InvalidateAllAdminSessions(ctx context.Context, in *
 	return out, nil
 }
 
+func (c *coreServiceClient) ListAdminUsers(ctx context.Context, in *ListAdminUsersRequest, opts ...grpc.CallOption) (*ListAdminUsersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListAdminUsersResponse)
+	err := c.cc.Invoke(ctx, CoreService_ListAdminUsers_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) GetAdminUser(ctx context.Context, in *GetAdminUserRequest, opts ...grpc.CallOption) (*GetAdminUserResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetAdminUserResponse)
+	err := c.cc.Invoke(ctx, CoreService_GetAdminUser_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) DeactivateUser(ctx context.Context, in *DeactivateUserRequest, opts ...grpc.CallOption) (*DeactivateUserResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeactivateUserResponse)
+	err := c.cc.Invoke(ctx, CoreService_DeactivateUser_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) ReactivateUser(ctx context.Context, in *ReactivateUserRequest, opts ...grpc.CallOption) (*ReactivateUserResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReactivateUserResponse)
+	err := c.cc.Invoke(ctx, CoreService_ReactivateUser_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) UpdateUserRole(ctx context.Context, in *UpdateUserRoleRequest, opts ...grpc.CallOption) (*UpdateUserRoleResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateUserRoleResponse)
+	err := c.cc.Invoke(ctx, CoreService_UpdateUserRole_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) ListAdminRooms(ctx context.Context, in *ListAdminRoomsRequest, opts ...grpc.CallOption) (*ListAdminRoomsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListAdminRoomsResponse)
+	err := c.cc.Invoke(ctx, CoreService_ListAdminRooms_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) GetAdminRoom(ctx context.Context, in *GetAdminRoomRequest, opts ...grpc.CallOption) (*GetAdminRoomResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetAdminRoomResponse)
+	err := c.cc.Invoke(ctx, CoreService_GetAdminRoom_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) GetServerConfig(ctx context.Context, in *GetServerConfigRequest, opts ...grpc.CallOption) (*GetServerConfigResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetServerConfigResponse)
+	err := c.cc.Invoke(ctx, CoreService_GetServerConfig_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) UpdateServerConfig(ctx context.Context, in *UpdateServerConfigRequest, opts ...grpc.CallOption) (*UpdateServerConfigResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateServerConfigResponse)
+	err := c.cc.Invoke(ctx, CoreService_UpdateServerConfig_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) UpgradeRoom(ctx context.Context, in *UpgradeRoomRequest, opts ...grpc.CallOption) (*UpgradeRoomResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpgradeRoomResponse)
+	err := c.cc.Invoke(ctx, CoreService_UpgradeRoom_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) ListAdminRoomMembers(ctx context.Context, in *ListAdminRoomMembersRequest, opts ...grpc.CallOption) (*ListAdminRoomMembersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListAdminRoomMembersResponse)
+	err := c.cc.Invoke(ctx, CoreService_ListAdminRoomMembers_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) GetRelations(ctx context.Context, in *GetRelationsRequest, opts ...grpc.CallOption) (*GetRelationsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetRelationsResponse)
+	err := c.cc.Invoke(ctx, CoreService_GetRelations_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) GetEvent(ctx context.Context, in *GetEventRequest, opts ...grpc.CallOption) (*GetEventResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetEventResponse)
+	err := c.cc.Invoke(ctx, CoreService_GetEvent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) SearchMessages(ctx context.Context, in *SearchMessagesRequest, opts ...grpc.CallOption) (*SearchMessagesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SearchMessagesResponse)
+	err := c.cc.Invoke(ctx, CoreService_SearchMessages_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CoreServiceServer is the server API for CoreService service.
 // All implementations must embed UnimplementedCoreServiceServer
 // for forward compatibility.
@@ -554,6 +749,47 @@ type CoreServiceServer interface {
 	// Iterates EtsStore.list_user_ids/0 and calls SessionSupervisor.destroy_session/1 for each.
 	// Returns ok=true always (best-effort — OIDC config is already updated in DB).
 	InvalidateAllAdminSessions(context.Context, *InvalidateAllAdminSessionsRequest) (*InvalidateAllAdminSessionsResponse, error)
+	// Story 9.1: Admin gRPC RPCs — User + Room Management
+	// ListAdminUsers — paginated user listing for Admin UI.
+	ListAdminUsers(context.Context, *ListAdminUsersRequest) (*ListAdminUsersResponse, error)
+	// GetAdminUser — fetch a single user by user_id for Admin UI.
+	GetAdminUser(context.Context, *GetAdminUserRequest) (*GetAdminUserResponse, error)
+	// DeactivateUser — set is_active=false and invalidate all sessions.
+	DeactivateUser(context.Context, *DeactivateUserRequest) (*DeactivateUserResponse, error)
+	// ReactivateUser — set is_active=true.
+	ReactivateUser(context.Context, *ReactivateUserRequest) (*ReactivateUserResponse, error)
+	// UpdateUserRole — update system_role for a user.
+	UpdateUserRole(context.Context, *UpdateUserRoleRequest) (*UpdateUserRoleResponse, error)
+	// ListAdminRooms — paginated room listing for Admin UI.
+	ListAdminRooms(context.Context, *ListAdminRoomsRequest) (*ListAdminRoomsResponse, error)
+	// GetAdminRoom — fetch a single room by room_id for Admin UI.
+	GetAdminRoom(context.Context, *GetAdminRoomRequest) (*GetAdminRoomResponse, error)
+	// GetServerConfig — fetch current server configuration (oidc_client_secret is intentionally excluded).
+	GetServerConfig(context.Context, *GetServerConfigRequest) (*GetServerConfigResponse, error)
+	// UpdateServerConfig — upsert server configuration fields.
+	UpdateServerConfig(context.Context, *UpdateServerConfigRequest) (*UpdateServerConfigResponse, error)
+	// UpgradeRoom — Story 9.8: atomic room version upgrade.
+	// Creates tombstone in old room, creates new room with predecessor,
+	// copies state, and invites all old members.
+	UpgradeRoom(context.Context, *UpgradeRoomRequest) (*UpgradeRoomResponse, error)
+	// ListAdminRoomMembers — Story 9.18: fetch current members of a room for Admin UI.
+	// Returns all members where left_at IS NULL, ordered by joined_at ASC.
+	// Returns empty list (not an error) when the room has no current members.
+	ListAdminRoomMembers(context.Context, *ListAdminRoomMembersRequest) (*ListAdminRoomMembersResponse, error)
+	// GetRelations — Story 9-28: returns events that relate to a given parent event
+	// via the specified rel_type (e.g. "m.thread").
+	// Returns PERMISSION_DENIED if user is not a room member.
+	// Returns NOT_FOUND if the parent event does not exist.
+	GetRelations(context.Context, *GetRelationsRequest) (*GetRelationsResponse, error)
+	// GetEvent — Story 11-8: fetches a single event by ID, scoped to a room.
+	// Implements GET /_matrix/client/v3/rooms/{roomId}/event/{eventId}.
+	// Returns PERMISSION_DENIED if user is not a room member.
+	// Returns NOT_FOUND if the event does not exist in the room.
+	GetEvent(context.Context, *GetEventRequest) (*GetEventResponse, error)
+	// SearchMessages — Story 11.3: Full-text search over rooms the user is a member of.
+	// user_id in the request is for documentation/auditing only — the handler MUST use
+	// x-user-id from gRPC metadata, never from the request body.
+	SearchMessages(context.Context, *SearchMessagesRequest) (*SearchMessagesResponse, error)
 	mustEmbedUnimplementedCoreServiceServer()
 }
 
@@ -659,6 +895,48 @@ func (UnimplementedCoreServiceServer) UnarchiveRoom(context.Context, *UnarchiveR
 }
 func (UnimplementedCoreServiceServer) InvalidateAllAdminSessions(context.Context, *InvalidateAllAdminSessionsRequest) (*InvalidateAllAdminSessionsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method InvalidateAllAdminSessions not implemented")
+}
+func (UnimplementedCoreServiceServer) ListAdminUsers(context.Context, *ListAdminUsersRequest) (*ListAdminUsersResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListAdminUsers not implemented")
+}
+func (UnimplementedCoreServiceServer) GetAdminUser(context.Context, *GetAdminUserRequest) (*GetAdminUserResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetAdminUser not implemented")
+}
+func (UnimplementedCoreServiceServer) DeactivateUser(context.Context, *DeactivateUserRequest) (*DeactivateUserResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeactivateUser not implemented")
+}
+func (UnimplementedCoreServiceServer) ReactivateUser(context.Context, *ReactivateUserRequest) (*ReactivateUserResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReactivateUser not implemented")
+}
+func (UnimplementedCoreServiceServer) UpdateUserRole(context.Context, *UpdateUserRoleRequest) (*UpdateUserRoleResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateUserRole not implemented")
+}
+func (UnimplementedCoreServiceServer) ListAdminRooms(context.Context, *ListAdminRoomsRequest) (*ListAdminRoomsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListAdminRooms not implemented")
+}
+func (UnimplementedCoreServiceServer) GetAdminRoom(context.Context, *GetAdminRoomRequest) (*GetAdminRoomResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetAdminRoom not implemented")
+}
+func (UnimplementedCoreServiceServer) GetServerConfig(context.Context, *GetServerConfigRequest) (*GetServerConfigResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetServerConfig not implemented")
+}
+func (UnimplementedCoreServiceServer) UpdateServerConfig(context.Context, *UpdateServerConfigRequest) (*UpdateServerConfigResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateServerConfig not implemented")
+}
+func (UnimplementedCoreServiceServer) UpgradeRoom(context.Context, *UpgradeRoomRequest) (*UpgradeRoomResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpgradeRoom not implemented")
+}
+func (UnimplementedCoreServiceServer) ListAdminRoomMembers(context.Context, *ListAdminRoomMembersRequest) (*ListAdminRoomMembersResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListAdminRoomMembers not implemented")
+}
+func (UnimplementedCoreServiceServer) GetRelations(context.Context, *GetRelationsRequest) (*GetRelationsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetRelations not implemented")
+}
+func (UnimplementedCoreServiceServer) GetEvent(context.Context, *GetEventRequest) (*GetEventResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetEvent not implemented")
+}
+func (UnimplementedCoreServiceServer) SearchMessages(context.Context, *SearchMessagesRequest) (*SearchMessagesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SearchMessages not implemented")
 }
 func (UnimplementedCoreServiceServer) mustEmbedUnimplementedCoreServiceServer() {}
 func (UnimplementedCoreServiceServer) testEmbeddedByValue()                     {}
@@ -1250,6 +1528,258 @@ func _CoreService_InvalidateAllAdminSessions_Handler(srv interface{}, ctx contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_ListAdminUsers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListAdminUsersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).ListAdminUsers(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_ListAdminUsers_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).ListAdminUsers(ctx, req.(*ListAdminUsersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_GetAdminUser_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetAdminUserRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).GetAdminUser(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_GetAdminUser_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).GetAdminUser(ctx, req.(*GetAdminUserRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_DeactivateUser_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeactivateUserRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).DeactivateUser(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_DeactivateUser_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).DeactivateUser(ctx, req.(*DeactivateUserRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_ReactivateUser_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReactivateUserRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).ReactivateUser(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_ReactivateUser_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).ReactivateUser(ctx, req.(*ReactivateUserRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_UpdateUserRole_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateUserRoleRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).UpdateUserRole(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_UpdateUserRole_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).UpdateUserRole(ctx, req.(*UpdateUserRoleRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_ListAdminRooms_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListAdminRoomsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).ListAdminRooms(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_ListAdminRooms_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).ListAdminRooms(ctx, req.(*ListAdminRoomsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_GetAdminRoom_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetAdminRoomRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).GetAdminRoom(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_GetAdminRoom_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).GetAdminRoom(ctx, req.(*GetAdminRoomRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_GetServerConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetServerConfigRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).GetServerConfig(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_GetServerConfig_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).GetServerConfig(ctx, req.(*GetServerConfigRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_UpdateServerConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateServerConfigRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).UpdateServerConfig(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_UpdateServerConfig_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).UpdateServerConfig(ctx, req.(*UpdateServerConfigRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_UpgradeRoom_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpgradeRoomRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).UpgradeRoom(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_UpgradeRoom_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).UpgradeRoom(ctx, req.(*UpgradeRoomRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_ListAdminRoomMembers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListAdminRoomMembersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).ListAdminRoomMembers(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_ListAdminRoomMembers_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).ListAdminRoomMembers(ctx, req.(*ListAdminRoomMembersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_GetRelations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetRelationsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).GetRelations(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_GetRelations_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).GetRelations(ctx, req.(*GetRelationsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_GetEvent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetEventRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).GetEvent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_GetEvent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).GetEvent(ctx, req.(*GetEventRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_SearchMessages_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SearchMessagesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).SearchMessages(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_SearchMessages_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).SearchMessages(ctx, req.(*SearchMessagesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CoreService_ServiceDesc is the grpc.ServiceDesc for CoreService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1380,6 +1910,62 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "InvalidateAllAdminSessions",
 			Handler:    _CoreService_InvalidateAllAdminSessions_Handler,
+		},
+		{
+			MethodName: "ListAdminUsers",
+			Handler:    _CoreService_ListAdminUsers_Handler,
+		},
+		{
+			MethodName: "GetAdminUser",
+			Handler:    _CoreService_GetAdminUser_Handler,
+		},
+		{
+			MethodName: "DeactivateUser",
+			Handler:    _CoreService_DeactivateUser_Handler,
+		},
+		{
+			MethodName: "ReactivateUser",
+			Handler:    _CoreService_ReactivateUser_Handler,
+		},
+		{
+			MethodName: "UpdateUserRole",
+			Handler:    _CoreService_UpdateUserRole_Handler,
+		},
+		{
+			MethodName: "ListAdminRooms",
+			Handler:    _CoreService_ListAdminRooms_Handler,
+		},
+		{
+			MethodName: "GetAdminRoom",
+			Handler:    _CoreService_GetAdminRoom_Handler,
+		},
+		{
+			MethodName: "GetServerConfig",
+			Handler:    _CoreService_GetServerConfig_Handler,
+		},
+		{
+			MethodName: "UpdateServerConfig",
+			Handler:    _CoreService_UpdateServerConfig_Handler,
+		},
+		{
+			MethodName: "UpgradeRoom",
+			Handler:    _CoreService_UpgradeRoom_Handler,
+		},
+		{
+			MethodName: "ListAdminRoomMembers",
+			Handler:    _CoreService_ListAdminRoomMembers_Handler,
+		},
+		{
+			MethodName: "GetRelations",
+			Handler:    _CoreService_GetRelations_Handler,
+		},
+		{
+			MethodName: "GetEvent",
+			Handler:    _CoreService_GetEvent_Handler,
+		},
+		{
+			MethodName: "SearchMessages",
+			Handler:    _CoreService_SearchMessages_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
