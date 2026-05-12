@@ -131,14 +131,3 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(plaintext)
 }
 
-// thumbnailStub returns 501 M_UNRECOGNIZED for all thumbnail requests.
-// Thumbnails are Phase 2; the endpoint is registered to avoid 404 confusion.
-// AC #6
-func thumbnailStub(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusNotImplemented)
-	_ = json.NewEncoder(w).Encode(map[string]string{
-		"errcode": "M_UNRECOGNIZED",
-		"error":   "Thumbnails not supported in this version",
-	})
-}

@@ -141,6 +141,23 @@ The `Storer` interface returns sentinel errors that map to specific HTTP status 
 
 Classification logic: `ClassifyMinIOError` uses `errors.As` to unwrap `minio.ErrorResponse` (not `minio.ToErrorResponse` which does direct type assertion). `LocalStorer.Get` maps `os.ErrNotExist` → `ErrNotFound`. The handler logs the full error via `slog.Error` but returns only a generic message to the client (no credential/endpoint leak).
 
+**Media Gateway — Thumbnail Generation (Story 12.5):**
+
+On-demand thumbnail generation for `GET /_matrix/media/v3/thumbnail/{serverName}/{mediaId}`:
+
+| Concern | Decision | Rationale |
+|---|---|---|
+| Library | `github.com/disintegration/imaging v1.6.2` (MIT) | Pure Go, no cgo, no shell exec — sandboxed by construction |
+| MIME detection | `net/http.DetectContentType` on first 512 bytes | Magic bytes only; never trust stored `Content-Type` |
+| Allowed types | `image/jpeg`, `image/png`, `image/gif`, `image/webp` | Deny-by-default: SVG/PDF/PS/EPS → 400 M_BAD_JSON |
+| Scale method | `imaging.Fit` | Aspect-ratio-preserved, fits within W×H |
+| Crop method | `imaging.Fill` (center) | Center-crop to exactly W×H |
+| Animated GIF | `gif.DecodeAll` + per-frame resize + Floyd-Steinberg re-palettize | Preserves all frames + loop count |
+| animated=false | Static JPEG (first-frame decode) | Spec MUST NOT return animated thumbnail |
+| Output format | JPEG (85 quality) for static; GIF for animated | Balance size/quality |
+| Headers | `Content-Disposition: inline; filename=...` (spec v1.12) + `Cache-Control: max-age=86400` | Matrix spec MUST requirements |
+| Security | `mediaId` validated with `^[A-Za-z0-9_\-]+$` before DB/storage call | Path traversal prevention (Matrix spec §5.6) |
+
 **gRPC error surface rule (Story 9-27):** Elixir gRPC handlers must use `raise GRPC.RPCError,
 status: GRPC.Status.<code>(), message: "..."` to propagate errors to the Go gateway. Bare `:ok =`
 pattern matches on `Room.Server` calls produce `MatchError` at runtime, which gRPC-elixir maps to

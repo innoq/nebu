@@ -1,6 +1,17 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-12
+# [12-5] 2026-05-12T22:30Z arc42-update → done (05-building-blocks: thumbnail package + pgThumbnailStore adapter; 08-concepts: thumbnail generation table — library/MIME/methods/headers)
+# [12-5] 2026-05-12T22:25Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW advisory — serverName pre-existing, large-GIF bounded by upload MaxBytes)
+# [12-5] 2026-05-12T22:20Z code-review → CLEAN (cycle 0) — 0 MAJOR, 0 MINOR (pgThumbnailStore adapter pattern correct; all AC+spec MUST satisfied)
+# [12-5] 2026-05-12T22:15Z ci-gate → ✓ build+unit-go (70 media tests)+unit-elixir (227); e2e+integration skipped (minio/mc image unavailable in env — pre-existing)
+# [12-5] 2026-05-12T22:10Z dev-story → done (cycle 0) — thumbnail package: GenerateThumbnail+DetectMIMEType+Handler; disintegration/imaging v1.6.2; pgThumbnailStore adapter; thumbnailStub removed; 70 tests green
+# [12-5] 2026-05-12T21:20Z test-review → 0 MAJOR, 3 MINOR (M-1: fakeThumbStorer io.Reader signature; M-2: weak traversal assert; M-3: PS/EPS not tested)
+# [12-5] 2026-05-12T21:15Z atdd → 13 failing tests (thumbnail_test.go: 9 unit; handler_test.go: 13 HTTP — compile fails: undefined thumbnail package)
+# [12-5] 2026-05-12T21:08Z oracle-gate → spec context captured (Content-Disposition MUST, mediaId validation MUST, animated=false MUST NOT animate, M_UNKNOWN vs M_BAD_JSON for 400)
+# [12-5] 2026-05-12T21:05Z create-story → 12-5-thumbnail-generation-on-demand-sandboxed.md
+# [12-5] 2026-05-12T21:00Z pipeline started
+# [12-4] 2026-05-12T18:47Z epic-loop → story done
 # [12-4] 2026-05-12T20:45Z committed ✓ (ATDD+Code CLEAN 0 cycles+Kassandra CLEAN 2 LOW advisory)
 # [12-4] 2026-05-12T20:40Z arc42-update → done (05-building-blocks: Storer sentinel errors+ClassifyMinIOError+LocalStorer alignment, 08-concepts: media storage error classification table+pattern)
 # [12-4] 2026-05-12T20:35Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW advisory — path traversal blocked by DB gate, observability gap in MinIO error logging)
@@ -197,9 +208,17 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: null
-current_step: null
-completed: []
+story: "12-5"
+current_step: "commit"
+completed:
+  - create-story
+  - atdd
+  - test-review
+  - dev-story
+  - ci-gate
+  - code-review
+  - security-review
+  - arc42-update
 cycle_count: 0
 blocked_reason: null
-last_updated: "2026-05-12T16:47Z"
+last_updated: "2026-05-12T17:13Z"

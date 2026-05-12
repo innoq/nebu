@@ -151,13 +151,37 @@ media/
     │   └── upload.go           ← Handler; depends on MediaStore (DB) + Storer (storage);
     │                              encrypts body AES-256-GCM, calls Storer.Put("<server>/<id>"),
     │                              inserts row in media_files, returns mxc:// URI
-    └── download/               ← GET /_matrix/media/v3/download/{serverName}/{mediaId}
-        └── handler.go          ← Handler; looks up row in media_files, calls Storer.Get,
-                                   decrypts AES-256-GCM, streams plaintext to client;
-                                   ErrNotFound → 404 M_NOT_FOUND; storage errors → 502 M_UNKNOWN;
-                                   slog.Error logs raw error; response body sanitized (no leaks)
-                                   (Story 12.4)
+    ├── download/               ← GET /_matrix/media/v3/download/{serverName}/{mediaId}
+    │   └── handler.go          ← Handler; looks up row in media_files, calls Storer.Get,
+    │                              decrypts AES-256-GCM, streams plaintext to client;
+    │                              ErrNotFound → 404 M_NOT_FOUND; storage errors → 502 M_UNKNOWN;
+    │                              slog.Error logs raw error; response body sanitized (no leaks)
+    │                              (Story 12.4)
+    └── thumbnail/              ← GET /_matrix/media/v3/thumbnail/{serverName}/{mediaId}
+        ├── thumbnail.go        ← GenerateThumbnail + DetectMIMEType + ThumbnailParams
+        │                          Library: github.com/disintegration/imaging v1.6.2 (pure Go, MIT,
+        │                          no cgo — sandboxed by construction, AC4 Story 12.5)
+        │                          method=scale → imaging.Fit (aspect-ratio-preserved, ≤W×H)
+        │                          method=crop  → imaging.Fill (center-crop, exactly W×H)
+        │                          animated=true + GIF → generateAnimatedGIFThumbnail (all frames)
+        │                          animated=false → static JPEG (spec MUST NOT animate)
+        │                          MIME detection: net/http.DetectContentType on first 512 bytes
+        │                          (magic bytes, NOT Content-Type header)
+        │                          AllowedMIMETypes: {image/jpeg, image/png, image/gif, image/webp}
+        │                          All others (SVG, PDF, PS, EPS) → 400 M_BAD_JSON (deny-by-default)
+        └── handler.go          ← HTTP handler; consumer-defined MediaStore interface;
+                                   width+height required (400 M_BAD_JSON if missing/non-integer);
+                                   mediaId validated: ^[A-Za-z0-9_\-]+$ (path traversal prevention);
+                                   Content-Disposition: inline; filename="thumbnail.ext" (spec v1.12);
+                                   Cache-Control: max-age=86400 (AC5);
+                                   ErrNotFound → 404 M_NOT_FOUND; storage errors → 502 M_UNKNOWN
+                                   (Story 12.5)
 ```
+
+**pgThumbnailStore adapter (Story 12.5):** `thumbnail.MediaStore` and `download.MediaStore` both
+require `GetMediaFile` returning different row types (Go structural constraint). `pgThumbnailStore`
+wraps `pgMediaStore` and converts `*download.MediaFileRow` to `*thumbnail.MediaFileRow` — zero
+additional SQL queries. Both handlers share the same underlying DB access.
 
 **Storer injection (Story 12.3):** `main.go` uses `selectStorer(cfg mediaConfig)` to select the backend:
 - `NEBU_STORAGE_BACKEND=local` (default) → `&storage.LocalStorer{BasePath: storagePath}`

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -17,6 +16,7 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/nebu/nebu/media/internal/download"
 	"github.com/nebu/nebu/media/internal/storage"
+	"github.com/nebu/nebu/media/internal/thumbnail"
 	"github.com/nebu/nebu/media/internal/upload"
 )
 
@@ -72,6 +72,32 @@ func (s *pgMediaStore) GetMediaFile(ctx context.Context, serverName, mediaID str
 		return nil, err
 	}
 	return row, nil
+}
+
+// pgThumbnailStore is an adapter that wraps pgMediaStore to satisfy thumbnail.MediaStore.
+// Go does not allow the same method name to return different types in the same struct,
+// so this thin adapter converts download.MediaFileRow to thumbnail.MediaFileRow.
+type pgThumbnailStore struct {
+	inner *pgMediaStore
+}
+
+// GetMediaFile implements thumbnail.MediaStore by delegating to the underlying pgMediaStore
+// and converting the returned row type.
+func (s *pgThumbnailStore) GetMediaFile(ctx context.Context, serverName, mediaID string) (*thumbnail.MediaFileRow, error) {
+	row, err := s.inner.GetMediaFile(ctx, serverName, mediaID)
+	if err != nil {
+		return nil, err
+	}
+	if row == nil {
+		return nil, nil
+	}
+	return &thumbnail.MediaFileRow{
+		MediaID:     row.MediaID,
+		ServerName:  row.ServerName,
+		ContentType: row.ContentType,
+		AESKeyHex:   row.AESKeyHex,
+		NonceHex:    row.NonceHex,
+	}, nil
 }
 
 func main() {
@@ -153,6 +179,7 @@ func main() {
 	defer pool.Close()
 
 	store := &pgMediaStore{pool: pool}
+	thumbStore := &pgThumbnailStore{inner: store}
 
 	uploadHandler := upload.NewHandler(upload.HandlerConfig{
 		DB:         store,
@@ -166,10 +193,15 @@ func main() {
 		Storage: storer,
 	})
 
+	thumbnailHandler := thumbnail.NewHandler(thumbnail.HandlerConfig{
+		DB:      thumbStore,
+		Storage: storer,
+	})
+
 	mux := http.NewServeMux()
 	mux.Handle("POST /_matrix/media/v3/upload", uploadHandler)
 	mux.Handle("GET /_matrix/media/v3/download/{serverName}/{mediaId}", downloadHandler)
-	mux.HandleFunc("GET /_matrix/media/v3/thumbnail/{serverName}/{mediaId}", thumbnailStub)
+	mux.Handle("GET /_matrix/media/v3/thumbnail/{serverName}/{mediaId}", thumbnailHandler)
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
@@ -227,13 +259,3 @@ func getenv(key, defaultVal string) string {
 	return defaultVal
 }
 
-// thumbnailStub returns 501 M_UNRECOGNIZED for all thumbnail requests.
-// Thumbnails are Phase 2; the endpoint is registered to avoid 404 confusion.
-func thumbnailStub(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusNotImplemented)
-	_ = json.NewEncoder(w).Encode(map[string]string{
-		"errcode": "M_UNRECOGNIZED",
-		"error":   "Thumbnails not supported in this version",
-	})
-}
