@@ -10,9 +10,15 @@ description: Guide developers implementing Matrix Client-Server API features —
 
 The developer has a clear, correct implementation path grounded in the spec. They know which fields are required, which error codes to return, what the spec requires vs. what is left to implementation, and where common mistakes are made. They do not need to re-read the spec themselves to verify the guidance.
 
-## Context7 First
+## Local Spec First
 
-Use context7 to fetch current spec docs before giving implementation guidance. Check MEMORY.md first — has this been discussed before? Any Nebu-specific decisions already made for this endpoint?
+Read the bundled local spec before giving implementation guidance — do not rely on training data alone. Check MEMORY.md first — has this been discussed before? Any Nebu-specific decisions already made for this endpoint?
+
+**Spec root:** `{skill-root}/matrix-spec/v1.18/`  
+Primary file: `client-server-api/index.html` (~3 MB — grep for anchor IDs, then Read with offset/limit).  
+Anchor pattern: endpoint IDs like `post_matrixclientv3login`; section IDs like `id="receipts"`, `id="typing-notifications"`.
+
+See `references/spec-lookup.md` for the full navigation strategy.
 
 ## Approach
 

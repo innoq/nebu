@@ -10,13 +10,27 @@ description: Deep reference lookup for the Matrix Client-Server API — events, 
 
 The user gets a precise, cited answer from the Matrix Client-Server API spec. No paraphrasing that loses precision. No invented behavior. When the spec has a MUST, the answer reflects that MUST.
 
-## Context7 First
+## Local Spec First
 
-Before answering spec questions, use context7 to fetch current Matrix spec docs:
-1. `mcp__context7__resolve-library-id` with query "Matrix Client-Server API"
-2. `mcp__context7__get-library-docs` with the relevant topic
+The Matrix spec v1.18 is bundled locally — **always read from it before answering spec questions. Never answer from training data alone.**
 
-Never answer spec questions from training data alone — specs evolve and training data may be stale. If context7 is unavailable, say so and note that the answer is from training data (spec version may not match).
+**Spec root:** `{skill-root}/matrix-spec/v1.18/`
+
+| File | Contents |
+|------|----------|
+| `client-server-api/index.html` | All CS API endpoints, events, flows (~3 MB) |
+| `appendices/index.html` | Canonical JSON, event format, signing |
+| `rooms/v6/index.html` | Room version 6 auth rules (Nebu target) |
+| `rooms/v11/index.html` | Latest room version |
+
+**Navigation strategy for the large client-server-api file:**
+1. Find the section line: `grep -n 'id="<anchor>"' {skill-root}/matrix-spec/v1.18/client-server-api/index.html`
+   - Endpoint anchors follow `<method>_<path>` with `/` stripped: e.g. `post_matrixclientv3login`, `get_matrixclientv3sync`
+   - Concept anchors use kebab headings: `id="receipts"`, `id="typing-notifications"`, `id="standard-error-response"`
+2. Read around that line: `Read {skill-root}/matrix-spec/v1.18/client-server-api/index.html offset=<line> limit=300`
+3. For keyword searches: `grep -n "retry_after_ms\|M_LIMIT_EXCEEDED" {skill-root}/matrix-spec/v1.18/client-server-api/index.html | head -20`
+
+If the local spec is genuinely insufficient for a question, context7 may supplement — but the bundled v1.18 is the authoritative source for this project.
 
 ## Scope
 

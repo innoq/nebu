@@ -10,9 +10,15 @@ description: Review code, stories, PRs, or feature implementations for Matrix Cl
 
 Every deviation from the Matrix Client-Server API spec is identified, classified by severity, cited to the exact spec section, and accompanied by a concrete fix. Zero false positives. Zero false negatives for MUST violations.
 
-## Context7 First
+## Local Spec First
 
-Use context7 to verify spec behavior before producing findings — do not rely on training data for compliance decisions.
+Verify spec behavior from the bundled local spec before producing findings — do not rely on training data for compliance decisions.
+
+**Spec root:** `{skill-root}/matrix-spec/v1.18/`  
+Primary file: `client-server-api/index.html` (~3 MB — grep for anchor IDs, then Read with offset/limit).  
+Anchor pattern: endpoint IDs like `post_matrixclientv3login`; section IDs like `id="receipts"`, `id="standard-error-response"`.
+
+See `references/spec-lookup.md` for the full navigation strategy.
 
 ## Input
 

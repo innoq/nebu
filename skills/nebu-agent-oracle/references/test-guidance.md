@@ -10,6 +10,14 @@ description: Help TEA agents and developers design acceptance tests that verify 
 
 The test covers the spec behavior — not just the happy path, but the error conditions and edge cases the spec explicitly defines. Every MUST that is testable produces an assertion. Tests are grounded in what a real Matrix client would send and what the spec requires the server to return.
 
+## Local Spec First
+
+Before designing tests for a Matrix feature, verify the exact spec requirements from the bundled local spec. Do not rely on training data for MUST/SHOULD semantics.
+
+**Spec root:** `{skill-root}/matrix-spec/v1.18/`  
+Primary file: `client-server-api/index.html` (~3 MB — grep for anchor IDs, then Read with offset/limit).  
+See `references/spec-lookup.md` for the navigation strategy.
+
 ## Approach
 
 For any Matrix feature, identify:
