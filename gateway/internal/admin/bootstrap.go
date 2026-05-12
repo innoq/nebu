@@ -220,7 +220,7 @@ func (h *BootstrapHandler) StepHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		// Show Step 3: Claim Mapping (pre-filled with Nebu defaults).
 		data.Step = 3
-		data.OIDCUserIDClaim = "sub"
+		data.OIDCUserIDClaim = "email"
 		data.OIDCDisplaynameClaim = "name"
 		data.OIDCEmailClaim = "email"
 

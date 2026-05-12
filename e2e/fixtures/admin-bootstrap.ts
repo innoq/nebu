@@ -89,6 +89,12 @@ async function runBootstrapWizard(page: Page): Promise<void> {
   await page.getByLabel(/oidc client secret/i).fill(
     process.env.NEBU_OIDC_CLIENT_SECRET ?? 'nebu-admin-secret'
   );
+  // Step 2 → Step 3 (Claim Mapping): click "Next" to advance to the claim mapping step.
+  // Story 11-10 added Step 3; "Connect with OIDC" is now on Step 3, not Step 2.
+  await page.getByRole('button', { name: /^next$/i }).click();
+
+  // Step 3: Claim Mapping — accept pre-filled defaults and proceed to OIDC.
+  await page.waitForURL(/\/admin\/bootstrap/, { timeout: 10_000 });
   // "Connect with OIDC" POST → redirect to /admin/login/start?mode=bootstrap → Dex
   await page.getByRole('button', { name: /connect with oidc/i }).click();
 

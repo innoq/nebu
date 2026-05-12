@@ -51,6 +51,12 @@ When(
   async ({ page }: { page: Page }, fieldName: string) => {
     const field = page.locator(`input[name="${fieldName}"]`);
     await field.clear();
+    // Remove 'required' so the browser allows form submission with an empty value,
+    // letting the server-side validation (HTTP 422) be tested end-to-end.
+    await page.evaluate((name) => {
+      const el = document.querySelector<HTMLInputElement>(`input[name="${name}"]`);
+      if (el) el.removeAttribute('required');
+    }, fieldName);
   }
 );
 
@@ -60,8 +66,9 @@ When(
 Then(
   'the page shows a validation error for {string}',
   async ({ page }: { page: Page }, fieldName: string) => {
-    // The template renders: <div class="alert alert-error mt-2" data-field="<fieldName>">
-    const errMsg = page.locator(`[data-field="${fieldName}"].alert-error, .alert-error[data-field="${fieldName}"]`);
+    // Bootstrap form: <div class="alert alert-error" data-field="...">.
+    // Settings page: <p class="text-error" role="alert" data-field="...">.
+    const errMsg = page.locator(`[data-field="${fieldName}"][role="alert"], [data-field="${fieldName}"].alert-error`);
     await expect(errMsg).toBeVisible({ timeout: 10_000 });
   }
 );

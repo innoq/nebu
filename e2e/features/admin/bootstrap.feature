@@ -26,6 +26,8 @@ Feature: Admin UI — Bootstrap Wizard
     When the operator fills in "OIDC Issuer URL" with the Dex issuer URL
     And the operator fills in "OIDC Client ID" with "nebu-admin"
     And the operator fills in "OIDC Client Secret" with the configured client secret
+    And the operator clicks "Next"
+    Then the progress indicator shows step 3 as active
     And the operator clicks "Connect with OIDC"
     Then the browser is redirected to the Dex login page
     When the operator fills in the Dex email field with "kai@example.com"

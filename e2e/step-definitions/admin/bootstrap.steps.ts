@@ -187,8 +187,14 @@ When('the operator fills in {string} with {string}', async (
   fieldLabel: string,
   value: string
 ) => {
-  const field = page.getByLabel(new RegExp(fieldLabel, 'i'));
-  await field.fill(value);
+  const byLabel = page.getByLabel(new RegExp(fieldLabel, 'i'));
+  const byName  = page.locator(`input[name="${fieldLabel}"], textarea[name="${fieldLabel}"]`);
+  const labelVisible = await byLabel.first().isVisible({ timeout: 3_000 }).catch(() => false);
+  if (labelVisible) {
+    await byLabel.first().fill(value);
+  } else {
+    await byName.first().fill(value);
+  }
 });
 
 When('the operator fills in {string} with the Dex issuer URL', async ({ page }: { page: Page }, _fieldLabel: string) => {
