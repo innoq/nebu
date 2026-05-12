@@ -130,7 +130,9 @@ gateway/
 
 ```
 media/
-├── cmd/media/main.go           ← Startup: DB pool → LocalStorer → HTTP routing
+├── cmd/media/main.go           ← Startup: readSecretFile → selectStorer(cfg) → DB pool → HTTP routing
+│                                  mediaConfig struct: serverName, storagePath, storageBackend,
+│                                  minioEndpoint, minioAccessKey, minioSecretKey, minioBucket, minioUseSSL
 └── internal/
     ├── crypto/                 ← AES-256-GCM key generation, encrypt, decrypt
     │   └── aes.go
@@ -147,9 +149,14 @@ media/
                                    decrypts AES-256-GCM, streams plaintext to client
 ```
 
-**Storer injection:** Both `upload.HandlerConfig` and `download.HandlerConfig` accept a `storage.Storer`
-interface field. `main.go` wires `&storage.LocalStorer{BasePath: storagePath}` for the local-filesystem
-backend. Story 12.3 will replace this with `&storage.MinIOStorer{...}` when `NEBU_STORAGE_BACKEND=minio`.
+**Storer injection (Story 12.3):** `main.go` uses `selectStorer(cfg mediaConfig)` to select the backend:
+- `NEBU_STORAGE_BACKEND=local` (default) → `&storage.LocalStorer{BasePath: storagePath}`
+- `NEBU_STORAGE_BACKEND=minio` → `&storage.MinIOStorer{Client: minioClient, Bucket: cfg.minioBucket}`
+
+Credentials are loaded from Docker Secrets via `readSecretFile(path)` (mirrors the Gateway PSK pattern):
+`NEBU_MINIO_ACCESS_KEY_FILE=/run/secrets/minio_app_access_key` → file read at startup.
+
+The `minio-go/v7` client is lazily constructed in `selectStorer`; empty `minioEndpoint`, `minioAccessKey`, or `minioSecretKey` returns an error (fail-fast, no silent anonymous access).
 
 ## Level 2 — Elixir/OTP Core Internal Structure
 

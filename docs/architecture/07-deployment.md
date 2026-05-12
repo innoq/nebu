@@ -12,7 +12,8 @@ services:
   postgres:       # PostgreSQL 16 (port 5432)
   dex:            # OIDC provider for development (port 5556)
   minio:          # MinIO S3-compatible object store (port 9000: API; port 9001: console) — Story 12.1
-  createbuckets:  # One-shot init container that creates the nebu-media bucket — Story 12.1
+  createbuckets:  # Init container: creates nebu-media bucket + nebu-app IAM user+policy — Story 12.1/12.3
+  media:          # Go Media Gateway (port 8009: upload/download) — Story 12.3
 ```
 
 **Port map:**
@@ -21,6 +22,7 @@ services:
 |---|---|---|
 | Go Gateway | 8008 | Matrix Client-Server API + Admin UI + Admin API |
 | Go Gateway | 8080 (dev) / 8443 (TLS) | Health, Readiness, Prometheus metrics |
+| Go Media Gateway | 8009 | Matrix Media API (upload + download) |
 | Elixir Core | 4000 | Health endpoint (internal Docker network only) |
 | Elixir Core | 9000 | gRPC CoreService (internal Docker network only) |
 | PostgreSQL | 5432 | Database (internal Docker network only) |
@@ -102,12 +104,33 @@ secrets and referenced via `NEBU_*_FILE` environment variables pointing to the m
 
 ```bash
 make setup   # generates .secrets/internal_secret, .secrets/minio_root_user,
-             # and .secrets/minio_root_password via openssl rand
-# docker-compose.yml mounts all three as Docker secrets
+             # .secrets/minio_root_password, .secrets/minio_app_access_key,
+             # and .secrets/minio_app_secret_key via openssl rand
+# docker-compose.yml mounts all five as Docker secrets
 # Gateway reads internal secret via NEBU_INTERNAL_SECRET_FILE=/run/secrets/internal_secret
-# MinIO reads credentials via MINIO_ROOT_USER_FILE / MINIO_ROOT_PASSWORD_FILE
+# MinIO reads root credentials via MINIO_ROOT_USER_FILE / MINIO_ROOT_PASSWORD_FILE
+# Media Gateway reads app credentials via NEBU_MINIO_ACCESS_KEY_FILE / NEBU_MINIO_SECRET_KEY_FILE
+# createbuckets creates the nebu-app MinIO user and attaches the nebu-app-policy (PutObject+GetObject only)
 # WARNING: These are example credentials for local development only.
 # Replace before first production start.
 ```
+
+### MinIO IAM Hardening (Story 12.3)
+
+The media gateway uses a dedicated `nebu-app` MinIO user with a least-privilege IAM policy:
+
+```json
+{
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": ["s3:PutObject", "s3:GetObject"],
+    "Resource": ["arn:aws:s3:::nebu-media/*"]
+  }]
+}
+```
+
+Intentionally absent: `s3:DeleteObject` (soft-delete only), `s3:ListBucket` (prevents enumeration), `s3:*` (no admin ops from app). The `createbuckets` init container creates and attaches this policy at startup. The media gateway runs as this user, never as the MinIO root. Root credentials are never passed to the media gateway.
+
+Policy source: `dev/minio/nebu-app-policy.json`.
 
 _Source: `_bmad-output/planning-artifacts/architecture.md`, §Infrastructure & Deployment, §Build-Container-Strategie, §Resilienz & Selbst-Heilung_

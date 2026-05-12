@@ -4,17 +4,39 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/nebu/nebu/media/internal/download"
 	"github.com/nebu/nebu/media/internal/storage"
 	"github.com/nebu/nebu/media/internal/upload"
 )
+
+// mediaConfig holds all configuration values for the media gateway.
+// Populated from environment variables in main(); passed to selectStorer.
+type mediaConfig struct {
+	serverName     string
+	storagePath    string
+	listenAddr     string
+	maxBytes       int64
+	dbURL          string
+	storageBackend string // "local" (default) or "minio"
+
+	// MinIO-specific (only used when storageBackend == "minio")
+	minioEndpoint  string
+	minioAccessKey string
+	minioSecretKey string
+	minioBucket    string
+	minioUseSSL    bool
+}
 
 // pgMediaStore implements upload.MediaStore and download.MediaStore using pgx/v5.
 // AC #7 — Real pgx/v5 DB layer replacing the placeholder stub.
@@ -72,6 +94,56 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Build MinIO credentials: env var takes priority; _FILE variant reads from Docker Secrets.
+	minioAccessKey := getenv("NEBU_MINIO_ACCESS_KEY", "")
+	if minioAccessKey == "" {
+		if keyFile := getenv("NEBU_MINIO_ACCESS_KEY_FILE", ""); keyFile != "" {
+			minioAccessKey, err = readSecretFile(keyFile)
+			if err != nil {
+				slog.Error("failed to read NEBU_MINIO_ACCESS_KEY_FILE", "path", keyFile, "err", err)
+				os.Exit(1)
+			}
+		}
+	}
+
+	minioSecretKey := getenv("NEBU_MINIO_SECRET_KEY", "")
+	if minioSecretKey == "" {
+		if secretFile := getenv("NEBU_MINIO_SECRET_KEY_FILE", ""); secretFile != "" {
+			minioSecretKey, err = readSecretFile(secretFile)
+			if err != nil {
+				slog.Error("failed to read NEBU_MINIO_SECRET_KEY_FILE", "path", secretFile, "err", err)
+				os.Exit(1)
+			}
+		}
+	}
+
+	minioUseSSL := false
+	if v := getenv("NEBU_MINIO_USE_SSL", "false"); v == "true" || v == "1" {
+		minioUseSSL = true
+	}
+
+	cfg := mediaConfig{
+		serverName:     serverName,
+		storagePath:    storagePath,
+		listenAddr:     listenAddr,
+		maxBytes:       maxBytes,
+		dbURL:          dbURL,
+		storageBackend: getenv("NEBU_STORAGE_BACKEND", "local"),
+		minioEndpoint:  getenv("NEBU_MINIO_ENDPOINT", ""),
+		minioAccessKey: minioAccessKey,
+		minioSecretKey: minioSecretKey,
+		minioBucket:    getenv("NEBU_MINIO_BUCKET", "nebu-media"),
+		minioUseSSL:    minioUseSSL,
+	}
+
+	storer, err := selectStorer(cfg)
+	if err != nil {
+		slog.Error("failed to initialise storage backend", "backend", cfg.storageBackend, "err", err)
+		os.Exit(1)
+	}
+
+	slog.Info("storage backend initialised", "backend", cfg.storageBackend)
+
 	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, dbURL)
 	if err != nil {
@@ -82,18 +154,16 @@ func main() {
 
 	store := &pgMediaStore{pool: pool}
 
-	localStorer := &storage.LocalStorer{BasePath: storagePath}
-
 	uploadHandler := upload.NewHandler(upload.HandlerConfig{
 		DB:         store,
-		Storage:    localStorer,
+		Storage:    storer,
 		ServerName: serverName,
 		MaxBytes:   maxBytes,
 	})
 
 	downloadHandler := download.NewHandler(download.HandlerConfig{
 		DB:      store,
-		Storage: localStorer,
+		Storage: storer,
 	})
 
 	mux := http.NewServeMux()
@@ -110,6 +180,44 @@ func main() {
 		slog.Error("server error", "err", err)
 		os.Exit(1)
 	}
+}
+
+// selectStorer returns the appropriate Storer implementation based on cfg.storageBackend.
+// "minio" requires cfg.minioEndpoint to be set; returns an error if it is empty.
+// Any other value (including empty) defaults to LocalStorer.
+func selectStorer(cfg mediaConfig) (storage.Storer, error) {
+	switch cfg.storageBackend {
+	case "minio":
+		if cfg.minioEndpoint == "" {
+			return nil, fmt.Errorf("NEBU_MINIO_ENDPOINT required when NEBU_STORAGE_BACKEND=minio")
+		}
+		if cfg.minioAccessKey == "" {
+			return nil, fmt.Errorf("NEBU_MINIO_ACCESS_KEY (or NEBU_MINIO_ACCESS_KEY_FILE) required when NEBU_STORAGE_BACKEND=minio")
+		}
+		if cfg.minioSecretKey == "" {
+			return nil, fmt.Errorf("NEBU_MINIO_SECRET_KEY (or NEBU_MINIO_SECRET_KEY_FILE) required when NEBU_STORAGE_BACKEND=minio")
+		}
+		client, err := minio.New(cfg.minioEndpoint, &minio.Options{
+			Creds:  credentials.NewStaticV4(cfg.minioAccessKey, cfg.minioSecretKey, ""),
+			Secure: cfg.minioUseSSL,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("minio client init: %w", err)
+		}
+		return &storage.MinIOStorer{Client: client, Bucket: cfg.minioBucket}, nil
+	default: // "local" or empty string
+		return &storage.LocalStorer{BasePath: cfg.storagePath}, nil
+	}
+}
+
+// readSecretFile reads a Docker Secret file (or any file) and returns its trimmed contents.
+// This mirrors the gateway pattern for NEBU_INTERNAL_SECRET_FILE.
+func readSecretFile(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("reading secret file %s: %w", path, err)
+	}
+	return strings.TrimSpace(string(data)), nil
 }
 
 func getenv(key, defaultVal string) string {
