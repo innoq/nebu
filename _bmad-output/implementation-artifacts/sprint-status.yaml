@@ -1,5 +1,6 @@
 # generated: 2026-03-20
 # last_updated: 2026-05-12
+# story 12-2 done (pipeline: ATDD+Dev+Code CLEAN — Storer interface, LocalStorer, MinIOStorer, handler injection, minio-go/v7): 2026-05-12
 # story 12-1 done (pipeline: ready-for-dev): 2026-05-12
 # story 11-11 done (pipeline: ATDD+Code CLEAN 1 cycle+noproc guard added): 2026-05-12
 # story 11-10 done (pipeline: ATDD+Dev+Code CLEAN (3 cycles, 3 MAJOR fixed: configReader, claims wired, TTL cache)+UX 6 violations fixed+Kassandra CLEAN): 2026-05-12
@@ -832,7 +833,7 @@ development_status:
   # ─────────────────────────────────────────────────────────────────────────
   epic-12: in-progress
   12-1-minio-docker-compose-credentials-via-secrets: ready-for-dev
-  12-2-storage-interface-refactor: backlog
+  12-2-storage-interface-refactor: done
   12-3-media-upload-minio-backend-iam-hardening: backlog
   12-4-media-download-minio-backend-pre-signed-url-security: backlog
   12-5-thumbnail-generation-on-demand-sandboxed: backlog

@@ -5,12 +5,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 
 	mediacrypto "github.com/nebu/nebu/media/internal/crypto"
+	"github.com/nebu/nebu/media/internal/storage"
 )
 
 // MediaStore is the consumer-defined interface for fetching media_files rows.
@@ -30,21 +30,21 @@ type MediaFileRow struct {
 
 // HandlerConfig contains configuration for the download Handler.
 type HandlerConfig struct {
-	DB          MediaStore
-	StoragePath string // NEBU_MEDIA_STORAGE_PATH
+	DB      MediaStore
+	Storage storage.Storer // replaces StoragePath — use LocalStorer or MinIOStorer
 }
 
 // Handler handles GET /_matrix/media/v3/download/{serverName}/{mediaId}.
 type Handler struct {
-	db          MediaStore
-	storagePath string
+	db      MediaStore
+	storage storage.Storer
 }
 
 // NewHandler creates a new download Handler with the given configuration.
 func NewHandler(cfg HandlerConfig) *Handler {
 	return &Handler{
-		db:          cfg.DB,
-		storagePath: cfg.StoragePath,
+		db:      cfg.DB,
+		storage: cfg.Storage,
 	}
 }
 
@@ -90,9 +90,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// AC #3 — Read encrypted file from disk.
-	filePath := filepath.Join(h.storagePath, serverName, mediaID)
-	ciphertext, err := os.ReadFile(filePath)
+	// AC #3 — Read encrypted bytes via Storer under key "<serverName>/<mediaID>".
+	storageKey := serverName + "/" + mediaID
+	rc, err := h.storage.Get(r.Context(), storageKey)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "M_UNKNOWN", "Failed to read media file")
+		return
+	}
+	defer rc.Close()
+
+	ciphertext, err := io.ReadAll(rc)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "M_UNKNOWN", "Failed to read media file")
 		return

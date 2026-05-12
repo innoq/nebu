@@ -126,6 +126,31 @@ gateway/
     └── config/                 ← NEBU_* env-var configuration
 ```
 
+## Level 2 — Go Media Gateway Internal Structure
+
+```
+media/
+├── cmd/media/main.go           ← Startup: DB pool → LocalStorer → HTTP routing
+└── internal/
+    ├── crypto/                 ← AES-256-GCM key generation, encrypt, decrypt
+    │   └── aes.go
+    ├── storage/                ← Storage abstraction (Story 12.2)
+    │   ├── storage.go          ← Storer interface: Put / Get / Delete
+    │   ├── local.go            ← LocalStorer: filesystem backend (BasePath/<key>)
+    │   └── minio.go            ← MinIOStorer: S3-compatible backend via minio-go/v7
+    ├── upload/                 ← POST /_matrix/media/v3/upload
+    │   └── upload.go           ← Handler; depends on MediaStore (DB) + Storer (storage);
+    │                              encrypts body AES-256-GCM, calls Storer.Put("<server>/<id>"),
+    │                              inserts row in media_files, returns mxc:// URI
+    └── download/               ← GET /_matrix/media/v3/download/{serverName}/{mediaId}
+        └── handler.go          ← Handler; looks up row in media_files, calls Storer.Get,
+                                   decrypts AES-256-GCM, streams plaintext to client
+```
+
+**Storer injection:** Both `upload.HandlerConfig` and `download.HandlerConfig` accept a `storage.Storer`
+interface field. `main.go` wires `&storage.LocalStorer{BasePath: storagePath}` for the local-filesystem
+backend. Story 12.3 will replace this with `&storage.MinIOStorer{...}` when `NEBU_STORAGE_BACKEND=minio`.
+
 ## Level 2 — Elixir/OTP Core Internal Structure
 
 ```

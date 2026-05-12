@@ -1,6 +1,7 @@
 package upload
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -34,18 +35,18 @@ type MediaFileRow struct {
 
 // HandlerConfig contains configuration for the upload Handler.
 type HandlerConfig struct {
-	DB          MediaStore
-	StoragePath string // NEBU_MEDIA_STORAGE_PATH
-	ServerName  string // Matrix server name
-	MaxBytes    int64  // NEBU_MEDIA_MAX_UPLOAD_BYTES (default 50 MiB)
+	DB         MediaStore
+	Storage    storage.Storer // replaces StoragePath — use LocalStorer or MinIOStorer
+	ServerName string         // Matrix server name
+	MaxBytes   int64          // NEBU_MEDIA_MAX_UPLOAD_BYTES (default 50 MiB)
 }
 
 // Handler handles POST /_matrix/media/v3/upload.
 type Handler struct {
-	db          MediaStore
-	storagePath string
-	serverName  string
-	maxBytes    int64
+	db         MediaStore
+	storage    storage.Storer
+	serverName string
+	maxBytes   int64
 }
 
 // NewHandler creates a new upload Handler with the given configuration.
@@ -55,10 +56,10 @@ func NewHandler(cfg HandlerConfig) *Handler {
 		maxBytes = 52428800 // 50 MiB default
 	}
 	return &Handler{
-		db:          cfg.DB,
-		storagePath: cfg.StoragePath,
-		serverName:  cfg.ServerName,
-		maxBytes:    maxBytes,
+		db:         cfg.DB,
+		storage:    cfg.Storage,
+		serverName: cfg.ServerName,
+		maxBytes:   maxBytes,
 	}
 }
 
@@ -152,9 +153,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// AC #4.5 — Write encrypted bytes to <storagePath>/<serverName>/<mediaId>.
-	_, err = storage.Store(h.storagePath, h.serverName, mediaID, ciphertext)
-	if err != nil {
+	// AC #4.5 — Write encrypted bytes via Storer under key "<serverName>/<mediaID>".
+	storageKey := h.serverName + "/" + mediaID
+	if err := h.storage.Put(r.Context(), storageKey, bytes.NewReader(ciphertext), int64(len(ciphertext))); err != nil {
 		writeError(w, http.StatusInternalServerError, "M_UNKNOWN", "Failed to store media file")
 		return
 	}

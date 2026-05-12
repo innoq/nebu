@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nebu/nebu/media/internal/download"
+	"github.com/nebu/nebu/media/internal/storage"
 	"github.com/nebu/nebu/media/internal/upload"
 )
 
@@ -81,16 +82,18 @@ func main() {
 
 	store := &pgMediaStore{pool: pool}
 
+	localStorer := &storage.LocalStorer{BasePath: storagePath}
+
 	uploadHandler := upload.NewHandler(upload.HandlerConfig{
-		DB:          store,
-		StoragePath: storagePath,
-		ServerName:  serverName,
-		MaxBytes:    maxBytes,
+		DB:         store,
+		Storage:    localStorer,
+		ServerName: serverName,
+		MaxBytes:   maxBytes,
 	})
 
 	downloadHandler := download.NewHandler(download.HandlerConfig{
-		DB:          store,
-		StoragePath: storagePath,
+		DB:      store,
+		Storage: localStorer,
 	})
 
 	mux := http.NewServeMux()

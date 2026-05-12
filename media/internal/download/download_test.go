@@ -27,6 +27,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -36,6 +37,7 @@ import (
 	"testing"
 
 	mediacrypto "github.com/nebu/nebu/media/internal/crypto"
+	"github.com/nebu/nebu/media/internal/storage"
 	"github.com/nebu/nebu/media/internal/upload"
 )
 
@@ -80,12 +82,17 @@ type matrixErrorResp struct {
 // at the correct Matrix route pattern.
 // storagePath must be provided (use t.TempDir() at the call site).
 
+// buildDownloadHandler creates a ServeMux with the download handler registered
+// at the correct Matrix route pattern.
+// storagePath must be provided (use t.TempDir() at the call site).
+// After the Story 12.2 refactor, uses storage.LocalStorer instead of StoragePath string.
+
 func buildDownloadHandler(t *testing.T, store *mockDownloadStore, storagePath string) http.Handler {
 	t.Helper()
 
 	h := NewHandler(HandlerConfig{
-		DB:          store,
-		StoragePath: storagePath,
+		DB:      store,
+		Storage: &storage.LocalStorer{BasePath: storagePath},
 	})
 
 	mux := http.NewServeMux()
@@ -455,16 +462,17 @@ func (m *mockUploadStore) InsertMediaFile(_ context.Context, row upload.MediaFil
 }
 
 // buildUploadHandler creates a bare upload Handler (no mux) for round-trip testing.
-// storagePath is shared with the download handler so files land in the same tree.
+// storagePath is shared with the download handler so files land in the same LocalStorer tree.
+// After the Story 12.2 refactor, uses storage.LocalStorer instead of StoragePath string.
 
 func buildUploadHandler(t *testing.T, store *mockUploadStore, storagePath string) http.Handler {
 	t.Helper()
 
 	h := upload.NewHandler(upload.HandlerConfig{
-		DB:          store,
-		StoragePath: storagePath,
-		ServerName:  testServerName,
-		MaxBytes:    52428800,
+		DB:         store,
+		Storage:    &storage.LocalStorer{BasePath: storagePath},
+		ServerName: testServerName,
+		MaxBytes:   52428800,
 	})
 
 	mux := http.NewServeMux()
@@ -598,5 +606,171 @@ func TestMediaDownload_DeletedAvatar_Returns404(t *testing.T) {
 	}
 	if errResp.Error == "" {
 		t.Error("expected non-empty error message in 404 response")
+	}
+}
+
+// ─── Story 12.2 ATDD Tests ────────────────────────────────────────────────────
+//
+// These tests will fail to compile until:
+//   1. HandlerConfig.Storage Storer field replaces StoragePath string
+//   2. handler.go imports and uses storage.Storer
+//
+// They test that the download handler works correctly with a fake Storer
+// (no filesystem, no MinIO) — Storer is fully mockable.
+
+// fakeDownloadStorer is an in-memory storage.Storer for download tests.
+// contents maps keys to ciphertext bytes.
+// getError, if set, is returned by Get.
+type fakeDownloadStorer struct {
+	contents map[string][]byte
+	getError error
+}
+
+func newFakeDownloadStorer() *fakeDownloadStorer {
+	return &fakeDownloadStorer{contents: make(map[string][]byte)}
+}
+
+func (f *fakeDownloadStorer) Put(_ context.Context, key string, r io.Reader, _ int64) error {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return err
+	}
+	f.contents[key] = data
+	return nil
+}
+
+func (f *fakeDownloadStorer) Get(_ context.Context, key string) (io.ReadCloser, error) {
+	if f.getError != nil {
+		return nil, f.getError
+	}
+	data, ok := f.contents[key]
+	if !ok {
+		return nil, errors.New("fakeDownloadStorer: key not found: " + key)
+	}
+	return io.NopCloser(bytes.NewReader(data)), nil
+}
+
+func (f *fakeDownloadStorer) Delete(_ context.Context, key string) error {
+	delete(f.contents, key)
+	return nil
+}
+
+// Compile-time check: *fakeDownloadStorer satisfies storage.Storer.
+var _ storage.Storer = &fakeDownloadStorer{}
+
+// buildDownloadHandlerWithStorer wires the download handler using the new
+// Storage Storer field. Will fail to compile until HandlerConfig has a
+// Storage field of type storage.Storer.
+func buildDownloadHandlerWithStorer(t *testing.T, db *mockDownloadStore, storer storage.Storer) http.Handler {
+	t.Helper()
+	h := NewHandler(HandlerConfig{
+		DB:      db,
+		Storage: storer,
+	})
+	mux := http.NewServeMux()
+	mux.Handle("GET /_matrix/media/v3/download/{serverName}/{mediaId}", h)
+	mux.HandleFunc("GET /_matrix/media/v3/thumbnail/{serverName}/{mediaId}", thumbnailStub)
+	return mux
+}
+
+// AT-7: Download handler with fake Storer — happy path returns 200, decrypted body correct.
+//
+// AC4 (Story 12.2) — When HandlerConfig has a Storage Storer field, the download
+// handler calls Storer.Get instead of os.ReadFile. Uses fakeDownloadStorer so no
+// filesystem is needed.
+
+func TestDownload_WithFakeStorer_HappyPath(t *testing.T) {
+	ctx := context.Background()
+	storer := newFakeDownloadStorer()
+	mediaID := "fake-storer-media-id"
+	plaintext := []byte("content served via fakeDownloadStorer — no filesystem needed")
+	contentType := "image/jpeg"
+
+	// Generate encryption materials and store ciphertext in the fake storer.
+	key, err := mediacrypto.GenerateKey()
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	nonce, err := mediacrypto.GenerateNonce()
+	if err != nil {
+		t.Fatalf("GenerateNonce: %v", err)
+	}
+	ciphertext, err := mediacrypto.Encrypt(plaintext, key, nonce)
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+
+	storageKey := testServerName + "/" + mediaID
+	if err := storer.Put(ctx, storageKey, bytes.NewReader(ciphertext), int64(len(ciphertext))); err != nil {
+		t.Fatalf("fakeStorer.Put: %v", err)
+	}
+
+	db := &mockDownloadStore{
+		row: &MediaFileRow{
+			MediaID:     mediaID,
+			ServerName:  testServerName,
+			ContentType: contentType,
+			AESKeyHex:   hex.EncodeToString(key),
+			NonceHex:    hex.EncodeToString(nonce),
+		},
+	}
+
+	mux := buildDownloadHandlerWithStorer(t, db, storer)
+	req := httptest.NewRequest(http.MethodGet,
+		"/_matrix/media/v3/download/"+testServerName+"/"+mediaID, nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	got := w.Body.Bytes()
+	if !bytes.Equal(got, plaintext) {
+		t.Errorf("response body mismatch: got %q, want %q", got, plaintext)
+	}
+
+	if ct := w.Header().Get("Content-Type"); ct != contentType {
+		t.Errorf("Content-Type: got %q, want %q", ct, contentType)
+	}
+}
+
+// AT-8: Download handler with fake Storer returning error — returns 500 M_UNKNOWN.
+//
+// AC4 (Story 12.2) — When Storer.Get returns an error, the handler must return
+// 500 M_UNKNOWN.
+
+func TestDownload_WithFakeStorer_StorageError(t *testing.T) {
+	storer := &fakeDownloadStorer{
+		contents: make(map[string][]byte),
+		getError: errors.New("storer get error"),
+	}
+
+	db := &mockDownloadStore{
+		row: &MediaFileRow{
+			MediaID:     "any-id",
+			ServerName:  testServerName,
+			ContentType: "image/png",
+			AESKeyHex:   strings.Repeat("aa", 32),
+			NonceHex:    strings.Repeat("bb", 12),
+		},
+	}
+
+	mux := buildDownloadHandlerWithStorer(t, db, storer)
+	req := httptest.NewRequest(http.MethodGet,
+		"/_matrix/media/v3/download/"+testServerName+"/any-id", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var errResp matrixErrorResp
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("failed to decode 500 error response: %v", err)
+	}
+	if errResp.ErrCode != "M_UNKNOWN" {
+		t.Errorf("expected errcode M_UNKNOWN, got %q", errResp.ErrCode)
 	}
 }
