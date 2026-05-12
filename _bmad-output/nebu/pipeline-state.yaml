@@ -1,6 +1,18 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-12
+# [12-2] 2026-05-12T18:50Z committed ✓ (ATDD+Code CLEAN+security skipped — 0 cycles)
+# [12-2] 2026-05-12T18:45Z arc42-update → done (05-building-blocks: Media Gateway Level 2 structure, 12-glossary: Storer interface)
+# [12-2] 2026-05-12T18:41Z security-review → skipped (not-needed)
+# [12-2] 2026-05-12T18:40Z code-review → CLEAN (cycle 0) — 0 MAJOR, 2 MINOR fixed inline (splitKey dedup, no cycle needed)
+# [12-2] 2026-05-12T18:35Z ci-gate → ✓ build+unit-go (media: 3 pkgs, 227 tests)+unit-elixir (227 tests)
+# [12-2] 2026-05-12T18:30Z dev-story → done (cycle 0) — storage.go (Storer interface), local.go (LocalStorer), minio.go (MinIOStorer+minio-go/v7), upload+download handlers refactored to Storer, main.go wired
+# [12-2] 2026-05-12T18:15Z test-review → CLEAN (0 MAJOR, 2 MINOR acceptable)
+# [12-2] 2026-05-12T18:10Z atdd → 8 failing tests (AT-1..AT-4 storage, AT-5..AT-6 upload, AT-7..AT-8 download — compile failures: undefined Storer, LocalStorer, Storage field)
+# [12-2] 2026-05-12T18:03Z oracle-gate → skipped (no Matrix feature — mxc:// false positive in story text)
+# [12-2] 2026-05-12T18:02Z create-story → 12-2-storage-interface-refactor.md
+# [12-2] 2026-05-12T18:00Z pipeline started
+# [12-1] 2026-05-12T17:50Z epic-loop → story done
 # [12-1] 2026-05-12T17:55Z committed ✓ (ATDD+Code CLEAN 1 cycle+Kassandra 2 MEDIUM advisory)
 # [12-1] 2026-05-12T17:50Z arc42-update → done (07-deployment: MinIO ports+setup, 12-glossary: MinIO+nebu-media)
 # [12-1] 2026-05-12T17:45Z security-review → Kassandra 0 CRITICAL, 0 HIGH, 2 MEDIUM advisory (ports+file perms, dev-only)
@@ -161,18 +173,9 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: "12-1"
-current_step: "committed"
-completed:
-  - create-story
-  - atdd
-  - test-review
-  - dev-story
-  - ci-gate
-  - code-review
-  - security-review
-  - arc42-update
-  - commit
-cycle_count: 1
+story: null
+current_step: null
+completed: []
+cycle_count: 0
 blocked_reason: null
-last_updated: "2026-05-12T17:55Z"
+last_updated: "2026-05-12T16:09Z"
