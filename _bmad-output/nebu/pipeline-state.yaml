@@ -1,6 +1,26 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-12
+# [12-4] 2026-05-12T20:25Z ci-gate → ✓ build+unit-go (media: 5 pkgs, AT-1..AT-8+existing green)+unit-elixir (227); e2e+integration skipped (minio/mc image unavailable in env — pre-existing)
+# [12-4] 2026-05-12T20:20Z dev-story → done (cycle 0) — ErrNotFound+ErrStorageUnavailable sentinels, ClassifyMinIOError (errors.As), MinIOStorer.Get(Stat eager), LocalStorer.Get ErrNotFound alignment, handler 404/502 mapping
+# [12-4] 2026-05-12T20:12Z test-review → CLEAN (0 MAJOR, 1 MINOR: test naming overlap AT-2/3/4 in both pkg — acceptable)
+# [12-4] 2026-05-12T20:10Z atdd → 8 failing tests (AT-1..AT-5 storage: ErrNotFound+ErrStorageUnavailable+ClassifyMinIOError undefined; AT-2..AT-4 download: ErrNotFound→404, ErrStorageUnavailable→502, credential-leak guard)
+# [12-4] 2026-05-12T20:05Z oracle-gate → spec context captured (download endpoint deprecated v1.11, Content-Type+Content-Disposition required v1.12, 502 M_UNKNOWN for storage unavailable)
+# [12-4] 2026-05-12T20:02Z create-story → 12-4-media-download-minio-backend-pre-signed-url-security.md
+# [12-4] 2026-05-12T20:00Z pipeline started
+# [12-3] 2026-05-12T18:30Z epic-loop → story done
+# [12-3] 2026-05-12T19:42Z committed ✓ (ATDD+Code 1 cycle+Kassandra CLEAN 5 LOW advisory)
+# [12-3] 2026-05-12T19:40Z arc42-update → done (07-deployment: media service+port map+MinIO IAM section, 05-building-blocks: selectStorer wiring+mediaConfig)
+# [12-3] 2026-05-12T19:35Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 5 LOW advisory — IAM hardening approved)
+# [12-3] 2026-05-12T19:30Z code-review → CLEAN (cycle 1) — M1 empty creds fail-fast, M2 restart policy, M3 mc policy create fallback — all fixed
+# [12-3] 2026-05-12T19:25Z code-review → 0 MAJOR, 3 MINOR → cycle 1
+# [12-3] 2026-05-12T19:22Z ci-gate → ✓ build+unit-go (media: 5 pkgs, AT-1..AT-5 green)+unit-elixir (227); e2e+integration skipped (minio/mc image unavailable in env — pre-existing)
+# [12-3] 2026-05-12T19:15Z dev-story → done (cycle 0) — mediaConfig+selectStorer+readSecretFile in main.go, media Dockerfile, docker-compose secrets+createbuckets+media service, Makefile test-unit-go+test-compose-minio extended
+# [12-3] 2026-05-12T19:08Z test-review → CLEAN (0 MAJOR, 3 MINOR acceptable)
+# [12-3] 2026-05-12T19:05Z atdd → 5 failing tests (AT-1..AT-3 compile: undefined selectStorer+mediaConfig; AT-4..AT-5 policy: green with policy file; AT-6 integration: conditional skip)
+# [12-3] 2026-05-12T19:01Z oracle-gate → skipped (no Matrix feature — mxc:// false positive)
+# [12-3] 2026-05-12T19:00Z pipeline started
+# [12-2] 2026-05-12T18:09Z epic-loop → story done
 # [12-2] 2026-05-12T18:50Z committed ✓ (ATDD+Code CLEAN+security skipped — 0 cycles)
 # [12-2] 2026-05-12T18:45Z arc42-update → done (05-building-blocks: Media Gateway Level 2 structure, 12-glossary: Storer interface)
 # [12-2] 2026-05-12T18:41Z security-review → skipped (not-needed)
@@ -173,9 +193,14 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: null
-current_step: null
-completed: []
+story: "12-4"
+current_step: "code-review"
+completed:
+  - create-story
+  - atdd
+  - test-review
+  - dev-story
+  - ci-gate
 cycle_count: 0
 blocked_reason: null
-last_updated: "2026-05-12T16:09Z"
+last_updated: "2026-05-12T16:43Z"

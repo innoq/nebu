@@ -27,6 +27,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -310,16 +311,21 @@ func TestDownload_WrongServerName(t *testing.T) {
 	}
 }
 
-// ─── Test 5: Storage read error — file missing from disk → 500 M_UNKNOWN ──────
+// ─── Test 5: Storage read error — file missing from disk → 404 M_NOT_FOUND ────
 //
-// AC #3 — DB row exists but the file is absent from disk (e.g. deleted after
-// upload). os.ReadFile returns an error; handler must return 500 M_UNKNOWN.
+// AC #3 (Story 12.4 update) — DB row exists but the file is absent from disk
+// (e.g. deleted after upload). LocalStorer.Get returns ErrNotFound for a
+// missing file (os.ErrNotExist), and the handler maps ErrNotFound → 404.
+//
+// Updated in Story 12.4: was 500 M_UNKNOWN (before ErrNotFound sentinel existed),
+// now correctly 404 M_NOT_FOUND (missing object → ErrNotFound → 404).
 
 func TestDownload_StorageReadError(t *testing.T) {
 	dir := t.TempDir()
 	mediaID := "deleted-media-id"
 
 	// DB row is valid, but we do NOT write any file to disk.
+	// LocalStorer.Get returns ErrNotFound → handler returns 404.
 	store := &mockDownloadStore{
 		row: &MediaFileRow{
 			MediaID:     mediaID,
@@ -336,16 +342,17 @@ func TestDownload_StorageReadError(t *testing.T) {
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500, got %d; body: %s", w.Code, w.Body.String())
+	// Story 12.4: missing file → LocalStorer returns ErrNotFound → handler returns 404.
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d; body: %s", w.Code, w.Body.String())
 	}
 
 	var errResp matrixErrorResp
 	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
-		t.Fatalf("failed to decode 500 error response: %v", err)
+		t.Fatalf("failed to decode 404 error response: %v", err)
 	}
-	if errResp.ErrCode != "M_UNKNOWN" {
-		t.Errorf("expected errcode M_UNKNOWN, got %q", errResp.ErrCode)
+	if errResp.ErrCode != "M_NOT_FOUND" {
+		t.Errorf("expected errcode M_NOT_FOUND, got %q", errResp.ErrCode)
 	}
 }
 
@@ -609,6 +616,156 @@ func TestMediaDownload_DeletedAvatar_Returns404(t *testing.T) {
 	}
 }
 
+// ─── Story 12.4 ATDD Tests ────────────────────────────────────────────────────
+//
+// These tests will FAIL until:
+//   1. storage.ErrNotFound sentinel is defined in storage/storage.go
+//   2. storage.ErrStorageUnavailable sentinel is defined in storage/storage.go
+//   3. handler.go maps ErrNotFound → 404 M_NOT_FOUND (not 500)
+//   4. handler.go maps other storage errors → 502 M_UNKNOWN (not 500)
+//   5. handler.go logs the full error but only returns generic message to client
+
+// ─── AT-2 (Story 12.4): ErrNotFound from Storer → 404 M_NOT_FOUND ────────────
+//
+// AC3 — When storage returns ErrNotFound, handler must return 404 M_NOT_FOUND.
+//
+// Failing reason before implementation:
+//   handler.go maps all storage errors to 500 M_UNKNOWN.
+
+func TestDownload_StorerErrNotFound_Returns404(t *testing.T) {
+	// DB row exists (media_files has the row), but Storer.Get returns ErrNotFound.
+	// This simulates the case where the object is missing from MinIO/LocalFS
+	// but the DB still has the metadata.
+	storer := &fakeDownloadStorer{
+		contents: make(map[string][]byte),
+		getError: fmt.Errorf("object missing: %w", storage.ErrNotFound),
+	}
+
+	db := &mockDownloadStore{
+		row: &MediaFileRow{
+			MediaID:     "missing-from-storage",
+			ServerName:  testServerName,
+			ContentType: "image/png",
+			AESKeyHex:   strings.Repeat("aa", 32),
+			NonceHex:    strings.Repeat("bb", 12),
+		},
+	}
+
+	mux := buildDownloadHandlerWithStorer(t, db, storer)
+	req := httptest.NewRequest(http.MethodGet,
+		"/_matrix/media/v3/download/"+testServerName+"/missing-from-storage", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for ErrNotFound, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var errResp matrixErrorResp
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if errResp.ErrCode != "M_NOT_FOUND" {
+		t.Errorf("expected errcode M_NOT_FOUND, got %q", errResp.ErrCode)
+	}
+}
+
+// ─── AT-3 (Story 12.4): ErrStorageUnavailable from Storer → 502 M_UNKNOWN ────
+//
+// AC4 — When storage returns ErrStorageUnavailable (e.g. MinIO unreachable),
+// handler must return 502 M_UNKNOWN (Bad Gateway).
+//
+// Failing reason before implementation:
+//   handler.go maps all storage errors to 500 M_UNKNOWN (wrong code).
+
+func TestDownload_StorerErrUnavailable_Returns502(t *testing.T) {
+	storer := &fakeDownloadStorer{
+		contents: make(map[string][]byte),
+		getError: fmt.Errorf("backend unreachable: %w", storage.ErrStorageUnavailable),
+	}
+
+	db := &mockDownloadStore{
+		row: &MediaFileRow{
+			MediaID:     "any-id",
+			ServerName:  testServerName,
+			ContentType: "image/jpeg",
+			AESKeyHex:   strings.Repeat("aa", 32),
+			NonceHex:    strings.Repeat("bb", 12),
+		},
+	}
+
+	mux := buildDownloadHandlerWithStorer(t, db, storer)
+	req := httptest.NewRequest(http.MethodGet,
+		"/_matrix/media/v3/download/"+testServerName+"/any-id", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502 for ErrStorageUnavailable, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var errResp matrixErrorResp
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if errResp.ErrCode != "M_UNKNOWN" {
+		t.Errorf("expected errcode M_UNKNOWN, got %q", errResp.ErrCode)
+	}
+}
+
+// ─── AT-4 (Story 12.4): Storage error must NOT leak credentials in response ───
+//
+// AC4 — The response body must not contain any internal details (endpoint URLs,
+// credentials, MinIO SDK error messages). Only a generic message is returned.
+//
+// Failing reason before implementation:
+//   Current handler may pass raw error message to response body.
+
+func TestDownload_StorageError_NoCredentialLeak(t *testing.T) {
+	// Inject an error that looks like it contains sensitive data.
+	fakeEndpoint := "minio.secret-internal.corp:9000"
+	fakeCreds := "AKIAIOSFODNN7EXAMPLE"
+	sensitiveErr := fmt.Errorf("connection to %s failed with key %s: %w",
+		fakeEndpoint, fakeCreds, storage.ErrStorageUnavailable)
+
+	storer := &fakeDownloadStorer{
+		contents: make(map[string][]byte),
+		getError: sensitiveErr,
+	}
+
+	db := &mockDownloadStore{
+		row: &MediaFileRow{
+			MediaID:     "leak-test-id",
+			ServerName:  testServerName,
+			ContentType: "application/octet-stream",
+			AESKeyHex:   strings.Repeat("cc", 32),
+			NonceHex:    strings.Repeat("dd", 12),
+		},
+	}
+
+	mux := buildDownloadHandlerWithStorer(t, db, storer)
+	req := httptest.NewRequest(http.MethodGet,
+		"/_matrix/media/v3/download/"+testServerName+"/leak-test-id", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	// Must be a 4xx or 5xx — not 200.
+	if w.Code == http.StatusOK {
+		t.Fatal("expected non-200 status for storage error")
+	}
+
+	body := w.Body.String()
+	if strings.Contains(body, fakeEndpoint) {
+		t.Errorf("response body must NOT contain endpoint URL %q, but got: %s", fakeEndpoint, body)
+	}
+	if strings.Contains(body, fakeCreds) {
+		t.Errorf("response body must NOT contain credentials %q, but got: %s", fakeCreds, body)
+	}
+	if strings.Contains(body, "minio.secret-internal.corp") {
+		t.Errorf("response body must NOT contain internal host, but got: %s", body)
+	}
+}
+
 // ─── Story 12.2 ATDD Tests ────────────────────────────────────────────────────
 //
 // These tests will fail to compile until:
@@ -735,10 +892,13 @@ func TestDownload_WithFakeStorer_HappyPath(t *testing.T) {
 	}
 }
 
-// AT-8: Download handler with fake Storer returning error — returns 500 M_UNKNOWN.
+// AT-8: Download handler with fake Storer returning generic error → 502 M_UNKNOWN.
 //
-// AC4 (Story 12.2) — When Storer.Get returns an error, the handler must return
-// 500 M_UNKNOWN.
+// AC4 (Story 12.2 / updated in Story 12.4) — When Storer.Get returns a generic
+// (non-ErrNotFound) error, the handler must return 502 M_UNKNOWN (Bad Gateway).
+//
+// Updated in Story 12.4: was 500 M_UNKNOWN, now correctly 502 M_UNKNOWN because
+// a storage backend error indicates upstream failure (Bad Gateway), not internal error.
 
 func TestDownload_WithFakeStorer_StorageError(t *testing.T) {
 	storer := &fakeDownloadStorer{
@@ -762,13 +922,14 @@ func TestDownload_WithFakeStorer_StorageError(t *testing.T) {
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500, got %d; body: %s", w.Code, w.Body.String())
+	// Story 12.4: generic storage error → 502 M_UNKNOWN (Bad Gateway).
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d; body: %s", w.Code, w.Body.String())
 	}
 
 	var errResp matrixErrorResp
 	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
-		t.Fatalf("failed to decode 500 error response: %v", err)
+		t.Fatalf("failed to decode 502 error response: %v", err)
 	}
 	if errResp.ErrCode != "M_UNKNOWN" {
 		t.Errorf("expected errcode M_UNKNOWN, got %q", errResp.ErrCode)

@@ -138,15 +138,25 @@ media/
     │   └── aes.go
     ├── storage/                ← Storage abstraction (Story 12.2)
     │   ├── storage.go          ← Storer interface: Put / Get / Delete
+    │   │                          Sentinel errors (Story 12.4):
+    │   │                            ErrNotFound          → HTTP 404 M_NOT_FOUND
+    │   │                            ErrStorageUnavailable → HTTP 502 M_UNKNOWN
     │   ├── local.go            ← LocalStorer: filesystem backend (BasePath/<key>)
+    │   │                          Get: os.ErrNotExist → ErrNotFound (Story 12.4)
     │   └── minio.go            ← MinIOStorer: S3-compatible backend via minio-go/v7
+    │                              Get: calls obj.Stat() eagerly to detect NoSuchKey;
+    │                              ClassifyMinIOError: NoSuchKey/404 → ErrNotFound,
+    │                              network/other → ErrStorageUnavailable (Story 12.4)
     ├── upload/                 ← POST /_matrix/media/v3/upload
     │   └── upload.go           ← Handler; depends on MediaStore (DB) + Storer (storage);
     │                              encrypts body AES-256-GCM, calls Storer.Put("<server>/<id>"),
     │                              inserts row in media_files, returns mxc:// URI
     └── download/               ← GET /_matrix/media/v3/download/{serverName}/{mediaId}
         └── handler.go          ← Handler; looks up row in media_files, calls Storer.Get,
-                                   decrypts AES-256-GCM, streams plaintext to client
+                                   decrypts AES-256-GCM, streams plaintext to client;
+                                   ErrNotFound → 404 M_NOT_FOUND; storage errors → 502 M_UNKNOWN;
+                                   slog.Error logs raw error; response body sanitized (no leaks)
+                                   (Story 12.4)
 ```
 
 **Storer injection (Story 12.3):** `main.go` uses `selectStorer(cfg mediaConfig)` to select the backend:

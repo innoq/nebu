@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -91,10 +93,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// AC #3 — Read encrypted bytes via Storer under key "<serverName>/<mediaID>".
+	// AC3 (Story 12.4): ErrNotFound → 404 M_NOT_FOUND
+	// AC4 (Story 12.4): ErrStorageUnavailable or other errors → 502 M_UNKNOWN
+	//   The full error is logged for observability; only a generic message is
+	//   returned to the client to prevent credential/endpoint leaks.
 	storageKey := serverName + "/" + mediaID
 	rc, err := h.storage.Get(r.Context(), storageKey)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "M_UNKNOWN", "Failed to read media file")
+		if errors.Is(err, storage.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "M_NOT_FOUND", "Media not found")
+			return
+		}
+		slog.Error("storage.Get failed", "key", storageKey, "err", err)
+		writeError(w, http.StatusBadGateway, "M_UNKNOWN", "Media storage unavailable")
 		return
 	}
 	defer rc.Close()

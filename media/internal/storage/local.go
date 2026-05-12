@@ -3,6 +3,8 @@ package storage
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -36,12 +38,16 @@ func (s *LocalStorer) Put(_ context.Context, key string, r io.Reader, _ int64) e
 }
 
 // Get opens BasePath/<subDir>/<name> and returns its contents as an io.ReadCloser.
-// Returns a non-nil error if the file does not exist.
+// Returns ErrNotFound (wrapped) if the file does not exist.
+// Returns a raw OS error for other filesystem failures.
 func (s *LocalStorer) Get(_ context.Context, key string) (io.ReadCloser, error) {
 	subDir, name := splitStorageKey(key)
 	filePath := filepath.Join(s.BasePath, subDir, name)
 	data, err := os.ReadFile(filePath)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("%w: %s", ErrNotFound, key)
+		}
 		return nil, err
 	}
 	return io.NopCloser(bytes.NewReader(data)), nil

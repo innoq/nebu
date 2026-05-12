@@ -129,6 +129,18 @@ gateway boundary. Matrix endpoints return `{"errcode": "M_...", "error": "..."}`
 **Elixir:** Tagged tuples `{:ok, result}` / `{:error, reason}`. No raise/throw for business logic.
 Let-it-crash + OTP Supervisor Trees for unexpected failures.
 
+**Media Gateway — Storage Error Classification (Story 12.4):**
+
+The `Storer` interface returns sentinel errors that map to specific HTTP status codes:
+
+| Sentinel | Cause | HTTP | errcode |
+|---|---|---|---|
+| `storage.ErrNotFound` | Object absent from backend (MinIO `NoSuchKey`, OS `ErrNotExist`) | 404 | `M_NOT_FOUND` |
+| `storage.ErrStorageUnavailable` | Network unreachable, MinIO degraded, other MinIO errors | 502 | `M_UNKNOWN` |
+| other | Crypto failure, hex decode error | 500 | `M_UNKNOWN` |
+
+Classification logic: `ClassifyMinIOError` uses `errors.As` to unwrap `minio.ErrorResponse` (not `minio.ToErrorResponse` which does direct type assertion). `LocalStorer.Get` maps `os.ErrNotExist` → `ErrNotFound`. The handler logs the full error via `slog.Error` but returns only a generic message to the client (no credential/endpoint leak).
+
 **gRPC error surface rule (Story 9-27):** Elixir gRPC handlers must use `raise GRPC.RPCError,
 status: GRPC.Status.<code>(), message: "..."` to propagate errors to the Go gateway. Bare `:ok =`
 pattern matches on `Room.Server` calls produce `MatchError` at runtime, which gRPC-elixir maps to
