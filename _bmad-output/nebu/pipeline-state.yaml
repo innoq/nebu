@@ -1,6 +1,7 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-12
+# [12-7] 2026-05-12T01:10Z committed ✓ (ATDD+Code CLEAN+Kassandra CLEAN 1 LOW advisory — 10 SEC Gate 2 findings resolved)
 # [12-7] 2026-05-12T00:50Z arc42-update → done (08-concepts: thumbnail dim cap+100MP+GIF cap+nosniff; upload CT blocklist; download safe-inline allowlist; upload JWT validation; server_config RLS mutable keys; SSO nonce subtle.ConstantTimeCompare)
 # [12-7] 2026-05-12T00:45Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW advisory — OIDC fail-open on startup; same pattern as gateway)
 # [12-7] 2026-05-12T00:40Z code-review → CLEAN (cycle 0) — 0 MAJOR, 0 MINOR (const inside func idiomatic Go; map alignment cosmetic; shell double-dollar escaping verified correct)
@@ -232,17 +233,9 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: "12-7"
-current_step: "commit"
-completed:
-  - create-story
-  - atdd
-  - test-review
-  - dev-story
-  - ci-gate
-  - code-review
-  - security-review
-  - arc42-update
+story: null
+current_step: null
+completed: []
 cycle_count: 0
 blocked_reason: null
-last_updated: "2026-05-12T21:57Z"
+last_updated: "2026-05-12T22:00Z"
