@@ -90,6 +90,14 @@ paths = [
   '''.*testdata/.*''',
 
   '''scripts/scan-secrets.test.sh''',
+
+  # (a) Matches example API key values embedded in Matrix Client-Server,
+  #     Push Gateway, and Server-Server specification JSON files (e.g.
+  #     "pushkey", "key" fields used as illustrative values in the spec).
+  # (b) These are fictional placeholder values from the official Matrix
+  #     specification — not credentials for any real service.
+  # (c) skills/nebu-agent-oracle/matrix-spec/ (read-only spec snapshots)
+  '''skills/nebu-agent-oracle/matrix-spec/.*''',
 ]
 
 # Example of a regex-based false-positive suppression (currently not needed).
