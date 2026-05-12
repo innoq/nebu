@@ -1,5 +1,6 @@
 # generated: 2026-03-20
 # last_updated: 2026-05-12
+# story 12-1 done (pipeline: ready-for-dev): 2026-05-12
 # story 11-11 done (pipeline: ATDD+Code CLEAN 1 cycle+noproc guard added): 2026-05-12
 # story 11-10 done (pipeline: ATDD+Dev+Code CLEAN (3 cycles, 3 MAJOR fixed: configReader, claims wired, TTL cache)+UX 6 violations fixed+Kassandra CLEAN): 2026-05-12
 # story 11-10 created: 11-10 → ready-for-dev: 2026-05-12 (OIDC Claim Mapping — Bootstrap Wizard step 3 + Admin UI settings page + FormatUserIDFromClaims refactor; security_review required)
@@ -829,8 +830,8 @@ development_status:
   # Pre-Epic-TODO: ADR-013 finalisieren (MinIO, Thumbnail-Library, Pre-Signed-URL-Policy)
   #   — vor Sprint-Start
   # ─────────────────────────────────────────────────────────────────────────
-  epic-12: backlog
-  12-1-minio-docker-compose-credentials-via-secrets: backlog
+  epic-12: in-progress
+  12-1-minio-docker-compose-credentials-via-secrets: ready-for-dev
   12-2-storage-interface-refactor: backlog
   12-3-media-upload-minio-backend-iam-hardening: backlog
   12-4-media-download-minio-backend-pre-signed-url-security: backlog

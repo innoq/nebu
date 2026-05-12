@@ -156,6 +156,10 @@ make dev       # starts gateway, core, postgres, dex (OIDC) via docker compose
 | Health / Metrics      | http://localhost:8080                       | Prometheus, health checks  |
 | Dex (OIDC provider)   | http://localhost:5556                       | Dev identity provider      |
 | PostgreSQL            | localhost:5432 (user `nebu`, db `nebu`)     | Database                   |
+| MinIO Console         | http://localhost:9001                       | Object storage console     |
+| MinIO S3 API          | http://localhost:9000                       | Object storage (S3-compat) |
+
+> **MinIO credentials:** `make setup` generates `.secrets/minio_root_user` and `.secrets/minio_root_password` automatically. These are example credentials for local development only. **Replace before first production start.** The `.secrets/` directory is gitignored and never committed.
 
 **One-time setup:** add `dex` to `/etc/hosts` so the OIDC redirect resolves in your browser:
 

@@ -34,6 +34,8 @@
 | **ETS** | Erlang Term Storage — an in-memory key-value store built into the Erlang/OTP runtime (no Redis needed) |
 | **libcluster** | Elixir library for automatic cluster node discovery (Phase 2) |
 | **golang-migrate** | Go library for PostgreSQL schema migrations; the Go Gateway is the sole schema owner |
+| **MinIO** | S3-compatible object storage server used as the local-dev media backend (Epic 12). Apache 2.0 licensed. |
+| **nebu-media** | The MinIO bucket (created by the `createbuckets` init container) where all media uploads are stored |
 | **oapi-codegen** | A Go code generator that produces types and a `ServerInterface` from an OpenAPI 3.1 YAML spec |
 | **PSK** | Pre-Shared Key — used for node registration security in the MVP (Docker Compose secrets) |
 | **mTLS** | Mutual TLS — ephemeral certificate-based authentication planned for Phase 2 node registration |

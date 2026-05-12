@@ -7,10 +7,12 @@ All builds run via Docker containers — no local Go, Elixir, or buf installatio
 ```yaml
 # Simplified docker-compose.yml topology
 services:
-  gateway:      # Go binary (port 8008: Matrix API + Admin; port 8080: metrics)
-  core:         # Elixir OTP release (port 4000: health; port 9000: gRPC)
-  postgres:     # PostgreSQL 16 (port 5432)
-  dex:          # OIDC provider for development (port 5556)
+  gateway:        # Go binary (port 8008: Matrix API + Admin; port 8080: metrics)
+  core:           # Elixir OTP release (port 4000: health; port 9000: gRPC)
+  postgres:       # PostgreSQL 16 (port 5432)
+  dex:            # OIDC provider for development (port 5556)
+  minio:          # MinIO S3-compatible object store (port 9000: API; port 9001: console) — Story 12.1
+  createbuckets:  # One-shot init container that creates the nebu-media bucket — Story 12.1
 ```
 
 **Port map:**
@@ -23,6 +25,8 @@ services:
 | Elixir Core | 9000 | gRPC CoreService (internal Docker network only) |
 | PostgreSQL | 5432 | Database (internal Docker network only) |
 | Dex (dev) | 5556 | OIDC provider (development only) |
+| MinIO S3 API | 9000 | Object storage API (S3-compatible) — local dev only |
+| MinIO Console | 9001 | Object storage management UI — local dev only |
 
 ## Network Boundaries
 
@@ -41,7 +45,7 @@ Internal boundary (Docker network, not exposed):
 ## Makefile Targets
 
 ```makefile
-make setup              # Generate .secrets/internal_secret and dev credentials
+make setup              # Generate .secrets/internal_secret, MinIO credentials, and dev credentials
 make dev                # docker compose up (gateway, core, postgres, dex)
 make build-gateway      # Docker multi-stage build for Go gateway
 make build-core         # Docker multi-stage build for Elixir core
@@ -97,9 +101,13 @@ Secrets are never passed as environment variables directly. They are mounted via
 secrets and referenced via `NEBU_*_FILE` environment variables pointing to the mounted file:
 
 ```bash
-make setup   # openssl rand -hex 32 > .secrets/internal_secret
-# docker-compose.yml mounts .secrets/internal_secret as Docker secret
-# Gateway reads it via NEBU_INTERNAL_SECRET_FILE=/run/secrets/internal_secret
+make setup   # generates .secrets/internal_secret, .secrets/minio_root_user,
+             # and .secrets/minio_root_password via openssl rand
+# docker-compose.yml mounts all three as Docker secrets
+# Gateway reads internal secret via NEBU_INTERNAL_SECRET_FILE=/run/secrets/internal_secret
+# MinIO reads credentials via MINIO_ROOT_USER_FILE / MINIO_ROOT_PASSWORD_FILE
+# WARNING: These are example credentials for local development only.
+# Replace before first production start.
 ```
 
 _Source: `_bmad-output/planning-artifacts/architecture.md`, §Infrastructure & Deployment, §Build-Container-Strategie, §Resilienz & Selbst-Heilung_

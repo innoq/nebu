@@ -7,7 +7,7 @@ DOCKER_ELIXIR = docker run --rm -v $(PWD):/workspace -w /workspace elixir:1.19-a
 DOCKER_BUF    = docker run --rm -v $(PWD):/workspace -w /workspace bufbuild/buf
 DOCKER_NODE   = docker run --rm -v $(PWD):/workspace -w /workspace node:22-alpine
 
-.PHONY: build-gateway build-core redeploy build-admin-css download-fonts download-vendor dev setup test-unit-go test-unit-elixir test-integration test-integration-elixir test-integration-ci test-e2e test-matrix-compat test-load-silber build-element-e2e test-e2e-element build-fluffychat-e2e test-e2e-fluffychat proto gen-api test-compose-ports
+.PHONY: build-gateway build-core redeploy build-admin-css download-fonts download-vendor dev setup test-unit-go test-unit-elixir test-integration test-integration-elixir test-integration-ci test-e2e test-matrix-compat test-load-silber build-element-e2e test-e2e-element build-fluffychat-e2e test-e2e-fluffychat proto gen-api test-compose-ports test-compose-minio
 
 ## download-fonts: Download Inter + JetBrains Mono WOFF2 fonts (run once; commit results)
 download-fonts:
@@ -66,7 +66,7 @@ redeploy:
 dev:
 	docker compose up
 
-## setup: First-time setup — generate .secrets/internal_secret and test keys
+## setup: First-time setup — generate .secrets/internal_secret, MinIO credentials, and dev credentials
 setup:
 	@mkdir -p .secrets
 	@if [ ! -f .secrets/internal_secret ]; then \
@@ -75,6 +75,21 @@ setup:
 	else \
 		echo ".secrets/internal_secret already exists, skipping"; \
 	fi
+	@if [ ! -f .secrets/minio_root_user ]; then \
+		openssl rand -hex 16 > .secrets/minio_root_user; \
+		echo "Generated .secrets/minio_root_user"; \
+	else \
+		echo ".secrets/minio_root_user already exists, skipping"; \
+	fi
+	@if [ ! -f .secrets/minio_root_password ]; then \
+		openssl rand -hex 16 > .secrets/minio_root_password; \
+		echo "Generated .secrets/minio_root_password"; \
+	else \
+		echo ".secrets/minio_root_password already exists, skipping"; \
+	fi
+	@echo ""
+	@echo "WARNING: MinIO credentials in .secrets/ are for LOCAL DEVELOPMENT only."
+	@echo "Replace before first production start."
 	@echo ""
 	@echo "Dev credentials (Dex local users):"
 	@echo "  kai@example.com        / changeme  (instance_admin)"
@@ -255,6 +270,23 @@ test-compose-ports:
 		echo "FAIL: core service still publishes port 9000 to the host. Remove '- \"9000:9000\"' from docker-compose.yml."; \
 		exit 1; \
 	fi
+
+## test-compose-minio: CI smoke test — assert that MinIO service and secrets are configured correctly.
+## Story 12.1 AC1+AC2: verifies minio service exists with minio_root_user + minio_root_password secrets.
+test-compose-minio:
+	@echo "Checking MinIO service configuration in docker-compose.yml..."
+	@docker compose config --format json 2>/dev/null | python3 -c "\
+	import json,sys; cfg=json.load(sys.stdin); \
+	svc=cfg.get('services',{}); \
+	assert 'minio' in svc, 'FAIL: minio service missing from docker-compose.yml'; \
+	secrets=cfg.get('secrets',{}); \
+	assert 'minio_root_user' in secrets, 'FAIL: minio_root_user secret missing from docker-compose.yml'; \
+	assert 'minio_root_password' in secrets, 'FAIL: minio_root_password secret missing from docker-compose.yml'; \
+	ports=svc.get('minio',{}).get('ports',[]); \
+	targets=[str(p.get('target','')) for p in ports if isinstance(p,dict)]; \
+	assert '9000' in targets, 'FAIL: MinIO S3 API port 9000 not published'; \
+	assert '9001' in targets, 'FAIL: MinIO Console port 9001 not published'; \
+	print('PASS: MinIO service and secrets configured correctly (ports 9000+9001 published)')"
 
 ## proto: Generate gRPC stubs from .proto definitions (via buf + protoc)
 ## Step 1: buf generates Go stubs using remote plugins
