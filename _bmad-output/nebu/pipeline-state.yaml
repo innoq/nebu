@@ -1,6 +1,10 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-12
+# [12-4] 2026-05-12T20:45Z committed ✓ (ATDD+Code CLEAN 0 cycles+Kassandra CLEAN 2 LOW advisory)
+# [12-4] 2026-05-12T20:40Z arc42-update → done (05-building-blocks: Storer sentinel errors+ClassifyMinIOError+LocalStorer alignment, 08-concepts: media storage error classification table+pattern)
+# [12-4] 2026-05-12T20:35Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW advisory — path traversal blocked by DB gate, observability gap in MinIO error logging)
+# [12-4] 2026-05-12T20:30Z code-review → CLEAN (cycle 0) — 0 MAJOR, 4 MINOR acceptable: ClassifyMinIOError exported (testability), Stat() double round-trip (MVP OK), OS errors → 502 consistent, AccessDenied → 502 acceptable
 # [12-4] 2026-05-12T20:25Z ci-gate → ✓ build+unit-go (media: 5 pkgs, AT-1..AT-8+existing green)+unit-elixir (227); e2e+integration skipped (minio/mc image unavailable in env — pre-existing)
 # [12-4] 2026-05-12T20:20Z dev-story → done (cycle 0) — ErrNotFound+ErrStorageUnavailable sentinels, ClassifyMinIOError (errors.As), MinIOStorer.Get(Stat eager), LocalStorer.Get ErrNotFound alignment, handler 404/502 mapping
 # [12-4] 2026-05-12T20:12Z test-review → CLEAN (0 MAJOR, 1 MINOR: test naming overlap AT-2/3/4 in both pkg — acceptable)
@@ -193,14 +197,9 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: "12-4"
-current_step: "code-review"
-completed:
-  - create-story
-  - atdd
-  - test-review
-  - dev-story
-  - ci-gate
+story: null
+current_step: null
+completed: []
 cycle_count: 0
 blocked_reason: null
-last_updated: "2026-05-12T16:43Z"
+last_updated: "2026-05-12T16:47Z"
