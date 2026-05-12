@@ -137,6 +137,67 @@ that raises `GRPC.RPCError` with `GRPC.Status.internal()` on unexpected `{:error
 This distinction is critical: `codes.Unknown` is ambiguous whereas `codes.Internal` correctly
 signals a server-side failure to the Go gateway's error mapper.
 
+## Room GenServer Start on Demand (Story 11-11)
+
+After a stack restart, Room GenServers are not automatically re-started — rooms exist in the DB
+but have no running process in the Horde registry. Handlers that need an active Room GenServer
+MUST use `start_room/1` (idempotent) rather than `lookup_room/1` (registry-only) to avoid
+returning `404` for rooms that genuinely exist.
+
+**Pattern:**
+
+```elixir
+case Nebu.Room.RoomSupervisor.start_room(room_id) do
+  {:error, _reason} ->
+    # Room does not exist in DB — Room.Server.init/1 returned {:stop, _}
+    raise GRPC.RPCError, status: GRPC.Status.not_found(), message: "room not found: #{room_id}"
+  {:ok, _pid} ->
+    # GenServer is running (either already was, or just started from DB)
+    # ... proceed with room operation
+end
+```
+
+**Idempotency invariant:** `RoomSupervisor.start_room/1` handles `{:error, {:already_started, pid}}`
+internally and converts it to `{:ok, pid}`. Callers always receive either `{:ok, pid}` (GenServer
+running) or `{:error, _}` (room absent from DB).
+
+**`{:error, _}` wildcard trade-off:** Horde supervisor errors (e.g. `:max_children`) also map to
+`not_found` via this pattern. This is an acceptable trade-off: such errors are rare, and the alternative
+of forwarding an opaque `GRPC.Status.internal()` is less useful to clients. The same trade-off applies
+consistently across all handlers that use `start_room/1`.
+
+**Race guard — `:noproc` after `start_room`:**
+
+In rare cases, a GenServer may die between `start_room` returning `{:ok, pid}` and the subsequent
+`get_state/1` call (e.g. during Horde CRDT reconciliation). Handlers that call `get_state` after
+`start_room` MUST wrap that call in a `try/catch :exit, {:noproc, _}` guard to surface the failure
+as `not_found` rather than a raw exit:
+
+```elixir
+state =
+  try do
+    room_registry_module().get_state(room_id)
+  catch
+    :exit, {:noproc, _} ->
+      raise GRPC.RPCError, status: GRPC.Status.not_found(), message: "room not found: #{room_id}"
+  end
+```
+
+**Handlers using `start_room` (not `lookup_room`):**
+
+| Handler / function | Call site in `server.ex` |
+|---|---|
+| `sync.ex` — incremental sync | line ~1053 |
+| `unarchive_room/2` | line ~1959 |
+| `upgrade_room/2` — new room | line ~2487 |
+| `send_receipt/2` | line ~662 (added Story 11-11) |
+
+**Handlers intentionally using `lookup_room`** (started elsewhere in the same request lifecycle,
+or explicitly requiring the GenServer to be pre-running):
+
+All other handlers in `server.ex`. Migration of remaining handlers (e.g. `set_typing/2`) is
+deferred to a separate story to keep diffs minimal and reviewable.
+
 ## Logging
 
 **Go:** `log/slog` (stdlib), structured key-value pairs.
@@ -440,4 +501,4 @@ native Elixir terms, not ETF-deserialised arbitrary structs).
 `GetRelations` (Story 9-29) and `GetMessages`. No new endpoints, migrations, gRPC handlers, or
 schema changes were introduced.
 
-_Source: `_bmad-output/planning-artifacts/architecture.md`, §Cross-Cutting Concerns, §Auth-Token-Flow, §Enforcement; `_bmad-output/planning-artifacts/prd.md`, §Cryptographic Identity Architecture; Story 9-22 (per-device sync token isolation, logout cleanup); Story 9-26 (Browser-First E2E layer, playwright-bdd, token sidecar pattern); Story 9-27 (gRPC error surface rule — GRPC.RPCError vs MatchError; failure audit trail pattern for multi-step operations); Story 9-28 (Thread aggregations in sync, bundled m.thread via unsigned_relations, GetRelations RPC, migration 000042 expression index); Story 9-29 (Relations API query params: dir, recurse, from; base and three-segment routes; prev_batch response field; fetch_events_by_relation/5 dynamic WHERE builder with rel_type + event_type + dir opts); Story 9-30 (JSONB content normalisation bug fix — %Postgrex.JSONB{decoded} struct guard in event_map_to_proto/1; resolves /relations HTTP 500 on JSONB-typed content columns); Story 11-7 (SSO nonce-based replay prevention; Cache-Control: no-store on SSO 302 redirect; denylist check in PostLogin with 403 M_FORBIDDEN; ssoStateStore capacity cap at 10,000; Safari re-login bugfix); Story 11-9 (build metadata injection — ldflags for Go, ARG→ENV for Elixir; NewInfoHandler static pre-marshalled response; Nebu.BuildInfo.get/0; Admin UI footer via SetBuildInfo/newPageData/ErrorMode; make redeploy GIT_COMMIT/BUILD_TIME exports); Story 11-10 (configurable OIDC claim mapping — FormatUserIDFromClaims refactored signature, TTL-cached claimLoader, oidcClaimNameRe validation, migration 000044 defaults seed, identity-stability warning, audit log with previous values, Bootstrap Wizard Step 3, ClaimMappingHandler admin settings page)_
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Cross-Cutting Concerns, §Auth-Token-Flow, §Enforcement; `_bmad-output/planning-artifacts/prd.md`, §Cryptographic Identity Architecture; Story 9-22 (per-device sync token isolation, logout cleanup); Story 9-26 (Browser-First E2E layer, playwright-bdd, token sidecar pattern); Story 9-27 (gRPC error surface rule — GRPC.RPCError vs MatchError; failure audit trail pattern for multi-step operations); Story 9-28 (Thread aggregations in sync, bundled m.thread via unsigned_relations, GetRelations RPC, migration 000042 expression index); Story 9-29 (Relations API query params: dir, recurse, from; base and three-segment routes; prev_batch response field; fetch_events_by_relation/5 dynamic WHERE builder with rel_type + event_type + dir opts); Story 9-30 (JSONB content normalisation bug fix — %Postgrex.JSONB{decoded} struct guard in event_map_to_proto/1; resolves /relations HTTP 500 on JSONB-typed content columns); Story 11-7 (SSO nonce-based replay prevention; Cache-Control: no-store on SSO 302 redirect; denylist check in PostLogin with 403 M_FORBIDDEN; ssoStateStore capacity cap at 10,000; Safari re-login bugfix); Story 11-9 (build metadata injection — ldflags for Go, ARG→ENV for Elixir; NewInfoHandler static pre-marshalled response; Nebu.BuildInfo.get/0; Admin UI footer via SetBuildInfo/newPageData/ErrorMode; make redeploy GIT_COMMIT/BUILD_TIME exports); Story 11-10 (configurable OIDC claim mapping — FormatUserIDFromClaims refactored signature, TTL-cached claimLoader, oidcClaimNameRe validation, migration 000044 defaults seed, identity-stability warning, audit log with previous values, Bootstrap Wizard Step 3, ClaimMappingHandler admin settings page); Story 11-11 (Room GenServer start-on-demand concept — send_receipt/2 lookup_room → start_room fix; {:error,_} wildcard trade-off; :noproc guard pattern; handler inventory for start_room vs lookup_room)_

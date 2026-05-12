@@ -661,6 +661,55 @@ back — no partial bootstrap state is persisted.
 without modification. For the `oidc_user_id_claim` field a `<datalist>` provides suggestions
 (`sub`, `preferred_username`, `email`).
 
+## Scenario 3n: Read Receipt — Start on Demand After Stack Restart (Story 11-11)
+
+`POST /_matrix/client/v3/rooms/{roomId}/receipt/{receiptType}/{eventId}` returned `404 M_NOT_FOUND`
+after any stack restart because `send_receipt/2` previously called `lookup_room/1`, which returns
+`{:error, :not_found}` for rooms that exist in the DB but have no running GenServer. The fix aligns
+receipts with the "start on demand" pattern already used by `sync`, `unarchive_room`, and `upgrade_room`.
+
+```
+Matrix Client      Go Gateway (receipts.go)     Elixir Core (send_receipt/2)   PostgreSQL
+     │                        │                            │                        │
+     │  POST /receipt/        │                            │                        │
+     │   m.read/{eventId}     │                            │                        │
+     │───────────────────────►│  gRPC SendReceipt          │                        │
+     │                        │───────────────────────────►│                        │
+     │                        │                            │  start_room(room_id)   │
+     │                        │                            │  ← idempotent: {:ok,pid}
+     │                        │                            │    if already running  │
+     │                        │                            │    OR just started from│
+     │                        │                            │    DB (restart case)   │
+     │                        │                            │  {:error,_} → NOT_FOUND│
+     │                        │                            │  (room absent from DB) │
+     │                        │                            │                        │
+     │                        │                            │  try get_state(room_id)│
+     │                        │                            │  catch :exit {:noproc} │
+     │                        │                            │  → NOT_FOUND (race)    │
+     │                        │                            │                        │
+     │                        │                            │  membership check      │
+     │                        │                            │  → PERMISSION_DENIED   │
+     │                        │                            │  if non-member         │
+     │                        │                            │                        │
+     │                        │                            │  upsert_receipt/4      │
+     │                        │                            │──────────────────────►│
+     │                        │  SendReceiptResponse{}     │                        │
+     │                        │◄───────────────────────────│                        │
+     │  200 {}                │                            │                        │
+     │◄───────────────────────│                            │                        │
+```
+
+**Error cases after fix:**
+
+| Condition | Path | HTTP response |
+|---|---|---|
+| Room exists in DB, GenServer not running (restart) | `start_room` starts GenServer on demand → success | `200 {}` |
+| Room absent from DB entirely | `start_room` → `Room.Server.init/1` → `{:stop, :room_not_found_in_db}` → `{:error, _}` | `404 M_NOT_FOUND` |
+| Race: GenServer stops between `start_room` and `get_state` | `try/catch :exit {:noproc, _}` in `send_receipt/2` | `404 M_NOT_FOUND` |
+| User not a member of the room | `MapSet.member?/2` returns false | `403 M_FORBIDDEN` |
+
+**Idempotency invariant:** `start_room/1` in `RoomSupervisor` handles `{:error, {:already_started, pid}}` internally and returns `{:ok, pid}`. The handler always receives either `{:ok, pid}` (GenServer running) or `{:error, _}` (room absent from DB). No special case needed for the "already running" path.
+
 ## Scenario 4: Compliance Four-Eyes Export Flow
 
 ```
@@ -748,4 +797,4 @@ This prevents unbounded memory growth from unauthenticated flood attacks.
 a denylist, test setups), the denylist check in PostLogin is skipped. This preserves
 backwards compatibility.
 
-_Source: `_bmad-output/planning-artifacts/architecture.md`, §Implementation Patterns, §API & Kommunikation, §Resilienz & Selbst-Heilung; Story 9-19 (GAP-JOIN-PUBLIC, GAP-LEAVE-ONCE, GAP-FORGET); Story 9-22 (GAP-SINCE-IGNORED — per-device sync tokens, per-device logout cleanup); Story 9-23 (GAP-INVITE-STATE — invite_state stripped state enrichment: join_rules, avatar, create); Story 9-24 (GAP-GLOBAL-ACCOUNT-DATA — top-level account_data delivery in all 4 sync paths, RLS-aware ListGlobalAccountData); Story 9-25 (GAP-BUFFER-NEXT-BATCH — synthetic buf_<ms>_<seq> next_batch token on buffer fast-path, replaces echoed since= token); Story 9-27 (Scenario 3i — full Matrix §11.35.1 room upgrade flow, GRPC.RPCError error handling, archive_room_atomic idempotency, terminate_child, try/rescue failure audit); Story 9-28 (Scenario 3j — GetRelations RPC + bundled m.thread aggregations in sync unsigned field, attach_thread_aggregations, fetch_events_by_relation, count_thread_children, migration 000042); Story 9-29 (Scenario 3j-1 expanded — base route + three-segment route, dir/event_type/recurse/from params, prev_batch response field, fetch_events_by_relation/5 dynamic WHERE builder, 400 validation for invalid dir/recurse); Story 11-7 (Scenario 6 — SSO nonce generation + verification, Cache-Control: no-store on 302, denylist check in PostLogin, ssoStateStore capacity cap at 10,000); Story 11-8 (Scenario 3k — GET /rooms/{roomId}/event/{eventId} new route + GetEvent gRPC RPC, Horde membership guard, fetch_event/2 DB query, attach_thread_aggregations, core_grpc.pb.ex rpc :GetRelations + rpc :GetEvent bug fix); Story 11-10 (Scenario 3l — Matrix login claim mapping: claimLoader TTL-cached DB lookup, FormatUserIDFromClaims fallback chain, JWTMiddleware userIDClaimLoader param, NEBU_OIDC_USER_ID_CLAIM env override; Scenario 3m — Bootstrap Wizard Step 3 claim mapping form, draft save, atomic ClaimSelectionHandler transaction, identity-stability warning)_
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Implementation Patterns, §API & Kommunikation, §Resilienz & Selbst-Heilung; Story 9-19 (GAP-JOIN-PUBLIC, GAP-LEAVE-ONCE, GAP-FORGET); Story 9-22 (GAP-SINCE-IGNORED — per-device sync tokens, per-device logout cleanup); Story 9-23 (GAP-INVITE-STATE — invite_state stripped state enrichment: join_rules, avatar, create); Story 9-24 (GAP-GLOBAL-ACCOUNT-DATA — top-level account_data delivery in all 4 sync paths, RLS-aware ListGlobalAccountData); Story 9-25 (GAP-BUFFER-NEXT-BATCH — synthetic buf_<ms>_<seq> next_batch token on buffer fast-path, replaces echoed since= token); Story 9-27 (Scenario 3i — full Matrix §11.35.1 room upgrade flow, GRPC.RPCError error handling, archive_room_atomic idempotency, terminate_child, try/rescue failure audit); Story 9-28 (Scenario 3j — GetRelations RPC + bundled m.thread aggregations in sync unsigned field, attach_thread_aggregations, fetch_events_by_relation, count_thread_children, migration 000042); Story 9-29 (Scenario 3j-1 expanded — base route + three-segment route, dir/event_type/recurse/from params, prev_batch response field, fetch_events_by_relation/5 dynamic WHERE builder, 400 validation for invalid dir/recurse); Story 11-7 (Scenario 6 — SSO nonce generation + verification, Cache-Control: no-store on 302, denylist check in PostLogin, ssoStateStore capacity cap at 10,000); Story 11-8 (Scenario 3k — GET /rooms/{roomId}/event/{eventId} new route + GetEvent gRPC RPC, Horde membership guard, fetch_event/2 DB query, attach_thread_aggregations, core_grpc.pb.ex rpc :GetRelations + rpc :GetEvent bug fix); Story 11-10 (Scenario 3l — Matrix login claim mapping: claimLoader TTL-cached DB lookup, FormatUserIDFromClaims fallback chain, JWTMiddleware userIDClaimLoader param, NEBU_OIDC_USER_ID_CLAIM env override; Scenario 3m — Bootstrap Wizard Step 3 claim mapping form, draft save, atomic ClaimSelectionHandler transaction, identity-stability warning); Story 11-11 (Scenario 3n — send_receipt/2 start-on-demand fix: lookup_room → start_room, :noproc guard on get_state, 404 preserved for ghost rooms, 403 preserved for non-members)_

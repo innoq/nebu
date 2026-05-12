@@ -651,15 +651,33 @@ defmodule Nebu.EventDispatcher.Server do
         message: "missing user_id in request"
     end
 
-    # Room existence check.
-    case Nebu.Room.RoomSupervisor.lookup_room(room_id) do
-      {:error, :not_found} ->
+    # Room existence check — start on demand (mirrors sync.ex line 1034–1035).
+    # start_room/1 is idempotent: returns {:ok, pid} whether the GenServer was
+    # already running or was just started from DB. {:error, _} maps to not_found
+    # because the only failure path is Room.Server.init/1 returning {:stop, _},
+    # which happens when load_members returns {:error, :not_found} (room absent
+    # from DB). Note: Horde supervisor errors (e.g. :max_children) would also hit
+    # this branch and be surfaced as not_found — acceptable trade-off consistent
+    # with sync.ex and unarchive_room patterns across the codebase (AA-1).
+    case Nebu.Room.RoomSupervisor.start_room(room_id) do
+      {:error, _reason} ->
         raise GRPC.RPCError,
           status: GRPC.Status.not_found(),
           message: "room not found: #{room_id}"
 
       {:ok, _pid} ->
-        state = room_registry_module().get_state(room_id)
+        # Guard against a race where the GenServer dies between start_room and
+        # get_state (e.g. Horde CRDT reconciliation). Mirrors get_room_state/2
+        # helper at line ~922–938. Surfaces as not_found rather than a raw exit.
+        state =
+          try do
+            room_registry_module().get_state(room_id)
+          catch
+            :exit, {:noproc, _} ->
+              raise GRPC.RPCError,
+                status: GRPC.Status.not_found(),
+                message: "room not found: #{room_id}"
+          end
 
         unless MapSet.member?(state.members, user_id) do
           raise GRPC.RPCError,

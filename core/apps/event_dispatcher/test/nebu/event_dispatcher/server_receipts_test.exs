@@ -52,10 +52,28 @@ defmodule Nebu.EventDispatcher.ServerReceiptsTest do
       end
     end
 
+    # insert_room/1 only succeeds for rooms that were pre-seeded via pre_seed_room/1.
+    # This mimics PostgreSQL behaviour: insert_room is only called during create_room;
+    # for existing rooms after restart, load_members returns {:ok, ...} directly.
+    # Ghost room tests rely on insert_room failing to preserve the 404 path when
+    # start_room is used instead of lookup_room (Story 11-11 fix).
     def insert_room(room_id) do
-      now_ms = System.system_time(:millisecond)
-      :ets.insert(:receipts_test_room_db, {{:room, room_id}, now_ms})
-      {:ok, now_ms}
+      case :ets.lookup(:receipts_test_room_db, {:pre_seeded, room_id}) do
+        [{_, true}] ->
+          now_ms = System.system_time(:millisecond)
+          :ets.insert(:receipts_test_room_db, {{:room, room_id}, now_ms})
+          {:ok, now_ms}
+
+        [] ->
+          {:error, :room_not_found_in_db}
+      end
+    end
+
+    # Mark a room as allowed to be created by insert_room/1.
+    # Must be called before start_room/1 when setting up a test room from scratch.
+    def pre_seed_room(room_id) do
+      :ets.insert(:receipts_test_room_db, {{:pre_seeded, room_id}, true})
+      :ok
     end
 
     def insert_member(room_id, user_id) do
@@ -198,6 +216,10 @@ defmodule Nebu.EventDispatcher.ServerReceiptsTest do
   end
 
   defp setup_room_with_member(room_id, user_id) do
+    # Pre-seed the room so FakeRoomDB.insert_room/1 succeeds during Room.Server.init/1.
+    # Without this, insert_room returns {:error, :room_not_found_in_db} and the
+    # GenServer refuses to start (same behaviour as a genuinely absent DB row).
+    :ok = FakeRoomDB.pre_seed_room(room_id)
     {:ok, _pid} = Nebu.Room.RoomSupervisor.start_room(room_id)
     :ok = start_and_track_room(room_id)
     :ok = Nebu.Room.Server.join(room_id, user_id)
@@ -348,6 +370,115 @@ defmodule Nebu.EventDispatcher.ServerReceiptsTest do
 
       assert error.status == GRPC.Status.not_found(),
              "expected status not_found (#{GRPC.Status.not_found()}), got: #{error.status}"
+    end
+  end
+
+  # ─── AT-NEW-1: GenServer not running → start on demand → success (AC1) ────────
+  #
+  # Story 11-11 bug fix: after a stack restart, the Room GenServer is NOT running
+  # even though the room exists in DB. The current code uses lookup_room which
+  # returns {:error, :not_found} → raises not_found → HTTP 404. The fix replaces
+  # lookup_room with start_room so the GenServer is started on demand.
+  #
+  # This test is written FIRST and is expected to FAIL until the fix is applied.
+  #
+  # Given: room "!restartedreceipt:test.local" exists in FakeRoomDB with alice as member;
+  #        Room GenServer was started (via start_room) and then EXPLICITLY KILLED
+  #        (simulating a stack restart where the room exists in DB but GenServer is gone)
+  # When: Server.send_receipt/2 called with alice's credentials
+  # Then: returns %Core.SendReceiptResponse{}; FakeReceiptDB contains the upsert row
+  #       (i.e., start_room started the GenServer on demand, membership was checked, receipt persisted)
+
+  describe "send_receipt/2 — room GenServer not running (start on demand)" do
+    test "AT-NEW-1: GenServer killed → receipt call starts it on demand and succeeds" do
+      room_id = "!restartedreceipt:test.local"
+      alice = "@alice:test.local"
+      event_id = "$event_after_restart"
+      receipt_type = "m.read"
+
+      # Start the room and add alice as a member (this also populates FakeRoomDB ETS).
+      :ok = setup_room_with_member(room_id, alice)
+
+      # Simulate a stack restart: explicitly kill the Room GenServer.
+      # The room still exists in FakeRoomDB ETS (DB survives restart), but the
+      # in-memory GenServer process is gone — exactly the production bug scenario.
+      {:ok, pid} = Nebu.Room.RoomSupervisor.lookup_room(room_id)
+      Horde.DynamicSupervisor.terminate_child(Nebu.Room.HordeSupervisor, pid)
+      # Brief wait for Horde CRDT propagation.
+      Process.sleep(50)
+
+      # Verify the GenServer is truly gone before calling send_receipt.
+      assert Nebu.Room.RoomSupervisor.lookup_room(room_id) == {:error, :not_found},
+             "expected GenServer to be gone after terminate_child"
+
+      request = %Core.SendReceiptRequest{
+        room_id: room_id,
+        user_id: alice,
+        receipt_type: receipt_type,
+        event_id: event_id
+      }
+
+      # This call currently FAILS (returns not_found with lookup_room).
+      # After the fix (start_room), it MUST succeed.
+      response = Server.send_receipt(request, build_stream(alice))
+
+      assert %Core.SendReceiptResponse{} = response,
+             "expected %Core.SendReceiptResponse{} after on-demand GenServer start, got: #{inspect(response)}"
+
+      # Verify FakeReceiptDB captured the upsert call.
+      receipts =
+        :ets.match(:receipts_test_receipt_db, {:receipt, room_id, alice, receipt_type, event_id})
+
+      assert length(receipts) == 1,
+             "expected exactly 1 receipt row in FakeReceiptDB after on-demand start, " <>
+               "got: #{inspect(:ets.tab2list(:receipts_test_receipt_db))}"
+    end
+
+    # ─── AT-NEW-2: Room not in DB → start_room fails → 404 preserved (AC2) ───────
+    #
+    # After the fix, lookup_room is replaced with start_room. When start_room is called
+    # for a room that does not exist in FakeRoomDB, Room.Server.init/1 calls
+    # FakeRoomDB.load_members/1 which returns {:error, :not_found} (no ETS entry) →
+    # Room.Server returns {:stop, :not_found} → Horde returns {:error, _} from start_child
+    # → start_room returns {:error, _} → send_receipt/2 raises not_found.
+    #
+    # This test is written FIRST and is expected to FAIL until the fix is applied
+    # (because with lookup_room the 404 is raised immediately without ever calling
+    # start_room — the behavior is accidentally correct but for the wrong reason).
+    # After the fix, the 404 is preserved via the start_room failure path.
+    #
+    # Given: FakeRoomDB has NO entry for "!neverexisted:test.local" (load_members → {:error, :not_found});
+    #        no Room GenServer running
+    # When: Server.send_receipt/2 called
+    # Then: raises %GRPC.RPCError{status: GRPC.Status.not_found()}
+
+    test "AT-NEW-2: room not in DB → start_room fails → not_found still raised" do
+      # Deliberately do NOT insert anything into FakeRoomDB ETS for this room_id.
+      # FakeRoomDB.load_members/1 will return {:error, :not_found}.
+      request = %Core.SendReceiptRequest{
+        room_id: "!neverexisted:test.local",
+        user_id: "@alice:test.local",
+        receipt_type: "m.read",
+        event_id: "$event1"
+      }
+
+      error =
+        try do
+          Server.send_receipt(request, build_stream("@alice:test.local"))
+          flunk("expected GRPC.RPCError to be raised, but no exception was raised")
+        rescue
+          e in GRPC.RPCError -> e
+        end
+
+      assert error.status == GRPC.Status.not_found(),
+             "expected status not_found (#{GRPC.Status.not_found()}) for room absent from DB, " <>
+               "got: #{error.status}"
+
+      # Verify FakeReceiptDB was NOT called (no upsert happened).
+      receipts = :ets.tab2list(:receipts_test_receipt_db)
+
+      assert receipts == [],
+             "expected FakeReceiptDB to be empty (not called), got: #{inspect(receipts)}"
     end
   end
 end

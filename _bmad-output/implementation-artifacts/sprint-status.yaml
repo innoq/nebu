@@ -1,5 +1,6 @@
 # generated: 2026-03-20
 # last_updated: 2026-05-12
+# story 11-11 done (pipeline: ATDD+Code CLEAN 1 cycle+noproc guard added): 2026-05-12
 # story 11-10 done (pipeline: ATDD+Dev+Code CLEAN (3 cycles, 3 MAJOR fixed: configReader, claims wired, TTL cache)+UX 6 violations fixed+Kassandra CLEAN): 2026-05-12
 # story 11-10 created: 11-10 → ready-for-dev: 2026-05-12 (OIDC Claim Mapping — Bootstrap Wizard step 3 + Admin UI settings page + FormatUserIDFromClaims refactor; security_review required)
 # story 11-9 done (pipeline: ATDD+Dev+Code CLEAN (2 cycles, 2 MAJOR fixed: error-page footer, make redeploy args) + UX gate ADV-1/ADV-2 fixed + Kassandra skipped (not-needed)): 2026-05-12
@@ -820,6 +821,7 @@ development_status:
   11-7-safari-relogin-fix: done
   11-9-build-info-endpoint: done  # story file: 11-9-build-info-endpoint.md (was mistakenly numbered 11-8 in sprint-status; actual story/commit uses 11-9; Build-Info Endpoint GET /info — ldflags in Go, ARG→ENV in Elixir, pubMux+health port 4000, no auth; security_review: not-needed)
   11-10-oidc-claim-mapping: done
+  11-11-receipt-404-fix: review  # story file: 11-11-receipt-404-fix.md (Bug: send_receipt returns 404 after stack restart — replace lookup_room with start_room; security_review: not-needed)
   epic-11-retrospective: optional
 
   # ─────────────────────────────────────────────────────────────────────────

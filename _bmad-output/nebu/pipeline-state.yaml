@@ -1,6 +1,15 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-12
+# [11-11] 2026-05-12T12:15Z test-review → CLEAN (0 MAJOR, 1 MINOR: Process.sleep guard acceptable)
+# [11-11] 2026-05-12T12:12Z atdd → 2 ExUnit tests (AT-NEW-1 failing, AT-NEW-2 green as regression guard)
+# [11-11] 2026-05-12T12:08Z oracle-gate → spec context captured (receipt MUST/error codes, GenServer restart edge case, sync ephemeral delivery)
+# [11-11] 2026-05-12T12:05Z create-story → 11-11-receipt-404-fix.md
+# [11-11] 2026-05-12T12:00Z pipeline started
+# [11-10] 2026-05-12T11:50Z committed ✓ (ATDD+Code CLEAN 3 cycles+UX 6 violations fixed+Kassandra CLEAN)
+# [11-10] 2026-05-12T11:45Z arc42-update → done (05-building-blocks, 06-runtime, 08-concepts: claim mapping)
+# [11-10] 2026-05-12T11:30Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 5 LOW)
+# [11-10] 2026-05-12T11:20Z code-review → CLEAN (cycle 3) — APPROVED, 0 MAJOR
 # [11-10] 2026-05-12T11:00Z code-review → 0 MAJOR, 11 MINOR → cycle 3 (final)
 # [11-10] 2026-05-12T10:35Z code-review → 0 MAJOR, 9 MINOR → cycle 2
 # [11-10] 2026-05-12T10:15Z code-review → 3 MAJOR + 10 MINOR → cycle 1
@@ -134,14 +143,12 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: "11-10"
+story: "11-11"
 current_step: "dev-story"
 completed:
   - create-story
   - atdd
   - test-review
-  - dev-story
-  - ci-gate
-cycle_count: 3
+cycle_count: 0
 blocked_reason: null
-last_updated: "2026-05-12T07:47Z"
+last_updated: "2026-05-12T11:58Z"
