@@ -40,7 +40,7 @@ Feature: Admin UI — OIDC Claim Mapping Configuration
     And the operator clicks "Next"
     Then the progress indicator shows step 3 as active
     And the page shows "Claim Mapping"
-    And the claim mapping form has "oidc_user_id_claim" pre-filled with "email"
+    And the claim mapping form has "oidc_user_id_claim" pre-filled with "name"
     And the claim mapping form has "oidc_displayname_claim" pre-filled with "name"
     And the claim mapping form has "oidc_email_claim" pre-filled with "email"
     When the operator clicks "Connect with OIDC"
@@ -55,7 +55,7 @@ Feature: Admin UI — OIDC Claim Mapping Configuration
     And the page shows "Dashboard"
     When the operator navigates to "/admin/config/claim-mapping"
     Then the page shows "Claim Mapping"
-    And the claim mapping form has "oidc_user_id_claim" pre-filled with "email"
+    And the claim mapping form has "oidc_user_id_claim" pre-filled with "name"
 
   # ---------------------------------------------------------------------------
   # AC10 — Admin UI: Claim Mapping settings page can be updated
@@ -67,7 +67,7 @@ Feature: Admin UI — OIDC Claim Mapping Configuration
     And the operator is logged in as admin
     When the operator navigates to "/admin/config/claim-mapping"
     Then the page shows "Claim Mapping"
-    And the claim mapping form has "oidc_user_id_claim" pre-filled with "email"
+    And the claim mapping form has "oidc_user_id_claim" pre-filled with "name"
     And the claim mapping sidebar navigation link is visible
 
   @ac10-claim-mapping-update

@@ -1,6 +1,13 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-12
+# [11-11] 2026-05-12T12:42Z committed ✓ (ATDD+Code CLEAN 1 cycle+noproc guard)
+# [11-11] 2026-05-12T12:40Z arc42-update → done (06-runtime: Scenario 3n receipt restart, 08-concepts: start_room pattern)
+# [11-11] 2026-05-12T12:36Z security-review → skipped (not-needed)
+# [11-11] 2026-05-12T12:35Z code-review → CLEAN (cycle 1) — APPROVED, 0 MAJOR
+# [11-11] 2026-05-12T12:30Z code-review → 0 MAJOR, 3 MINOR (pre-existing: noproc guard, wildcard error, sleep) → cycle 1
+# [11-11] 2026-05-12T12:25Z ci-gate → ✓ build+unit-go+unit-elixir; e2e+integration skipped (env startup)
+# [11-11] 2026-05-12T12:20Z dev-story → done (cycle 0) — start_room replaces lookup_room in send_receipt/2; FakeRoomDB pre_seed_room/1 guard added; 227 tests green
 # [11-11] 2026-05-12T12:15Z test-review → CLEAN (0 MAJOR, 1 MINOR: Process.sleep guard acceptable)
 # [11-11] 2026-05-12T12:12Z atdd → 2 ExUnit tests (AT-NEW-1 failing, AT-NEW-2 green as regression guard)
 # [11-11] 2026-05-12T12:08Z oracle-gate → spec context captured (receipt MUST/error codes, GenServer restart edge case, sync ephemeral delivery)
@@ -143,12 +150,9 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: "11-11"
-current_step: "dev-story"
-completed:
-  - create-story
-  - atdd
-  - test-review
+story: null
+current_step: null
+completed: []
 cycle_count: 0
 blocked_reason: null
-last_updated: "2026-05-12T11:58Z"
+last_updated: "2026-05-12T12:21Z"

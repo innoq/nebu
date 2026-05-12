@@ -43,14 +43,14 @@ func NewClaimMappingHandler(tmpl *TemplateHandler, configReader ServerConfigRead
 }
 
 // Handler serves GET /admin/config/claim-mapping.
-// Reads current values from server_config; falls back to defaults (email, name, email) if absent.
+// Reads current values from server_config; falls back to defaults (name, name, email) if absent.
 func (h *ClaimMappingHandler) Handler(w http.ResponseWriter, r *http.Request) {
 	var flash AlertBannerData
 	if msg := sanitizeFlash(r.URL.Query().Get("flash")); msg != "" {
 		flash = AlertBannerData{Severity: "success", Message: msg, Dismissible: true}
 	}
 
-	userIDClaim, displaynameClaim, emailClaim := "email", "name", "email"
+	userIDClaim, displaynameClaim, emailClaim := "name", "name", "email"
 	if uid, dn, em, err := h.configReader.LoadClaimMapping(r.Context()); err != nil {
 		slog.Warn("failed to load claim mapping, showing defaults", "err", err)
 		// Override any existing flash to surface the read failure so the admin
@@ -105,11 +105,11 @@ func (h *ClaimMappingHandler) UpdateHandler(w http.ResponseWriter, r *http.Reque
 		pd.ActiveNav = "claim-mapping"
 		pd.CSRFToken = CSRFTokenFromContext(r.Context())
 		data := ClaimMappingPageData{
-			PageData:        pd,
-			UserIDClaim:     userIDClaim,
+			PageData:         pd,
+			UserIDClaim:      userIDClaim,
 			DisplaynameClaim: displaynameClaim,
-			EmailClaim:      emailClaim,
-			Errors:          errors,
+			EmailClaim:       emailClaim,
+			Errors:           errors,
 		}
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		h.tmpl.render(w, "claim-mapping", data)
