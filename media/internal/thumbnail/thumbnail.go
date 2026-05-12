@@ -12,6 +12,7 @@ package thumbnail
 
 import (
 	"bytes"
+	"fmt"
 	"image"
 	"image/color/palette"
 	"image/draw"
@@ -20,6 +21,15 @@ import (
 
 	"github.com/disintegration/imaging"
 )
+
+// maxSourceMegapixels is the maximum decoded source image size in pixels.
+// Images larger than this are rejected to prevent decompression-bomb DoS.
+// 100 MP = 100,000,000 pixels (e.g. 10000×10000).
+const maxSourceMegapixels = 100_000_000
+
+// maxGIFFrames is the maximum number of GIF frames that will be resized.
+// GIFs with more frames have the excess frames silently discarded.
+const maxGIFFrames = 200
 
 // ThumbnailParams holds the validated parameters for thumbnail generation.
 type ThumbnailParams struct {
@@ -84,6 +94,14 @@ func GenerateThumbnail(imgBytes []byte, params ThumbnailParams) ([]byte, string,
 		return nil, "", err
 	}
 
+	// Decompression-bomb defence: reject source images larger than maxSourceMegapixels.
+	// imaging allocates 4 * W * H bytes for the decoded image; without this check,
+	// a maliciously crafted image could exhaust server memory.
+	srcPixels := src.Bounds().Dx() * src.Bounds().Dy()
+	if srcPixels > maxSourceMegapixels {
+		return nil, "", fmt.Errorf("source image too large: %d pixels exceeds %d pixel limit", srcPixels, maxSourceMegapixels)
+	}
+
 	var dst image.Image
 	switch params.Method {
 	case "crop":
@@ -109,6 +127,18 @@ func generateAnimatedGIFThumbnail(imgBytes []byte, width, height int) ([]byte, e
 	g, err := gif.DecodeAll(bytes.NewReader(imgBytes))
 	if err != nil {
 		return nil, err
+	}
+
+	// Cap the number of frames to prevent resource exhaustion on large animated GIFs.
+	// Frames beyond maxGIFFrames are silently discarded (no error returned).
+	if len(g.Image) > maxGIFFrames {
+		g.Image = g.Image[:maxGIFFrames]
+		if len(g.Delay) > maxGIFFrames {
+			g.Delay = g.Delay[:maxGIFFrames]
+		}
+		if len(g.Disposal) > maxGIFFrames {
+			g.Disposal = g.Disposal[:maxGIFFrames]
+		}
 	}
 
 	for i, frame := range g.Image {

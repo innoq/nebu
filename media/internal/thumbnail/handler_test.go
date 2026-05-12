@@ -637,3 +637,82 @@ func TestThumbnailHandler_ContentDisposition_IsInline(t *testing.T) {
 		t.Errorf("Content-Disposition MUST be 'inline' per spec v1.12, got %q", cd)
 	}
 }
+
+// ─── Story 12.7: SEC Gate 2 Fixes — Dimension clamping [HIGH-1] ──────────────
+//
+// AT-1: Width > 2048 returns 400 M_BAD_JSON
+// AT-2: Height > 2048 returns 400 M_BAD_JSON
+//
+// These tests will FAIL until:
+//   1. handler.go adds const maxThumbDim = 2048 guard after the positive-int check
+//   2. width > maxThumbDim or height > maxThumbDim → 400 M_BAD_JSON
+
+// ─── AT-1: Width exceeding cap returns 400 M_BAD_JSON ────────────────────────
+//
+// AC1-1 [HIGH-1]: ?width=2049 must be rejected with 400 M_BAD_JSON.
+
+func TestThumbnailHandler_WidthExceedsCap_Returns400(t *testing.T) {
+	store := &fakeThumbStore{}
+	storer := newFakeThumbStorer()
+	mux := buildThumbHandler(t, store, storer)
+
+	req := httptest.NewRequest("GET", "/_matrix/media/v3/thumbnail/test.local/abc123?width=2049&height=1", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("[AT-1] width=2049: expected 400, got %d; body: %s", w.Code, w.Body.String())
+	}
+	var resp thumbErrResp
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("[AT-1] could not decode error response: %v", err)
+	}
+	if resp.ErrCode != "M_BAD_JSON" {
+		t.Errorf("[AT-1] expected errcode M_BAD_JSON, got %q", resp.ErrCode)
+	}
+}
+
+// ─── AT-2: Height exceeding cap returns 400 M_BAD_JSON ────────────────────────
+//
+// AC1-2 [HIGH-1]: ?height=2049 must be rejected with 400 M_BAD_JSON.
+
+func TestThumbnailHandler_HeightExceedsCap_Returns400(t *testing.T) {
+	store := &fakeThumbStore{}
+	storer := newFakeThumbStorer()
+	mux := buildThumbHandler(t, store, storer)
+
+	req := httptest.NewRequest("GET", "/_matrix/media/v3/thumbnail/test.local/abc123?width=1&height=2049", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("[AT-2] height=2049: expected 400, got %d; body: %s", w.Code, w.Body.String())
+	}
+	var resp thumbErrResp
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("[AT-2] could not decode error response: %v", err)
+	}
+	if resp.ErrCode != "M_BAD_JSON" {
+		t.Errorf("[AT-2] expected errcode M_BAD_JSON, got %q", resp.ErrCode)
+	}
+}
+
+// ─── AT-1b: Width at cap (2048) is accepted ───────────────────────────────────
+//
+// AC1-5 [HIGH-1]: ?width=2048 must be accepted (boundary at cap, not +1).
+
+func TestThumbnailHandler_WidthAtCap_IsAccepted(t *testing.T) {
+	storer := newFakeThumbStorer()
+	row := storeEncryptedJPEG(t, storer, "test.local", "cap-test-001")
+	store := &fakeThumbStore{row: row}
+	mux := buildThumbHandler(t, store, storer)
+
+	req := httptest.NewRequest("GET", "/_matrix/media/v3/thumbnail/test.local/cap-test-001?width=2048&height=2048", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	// 2048x2048 must be accepted (exact cap boundary)
+	if w.Code != http.StatusOK {
+		t.Errorf("[AT-1b] width=height=2048: expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+}

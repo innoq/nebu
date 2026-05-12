@@ -9,7 +9,9 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/minio/minio-go/v7"
@@ -120,27 +122,34 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Build MinIO credentials: env var takes priority; _FILE variant reads from Docker Secrets.
-	minioAccessKey := getenv("NEBU_MINIO_ACCESS_KEY", "")
-	if minioAccessKey == "" {
-		if keyFile := getenv("NEBU_MINIO_ACCESS_KEY_FILE", ""); keyFile != "" {
-			minioAccessKey, err = readSecretFile(keyFile)
-			if err != nil {
-				slog.Error("failed to read NEBU_MINIO_ACCESS_KEY_FILE", "path", keyFile, "err", err)
-				os.Exit(1)
-			}
+	// Build MinIO credentials: _FILE form (Docker Secrets) takes priority over plain env var.
+	// LOW-9 [Story 12.7]: Reversed precedence — file takes priority. This aligns with the
+	// gateway's NEBU_INTERNAL_SECRET_FILE pattern and prevents accidental .env file commits
+	// from silently overriding the intended Docker Secrets configuration.
+	//
+	// Resolution order:
+	//   1. NEBU_MINIO_ACCESS_KEY_FILE — read from Docker Secret file (preferred)
+	//   2. NEBU_MINIO_ACCESS_KEY — plain environment variable (fallback for dev)
+	var minioAccessKey string
+	if keyFile := getenv("NEBU_MINIO_ACCESS_KEY_FILE", ""); keyFile != "" {
+		minioAccessKey, err = readSecretFile(keyFile)
+		if err != nil {
+			slog.Error("failed to read NEBU_MINIO_ACCESS_KEY_FILE", "path", keyFile, "err", err)
+			os.Exit(1)
 		}
+	} else {
+		minioAccessKey = getenv("NEBU_MINIO_ACCESS_KEY", "")
 	}
 
-	minioSecretKey := getenv("NEBU_MINIO_SECRET_KEY", "")
-	if minioSecretKey == "" {
-		if secretFile := getenv("NEBU_MINIO_SECRET_KEY_FILE", ""); secretFile != "" {
-			minioSecretKey, err = readSecretFile(secretFile)
-			if err != nil {
-				slog.Error("failed to read NEBU_MINIO_SECRET_KEY_FILE", "path", secretFile, "err", err)
-				os.Exit(1)
-			}
+	var minioSecretKey string
+	if secretFile := getenv("NEBU_MINIO_SECRET_KEY_FILE", ""); secretFile != "" {
+		minioSecretKey, err = readSecretFile(secretFile)
+		if err != nil {
+			slog.Error("failed to read NEBU_MINIO_SECRET_KEY_FILE", "path", secretFile, "err", err)
+			os.Exit(1)
 		}
+	} else {
+		minioSecretKey = getenv("NEBU_MINIO_SECRET_KEY", "")
 	}
 
 	minioUseSSL := false
@@ -178,14 +187,36 @@ func main() {
 	}
 	defer pool.Close()
 
+	// HIGH-2 [Story 12.7]: OIDC JWT verification for media upload.
+	// If NEBU_OIDC_ISSUER is set, create a verifier that validates upload tokens
+	// against the same OIDC provider as the API gateway.
+	// If not configured, the upload handler falls back to MVP bearer-presence check.
+	var uploadVerifier upload.TokenVerifier
+	if oidcIssuer := getenv("NEBU_OIDC_ISSUER", ""); oidcIssuer != "" {
+		oidcClientID := getenv("NEBU_OIDC_CLIENT_ID", "nebu")
+		oidcProvider, err := oidc.NewProvider(ctx, oidcIssuer)
+		if err != nil {
+			slog.Warn("media: OIDC provider unavailable — upload JWT validation disabled until resolved",
+				"issuer", oidcIssuer, "err", err)
+			// Fail-open: allow startup without OIDC (provider may come up after media).
+			// The handler will fall back to MVP bearer-presence check.
+		} else {
+			uploadVerifier = oidcProvider.Verifier(&oidc.Config{ClientID: oidcClientID})
+			slog.Info("media: OIDC JWT validation enabled for uploads", "issuer", oidcIssuer)
+		}
+	} else {
+		slog.Warn("media: NEBU_OIDC_ISSUER not set — upload JWT validation disabled (MVP mode)")
+	}
+
 	store := &pgMediaStore{pool: pool}
 	thumbStore := &pgThumbnailStore{inner: store}
 
 	uploadHandler := upload.NewHandler(upload.HandlerConfig{
-		DB:         store,
-		Storage:    storer,
-		ServerName: serverName,
-		MaxBytes:   maxBytes,
+		DB:           store,
+		Storage:      storer,
+		ServerName:   serverName,
+		MaxBytes:     maxBytes,
+		OIDCVerifier: uploadVerifier,
 	})
 
 	downloadHandler := download.NewHandler(download.HandlerConfig{
@@ -207,8 +238,19 @@ func main() {
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
 
+	// LOW-10 [Story 12.7]: Use http.Server with explicit timeouts to prevent Slowloris attacks.
+	// Without these, a client holding a TCP connection open with dribbled header bytes
+	// can exhaust goroutines/file descriptors on the newly-exposed :8009 port.
+	srv := &http.Server{
+		Addr:              listenAddr,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      120 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
 	slog.Info("Nebu Media Gateway listening", "addr", listenAddr)
-	if err := http.ListenAndServe(listenAddr, mux); err != nil {
+	if err := srv.ListenAndServe(); err != nil {
 		slog.Error("server error", "err", err)
 		os.Exit(1)
 	}

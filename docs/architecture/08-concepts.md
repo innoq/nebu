@@ -23,14 +23,16 @@ Auth token never forwarded to Elixir — only user_id + system_role
 **Bootstrap mode:** First OIDC login automatically receives `instance_admin`. Bootstrap mode is
 permanently disabled after the first admin setup. No default password, no insecure fallback.
 
-**SSO Nonce-Based Replay Prevention (Story 11-7):**
+**SSO Nonce-Based Replay Prevention (Story 11-7, hardened Story 12.7):**
 
 `GetSSORedirect` generates a 16-byte cryptographically random nonce (32 hex chars) per SSO
 flow. The nonce is stored in `globalSSOState` alongside the PKCE verifier and forwarded to
 Dex via `oauth2.SetAuthURLParam("nonce", nonce)`. In `GetSSOCallback`, the `nonce` claim is
-extracted from the returned id_token and compared against the stored nonce. A mismatch results
-in `403 M_FORBIDDEN "SSO nonce mismatch"` — no loginToken is issued. This prevents Dex's
-server-side token caching from replaying a previously invalidated JWT as a new access_token.
+extracted from the returned id_token and compared against the stored nonce using
+`crypto/subtle.ConstantTimeCompare` (timing-attack safe, Story 12.7 LOW-7). A mismatch results
+in `403 M_FORBIDDEN "SSO nonce mismatch"` — no loginToken is issued. The server nonce is
+never logged on mismatch (Story 12.7 LOW-8). This prevents Dex's server-side token caching
+from replaying a previously invalidated JWT as a new access_token.
 
 **Denylist Check at Login (Story 11-7):**
 
@@ -157,6 +159,34 @@ On-demand thumbnail generation for `GET /_matrix/media/v3/thumbnail/{serverName}
 | Output format | JPEG (85 quality) for static; GIF for animated | Balance size/quality |
 | Headers | `Content-Disposition: inline; filename=...` (spec v1.12) + `Cache-Control: max-age=86400` | Matrix spec MUST requirements |
 | Security | `mediaId` validated with `^[A-Za-z0-9_\-]+$` before DB/storage call | Path traversal prevention (Matrix spec §5.6) |
+| Dimension cap | `const maxThumbDim = 2048`; width > 2048 or height > 2048 → 400 M_BAD_JSON | Memory-amplification DoS prevention (Story 12.7 HIGH-1) |
+| Source image budget | After `imaging.Decode`, check `Dx * Dy > 100_000_000` → return error | Decompression-bomb defence — prevents ≥400 MB allocations from compressed source |
+| GIF frame cap | `len(g.Image) > maxGIFFrames (200)` → truncate to first 200 frames silently | Bounded resource usage for animated GIFs; no error returned |
+| Response headers | `X-Content-Type-Options: nosniff` set on all thumbnail responses | Prevent MIME sniffing in legacy browsers (Matrix spec v1.12) |
+
+**Media Gateway — Upload/Download Security (Story 12.7 HIGH-3):**
+
+Content-Type enforcement to prevent stored XSS:
+
+| Phase | Rule | Mechanism |
+|---|---|---|
+| Upload — blocklist | `text/html`, `application/xhtml+xml`, `text/javascript`, `application/javascript`, `image/svg+xml`, `application/x-shockwave-flash` → 400 M_BAD_JSON | `blockedContentTypes` map; normalized with `mime.ParseMediaType` (strips params) |
+| Download — safe inline | `image/jpeg`, `image/png`, `image/gif`, `image/webp`, `image/avif`, `audio/mpeg`, `audio/ogg`, `video/mp4`, `video/webm`, `application/pdf`, `text/plain` → `Content-Disposition: inline` | `safeInlineContentTypes` map; normalize with `strings.SplitN(...,";",2)` |
+| Download — unsafe fallback | All other stored types → `Content-Type: application/octet-stream`, `Content-Disposition: attachment` | Prevents inline rendering of pre-allowlist uploads |
+| All download responses | `X-Content-Type-Options: nosniff` always set | Prevent MIME sniffing |
+
+**Media Gateway — Upload JWT Validation (Story 12.7 HIGH-2):**
+
+The upload handler supports a `TokenVerifier` interface (`HandlerConfig.OIDCVerifier`). When set, uploads are validated against the OIDC provider (same Dex instance as API gateway). The `sub` claim is used as `uploader_user_id`; `name` claim as fallback. If `NEBU_OIDC_ISSUER` is unset at startup, or if the provider is temporarily unavailable, the handler falls back to MVP bearer-presence check (logged at WARN).
+
+**server_config RLS UPDATE Policy (Story 12.7 MEDIUM-5):**
+
+Migration 000046 replaces the blanket `config_update_all` policy (USING true — introduced in migration 000045 for OIDC claim upserts) with a key-scoped `config_update_mutable` policy. Only the following keys are updatable by `nebu_app`:
+
+- `oidc_user_id_claim`, `oidc_displayname_claim`, `oidc_email_claim`, `admin_group_claim`
+- `oidc_issuer`, `oidc_client_id`, `oidc_client_secret`
+
+`server_name`, `bootstrap_completed`, and any future keys not in this allowlist are immutable at the DB level (defence-in-depth restoration from ADR G8).
 
 **Media Event Content Pass-Through Contract (Story 12.6):**
 

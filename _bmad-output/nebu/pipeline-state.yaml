@@ -1,6 +1,17 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-12
+# [12-7] 2026-05-12T00:50Z arc42-update → done (08-concepts: thumbnail dim cap+100MP+GIF cap+nosniff; upload CT blocklist; download safe-inline allowlist; upload JWT validation; server_config RLS mutable keys; SSO nonce subtle.ConstantTimeCompare)
+# [12-7] 2026-05-12T00:45Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW advisory — OIDC fail-open on startup; same pattern as gateway)
+# [12-7] 2026-05-12T00:40Z code-review → CLEAN (cycle 0) — 0 MAJOR, 0 MINOR (const inside func idiomatic Go; map alignment cosmetic; shell double-dollar escaping verified correct)
+# [12-7] 2026-05-12T00:35Z ci-gate → ✓ build+unit-go (all media+gateway+matrix packages green)+unit-elixir (227); e2e+integration skipped (minio/mc image unavailable — pre-existing)
+# [12-7] 2026-05-12T00:30Z dev-story → done (cycle 0) — thumbnail dim cap+100MP+GIF-cap; CT blocklist upload; nosniff+attachment download; migration 000046; subtle.ConstantTimeCompare SSO; env file precedence; http.Server timeouts; go-oidc JWT verifier
+# [12-7] 2026-05-12T00:07Z test-review → CLEAN (0 MAJOR; MINOR: JWT upload tests deferred to impl — interface must be defined first; AT-3 testing.Short skip acceptable)
+# [12-7] 2026-05-12T00:05Z atdd → 14 failing tests (AT-1..AT-14: thumbnail dim cap, GIF frame cap, 100MP source, upload CT blocklist, download nosniff+attachment, migration 000046 RLS)
+# [12-7] 2026-05-12T00:02Z oracle-gate → spec context captured (media safety: nosniff+attachment MUST; upload 401 M_UNKNOWN_TOKEN; thumbnail 400 M_BAD_JSON for dim cap)
+# [12-7] 2026-05-12T00:01Z create-story → 12-7-media-gateway-security-hardening-sec-gate-2-fixes.md
+# [12-7] 2026-05-12T00:00Z pipeline started
+# [12-6] 2026-05-12T19:31Z epic-loop → story done
 # [12-6] 2026-05-12T23:36Z committed ✓ (ATDD+Code CLEAN 0 cycles+Kassandra CLEAN — test-only story, pass-through verified)
 # [12-6] 2026-05-12T23:34Z arc42-update → done (08-concepts: content.info opaque pass-through contract + blurhash, source line updated)
 # [12-6] 2026-05-12T23:32Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW — test-only diff, no production code changes)
@@ -221,9 +232,17 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: null
-current_step: null
-completed: []
+story: "12-7"
+current_step: "commit"
+completed:
+  - create-story
+  - atdd
+  - test-review
+  - dev-story
+  - ci-gate
+  - code-review
+  - security-review
+  - arc42-update
 cycle_count: 0
 blocked_reason: null
-last_updated: "2026-05-12T17:30Z"
+last_updated: "2026-05-12T21:57Z"

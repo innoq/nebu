@@ -1,5 +1,6 @@
 # generated: 2026-03-20
 # last_updated: 2026-05-12
+# story 12-7 done (pipeline: ATDD+Dev+Code CLEAN+Kassandra CLEAN (1 LOW advisory)): 2026-05-12
 # story 12-6 done (pipeline: ATDD+Code CLEAN 0 cycles+Kassandra CLEAN — blurhash pass-through tests (AT-2+AT-5+AT-6) + animated=false regression guards (AT-3+AT-4)): 2026-05-12
 # story 12-5 done (pipeline: ATDD+Code CLEAN 0 cycles+Kassandra CLEAN 2 LOW advisory): 2026-05-12
 # story 12-4 done (pipeline: ATDD+Code CLEAN 0 cycles+Kassandra CLEAN 2 LOW advisory): 2026-05-12

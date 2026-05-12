@@ -521,10 +521,11 @@ func TestDownload_ContentDisposition(t *testing.T) {
 		t.Fatal("Content-Disposition header is missing")
 	}
 
-	// Must contain the mediaId as filename.
-	// Expected format: inline; filename="abc123"
-	if !strings.Contains(cd, "inline") {
-		t.Errorf("Content-Disposition %q does not contain 'inline'", cd)
+	// application/octet-stream is NOT in the safe-inline allowlist (Story 12.7, HIGH-3).
+	// Content must be served as attachment to prevent inline rendering of unknown binary types.
+	// Expected format: attachment; filename="abc123"
+	if !strings.Contains(cd, "attachment") {
+		t.Errorf("Content-Disposition %q does not contain 'attachment' (application/octet-stream is not safe-inline)", cd)
 	}
 	if !strings.Contains(cd, mediaID) {
 		t.Errorf("Content-Disposition %q does not contain mediaId %q", cd, mediaID)
@@ -933,5 +934,248 @@ func TestDownload_WithFakeStorer_StorageError(t *testing.T) {
 	}
 	if errResp.ErrCode != "M_UNKNOWN" {
 		t.Errorf("expected errcode M_UNKNOWN, got %q", errResp.ErrCode)
+	}
+}
+
+// ─── Story 12.7: SEC Gate 2 Fixes — Content-Type safety [HIGH-3] ──────────────
+//
+// AT-8: All download responses must include X-Content-Type-Options: nosniff
+// AT-9: Non-safe stored content type forces Content-Type: application/octet-stream
+//       and Content-Disposition: attachment
+// AT-10: Safe content type gets inline disposition and original Content-Type preserved
+//
+// These tests will FAIL until:
+//   1. download handler sets X-Content-Type-Options: nosniff on ALL responses
+//   2. download handler checks stored ContentType against safe-inline allowlist
+//   3. Non-safe types get Content-Type: application/octet-stream + Content-Disposition: attachment
+
+// buildDownloadHandlerWithFakeStorer creates a handler backed by a fakeStorer
+// (in-memory, not disk-based) for tests that need precise ciphertext control.
+func buildDownloadHandlerWithFakeStorer(t *testing.T, store *mockDownloadStore, storer storage.Storer) http.Handler {
+	t.Helper()
+	h := NewHandler(HandlerConfig{
+		DB:      store,
+		Storage: storer,
+	})
+	mux := http.NewServeMux()
+	mux.Handle("GET /_matrix/media/v3/download/{serverName}/{mediaId}", h)
+	return mux
+}
+
+// fakeInMemoryStorer is an in-memory storer for download tests.
+type fakeInMemoryStorer struct {
+	objects map[string][]byte
+}
+
+func newFakeInMemoryStorer() *fakeInMemoryStorer {
+	return &fakeInMemoryStorer{objects: make(map[string][]byte)}
+}
+
+func (f *fakeInMemoryStorer) Put(_ context.Context, key string, r io.Reader, _ int64) error {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return err
+	}
+	f.objects[key] = data
+	return nil
+}
+
+func (f *fakeInMemoryStorer) Get(_ context.Context, key string) (io.ReadCloser, error) {
+	data, ok := f.objects[key]
+	if !ok {
+		return nil, storage.ErrNotFound
+	}
+	return io.NopCloser(bytes.NewReader(data)), nil
+}
+
+func (f *fakeInMemoryStorer) Delete(_ context.Context, key string) error {
+	delete(f.objects, key)
+	return nil
+}
+
+// storeEncryptedDownload stores plaintext encrypted to the in-memory storer.
+func storeEncryptedDownload(t *testing.T, storer *fakeInMemoryStorer, serverName, mediaID string, plaintext []byte) (aesKeyHex, nonceHex string) {
+	t.Helper()
+	key, err := mediacrypto.GenerateKey()
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	nonce, err := mediacrypto.GenerateNonce()
+	if err != nil {
+		t.Fatalf("GenerateNonce: %v", err)
+	}
+	ct, err := mediacrypto.Encrypt(plaintext, key, nonce)
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+	storer.objects[serverName+"/"+mediaID] = ct
+	return hex.EncodeToString(key), hex.EncodeToString(nonce)
+}
+
+// ─── AT-8: Download always sets X-Content-Type-Options: nosniff ──────────────
+//
+// AC3-5 [HIGH-3]: Every download response MUST include X-Content-Type-Options: nosniff.
+// This test uses a safe content type (image/png) to isolate the nosniff header check.
+
+func TestDownload_NosniffHeader_AlwaysPresent(t *testing.T) {
+	storer := newFakeInMemoryStorer()
+	plaintext := []byte("png file content for nosniff test")
+	aesKeyHex, nonceHex := storeEncryptedDownload(t, storer, testServerName, "nosniff-id", plaintext)
+
+	db := &mockDownloadStore{
+		row: &MediaFileRow{
+			MediaID:     "nosniff-id",
+			ServerName:  testServerName,
+			ContentType: "image/png",
+			AESKeyHex:   aesKeyHex,
+			NonceHex:    nonceHex,
+		},
+	}
+	mux := buildDownloadHandlerWithFakeStorer(t, db, storer)
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/_matrix/media/v3/download/"+testServerName+"/nosniff-id", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("[AT-8] expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+	nosniff := w.Header().Get("X-Content-Type-Options")
+	if nosniff != "nosniff" {
+		t.Errorf("[AT-8] expected X-Content-Type-Options: nosniff, got %q", nosniff)
+	}
+}
+
+// ─── AT-9: Download of non-safe stored type → attachment disposition ──────────
+//
+// AC3-6 [HIGH-3]: Files stored with non-safe Content-Type (e.g. text/html)
+// must be served as Content-Type: application/octet-stream with
+// Content-Disposition: attachment and X-Content-Type-Options: nosniff.
+
+func TestDownload_UnsafeContentType_ForcesAttachment(t *testing.T) {
+	storer := newFakeInMemoryStorer()
+	plaintext := []byte("<html><script>alert(1)</script></html>")
+	aesKeyHex, nonceHex := storeEncryptedDownload(t, storer, testServerName, "html-upload-id", plaintext)
+
+	db := &mockDownloadStore{
+		row: &MediaFileRow{
+			MediaID:     "html-upload-id",
+			ServerName:  testServerName,
+			ContentType: "text/html", // stored before the allowlist was enforced
+			AESKeyHex:   aesKeyHex,
+			NonceHex:    nonceHex,
+		},
+	}
+	mux := buildDownloadHandlerWithFakeStorer(t, db, storer)
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/_matrix/media/v3/download/"+testServerName+"/html-upload-id", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("[AT-9] expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	ct := w.Header().Get("Content-Type")
+	if ct != "application/octet-stream" {
+		t.Errorf("[AT-9] unsafe type: expected Content-Type application/octet-stream, got %q", ct)
+	}
+
+	cd := w.Header().Get("Content-Disposition")
+	if !strings.HasPrefix(cd, "attachment") {
+		t.Errorf("[AT-9] unsafe type: expected Content-Disposition to start with 'attachment', got %q", cd)
+	}
+
+	nosniff := w.Header().Get("X-Content-Type-Options")
+	if nosniff != "nosniff" {
+		t.Errorf("[AT-9] expected X-Content-Type-Options: nosniff, got %q", nosniff)
+	}
+}
+
+// ─── AT-10: Download of safe type: inline preserved + nosniff ─────────────────
+//
+// AC3-4 [HIGH-3]: Safe content types (image/png) must be served inline with
+// original Content-Type and X-Content-Type-Options: nosniff.
+
+func TestDownload_SafeContentType_InlineDisposition(t *testing.T) {
+	storer := newFakeInMemoryStorer()
+	plaintext := []byte("png image bytes")
+	aesKeyHex, nonceHex := storeEncryptedDownload(t, storer, testServerName, "safe-png-id", plaintext)
+
+	db := &mockDownloadStore{
+		row: &MediaFileRow{
+			MediaID:     "safe-png-id",
+			ServerName:  testServerName,
+			ContentType: "image/png",
+			AESKeyHex:   aesKeyHex,
+			NonceHex:    nonceHex,
+		},
+	}
+	mux := buildDownloadHandlerWithFakeStorer(t, db, storer)
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/_matrix/media/v3/download/"+testServerName+"/safe-png-id", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("[AT-10] expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	ct := w.Header().Get("Content-Type")
+	if ct != "image/png" {
+		t.Errorf("[AT-10] safe type: expected Content-Type image/png, got %q", ct)
+	}
+
+	cd := w.Header().Get("Content-Disposition")
+	if !strings.HasPrefix(cd, "inline") {
+		t.Errorf("[AT-10] safe type: expected Content-Disposition to start with 'inline', got %q", cd)
+	}
+
+	nosniff := w.Header().Get("X-Content-Type-Options")
+	if nosniff != "nosniff" {
+		t.Errorf("[AT-10] expected X-Content-Type-Options: nosniff, got %q", nosniff)
+	}
+}
+
+// ─── AT-9b: image/svg+xml stored before allowlist → forced attachment ─────────
+//
+// AC3-6: image/svg+xml is not in the safe-inline list → must serve as attachment.
+
+func TestDownload_SVGContentType_ForcesAttachment(t *testing.T) {
+	storer := newFakeInMemoryStorer()
+	plaintext := []byte(`<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`)
+	aesKeyHex, nonceHex := storeEncryptedDownload(t, storer, testServerName, "svg-upload-id", plaintext)
+
+	db := &mockDownloadStore{
+		row: &MediaFileRow{
+			MediaID:     "svg-upload-id",
+			ServerName:  testServerName,
+			ContentType: "image/svg+xml",
+			AESKeyHex:   aesKeyHex,
+			NonceHex:    nonceHex,
+		},
+	}
+	mux := buildDownloadHandlerWithFakeStorer(t, db, storer)
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/_matrix/media/v3/download/"+testServerName+"/svg-upload-id", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("[AT-9b] expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	ct := w.Header().Get("Content-Type")
+	if ct != "application/octet-stream" {
+		t.Errorf("[AT-9b] svg: expected Content-Type application/octet-stream, got %q", ct)
+	}
+
+	cd := w.Header().Get("Content-Disposition")
+	if !strings.HasPrefix(cd, "attachment") {
+		t.Errorf("[AT-9b] svg: expected Content-Disposition to start with 'attachment', got %q", cd)
 	}
 }

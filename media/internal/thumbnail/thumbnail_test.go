@@ -334,3 +334,130 @@ func TestGenerateThumbnail_AnimatedGIF_AnimatedFalse_ReturnsStaticJPEG(t *testin
 		t.Fatalf("result is not a valid image: %v", err)
 	}
 }
+
+// ─── Story 12.7: SEC Gate 2 Fixes — Source image budget + GIF frame cap ──────
+//
+// AT-3: Source image > 100 MP rejected with error
+// AT-4: GIF with > 200 frames → only first 200 frames processed (no error)
+//
+// These tests will FAIL until:
+//   1. thumbnail.go checks src.Bounds().Dx() * src.Bounds().Dy() > 100_000_000 after Decode
+//   2. generateAnimatedGIFThumbnail caps g.Image to first 200 frames
+
+// ─── AT-3: Source image > 100 MP rejected ─────────────────────────────────────
+//
+// AC1-3 [HIGH-1]: After decoding the source image, if pixel count > 100,000,000
+// GenerateThumbnail must return an error (decompression-bomb defence).
+
+func TestGenerateThumbnail_SourceTooLarge_ReturnsError(t *testing.T) {
+	// Create a PNG that reports dimensions > 100 MP when decoded.
+	// 10001 x 10001 = 100,020,001 pixels > 100,000,000 MP cap.
+	// Creating a real 10001x10001 PNG in tests is impractical (~400MB uncompressed).
+	// Instead, use a smaller but still valid image and rely on the function
+	// enforcing the pixel budget check correctly.
+	//
+	// Strategy: use a 100x100 image for a passing test and accept that
+	// the 100 MP test requires a specially crafted test fixture. We test
+	// the contract: GenerateThumbnail must return a non-nil error when
+	// the decoded source exceeds the 100 MP cap.
+	//
+	// To avoid giant allocations in tests, we construct a minimal PNG with
+	// the right dimensions but mark this test as needing the real enforcement:
+
+	// This test verifies the error is returned for a synthesized large image.
+	// The simplest approach: use a known large image byte sequence.
+	// For now, construct a 10001×10001 pixel image programmatically.
+
+	// Note: 10001x10001 PNG creation would take too much memory in tests.
+	// Use a smaller threshold: test at exactly N = 100_000_001 pixels conceptually
+	// by verifying a helper function. We test via an interface contract:
+	// thumbnail.ErrSourceImageTooLarge must be exported and returned.
+
+	// If the source image has > 100 MP, GenerateThumbnail MUST return an error.
+	// This test uses a PNG of 10001×10001 dimensions (> 100 MP).
+	// Skip if it would cause OOM on test machines; but the production path must block it.
+	if testing.Short() {
+		t.Skip("AT-3 skipped in short mode — 10001×10001 image creation takes ~3s")
+	}
+
+	// Build a minimal 10001×10001 image (using NRGBA → PNG encoder handles it in tiles).
+	// This is ~400MB in memory; acceptable for a security test, not for daily runs.
+	// Use a 10001×10001 RGBA image with a simple pattern.
+	const largeW, largeH = 10001, 10001 // 100,020,001 pixels
+	img := image.NewNRGBA(image.Rect(0, 0, largeW, largeH))
+	// Don't fill every pixel — leave it zero-initialized (all transparent).
+	// PNG will compress this extremely well; file is small despite large dimensions.
+
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatalf("AT-3: could not encode large PNG: %v", err)
+	}
+	imgBytes := buf.Bytes()
+	t.Logf("AT-3: large PNG size: %d bytes", len(imgBytes))
+
+	params := thumbnail.ThumbnailParams{Width: 100, Height: 100, Method: "scale"}
+	_, _, err := thumbnail.GenerateThumbnail(imgBytes, params)
+	if err == nil {
+		t.Error("[AT-3] GenerateThumbnail must return an error for source images > 100 MP")
+	}
+}
+
+// ─── AT-4: GIF with > 200 frames → only first 200 frames processed ────────────
+//
+// AC1-4 [HIGH-1]: For animated GIFs with more than 200 frames, only the first
+// 200 frames must be resized. Output GIF must have exactly 200 frames (no error).
+
+func TestGenerateThumbnail_GIFFrameCap_200Frames(t *testing.T) {
+	// Build a 201-frame GIF.
+	const frameCount = 201
+	const w, h = 20, 20
+
+	p := color.Palette{
+		color.RGBA{R: 255, G: 0, B: 0, A: 255},
+		color.RGBA{R: 0, G: 255, B: 0, A: 255},
+		color.RGBA{R: 0, G: 0, B: 255, A: 255},
+	}
+
+	g := &gif.GIF{
+		LoopCount: 0,
+	}
+	for i := 0; i < frameCount; i++ {
+		frame := image.NewPaletted(image.Rect(0, 0, w, h), p)
+		// Fill each frame with a different color index for variety.
+		idx := uint8(i % len(p))
+		for j := range frame.Pix {
+			frame.Pix[j] = idx
+		}
+		g.Image = append(g.Image, frame)
+		g.Delay = append(g.Delay, 10)
+	}
+
+	var gifBuf bytes.Buffer
+	if err := gif.EncodeAll(&gifBuf, g); err != nil {
+		t.Fatalf("AT-4: could not encode 201-frame GIF: %v", err)
+	}
+	gifBytes := gifBuf.Bytes()
+
+	params := thumbnail.ThumbnailParams{
+		Width:    10,
+		Height:   10,
+		Method:   "scale",
+		Animated: true,
+	}
+	result, contentType, err := thumbnail.GenerateThumbnail(gifBytes, params)
+	if err != nil {
+		t.Fatalf("[AT-4] GenerateThumbnail returned error for 201-frame GIF: %v", err)
+	}
+	if contentType != "image/gif" {
+		t.Errorf("[AT-4] expected image/gif, got %q", contentType)
+	}
+
+	// Decode result and count frames.
+	outGIF, err := gif.DecodeAll(bytes.NewReader(result))
+	if err != nil {
+		t.Fatalf("[AT-4] could not decode output GIF: %v", err)
+	}
+	if len(outGIF.Image) != 200 {
+		t.Errorf("[AT-4] expected exactly 200 frames (cap), got %d", len(outGIF.Image))
+	}
+}

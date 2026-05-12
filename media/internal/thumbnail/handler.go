@@ -93,7 +93,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	serverName := r.PathValue("serverName")
 	mediaID := r.PathValue("mediaId")
 
-	// Step 1: Validate width (required, integer, > 0).
+	// maxThumbDim is the maximum allowed width or height for a thumbnail request.
+	// Requests above this cap are rejected with 400 M_BAD_JSON to prevent
+	// memory-amplification DoS (imaging allocates 4 * width * height bytes per request).
+	const maxThumbDim = 2048
+
+	// Step 1: Validate width (required, integer, > 0, ≤ maxThumbDim).
 	widthStr := r.URL.Query().Get("width")
 	if widthStr == "" {
 		writeError(w, http.StatusBadRequest, "M_BAD_JSON", "width and height query parameters are required")
@@ -104,8 +109,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "M_BAD_JSON", "width must be a positive integer")
 		return
 	}
+	if width > maxThumbDim {
+		writeError(w, http.StatusBadRequest, "M_BAD_JSON", "width exceeds maximum allowed value of 2048")
+		return
+	}
 
-	// Step 1: Validate height (required, integer, > 0).
+	// Step 1: Validate height (required, integer, > 0, ≤ maxThumbDim).
 	heightStr := r.URL.Query().Get("height")
 	if heightStr == "" {
 		writeError(w, http.StatusBadRequest, "M_BAD_JSON", "width and height query parameters are required")
@@ -114,6 +123,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	height, err := strconv.Atoi(heightStr)
 	if err != nil || height <= 0 {
 		writeError(w, http.StatusBadRequest, "M_BAD_JSON", "height must be a positive integer")
+		return
+	}
+	if height > maxThumbDim {
+		writeError(w, http.StatusBadRequest, "M_BAD_JSON", "height exceeds maximum allowed value of 2048")
 		return
 	}
 
@@ -211,6 +224,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Step 9: Write response headers.
+	// X-Content-Type-Options: nosniff — prevent MIME sniffing in legacy browsers (HIGH-3, Story 12.7).
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	// Content-Type: REQUIRED per spec v1.12.
 	w.Header().Set("Content-Type", contentType)
 	// Content-Disposition: REQUIRED per spec v1.12; MUST be inline; SHOULD contain filename.

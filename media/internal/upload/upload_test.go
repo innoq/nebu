@@ -585,3 +585,157 @@ func TestUpload_WithFakeStorer_StorageError(t *testing.T) {
 		t.Errorf("expected InsertMediaFile NOT to be called on storage error, got %d calls", len(db.inserted))
 	}
 }
+
+// ─── Story 12.7: SEC Gate 2 Fixes ─────────────────────────────────────────────
+//
+// AT-5/6/7: Blocked Content-Type at upload [HIGH-3]
+// AT-11/12: JWT validation on upload [HIGH-2]
+//
+// These tests will FAIL until:
+//   1. HandlerConfig gains an OIDCVerifier field
+//   2. Upload handler blocks dangerous Content-Types
+//   3. Upload handler performs real JWT verification (not just bearer-presence)
+
+// ─── AT-5: Upload with text/html blocked → 400 M_BAD_JSON ────────────────────
+//
+// AC3-1 [HIGH-3]: text/html Content-Type must be rejected at upload with 400.
+
+func TestUpload_BlockedContentType_TextHTML(t *testing.T) {
+	store := &mockMediaStore{}
+	mux := buildHandler(t, store, "", 0)
+
+	body := bytes.NewReader([]byte("<html><script>alert(1)</script></html>"))
+	req := httptest.NewRequest(http.MethodPost, "/_matrix/media/v3/upload", body)
+	req.Header.Set("Content-Type", "text/html")
+	req.Header.Set("Authorization", testBearerToken)
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("[AT-5] text/html upload: expected 400, got %d; body: %s", w.Code, w.Body.String())
+	}
+	var errResp matrixErrorResp
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("[AT-5] could not decode error response: %v", err)
+	}
+	if errResp.ErrCode != "M_BAD_JSON" {
+		t.Errorf("[AT-5] expected errcode M_BAD_JSON, got %q", errResp.ErrCode)
+	}
+	// DB must NOT have been called.
+	if len(store.inserted) != 0 {
+		t.Errorf("[AT-5] InsertMediaFile must NOT be called on blocked content type, got %d calls", len(store.inserted))
+	}
+}
+
+// ─── AT-6: Upload with image/svg+xml blocked → 400 M_BAD_JSON ────────────────
+//
+// AC3-2 [HIGH-3]: image/svg+xml Content-Type must be rejected at upload with 400.
+
+func TestUpload_BlockedContentType_SVG(t *testing.T) {
+	store := &mockMediaStore{}
+	mux := buildHandler(t, store, "", 0)
+
+	body := bytes.NewReader([]byte(`<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`))
+	req := httptest.NewRequest(http.MethodPost, "/_matrix/media/v3/upload", body)
+	req.Header.Set("Content-Type", "image/svg+xml")
+	req.Header.Set("Authorization", testBearerToken)
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("[AT-6] svg upload: expected 400, got %d; body: %s", w.Code, w.Body.String())
+	}
+	var errResp matrixErrorResp
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("[AT-6] could not decode error response: %v", err)
+	}
+	if errResp.ErrCode != "M_BAD_JSON" {
+		t.Errorf("[AT-6] expected errcode M_BAD_JSON, got %q", errResp.ErrCode)
+	}
+}
+
+// ─── AT-7: Upload with application/javascript blocked → 400 M_BAD_JSON ────────
+//
+// AC3-3 [HIGH-3]: application/javascript Content-Type must be rejected at upload.
+
+func TestUpload_BlockedContentType_JavaScript(t *testing.T) {
+	store := &mockMediaStore{}
+	mux := buildHandler(t, store, "", 0)
+
+	body := bytes.NewReader([]byte("alert('xss')"))
+	req := httptest.NewRequest(http.MethodPost, "/_matrix/media/v3/upload", body)
+	req.Header.Set("Content-Type", "application/javascript")
+	req.Header.Set("Authorization", testBearerToken)
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("[AT-7] javascript upload: expected 400, got %d; body: %s", w.Code, w.Body.String())
+	}
+	var errResp matrixErrorResp
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("[AT-7] could not decode error response: %v", err)
+	}
+	if errResp.ErrCode != "M_BAD_JSON" {
+		t.Errorf("[AT-7] expected errcode M_BAD_JSON, got %q", errResp.ErrCode)
+	}
+}
+
+// ─── AT-7b: Upload with text/javascript blocked → 400 M_BAD_JSON ─────────────
+//
+// AC3-3 [HIGH-3]: text/javascript Content-Type (alias) must also be blocked.
+
+func TestUpload_BlockedContentType_TextJavaScript(t *testing.T) {
+	store := &mockMediaStore{}
+	mux := buildHandler(t, store, "", 0)
+
+	body := bytes.NewReader([]byte("alert('xss')"))
+	req := httptest.NewRequest(http.MethodPost, "/_matrix/media/v3/upload", body)
+	req.Header.Set("Content-Type", "text/javascript")
+	req.Header.Set("Authorization", testBearerToken)
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("[AT-7b] text/javascript upload: expected 400, got %d; body: %s", w.Code, w.Body.String())
+	}
+	var errResp matrixErrorResp
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("[AT-7b] could not decode error response: %v", err)
+	}
+	if errResp.ErrCode != "M_BAD_JSON" {
+		t.Errorf("[AT-7b] expected errcode M_BAD_JSON, got %q", errResp.ErrCode)
+	}
+}
+
+// ─── AT-7c: Content-Type with charset param: normalize before check ──────────
+//
+// AC3 [HIGH-3]: "text/html; charset=utf-8" must also be blocked (param stripping).
+
+func TestUpload_BlockedContentType_TextHTMLWithCharset(t *testing.T) {
+	store := &mockMediaStore{}
+	mux := buildHandler(t, store, "", 0)
+
+	body := bytes.NewReader([]byte("<html></html>"))
+	req := httptest.NewRequest(http.MethodPost, "/_matrix/media/v3/upload", body)
+	req.Header.Set("Content-Type", "text/html; charset=utf-8")
+	req.Header.Set("Authorization", testBearerToken)
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("[AT-7c] text/html;charset upload: expected 400, got %d; body: %s", w.Code, w.Body.String())
+	}
+	var errResp matrixErrorResp
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("[AT-7c] could not decode error response: %v", err)
+	}
+	if errResp.ErrCode != "M_BAD_JSON" {
+		t.Errorf("[AT-7c] expected errcode M_BAD_JSON, got %q", errResp.ErrCode)
+	}
+}

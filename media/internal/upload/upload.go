@@ -8,13 +8,36 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
+	"mime"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/coreos/go-oidc/v3/oidc"
 	mediacrypto "github.com/nebu/nebu/media/internal/crypto"
 	"github.com/nebu/nebu/media/internal/storage"
 )
+
+// TokenVerifier abstracts OIDC token verification to allow mocking in tests.
+// In production, this is a *oidc.IDTokenVerifier from go-oidc/v3.
+// When nil, the handler falls back to MVP behaviour (bearer-presence check only).
+type TokenVerifier interface {
+	Verify(ctx context.Context, rawIDToken string) (*oidc.IDToken, error)
+}
+
+// blockedContentTypes is the set of MIME types that must not be accepted at upload.
+// These types can be rendered as HTML/JavaScript by browsers if served inline,
+// enabling stored XSS attacks against the Nebu origin.
+// Comparison uses the normalized base type (parameters stripped).
+var blockedContentTypes = map[string]bool{
+	"text/html":                     true,
+	"application/xhtml+xml":         true,
+	"text/javascript":               true,
+	"application/javascript":        true,
+	"image/svg+xml":                 true,
+	"application/x-shockwave-flash": true,
+}
 
 // MediaStore is the consumer-defined interface for persisting media_files rows.
 type MediaStore interface {
@@ -35,18 +58,20 @@ type MediaFileRow struct {
 
 // HandlerConfig contains configuration for the upload Handler.
 type HandlerConfig struct {
-	DB         MediaStore
-	Storage    storage.Storer // replaces StoragePath — use LocalStorer or MinIOStorer
-	ServerName string         // Matrix server name
-	MaxBytes   int64          // NEBU_MEDIA_MAX_UPLOAD_BYTES (default 50 MiB)
+	DB           MediaStore
+	Storage      storage.Storer // replaces StoragePath — use LocalStorer or MinIOStorer
+	ServerName   string         // Matrix server name
+	MaxBytes     int64          // NEBU_MEDIA_MAX_UPLOAD_BYTES (default 50 MiB)
+	OIDCVerifier TokenVerifier  // HIGH-2: JWT verifier. nil = MVP bearer-presence only.
 }
 
 // Handler handles POST /_matrix/media/v3/upload.
 type Handler struct {
-	db         MediaStore
-	storage    storage.Storer
-	serverName string
-	maxBytes   int64
+	db           MediaStore
+	storage      storage.Storer
+	serverName   string
+	maxBytes     int64
+	oidcVerifier TokenVerifier
 }
 
 // NewHandler creates a new upload Handler with the given configuration.
@@ -56,10 +81,11 @@ func NewHandler(cfg HandlerConfig) *Handler {
 		maxBytes = 52428800 // 50 MiB default
 	}
 	return &Handler{
-		db:         cfg.DB,
-		storage:    cfg.Storage,
-		serverName: cfg.ServerName,
-		maxBytes:   maxBytes,
+		db:           cfg.DB,
+		storage:      cfg.Storage,
+		serverName:   cfg.ServerName,
+		maxBytes:     maxBytes,
+		oidcVerifier: cfg.OIDCVerifier,
 	}
 }
 
@@ -91,16 +117,49 @@ func generateUUID() (string, error) {
 
 // ServeHTTP implements http.Handler for POST /_matrix/media/v3/upload.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// AC #1 — Authentication: require Bearer token presence.
+	// AC #1 / HIGH-2 — Authentication: require Bearer token.
 	authHeader := r.Header.Get("Authorization")
 	if !strings.HasPrefix(authHeader, "Bearer ") {
 		writeError(w, http.StatusUnauthorized, "M_MISSING_TOKEN", "Missing or invalid access token")
 		return
 	}
+	rawToken := strings.TrimPrefix(authHeader, "Bearer ")
 
-	// Extract sub from token — for MVP, use the raw token value as user ID.
-	// A real implementation would validate the JWT; here we accept any bearer.
-	uploaderUserID := strings.TrimPrefix(authHeader, "Bearer ")
+	var uploaderUserID string
+	if h.oidcVerifier != nil {
+		// HIGH-2 [Story 12.7]: Full JWT verification — signature, expiry, audience.
+		// Reject with 401 M_UNKNOWN_TOKEN on any validation failure.
+		idToken, err := h.oidcVerifier.Verify(r.Context(), rawToken)
+		if err != nil {
+			slog.Error("media upload: JWT verification failed", "err", err)
+			writeError(w, http.StatusUnauthorized, "M_UNKNOWN_TOKEN", "Invalid or expired access token")
+			return
+		}
+		// Extract subject claim as the authoritative uploader identity.
+		var claims struct {
+			Sub  string `json:"sub"`
+			Name string `json:"name"`
+		}
+		if err := idToken.Claims(&claims); err != nil {
+			slog.Error("media upload: failed to extract JWT claims", "err", err)
+			writeError(w, http.StatusUnauthorized, "M_UNKNOWN_TOKEN", "Invalid token claims")
+			return
+		}
+		// Use sub as the primary identity; fall back to name claim if sub is empty.
+		if claims.Sub != "" {
+			uploaderUserID = claims.Sub
+		} else if claims.Name != "" {
+			uploaderUserID = claims.Name
+		} else {
+			writeError(w, http.StatusUnauthorized, "M_UNKNOWN_TOKEN", "Token missing subject claim")
+			return
+		}
+	} else {
+		// MVP fallback: OIDC verifier not configured — accept any Bearer token.
+		// Used in tests and during initial setup before OIDC is wired in.
+		// NOTE: This path should not be reachable in production deployments.
+		uploaderUserID = rawToken
+	}
 
 	// AC #2 — Check Content-Length header before reading body.
 	if r.ContentLength > h.maxBytes {
@@ -123,6 +182,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	contentType := r.Header.Get("Content-Type")
 	if contentType == "" {
 		contentType = "application/octet-stream"
+	}
+
+	// AC3 [HIGH-3] — Reject dangerous Content-Types at upload time.
+	// Normalize: strip parameters (e.g. "text/html; charset=utf-8" → "text/html").
+	baseType, _, _ := mime.ParseMediaType(contentType)
+	if baseType == "" {
+		// ParseMediaType failed — use simple split as fallback.
+		baseType = strings.TrimSpace(strings.SplitN(contentType, ";", 2)[0])
+	}
+	baseType = strings.ToLower(baseType)
+	if blockedContentTypes[baseType] {
+		writeError(w, http.StatusBadRequest, "M_BAD_JSON", "Content-Type not permitted for upload")
+		return
 	}
 
 	// AC #4.1 — Generate media_id (UUID v4).

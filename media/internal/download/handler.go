@@ -10,10 +10,29 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	mediacrypto "github.com/nebu/nebu/media/internal/crypto"
 	"github.com/nebu/nebu/media/internal/storage"
 )
+
+// safeInlineContentTypes is the allowlist of MIME types that may be served with
+// Content-Disposition: inline. All other types are served as application/octet-stream
+// with Content-Disposition: attachment to prevent stored XSS via inline rendering.
+// Based on Matrix CS spec v1.12 media safety requirements.
+var safeInlineContentTypes = map[string]bool{
+	"image/jpeg":       true,
+	"image/png":        true,
+	"image/gif":        true,
+	"image/webp":       true,
+	"image/avif":       true,
+	"audio/mpeg":       true,
+	"audio/ogg":        true,
+	"video/mp4":        true,
+	"video/webm":       true,
+	"application/pdf":  true,
+	"text/plain":       true,
+}
 
 // MediaStore is the consumer-defined interface for fetching media_files rows.
 type MediaStore interface {
@@ -124,8 +143,21 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// AC #5 — Write response with correct headers.
-	w.Header().Set("Content-Type", row.ContentType)
-	w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=%q", mediaID))
+	// AC3-5 [HIGH-3]: Always set X-Content-Type-Options: nosniff to prevent MIME sniffing.
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+
+	// AC3-4/3-6 [HIGH-3]: Check stored ContentType against safe-inline allowlist.
+	// Normalize: strip parameters before lookup.
+	storedBase := strings.ToLower(strings.TrimSpace(strings.SplitN(row.ContentType, ";", 2)[0]))
+	if safeInlineContentTypes[storedBase] {
+		// Safe type: serve inline with original Content-Type.
+		w.Header().Set("Content-Type", row.ContentType)
+		w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=%q", mediaID))
+	} else {
+		// Unsafe type: force octet-stream + attachment to prevent inline rendering.
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", mediaID))
+	}
 	w.Header().Set("Content-Length", strconv.Itoa(len(plaintext)))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(plaintext)

@@ -2,6 +2,7 @@ package matrix
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"errors"
 	"log/slog"
@@ -408,9 +409,12 @@ func (h *LoginHandler) GetSSOCallback(w http.ResponseWriter, r *http.Request) {
 		writeMatrixError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal error")
 		return
 	}
-	if entry.nonce == "" || nonceClaims.Nonce != entry.nonce {
-		slog.Error("matrix SSO: nonce mismatch — Dex returned a stale or cached id_token",
-			"want_prefix", entry.nonce[:min(8, len(entry.nonce))], "got", nonceClaims.Nonce)
+	// LOW-7 [Story 12.7]: Use constant-time comparison for nonce to prevent timing attacks.
+	// LOW-8 [Story 12.7]: Remove want_prefix log field — do not log any portion of the server nonce.
+	nonceMatch := len(entry.nonce) > 0 &&
+		subtle.ConstantTimeCompare([]byte(nonceClaims.Nonce), []byte(entry.nonce)) == 1
+	if !nonceMatch {
+		slog.Error("matrix SSO: nonce mismatch — Dex returned a stale or cached id_token")
 		writeMatrixError(w, http.StatusForbidden, "M_FORBIDDEN", "SSO nonce mismatch — please try logging in again")
 		return
 	}
