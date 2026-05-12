@@ -35,14 +35,14 @@
              list="user-id-claim-options"
              {{ if index .Errors "oidc_user_id_claim" }}aria-describedby="err-oidc_user_id_claim" aria-invalid="true"{{ end }}>
       <datalist id="user-id-claim-options">
-        <option value="sub">sub (recommended — stable opaque ID)</option>
+        <option value="email">email (default — human-readable)</option>
         <option value="preferred_username">preferred_username (human-readable)</option>
-        <option value="email">email (use if preferred_username absent)</option>
+        <option value="sub">sub (stable opaque ID)</option>
       </datalist>
       <p class="text-xs text-base-content/60 mt-1">
         The OIDC claim used to derive the Matrix local part.
-        <code>sub</code> (recommended for new installs) produces a stable opaque ID.
-        Use <code>preferred_username</code> or <code>email</code> for human-readable IDs.
+        Defaults to <code>email</code> for human-readable IDs.
+        Use <code>sub</code> for a stable opaque ID that survives email changes.
       </p>
       {{ if index .Errors "oidc_user_id_claim" }}
       <p class="text-error text-sm mt-1" id="err-oidc_user_id_claim" role="alert" data-field="oidc_user_id_claim">{{ index .Errors "oidc_user_id_claim" }}</p>

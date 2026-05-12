@@ -159,16 +159,16 @@
             class="input input-bordered"
             required
             maxlength="50"
-            placeholder="sub"
+            placeholder="email"
             value="{{ .OIDCUserIDClaim }}"
             list="bs-user-id-claim-options"
             data-field="oidc_user_id_claim"
             {{ if and .Errors (index .Errors "oidc_user_id_claim") }}aria-describedby="err-bs-oidc_user_id_claim" aria-invalid="true"{{ end }}
           >
           <datalist id="bs-user-id-claim-options">
-            <option value="sub">sub (recommended — stable opaque ID)</option>
+            <option value="email">email (default — human-readable)</option>
             <option value="preferred_username">preferred_username (human-readable)</option>
-            <option value="email">email (use if preferred_username absent)</option>
+            <option value="sub">sub (stable opaque ID)</option>
           </datalist>
           {{ if .Errors }}{{ if index .Errors "oidc_user_id_claim" }}
           <div role="alert" class="alert alert-error mt-2" id="err-bs-oidc_user_id_claim" data-field="oidc_user_id_claim">

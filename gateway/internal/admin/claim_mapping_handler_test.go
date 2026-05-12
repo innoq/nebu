@@ -41,7 +41,7 @@ func (r *recordingServerConfigReader) SaveAdminGroupClaim(_ context.Context, _ s
 }
 
 func (r *recordingServerConfigReader) LoadClaimMapping(_ context.Context) (string, string, string, error) {
-	return "sub", "name", "email", nil
+	return "email", "name", "email", nil
 }
 
 func (r *recordingServerConfigReader) SaveClaimMapping(_ context.Context, uid, dn, em string) error {
@@ -78,7 +78,7 @@ func newClaimMappingHandler(t *testing.T) *ClaimMappingHandler {
 }
 
 // TestClaimMappingHandler_GetDefaults verifies GET /admin/config/claim-mapping returns
-// HTTP 200 and renders the form with pre-filled defaults: sub, name, email.
+// HTTP 200 and renders the form with pre-filled defaults: email, name, email.
 // AC3 — "the page renders a form showing the three configurable claim fields pre-populated
 // from server_config (with the Nebu defaults if the keys are absent)."
 func TestClaimMappingHandler_GetDefaults(t *testing.T) {
@@ -105,8 +105,8 @@ func TestClaimMappingHandler_GetDefaults(t *testing.T) {
 		t.Error("expected oidc_email_claim input in body")
 	}
 	// Default values
-	if !strings.Contains(body, `value="sub"`) {
-		t.Error("expected default oidc_user_id_claim value 'sub'")
+	if !strings.Contains(body, `value="email"`) {
+		t.Error("expected default oidc_user_id_claim value 'email'")
 	}
 	if !strings.Contains(body, `value="name"`) {
 		t.Error("expected default oidc_displayname_claim value 'name'")
