@@ -1,6 +1,10 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-12
+# [12-6] 2026-05-12T23:36Z committed ✓ (ATDD+Code CLEAN 0 cycles+Kassandra CLEAN — test-only story, pass-through verified)
+# [12-6] 2026-05-12T23:34Z arc42-update → done (08-concepts: content.info opaque pass-through contract + blurhash, source line updated)
+# [12-6] 2026-05-12T23:32Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW — test-only diff, no production code changes)
+# [12-6] 2026-05-12T23:30Z code-review → CLEAN (cycle 0) — 0 MAJOR, 0 MINOR (2 INFO: heavier OIDC setup acceptable per existing pattern; nil-check for float64 correct)
 # [12-6] 2026-05-12T23:28Z ci-gate → ✓ build+unit-go (matrix+media all green)+unit-elixir (227 actual pass); e2e+integration skipped (minio/mc image unavailable — pre-existing)
 # [12-6] 2026-05-12T23:16Z dev-story → done (cycle 0) — all tests pass: AT-2 sync blurhash, AT-5+AT-6 send-event blurhash; AT-3+AT-4 animated regression guards pass; no implementation changes needed (pass-through already correct)
 # [12-6] 2026-05-12T23:14Z test-review → CLEAN (0 MAJOR, 0 MINOR — all ACs covered, gRPC mock pattern, deterministic)
@@ -217,14 +221,9 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: "12-6"
-current_step: "code-review"
-completed:
-  - create-story
-  - atdd
-  - test-review
-  - dev-story
-  - ci-gate
+story: null
+current_step: null
+completed: []
 cycle_count: 0
 blocked_reason: null
-last_updated: "2026-05-12T17:28Z"
+last_updated: "2026-05-12T17:30Z"
