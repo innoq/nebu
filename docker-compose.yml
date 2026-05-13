@@ -212,7 +212,10 @@ services:
       - minio_app_access_key
       - minio_app_secret_key
     environment:
-      NEBU_SERVER_NAME: "localhost"
+      # Story 12.9: NEBU_SERVER_NAME is now mandatory (fatal exit if unset).
+      # Used to construct canonical Matrix user IDs (@localpart:server) in media_files.
+      # Override via env var for non-localhost deployments.
+      NEBU_SERVER_NAME: "${NEBU_SERVER_NAME:-localhost}"
       NEBU_DB_URL: "postgresql://nebu_app:nebu_app_dev_pw@postgres:5432/nebu"
       NEBU_STORAGE_BACKEND: "minio"
       NEBU_MINIO_ENDPOINT: "minio:9000"

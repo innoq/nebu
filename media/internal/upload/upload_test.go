@@ -780,6 +780,102 @@ func TestUpload_BlockedContentType_TextHTMLWithCharset(t *testing.T) {
 // RED: The current code has a nil-verifier fallback that accepts any Bearer token
 // as the uploaderUserID. This test FAILS until the else branch is replaced with 503.
 
+// ─── Story 12.9: Canonical Matrix User ID in Media Audit Trail ───────────────
+//
+// AT-12-9-1: Upload stores canonical @localpart:server in uploader_user_id.
+//
+// AC-1 — Given a user with OIDC sub=alice and server name "localhost",
+// when the upload is accepted,
+// then media_files.uploader_user_id must be "@alice:localhost" (not "alice").
+//
+// RED: The current code sets uploaderUserID = subject (raw claim).
+// This test FAILS until formatMatrixUserID is added and called in ServeHTTP.
+
+func TestUpload_StoresCanonicalMatrixUserID(t *testing.T) {
+	store := &mockMediaStore{}
+	storer := &fakeStorer{}
+
+	h := NewHandler(HandlerConfig{
+		DB:           store,
+		Storage:      storer,
+		ServerName:   "localhost",
+		MaxBytes:     defaultMaxBytes,
+		OIDCVerifier: &mockTokenVerifier{subject: "alice"},
+	})
+	mux := http.NewServeMux()
+	mux.Handle("POST /_matrix/media/v3/upload", h)
+
+	body := bytes.NewReader([]byte("test file content"))
+	req := httptest.NewRequest(http.MethodPost, "/_matrix/media/v3/upload", body)
+	req.Header.Set("Content-Type", "image/png")
+	req.Header.Set("Authorization", "Bearer mock-token")
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("[AT-12-9-1] expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	if len(store.inserted) != 1 {
+		t.Fatalf("[AT-12-9-1] expected InsertMediaFile called once, got %d calls", len(store.inserted))
+	}
+
+	got := store.inserted[0].UploaderUserID
+	want := "@alice:localhost"
+	if got != want {
+		t.Errorf("[AT-12-9-1] UploaderUserID = %q, want %q (canonical Matrix format)", got, want)
+	}
+}
+
+// AT-12-9-2: Upload uses NEBU_SERVER_NAME as server part of the Matrix user ID.
+//
+// AC-2 — Given an OIDC token with sub=alice and server name "myserver.example.com",
+// when the upload is accepted,
+// then media_files.uploader_user_id must be "@alice:myserver.example.com".
+//
+// RED: Current code does not format the user ID at all — raw claim is stored.
+// This test FAILS until formatMatrixUserID is added and the handler uses ServerName.
+
+func TestUpload_UsesServerNameInMatrixUserID(t *testing.T) {
+	store := &mockMediaStore{}
+	storer := &fakeStorer{}
+
+	h := NewHandler(HandlerConfig{
+		DB:           store,
+		Storage:      storer,
+		ServerName:   "myserver.example.com",
+		MaxBytes:     defaultMaxBytes,
+		OIDCVerifier: &mockTokenVerifier{subject: "alice"},
+	})
+	mux := http.NewServeMux()
+	mux.Handle("POST /_matrix/media/v3/upload", h)
+
+	body := bytes.NewReader([]byte("test file content"))
+	req := httptest.NewRequest(http.MethodPost, "/_matrix/media/v3/upload", body)
+	req.Header.Set("Content-Type", "image/png")
+	req.Header.Set("Authorization", "Bearer mock-token")
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("[AT-12-9-2] expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	if len(store.inserted) != 1 {
+		t.Fatalf("[AT-12-9-2] expected InsertMediaFile called once, got %d calls", len(store.inserted))
+	}
+
+	got := store.inserted[0].UploaderUserID
+	want := "@alice:myserver.example.com"
+	if got != want {
+		t.Errorf("[AT-12-9-2] UploaderUserID = %q, want %q", got, want)
+	}
+}
+
+// ─── Story 12.8: OIDC Fail-Open Hardening ─────────────────────────────────────
+
 func TestUpload_NilVerifier_Returns503(t *testing.T) {
 	store := &mockMediaStore{}
 	storer := &fakeStorer{}

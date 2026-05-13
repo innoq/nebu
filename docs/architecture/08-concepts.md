@@ -181,6 +181,15 @@ The upload handler uses a `TokenVerifier` interface (`HandlerConfig.OIDCVerifier
 
 **Startup hardening (Story 12.8):** `NEBU_OIDC_ISSUER` is mandatory. If empty, the media gateway exits immediately with `FATAL: NEBU_OIDC_ISSUER is required`. If Dex is unreachable at startup, `initOIDCVerifier` retries up to 5 times with 2s backoff, then exits (`FATAL: media: OIDC provider unreachable after retries`). The service never starts with a nil verifier. This eliminates the "OIDC fail-open at startup" pattern documented as a recurring vulnerability.
 
+**Canonical Matrix user ID in audit trail (Story 12.9):** After OIDC verification, the upload handler constructs a canonical Matrix user ID before storing `uploader_user_id` in `media_files`:
+
+```
+uploader_user_id = formatMatrixUserID(subject, serverName)
+                 = "@" + sanitiseLocalpart(subject) + ":" + serverName
+```
+
+`sanitiseLocalpart` keeps only `[a-z0-9._-]` characters (spaces → `_`, all others dropped). This mirrors `gateway/internal/grpc/metadata.go sanitiseLocalpart` but is intentionally self-contained (no cross-binary import). `NEBU_SERVER_NAME` is mandatory — the media gateway exits with `FATAL: NEBU_SERVER_NAME is required` if unset. Historical rows (pre-12.9) contain raw OIDC claims and are grandfathered; see migration 000047 column comment. This enables compliance officers to correlate `media_files.uploader_user_id` with room event `sender` fields without manual claim-mapping.
+
 **server_config RLS UPDATE Policy (Story 12.7 MEDIUM-5):**
 
 Migration 000046 replaces the blanket `config_update_all` policy (USING true — introduced in migration 000045 for OIDC claim upserts) with a key-scoped `config_update_mutable` policy. Only the following keys are updatable by `nebu_app`:

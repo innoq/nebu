@@ -105,7 +105,14 @@ func (s *pgThumbnailStore) GetMediaFile(ctx context.Context, serverName, mediaID
 func main() {
 	slog.Info("Nebu Media Gateway starting")
 
-	serverName := getenv("NEBU_SERVER_NAME", "localhost")
+	// Story 12.9 — NEBU_SERVER_NAME is mandatory (AC-3).
+	// Without it, uploader_user_id would contain a wrong server part
+	// in the canonical Matrix user ID (@localpart:server).
+	serverName := os.Getenv("NEBU_SERVER_NAME")
+	if serverName == "" {
+		slog.Error("FATAL: NEBU_SERVER_NAME is required")
+		os.Exit(1)
+	}
 	storagePath := getenv("NEBU_MEDIA_STORAGE_PATH", "/var/nebu/media")
 	listenAddr := getenv("NEBU_MEDIA_LISTEN_ADDR", ":8009")
 	maxBytesStr := getenv("NEBU_MEDIA_MAX_UPLOAD_BYTES", "52428800")

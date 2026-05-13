@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	mediacrypto "github.com/nebu/nebu/media/internal/crypto"
@@ -153,6 +154,40 @@ func generateUUID() (string, error) {
 		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
 }
 
+// formatMatrixUserID builds a canonical Matrix user ID from an OIDC claim value
+// and a server name. The localpart is sanitised (lowercase, only [a-z0-9._-] kept,
+// spaces replaced with underscore). Returns "@unknown:<serverName>" if sanitise
+// produces an empty string.
+//
+// This mirrors gateway/internal/grpc/metadata.go sanitiseLocalpart but is
+// intentionally duplicated to avoid cross-binary coupling between the media
+// gateway and the API gateway binaries (Story 12.9).
+func formatMatrixUserID(localpart, serverName string) string {
+	safe := sanitiseLocalpart(localpart)
+	if safe == "" {
+		safe = "unknown"
+	}
+	return "@" + safe + ":" + serverName
+}
+
+// sanitiseLocalpart lowercases s and keeps only Matrix-safe characters.
+// Returns "" if the result is empty.
+func sanitiseLocalpart(s string) string {
+	if s == "" {
+		return ""
+	}
+	var b strings.Builder
+	for _, r := range strings.ToLower(s) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '.' || r == '_' || r == '-' {
+			b.WriteRune(r)
+		} else if unicode.IsSpace(r) {
+			b.WriteRune('_')
+		}
+		// drop all other characters
+	}
+	return b.String()
+}
+
 // ServeHTTP implements http.Handler for POST /_matrix/media/v3/upload.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// AC #1 / HIGH-2 — Authentication: require Bearer token.
@@ -178,7 +213,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusUnauthorized, "M_UNKNOWN_TOKEN", "Token missing subject claim")
 			return
 		}
-		uploaderUserID = subject
+		// Story 12.9: construct canonical Matrix user ID (@localpart:server) so that
+		// media_files.uploader_user_id can be correlated with room events without
+		// manual claim-mapping. The raw OIDC claim is the localpart; serverName is
+		// from HandlerConfig (set from NEBU_SERVER_NAME env var at startup).
+		uploaderUserID = formatMatrixUserID(subject, h.serverName)
 	} else {
 		// Story 12.8 — fail-closed: nil verifier means OIDC startup failed.
 		// Reject with 503 M_UNAVAILABLE. This path must NOT be reachable in production
