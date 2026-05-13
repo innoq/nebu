@@ -1,6 +1,42 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-13
+# [12-15] 2026-05-13T14:42Z epic-loop → story done (GAP-01 P0 regression test)
+# [12-15] 2026-05-13T10:20Z committed ✓ (ATDD+Code CLEAN 0 cycles+no sec review)
+# [12-15] 2026-05-13T10:17Z arc42-update → no arch changes (pure test-addition story)
+# [12-15] 2026-05-13T10:16Z security-review → skipped (not-needed)
+# [12-15] 2026-05-13T10:15Z code-review → CLEAN (cycle 0) — M-1 auto-fixed (story status: done); 2 INFO
+# [12-15] 2026-05-13T10:10Z ci-gate → ✓ build+unit-go+unit-elixir; e2e+integration skipped (minio/mc image unavailable — pre-existing)
+# [12-15] 2026-05-13T10:07Z dev-story → done (cycle 0) — 2 new tests GREEN immediately (pure test-addition, no prod code)
+# [12-15] 2026-05-13T10:06Z test-review → CLEAN (0 MAJOR; AC-1+AC-2 covered; storage+DB side-effects asserted)
+# [12-15] 2026-05-13T10:05Z atdd → 2 failing tests (AT-12-15-1: expired JWT 401; AT-12-15-2: valid JWT 200)
+# [12-15] 2026-05-13T10:02Z oracle-gate → spec context captured (M_UNKNOWN_TOKEN for expired token confirmed)
+# [12-15] 2026-05-13T10:01Z create-story → 12-15-regression-test-expired-jwt-upload-returns-401.md
+# [12-15] 2026-05-13T10:00Z pipeline started
+# [12-14] 2026-05-13T14:01Z epic-loop → story done (full graceful shutdown)
+# [12-14] 2026-05-13T10:00Z committed ✓ (ATDD+Code CLEAN+Kassandra CLEAN)
+# [12-14] 2026-05-13T09:55Z arc42-update → done (08-concepts: rate-limit ctx param +12.14 stoppable goroutine; graceful shutdown section +HTTP drain+pool close+order)
+# [12-14] 2026-05-13T09:50Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW drain-window — accepted)
+# [12-14] 2026-05-13T09:45Z code-review → CLEAN (cycle 0) — M-1 auto-fixed (runMinimalGateway moved to _test.go); 2 INFO
+# [12-14] 2026-05-13T09:35Z ci-gate → ✓ build+unit-go+unit-elixir; e2e+integration skipped (minio/mc image unavailable — pre-existing)
+# [12-14] 2026-05-13T09:25Z dev-story → done (cycle 0) — ratelimit ctx+NewIPRateLimiter; main.go goroutine+Shutdown+runShutdownSequence; all 5 new tests GREEN
+# [12-14] 2026-05-13T09:12Z test-review → CLEAN (0 MAJOR; all 5 ACs covered; AT-3 goroutine count tolerance noted)
+# [12-14] 2026-05-13T09:10Z atdd → 5 failing tests (AT-1+AT-2: http drain; AT-3: cleanupLoop ctx; AT-4: runShutdownSequence; AT-5: subprocess exit 0)
+# [12-14] 2026-05-13T09:02Z create-story → 12-14-media-gateway-full-graceful-shutdown.md
+# [12-14] 2026-05-13T09:00Z pipeline started
+# [12-13] 2026-05-13T12:36Z epic-loop → story done (SIGTERM signal wiring)
+# [12-13] 2026-05-13T08:55Z committed ✓ (1 MINOR fixed 1 cycle+no sec review+arc42 done)
+# [12-13] 2026-05-13T08:50Z arc42-update → done (08-concepts: OIDC startup section +12.13 signal.NotifyContext + ctx-aware sleep)
+# [12-13] 2026-05-13T08:46Z security-review → skipped (not-needed)
+# [12-13] 2026-05-13T08:45Z code-review → CLEAN (cycle 1) — 0 MAJOR, 0 MINOR (F-1 fixed: slog.Info on signal abort), 2 INFO
+# [12-13] 2026-05-13T08:40Z code-review → 1 MINOR (F-1: misleading fatal log on SIGTERM abort) → cycle 1
+# [12-13] 2026-05-13T08:35Z ci-gate → ✓ build+unit-go+unit-elixir; e2e+integration skipped (minio/mc image unavailable — pre-existing)
+# [12-13] 2026-05-13T08:25Z dev-story → done (cycle 0) — main.go: signal.NotifyContext+ctx-aware select sleep; all 3 new tests GREEN
+# [12-13] 2026-05-13T08:20Z test-review → CLEAN (0 MAJOR; all 4 ACs covered; AC-4 non-regression verified by existing suite)
+# [12-13] 2026-05-13T08:15Z atdd → 3 failing tests (AT-12-13-1+AT-12-13-4: sleep-not-ctx-aware; AT-12-13-3: green baseline)
+# [12-13] 2026-05-13T08:05Z create-story → 12-13-media-gateway-graceful-shutdown-signal-aware-oidc-retry.md
+# [12-13] 2026-05-13T08:00Z pipeline started
+# [12-12] 2026-05-13T11:31Z epic-loop → story done (F-3/F-4/F-5 LOW resolved)
 # [12-12] 2026-05-13T15:00Z committed ✓ (ATDD+Code CLEAN 0 cycles+Kassandra CLEAN)
 # [12-12] 2026-05-13T14:55Z arc42-update → done (08-concepts: OIDC startup section +F-3 per-attempt timeout; rate-limit section +F-5 startup warn + F-4 cleanup correctness note)
 # [12-12] 2026-05-13T14:50Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW — F-3+F-4+F-5 LOW advisories fully closed; no new surface)
@@ -295,4 +331,4 @@ current_step: null
 completed: []
 cycle_count: 0
 blocked_reason: null
-last_updated: "2026-05-13T09:31Z"
+last_updated: "2026-05-13T12:42Z"
