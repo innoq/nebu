@@ -1,37 +1,40 @@
 variable "kubeconfig_path" {
-  description = "Path to the kubeconfig file."
+  description = "Path to the kubeconfig file used by the kubernetes and helm providers."
   type        = string
   default     = "~/.kube/config"
 }
 
 variable "kube_context" {
-  description = "Kubernetes context to use from the kubeconfig file."
+  description = "Kubernetes context to use from the kubeconfig file. Leave empty to use the active context."
   type        = string
   default     = ""
 }
 
-variable "nebu_version" {
-  description = "Nebu container image tag to deploy."
+variable "gateway_image_tag" {
+  description = "Container image tag for the Nebu gateway component (e.g. '0.3.0' or 'dev')."
   type        = string
 }
 
-variable "domain_name" {
-  description = "Public domain name for the Nebu instance."
+variable "core_image_tag" {
+  description = "Container image tag for the Nebu core component (e.g. '0.3.0' or 'dev')."
   type        = string
 }
 
-variable "admin_email" {
-  description = "Email for the initial instance administrator and TLS certificate issuance."
-  type        = string
-}
-
-variable "postgres_db_name" {
-  description = "PostgreSQL database name."
+variable "namespace" {
+  description = "Kubernetes namespace to deploy Nebu into."
   type        = string
   default     = "nebu"
 }
 
-variable "image_registry" {
-  description = "Container image registry prefix."
+variable "chart_path" {
+  description = "Path to the Nebu Helm chart directory (relative to the k8s example root)."
   type        = string
+  default     = "../../../helm/nebu"
 }
+
+variable "ingress_enabled" {
+  description = "Enable the Ingress resource for external access."
+  type        = bool
+  default     = false
+}
+

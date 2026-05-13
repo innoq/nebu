@@ -2,12 +2,12 @@ terraform {
   required_version = ">= 1.6.0"
 
   required_providers {
-    helm = {
-      source  = "hashicorp/helm"
-      version = "~> 2.0"
-    }
     kubernetes = {
       source  = "hashicorp/kubernetes"
+      version = "~> 2.0"
+    }
+    helm = {
+      source  = "hashicorp/helm"
       version = "~> 2.0"
     }
   }
@@ -26,6 +26,11 @@ terraform {
   }
 }
 
+provider "kubernetes" {
+  config_path    = var.kubeconfig_path
+  config_context = var.kube_context
+}
+
 provider "helm" {
   kubernetes {
     config_path    = var.kubeconfig_path
@@ -33,22 +38,15 @@ provider "helm" {
   }
 }
 
-provider "kubernetes" {
-  config_path    = var.kubeconfig_path
-  config_context = var.kube_context
+module "nebu_k8s" {
+  source = "../../modules/nebu-k8s"
+
+  chart_path        = var.chart_path
+  namespace         = var.namespace
+  gateway_image_tag = var.gateway_image_tag
+  core_image_tag    = var.core_image_tag
+  ingress_enabled   = var.ingress_enabled
+  # values_files paths are resolved relative to the module file (path.module).
+  # Use an absolute path here to avoid CWD-dependent resolution.
+  values_files = ["${path.module}/../../../helm/nebu/values-dev.yaml"]
 }
-
-module "nebu_core" {
-  source = "../../modules/nebu-core"
-
-  nebu_version     = var.nebu_version
-  domain_name      = var.domain_name
-  admin_email      = var.admin_email
-  postgres_db_name = var.postgres_db_name
-  image_registry   = var.image_registry
-}
-
-# ── Kubernetes/Helm resources are added in Story 13-4 ───────────────────────
-# Provisioned here: helm_release for nebu chart, cert-manager (optional),
-# ingress-nginx (optional), ConfigMap + Secret references.
-# See ADR-014: Kubernetes / Helm.

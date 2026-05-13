@@ -1,0 +1,17 @@
+# Copy this file to terraform.tfvars and fill in the values.
+# Do NOT commit terraform.tfvars — it may contain sensitive paths.
+
+# kubeconfig_path = "~/.kube/config"   # default: ~/.kube/config
+# kube_context    = "kind-nebu-dev"     # leave empty to use the active context
+
+gateway_image_tag = "dev"
+core_image_tag    = "dev"
+
+# namespace   = "nebu"                   # default: nebu
+# chart_path  = "../../../helm/nebu"     # default: relative path to the Helm chart
+# ingress_enabled = false                # default: false
+
+# domain_name      = "chat.example.com"  # used by nebu-core shared module
+# admin_email      = "admin@example.com"
+# postgres_db_name = "nebu"
+# image_registry   = "registry.gitlab.com/philippb/open-chat"

@@ -331,8 +331,9 @@ gen-api:
 ## test-iac-validate: Validate OpenTofu IaC files + Helm chart — format check, syntax validation, lint, and template render.
 ## Runs tofu fmt -check (formatting) and tofu validate (syntax/types) for all example directories.
 ## Also runs helm lint and helm template on deploy/helm/nebu/ (Story 13-4a AC1+AC2, Story 13-4b AC3+AC5).
+## If kubectl is available, runs helm template | kubectl apply --dry-run=client (Story 13-4c AC2).
 ## No cloud credentials required — tofu validate checks syntax only, not provider resources.
-## Story 13-1 AC3 + AC7, Story 13-4a AC1 + AC2, Story 13-4b AC3 + AC5: equivalent to the validate-iac CI job.
+## Story 13-1 AC3 + AC7, Story 13-4a AC1 + AC2, Story 13-4b AC3 + AC5, Story 13-4c AC3: equivalent to the validate-iac CI job.
 test-iac-validate:
 	@echo "==> OpenTofu: fmt check (recursive)"
 	$(DOCKER_TOFU) -c "tofu fmt -check -recursive deploy/tofu/"
@@ -348,4 +349,14 @@ test-iac-validate:
 	$(DOCKER_HELM) -c "helm template nebu deploy/helm/nebu/ --set gateway.image.tag=validate --set core.image.tag=validate > /dev/null"
 	@echo "==> Helm: template render check deploy/helm/nebu/ (ingress + HPA enabled)"
 	$(DOCKER_HELM) -c "helm template nebu deploy/helm/nebu/ --set gateway.image.tag=validate --set core.image.tag=validate --set ingress.enabled=true --set ingress.hostname=nebu.example.com --set autoscaling.gateway.enabled=true > /dev/null"
+	@if command -v kubectl >/dev/null 2>&1 && kubectl get nodes -o name >/dev/null 2>&1; then \
+		echo "==> Helm: template dry-run: renders chart and validates against k8s API schema (requires kubectl in PATH)"; \
+		$(DOCKER_HELM) -c "helm template nebu deploy/helm/nebu/ \
+			-f deploy/helm/nebu/values-dev.yaml \
+			--set gateway.image.tag=validate \
+			--set core.image.tag=validate" \
+			| kubectl apply --dry-run=client -f -; \
+	else \
+		echo "==> Helm: no reachable cluster — skipping kubectl dry-run (run against a live kind cluster to enable)"; \
+	fi
 	@echo "==> IaC validation passed."

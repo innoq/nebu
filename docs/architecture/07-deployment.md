@@ -359,3 +359,63 @@ helm install nebu deploy/helm/nebu/ \
   --set ingress.tls.secretName=nebu-tls \
   --set autoscaling.gateway.enabled=true
 ```
+
+### OpenTofu Kubernetes Wrapper (nebu-k8s — Story 13-4c)
+
+`deploy/tofu/modules/nebu-k8s/` is a thin OpenTofu wrapper around a single `helm_release` resource. It manages the Nebu Helm release on any Kubernetes cluster. The Kubernetes and Helm providers must be configured in the calling root module.
+
+**Module interface:**
+
+| Variable | Type | Default | Purpose |
+|---|---|---|---|
+| `release_name` | string | `"nebu"` | Helm release name |
+| `chart_path` | string | required | Path to the Nebu Helm chart directory |
+| `namespace` | string | `"nebu"` | Kubernetes namespace (created if absent) |
+| `gateway_image_tag` | string | required | Container image tag for the gateway component |
+| `core_image_tag` | string | required | Container image tag for the core component |
+| `ingress_enabled` | bool | `false` | Enable the Ingress resource |
+| `helm_timeout` | number | `300` | Seconds to wait for all pods to reach Ready state |
+| `values_files` | list(string) | `[]` | Extra values files; must be non-empty absolute paths |
+
+`wait = true` is set explicitly — `tofu apply` blocks until all pods are Ready or `helm_timeout` seconds elapse. This prevents silent partial deployments.
+
+`values_files` paths must be absolute (use `"${path.module}/..."` in the calling root module) — relative paths are resolved from the `tofu apply` working directory, not the module directory.
+
+**Quick-start example (`deploy/tofu/examples/k8s/`):**
+
+```hcl
+module "nebu_k8s" {
+  source = "../../modules/nebu-k8s"
+
+  chart_path        = var.chart_path
+  namespace         = var.namespace
+  gateway_image_tag = var.gateway_image_tag
+  core_image_tag    = var.core_image_tag
+  ingress_enabled   = var.ingress_enabled
+  values_files      = ["${path.module}/../../../helm/nebu/values-dev.yaml"]
+}
+```
+
+**Local smoke test (kind):**
+
+```bash
+# 1. Start a local kind cluster
+kind create cluster --name nebu-dev
+
+# 2. Validate IaC configuration (no cluster required)
+make test-iac-validate
+
+# 3. Install via Helm directly (fastest smoke test path)
+helm install nebu deploy/helm/nebu/ \
+  -f deploy/helm/nebu/values-dev.yaml \
+  --set gateway.image.tag=dev \
+  --set core.image.tag=dev
+
+# 4. Wait for pods
+kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=nebu --timeout=180s -n default
+
+# 5. Teardown
+kind delete cluster --name nebu-dev
+```
+
+Full operator procedures (upgrade, rollback, HPA configuration, teardown) are in `deploy/tofu/examples/k8s/RUNBOOK.md`.
