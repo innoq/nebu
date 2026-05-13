@@ -1,6 +1,7 @@
 package ratelimit
 
 // Story 12.10 — Per-IP Rate Limiting on Media Gateway
+// Story 12.11 — SEC Fix F-2: XFF trusted-proxy gate
 //
 // Acceptance Criteria implemented:
 //   AC-1 — upload tier: 10 req/s per IP (burst 5), 429 M_LIMIT_EXCEEDED on exhaustion
@@ -8,10 +9,12 @@ package ratelimit
 //   AC-3 — per-IP token buckets (sync.Map keyed by IP), not shared across clients
 //   AC-4 — token bucket refills over time (golang.org/x/time/rate token bucket)
 //
-// IP extraction:
-//   X-Forwarded-For last entry (proxy-appended) used when header has 2+ values.
-//   Falls back to RemoteAddr (port stripped) when header absent or single-entry.
-//   This matches the rightmost-minus-1 strategy from gateway/internal/middleware/ratelimit.go.
+// IP extraction (Story 12.11 — AC-F2-1..3):
+//   trustedProxy=false (default): always use RemoteAddr, ignore X-Forwarded-For.
+//     An attacker cannot bypass rate limiting by sending different XFF headers.
+//   trustedProxy=true: use rightmost entry from X-Forwarded-For when header has
+//     2+ entries (proxy-appended entry), falling back to RemoteAddr otherwise.
+//     This matches the pattern in gateway/internal/middleware/ratelimit.go.
 //
 // Memory management:
 //   Background cleanup goroutine removes entries not seen for >5 minutes to prevent
@@ -54,17 +57,18 @@ type ipEntry struct {
 
 // IPRateLimiter is a per-IP token-bucket middleware for the media gateway.
 type IPRateLimiter struct {
-	limiters sync.Map // map[string]*ipEntry
-	rate     rate.Limit
-	burst    int
+	limiters     sync.Map // map[string]*ipEntry
+	rate         rate.Limit
+	burst        int
+	trustedProxy bool // Story 12.11: gate XFF extraction behind this flag
 }
 
-// newIPRateLimiterCore creates the core struct and starts the cleanup goroutine.
-// Exported only for testing; callers should use NewIPRateLimiter.
-func newCore(cfg Config) *IPRateLimiter {
+// newCore creates the core struct and starts the cleanup goroutine.
+func newCore(cfg Config, trustedProxy bool) *IPRateLimiter {
 	rl := &IPRateLimiter{
-		rate:  cfg.Rate,
-		burst: cfg.Burst,
+		rate:         cfg.Rate,
+		burst:        cfg.Burst,
+		trustedProxy: trustedProxy,
 	}
 	// Background cleanup: remove stale entries every minute.
 	go rl.cleanupLoop(1*time.Minute, 5*time.Minute)
@@ -114,25 +118,63 @@ func (rl *IPRateLimiter) getOrCreate(ip string) *rate.Limiter {
 	return e.limiter
 }
 
+// clientIP returns the client IP address for rate-limiting purposes.
+//
+// Story 12.11 — trustedProxy gate (AC-F2-1..3):
+//
+//   - trustedProxy=false (default, secure): always use RemoteAddr (port stripped).
+//     X-Forwarded-For is completely ignored. An attacker cannot bypass rate limiting
+//     by sending different XFF header values — all requests from the same TCP peer
+//     are counted against the same RemoteAddr bucket.
+//
+//   - trustedProxy=true: if X-Forwarded-For contains 2+ comma-separated entries,
+//     the rightmost entry (proxy-appended) is used as the rate-limit key.
+//     Falls back to RemoteAddr when the header has 0 or 1 entry.
+//     IMPORTANT: the reverse proxy MUST strip any X-Forwarded-For header received
+//     from external clients before forwarding the request to the media gateway.
+func (rl *IPRateLimiter) clientIP(r *http.Request) string {
+	if rl.trustedProxy {
+		xff := r.Header.Get("X-Forwarded-For")
+		if xff != "" {
+			ips := strings.Split(xff, ",")
+			if len(ips) >= 2 {
+				// Rightmost entry is proxy-appended — use it as the client IP.
+				return strings.TrimSpace(ips[len(ips)-1])
+			}
+			// Single entry: could be client-supplied — fall through to RemoteAddr.
+		}
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
 // NewIPRateLimiter returns a per-IP token-bucket middleware function.
 //
-// The returned function wraps an http.Handler and enforces the rate limit.
-// On exhaustion it returns HTTP 429 with:
+// The trustedProxy parameter controls X-Forwarded-For handling (Story 12.11):
+//   - false (default): XFF is ignored; rate limiting always keys on RemoteAddr.
+//     Use this unless the media gateway sits behind a trusted reverse proxy.
+//   - true: XFF rightmost entry is used when present; falls back to RemoteAddr.
+//     Only use when the gateway is behind a trusted proxy that controls XFF.
+//
+// On exhaustion the middleware returns HTTP 429 with:
 //
 //	{"errcode":"M_LIMIT_EXCEEDED","error":"Too many requests"}
 //	Retry-After: <seconds until next token available>
 //
 // Dev/test escape hatch: NEBU_RATE_LIMIT_DISABLED=true returns a no-op wrapper.
-func NewIPRateLimiter(cfg Config) func(http.Handler) http.Handler {
+func NewIPRateLimiter(cfg Config, trustedProxy bool) func(http.Handler) http.Handler {
 	if os.Getenv("NEBU_RATE_LIMIT_DISABLED") == "true" {
 		return func(next http.Handler) http.Handler { return next }
 	}
 
-	rl := newCore(cfg)
+	rl := newCore(cfg, trustedProxy)
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ip := extractClientIP(r)
+			ip := rl.clientIP(r)
 			lim := rl.getOrCreate(ip)
 
 			reservation := lim.Reserve()
@@ -157,34 +199,6 @@ func NewIPRateLimiter(cfg Config) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
-}
-
-// extractClientIP returns the client IP address for rate-limiting purposes.
-//
-// Strategy (rightmost-minus-1, spoofing-resistant):
-//   - If X-Forwarded-For contains 2+ comma-separated entries, the last entry
-//     (proxy-appended) is returned. The leftmost entries are client-controlled
-//     and MUST NOT be trusted.
-//   - If the header contains only one entry or is absent, RemoteAddr is used
-//     (port stripped).
-//
-// IMPORTANT: the reverse proxy MUST strip any X-Forwarded-For header that
-// arrives from untrusted external clients before forwarding the request.
-func extractClientIP(r *http.Request) string {
-	xff := r.Header.Get("X-Forwarded-For")
-	if xff != "" {
-		ips := strings.Split(xff, ",")
-		if len(ips) >= 2 {
-			// Rightmost entry is proxy-appended — use it as the client IP.
-			return strings.TrimSpace(ips[len(ips)-1])
-		}
-		// Single entry: could be client-supplied — fall through to RemoteAddr.
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
 }
 
 // writeTooManyRequests writes a 429 Matrix error response with a Retry-After header.

@@ -920,3 +920,103 @@ func TestUpload_NilVerifier_Returns503(t *testing.T) {
 		t.Errorf("[AT-12-8-4] InsertMediaFile must NOT be called on 503 response, got %d calls", len(store.inserted))
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Story 12.11 — SEC Fix F-1: Configurable OIDC claim for audit trail
+//
+// These tests validate the extractClaimFromMap pure function and the
+// OIDCTokenVerifier claim configuration. They are RED until:
+//   - extractClaimFromMap(rawClaims map[string]interface{}, claimName string) (string, error) exists
+//   - OIDCTokenVerifier accepts claimName in its constructor
+// ---------------------------------------------------------------------------
+
+// AT-12-11-4 — extractClaimFromMap returns configured claim ("sub") when present
+//
+// AC-F1-1: Given claimName="sub" and rawClaims={"sub":"alice-uuid","name":"alice"},
+//          when extractClaimFromMap is called,
+//          then it returns "alice-uuid".
+//
+// RED: fails until extractClaimFromMap is defined in upload.go.
+func TestExtractClaimFromMap_Sub_WhenPresent(t *testing.T) {
+	t.Parallel()
+
+	rawClaims := map[string]interface{}{
+		"sub":  "alice-uuid",
+		"name": "alice",
+	}
+
+	got, err := extractClaimFromMap(rawClaims, "sub")
+	if err != nil {
+		t.Fatalf("[AT-12-11-4] unexpected error: %v", err)
+	}
+	if got != "alice-uuid" {
+		t.Errorf("[AT-12-11-4] claimName=sub: got %q, want %q", got, "alice-uuid")
+	}
+}
+
+// AT-12-11-5 — extractClaimFromMap returns configured claim ("name") when present
+//
+// AC-F1-2: Given claimName="name" and rawClaims={"sub":"uuid-123","name":"alice"},
+//          when extractClaimFromMap is called,
+//          then it returns "alice".
+//
+// RED: fails until extractClaimFromMap is defined.
+func TestExtractClaimFromMap_Name_WhenPresent(t *testing.T) {
+	t.Parallel()
+
+	rawClaims := map[string]interface{}{
+		"sub":  "uuid-123",
+		"name": "alice",
+	}
+
+	got, err := extractClaimFromMap(rawClaims, "name")
+	if err != nil {
+		t.Fatalf("[AT-12-11-5] unexpected error: %v", err)
+	}
+	if got != "alice" {
+		t.Errorf("[AT-12-11-5] claimName=name: got %q, want %q", got, "alice")
+	}
+}
+
+// AT-12-11-6 — extractClaimFromMap falls back to sub when configured claim is missing
+//
+// AC-F1-4: Given claimName="email" and token has no "email" claim but has sub="uuid-123",
+//          when extractClaimFromMap is called,
+//          then it returns "uuid-123" (sub fallback).
+//
+// RED: fails until extractClaimFromMap implements the fallback logic.
+func TestExtractClaimFromMap_FallsBackToSub_WhenClaimMissing(t *testing.T) {
+	t.Parallel()
+
+	rawClaims := map[string]interface{}{
+		"sub":  "uuid-123",
+		"name": "alice",
+		// no "email" claim
+	}
+
+	got, err := extractClaimFromMap(rawClaims, "email")
+	if err != nil {
+		t.Fatalf("[AT-12-11-6] unexpected error: %v", err)
+	}
+	if got != "uuid-123" {
+		t.Errorf("[AT-12-11-6] claimName=email (missing): got %q, want sub fallback %q", got, "uuid-123")
+	}
+}
+
+// AT-12-11-7 — extractClaimFromMap returns error when both configured claim and sub are missing
+//
+// Given claimName="email" and rawClaims has neither "email" nor "sub",
+// then an error is returned.
+func TestExtractClaimFromMap_ErrorWhenBothMissing(t *testing.T) {
+	t.Parallel()
+
+	rawClaims := map[string]interface{}{
+		"name": "alice",
+		// no "email", no "sub"
+	}
+
+	got, err := extractClaimFromMap(rawClaims, "email")
+	if err == nil {
+		t.Fatalf("[AT-12-11-7] expected error when both configured claim and sub are missing, got %q", got)
+	}
+}

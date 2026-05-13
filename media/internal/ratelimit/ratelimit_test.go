@@ -1,6 +1,7 @@
 package ratelimit_test
 
 // Story 12.10 — Per-IP Rate Limiting on Media Gateway
+// Story 12.11 — Media Gateway Rate Limit + Audit Trail SEC Fixes (XFF gating)
 //
 // Acceptance Tests (RED phase — written BEFORE implementation):
 //
@@ -42,7 +43,7 @@ func TestUploadRateLimit_BlocksAfterBurst(t *testing.T) {
 		Rate:  rate.Limit(10), // 10 req/s
 		Burst: 10,
 	}
-	handler := ratelimit.NewIPRateLimiter(cfg)(okHandler)
+	handler := ratelimit.NewIPRateLimiter(cfg, false)(okHandler)
 
 	const ip = "192.0.2.1:12345"
 
@@ -85,7 +86,7 @@ func TestDownloadRateLimit_BlocksAfterBurst(t *testing.T) {
 		Rate:  rate.Limit(100), // 100 req/s
 		Burst: 100,
 	}
-	handler := ratelimit.NewIPRateLimiter(cfg)(okHandler)
+	handler := ratelimit.NewIPRateLimiter(cfg, false)(okHandler)
 
 	const ip = "198.51.100.5:8080"
 
@@ -126,7 +127,7 @@ func TestRateLimit_DifferentIPs_IndependentBuckets(t *testing.T) {
 		Rate:  rate.Limit(5),
 		Burst: 5,
 	}
-	handler := ratelimit.NewIPRateLimiter(cfg)(okHandler)
+	handler := ratelimit.NewIPRateLimiter(cfg, false)(okHandler)
 
 	ipA := "10.0.0.1:11111"
 	ipB := "10.0.0.2:22222"
@@ -172,7 +173,7 @@ func TestRateLimit_429ResponseFormat(t *testing.T) {
 		Rate:  rate.Limit(1), // 1 req/s — next token in ~1s
 		Burst: 1,
 	}
-	handler := ratelimit.NewIPRateLimiter(cfg)(okHandler)
+	handler := ratelimit.NewIPRateLimiter(cfg, false)(okHandler)
 
 	const ip = "203.0.113.42:9999"
 
@@ -242,7 +243,8 @@ func TestRateLimit_XForwardedFor_Extraction(t *testing.T) {
 		Rate:  rate.Limit(1),
 		Burst: 1,
 	}
-	handler := ratelimit.NewIPRateLimiter(cfg)(okHandler)
+	// trustedProxy=true: XFF extraction is active.
+	handler := ratelimit.NewIPRateLimiter(cfg, true)(okHandler)
 
 	// Request from proxy: X-Forwarded-For: spoofed-client, real-client
 	// The limiter must key on "9.9.9.9" (last / proxy-appended entry).
@@ -291,7 +293,7 @@ func TestRateLimit_Disabled_NoOp(t *testing.T) {
 		Rate:  rate.Limit(1),
 		Burst: 1,
 	}
-	handler := ratelimit.NewIPRateLimiter(cfg)(okHandler)
+	handler := ratelimit.NewIPRateLimiter(cfg, false)(okHandler)
 
 	const ip = "10.10.10.10:5000"
 
@@ -305,5 +307,133 @@ func TestRateLimit_Disabled_NoOp(t *testing.T) {
 			t.Fatalf("[AT-12-10-5] (NEBU_RATE_LIMIT_DISABLED=true) request %d expected 200 (no-op), got %d: %s",
 				i, rr.Code, rr.Body.String())
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Story 12.11 — SEC Fix F-2: XFF gating behind trustedProxy flag
+// ---------------------------------------------------------------------------
+
+// AT-12-11-1 — Rate limiter ignores XFF when trustedProxy=false (default)
+//
+// AC-F2-1: Given NewIPRateLimiter(cfg, false), when a request has
+//          X-Forwarded-For: 1.2.3.4 and RemoteAddr: 5.6.7.8:1234,
+//          then rate limiting keys on 5.6.7.8 (RemoteAddr), NOT on 1.2.3.4.
+//
+// RED: This test will compile and fail until NewIPRateLimiter accepts a second
+//      bool argument and extractClientIP ignores XFF when trustedProxy=false.
+func TestRateLimit_TrustedProxyFalse_IgnoresXFF(t *testing.T) {
+	t.Parallel()
+
+	// burst=1 so we can easily exhaust one IP's bucket.
+	cfg := ratelimit.Config{
+		Rate:  rate.Limit(1),
+		Burst: 1,
+	}
+	// trustedProxy=false: XFF must be ignored.
+	handler := ratelimit.NewIPRateLimiter(cfg, false)(okHandler)
+
+	// First request: RemoteAddr=5.6.7.8, XFF=1.2.3.4.
+	// Must succeed and consume RemoteAddr bucket for 5.6.7.8.
+	req1 := httptest.NewRequest(http.MethodPost, "/_matrix/media/v3/upload", nil)
+	req1.RemoteAddr = "5.6.7.8:1234"
+	req1.Header.Set("X-Forwarded-For", "1.2.3.4")
+	rr1 := httptest.NewRecorder()
+	handler.ServeHTTP(rr1, req1)
+	if rr1.Code != http.StatusOK {
+		t.Fatalf("[AT-12-11-1] first request: expected 200, got %d", rr1.Code)
+	}
+
+	// Second request: same RemoteAddr=5.6.7.8, different XFF=9.9.9.9.
+	// If the limiter used XFF as the key, this would get a fresh bucket (pass).
+	// Correct behavior: it must use RemoteAddr → bucket exhausted → 429.
+	req2 := httptest.NewRequest(http.MethodPost, "/_matrix/media/v3/upload", nil)
+	req2.RemoteAddr = "5.6.7.8:1234"
+	req2.Header.Set("X-Forwarded-For", "9.9.9.9")
+	rr2 := httptest.NewRecorder()
+	handler.ServeHTTP(rr2, req2)
+	if rr2.Code != http.StatusTooManyRequests {
+		t.Fatalf("[AT-12-11-1] second request with different XFF but same RemoteAddr: "+
+			"expected 429 (RemoteAddr bucket exhausted), got %d — "+
+			"XFF must be ignored when trustedProxy=false", rr2.Code)
+	}
+}
+
+// AT-12-11-2 — Rate limiter uses XFF rightmost entry when trustedProxy=true
+//
+// AC-F2-2: Given NewIPRateLimiter(cfg, true), when request has
+//          X-Forwarded-For: 1.2.3.4, 10.0.0.1,
+//          then rate limiting keys on 10.0.0.1 (the rightmost / proxy-appended entry).
+func TestRateLimit_TrustedProxyTrue_UsesXFF(t *testing.T) {
+	t.Parallel()
+
+	cfg := ratelimit.Config{
+		Rate:  rate.Limit(1),
+		Burst: 1,
+	}
+	// trustedProxy=true: must use XFF rightmost entry.
+	handler := ratelimit.NewIPRateLimiter(cfg, true)(okHandler)
+
+	// First request: XFF: 1.2.3.4, 10.0.0.1 → key = 10.0.0.1
+	req1 := httptest.NewRequest(http.MethodPost, "/_matrix/media/v3/upload", nil)
+	req1.RemoteAddr = "10.0.0.1:5000"
+	req1.Header.Set("X-Forwarded-For", "1.2.3.4, 10.0.0.1")
+	rr1 := httptest.NewRecorder()
+	handler.ServeHTTP(rr1, req1)
+	if rr1.Code != http.StatusOK {
+		t.Fatalf("[AT-12-11-2] first request: expected 200, got %d", rr1.Code)
+	}
+
+	// Second request: same XFF rightmost entry (10.0.0.1) → same bucket → 429.
+	req2 := httptest.NewRequest(http.MethodPost, "/_matrix/media/v3/upload", nil)
+	req2.RemoteAddr = "10.0.0.2:5000" // different RemoteAddr, but same XFF rightmost
+	req2.Header.Set("X-Forwarded-For", "8.8.8.8, 10.0.0.1")
+	rr2 := httptest.NewRecorder()
+	handler.ServeHTTP(rr2, req2)
+	if rr2.Code != http.StatusTooManyRequests {
+		t.Fatalf("[AT-12-11-2] second request: same XFF rightmost (10.0.0.1) → "+
+			"expected 429 (XFF bucket exhausted), got %d", rr2.Code)
+	}
+}
+
+// AT-12-11-3 — Bypass protection: 11 requests from same RemoteAddr with different XFF
+//              are all counted against RemoteAddr when trustedProxy=false.
+//
+// AC-F2-3: Given trustedProxy=false, burst=10, attacker sends 11 requests from
+//          RemoteAddr=5.6.7.8 each with a different X-Forwarded-For,
+//          then all 11 are counted against 5.6.7.8 and the 11th is rate-limited.
+func TestRateLimit_TrustedProxyFalse_BypassNotPossible(t *testing.T) {
+	t.Parallel()
+
+	cfg := ratelimit.Config{
+		Rate:  rate.Limit(10),
+		Burst: 10,
+	}
+	handler := ratelimit.NewIPRateLimiter(cfg, false)(okHandler)
+
+	const remoteAddr = "5.6.7.8:4321"
+
+	// Requests 1-10: same RemoteAddr, different XFF each time — must all pass.
+	for i := 1; i <= 10; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/_matrix/media/v3/upload", nil)
+		req.RemoteAddr = remoteAddr
+		req.Header.Set("X-Forwarded-For", "10.0.0."+strconv.Itoa(i)) // different spoofed IP each time
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("[AT-12-11-3] request %d: expected 200, got %d", i, rr.Code)
+		}
+	}
+
+	// Request 11: same RemoteAddr, yet another different XFF → must be 429.
+	req11 := httptest.NewRequest(http.MethodPost, "/_matrix/media/v3/upload", nil)
+	req11.RemoteAddr = remoteAddr
+	req11.Header.Set("X-Forwarded-For", "10.0.0.99") // attacker tries a fresh spoofed IP
+	rr11 := httptest.NewRecorder()
+	handler.ServeHTTP(rr11, req11)
+	if rr11.Code != http.StatusTooManyRequests {
+		t.Fatalf("[AT-12-11-3] 11th request with different XFF from same RemoteAddr: "+
+			"expected 429 (RemoteAddr bucket exhausted), got %d — "+
+			"XFF spoofing bypass must not work when trustedProxy=false", rr11.Code)
 	}
 }

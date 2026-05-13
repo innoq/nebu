@@ -206,7 +206,13 @@ func main() {
 		os.Exit(1)
 	}
 	oidcClientID := getenv("NEBU_OIDC_CLIENT_ID", "nebu")
-	uploadVerifier := initOIDCVerifier(ctx, oidcIssuer, oidcClientID, 5, 2*time.Second)
+
+	// Story 12.11 — SEC Fix F-1: NEBU_OIDC_USER_ID_CLAIM configures which OIDC
+	// claim is used as the user identity in audit records (media_files.uploader_user_id).
+	// Default "name" matches migration 000044 column comment and the gateway DB default.
+	oidcUserIDClaim := getenv("NEBU_OIDC_USER_ID_CLAIM", "name")
+
+	uploadVerifier := initOIDCVerifier(ctx, oidcIssuer, oidcClientID, oidcUserIDClaim, 5, 2*time.Second)
 
 	store := &pgMediaStore{pool: pool}
 	thumbStore := &pgThumbnailStore{inner: store}
@@ -230,17 +236,21 @@ func main() {
 	})
 
 	// Story 12.10 — Per-IP Rate Limiting.
+	// Story 12.11 — SEC Fix F-2: NEBU_TRUSTED_PROXY gates XFF extraction.
+	//   false (default): always key on RemoteAddr — XFF spoofing bypass not possible.
+	//   true: use rightmost XFF entry — only set when behind a trusted reverse proxy.
 	// Upload tier: 10 req/s per IP (burst 5).
 	// Download/thumbnail tier: 100 req/s per IP (burst 20).
 	// NEBU_RATE_LIMIT_DISABLED=true disables both tiers (dev/test escape hatch).
+	trustedProxy := os.Getenv("NEBU_TRUSTED_PROXY") == "true"
 	uploadRL := ratelimit.NewIPRateLimiter(ratelimit.Config{
 		Rate:  rate.Limit(10),
 		Burst: 5,
-	})
+	}, trustedProxy)
 	downloadRL := ratelimit.NewIPRateLimiter(ratelimit.Config{
 		Rate:  rate.Limit(100),
 		Burst: 20,
-	})
+	}, trustedProxy)
 
 	mux := http.NewServeMux()
 	mux.Handle("POST /_matrix/media/v3/upload", uploadRL(uploadHandler))
@@ -319,15 +329,16 @@ func getenv(key, defaultVal string) string {
 // If all attempts fail, it logs a FATAL error and calls os.Exit(1) — the service
 // must not start without a working OIDC verifier (fail-closed, Story 12.8).
 //
+// claimName is the OIDC claim used as the uploader identity (Story 12.11, AC-F1-3).
 // An empty issuer triggers an immediate fatal exit (AC-1).
 // On success it returns a non-nil upload.TokenVerifier (AC-3).
-func initOIDCVerifier(ctx context.Context, issuer, clientID string, maxAttempts int, retryDelay time.Duration) upload.TokenVerifier {
+func initOIDCVerifier(ctx context.Context, issuer, clientID, claimName string, maxAttempts int, retryDelay time.Duration) upload.TokenVerifier {
 	if issuer == "" {
 		slog.Error("FATAL: NEBU_OIDC_ISSUER is required")
 		os.Exit(1)
 		return nil // unreachable
 	}
-	v, _, err := initOIDCVerifierWith(ctx, issuer, clientID, maxAttempts, retryDelay, oidc.NewProvider)
+	v, _, err := initOIDCVerifierWith(ctx, issuer, clientID, claimName, maxAttempts, retryDelay, oidc.NewProvider)
 	if err != nil {
 		slog.Error("FATAL: media: OIDC provider unreachable after retries",
 			"issuer", issuer, "attempts", maxAttempts, "err", err)
@@ -345,12 +356,13 @@ type oidcNewProviderFunc func(ctx context.Context, issuer string) (*oidc.Provide
 // It accepts an injectable newProvider function — the real path passes oidc.NewProvider;
 // tests inject a mock that returns controlled errors to verify retry behavior.
 //
+// claimName is the OIDC claim used as the uploader identity (Story 12.11).
 // Returns (verifier, attemptCount, lastErr).
 // When all attempts are exhausted, returns (nil, maxAttempts, lastErr).
 // Callers (initOIDCVerifier) are responsible for calling os.Exit on non-nil err.
 func initOIDCVerifierWith(
 	ctx context.Context,
-	issuer, clientID string,
+	issuer, clientID, claimName string,
 	maxAttempts int,
 	retryDelay time.Duration,
 	newProvider oidcNewProviderFunc,
@@ -360,8 +372,9 @@ func initOIDCVerifierWith(
 		provider, err := newProvider(ctx, issuer)
 		if err == nil {
 			idTokenVerifier := provider.Verifier(&oidc.Config{ClientID: clientID})
-			verifier := upload.NewOIDCTokenVerifier(idTokenVerifier)
-			slog.Info("media: OIDC verifier initialised", "issuer", issuer, "attempt", attempt)
+			verifier := upload.NewOIDCTokenVerifier(idTokenVerifier, claimName)
+			slog.Info("media: OIDC verifier initialised", "issuer", issuer, "attempt", attempt,
+				"oidc_claim", claimName)
 			return verifier, attempt, nil
 		}
 		lastErr = err

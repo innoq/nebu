@@ -227,6 +227,14 @@ services:
       # Same OIDC provider as the API gateway — tokens issued by Dex are valid here too.
       NEBU_OIDC_ISSUER: "http://dex:5556/dex"
       NEBU_OIDC_CLIENT_ID: "nebu"
+      # Story 12.11 [F-1]: OIDC claim used as user identity in audit records.
+      # Default "name" matches migration 000044 column comment.
+      # Set to "sub" or "email" if your Dex config uses a different unique claim.
+      NEBU_OIDC_USER_ID_CLAIM: "name"
+      # Story 12.11 [F-2]: NEBU_TRUSTED_PROXY=false is the secure default.
+      # Set to "true" only when the media gateway is behind a trusted reverse proxy
+      # that sets X-Forwarded-For. Without a trusted proxy, XFF can be spoofed.
+      NEBU_TRUSTED_PROXY: "false"
     ports:
       - "8009:8009"
     healthcheck:

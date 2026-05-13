@@ -140,7 +140,7 @@ func TestInitOIDCVerifier_EmptyIssuer_FatalExit(t *testing.T) {
 	if os.Getenv("NEBU_TEST_CRASH_12_8_1") == "1" {
 		// Subprocess arm: call initOIDCVerifier with empty issuer.
 		// Must os.Exit(1) — should never return.
-		initOIDCVerifier(context.Background(), "", "nebu", 1, 0)
+		initOIDCVerifier(context.Background(), "", "nebu", "name", 1, 0)
 		return // unreachable if implementation is correct
 	}
 
@@ -175,7 +175,7 @@ func TestInitOIDCVerifier_EmptyIssuer_FatalExit(t *testing.T) {
 func TestInitOIDCVerifier_AllRetriesFail_FatalExit(t *testing.T) {
 	if os.Getenv("NEBU_TEST_CRASH_12_8_2") == "1" {
 		// Subprocess arm: use a dead URL with short retry params (0 delay for speed).
-		initOIDCVerifier(context.Background(), "http://localhost:1", "nebu", 2, 0)
+		initOIDCVerifier(context.Background(), "http://localhost:1", "nebu", "name", 2, 0)
 		return // unreachable if implementation is correct
 	}
 
@@ -214,6 +214,7 @@ func TestInitOIDCVerifier_RetryCountOnFailure(t *testing.T) {
 		context.Background(),
 		"http://localhost:1", // always refused
 		"nebu",
+		"name",        // claimName (Story 12.11)
 		3,             // maxAttempts
 		0*time.Second, // zero delay for test speed
 		func(_ context.Context, _ string) (*oidc.Provider, error) {

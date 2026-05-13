@@ -69,7 +69,16 @@ Implementation: `gateway/internal/middleware/ratelimit.go` — `NewIPRateLimiter
 | upload | 10 req/s | 5 | `POST /_matrix/media/v3/upload` |
 | download | 100 req/s | 20 | `GET /_matrix/media/v3/download/…`, `GET /_matrix/media/v3/thumbnail/…` |
 
-Implementation: `media/internal/ratelimit/ratelimit.go` — `NewIPRateLimiter` with `sync.Map` keyed by IP and a background cleanup goroutine (evicts entries not seen for >5 minutes, runs every 1 minute). IP extracted via rightmost-minus-1 XFF strategy (same semantics as gateway). No LRU dependency — simpler sync.Map + time-based eviction. `NEBU_RATE_LIMIT_DISABLED=true` disables both tiers (dev/test escape hatch). 429 response format: `{"errcode":"M_LIMIT_EXCEEDED","error":"Too many requests"}` + `Retry-After: N` header (Matrix CS API §rate-limiting compliant).
+Implementation: `media/internal/ratelimit/ratelimit.go` — `NewIPRateLimiter(cfg Config, trustedProxy bool)` with `sync.Map` keyed by IP and a background cleanup goroutine (evicts entries not seen for >5 minutes, runs every 1 minute). No LRU dependency — simpler sync.Map + time-based eviction.
+
+**IP extraction — trusted-proxy gate (Story 12.11 SEC Fix F-2):**
+
+| `NEBU_TRUSTED_PROXY` | Behavior |
+|---|---|
+| `false` (default) | Always use `RemoteAddr`; ignore `X-Forwarded-For`. Attacker cannot bypass per-IP limit by rotating XFF header values. Use when the media gateway is directly exposed. |
+| `true` | Use rightmost `X-Forwarded-For` entry (proxy-appended) when header has 2+ entries; fall back to `RemoteAddr`. Use only when behind a trusted reverse proxy that strips client-supplied XFF. |
+
+`NEBU_RATE_LIMIT_DISABLED=true` disables both tiers (dev/test escape hatch). 429 response format: `{"errcode":"M_LIMIT_EXCEEDED","error":"Too many requests"}` + `Retry-After: N` header (Matrix CS API §rate-limiting compliant).
 
 ## Cryptography
 
@@ -188,7 +197,7 @@ Content-Type enforcement to prevent stored XSS:
 
 **Media Gateway — Upload JWT Validation + Fail-Closed OIDC Startup (Stories 12.7, 12.8):**
 
-The upload handler uses a `TokenVerifier` interface (`HandlerConfig.OIDCVerifier`). `OIDCTokenVerifier` wraps `*oidc.IDTokenVerifier` and implements `VerifyToken(ctx, rawToken) (string, error)` — returning the uploader's subject identity (sub claim; name claim as fallback). Uploads with a nil verifier receive `503 M_UNAVAILABLE` (fail-closed, not fail-open).
+The upload handler uses a `TokenVerifier` interface (`HandlerConfig.OIDCVerifier`). `OIDCTokenVerifier` wraps `*oidc.IDTokenVerifier` and implements `VerifyToken(ctx, rawToken) (string, error)` — returning the uploader's subject identity from the operator-configured OIDC claim (see Story 12.11 below). Uploads with a nil verifier receive `503 M_UNAVAILABLE` (fail-closed, not fail-open).
 
 **Startup hardening (Story 12.8):** `NEBU_OIDC_ISSUER` is mandatory. If empty, the media gateway exits immediately with `FATAL: NEBU_OIDC_ISSUER is required`. If Dex is unreachable at startup, `initOIDCVerifier` retries up to 5 times with 2s backoff, then exits (`FATAL: media: OIDC provider unreachable after retries`). The service never starts with a nil verifier. This eliminates the "OIDC fail-open at startup" pattern documented as a recurring vulnerability.
 
@@ -200,6 +209,17 @@ uploader_user_id = formatMatrixUserID(subject, serverName)
 ```
 
 `sanitiseLocalpart` keeps only `[a-z0-9._-]` characters (spaces → `_`, all others dropped). This mirrors `gateway/internal/grpc/metadata.go sanitiseLocalpart` but is intentionally self-contained (no cross-binary import). `NEBU_SERVER_NAME` is mandatory — the media gateway exits with `FATAL: NEBU_SERVER_NAME is required` if unset. Historical rows (pre-12.9) contain raw OIDC claims and are grandfathered; see migration 000047 column comment. This enables compliance officers to correlate `media_files.uploader_user_id` with room event `sender` fields without manual claim-mapping.
+
+**Configurable OIDC claim for audit trail (Story 12.11 SEC Fix F-1):** The claim used as the audit trail user identity is now operator-configurable via `NEBU_OIDC_USER_ID_CLAIM` (default: `name`, matching migration 000044 column comment and the gateway's DB default).
+
+| `NEBU_OIDC_USER_ID_CLAIM` | Behavior |
+|---|---|
+| unset or `name` (default) | Uses the `name` claim from the OIDC token |
+| `sub` | Uses the `sub` claim (UUID from IdP) |
+| `email`, `preferred_username`, etc. | Uses the specified claim |
+| any (configured claim missing) | Falls back to `sub` with a `slog.Warn` log entry |
+
+Implementation: `extractClaimFromMap(rawClaims map[string]interface{}, claimName string) (string, error)` — pure function in `media/internal/upload/upload.go`. The value goes through `sanitiseLocalpart` before storage. `OIDCTokenVerifier` is constructed with `NewOIDCTokenVerifier(idTokenVerifier, claimName)` in `initOIDCVerifierWith`.
 
 **server_config RLS UPDATE Policy (Story 12.7 MEDIUM-5):**
 

@@ -32,37 +32,69 @@ type TokenVerifier interface {
 }
 
 // OIDCTokenVerifier wraps *oidc.IDTokenVerifier to implement TokenVerifier.
-// It extracts the subject (sub) claim from the verified token.
+// It extracts the configured OIDC claim from the verified token.
+//
+// Story 12.11 — SEC Fix F-1: the claim used as the audit trail user identity
+// is now operator-configurable via NEBU_OIDC_USER_ID_CLAIM (default: "name").
 type OIDCTokenVerifier struct {
-	verifier *oidc.IDTokenVerifier
+	verifier  *oidc.IDTokenVerifier
+	claimName string // OIDC claim to use as uploader identity (e.g. "sub", "name", "email")
 }
 
 // NewOIDCTokenVerifier creates an OIDCTokenVerifier from an *oidc.IDTokenVerifier.
-func NewOIDCTokenVerifier(v *oidc.IDTokenVerifier) *OIDCTokenVerifier {
-	return &OIDCTokenVerifier{verifier: v}
+// claimName specifies which OIDC claim to use as the user identity in audit records.
+// Defaults to "name" if empty (matching migration 000044 and the gateway DB default).
+func NewOIDCTokenVerifier(v *oidc.IDTokenVerifier, claimName string) *OIDCTokenVerifier {
+	if claimName == "" {
+		claimName = "name"
+	}
+	return &OIDCTokenVerifier{verifier: v, claimName: claimName}
 }
 
 // VerifyToken implements TokenVerifier using go-oidc/v3 JWT verification.
-// Extracts sub claim as the uploader identity; falls back to name if sub is empty.
+// Extracts the configured claim (claimName) as the uploader identity.
+// Falls back to "sub" with a warning if the configured claim is missing.
 func (o *OIDCTokenVerifier) VerifyToken(ctx context.Context, rawToken string) (string, error) {
 	idToken, err := o.verifier.Verify(ctx, rawToken)
 	if err != nil {
 		return "", err
 	}
-	var claims struct {
-		Sub  string `json:"sub"`
-		Name string `json:"name"`
-	}
-	if err := idToken.Claims(&claims); err != nil {
+	var rawClaims map[string]interface{}
+	if err := idToken.Claims(&rawClaims); err != nil {
 		return "", err
 	}
-	if claims.Sub != "" {
-		return claims.Sub, nil
+	return extractClaimFromMap(rawClaims, o.claimName)
+}
+
+// extractClaimFromMap returns the string value of claimName from rawClaims.
+//
+// Story 12.11 — AC-F1-1..4: configurable claim extraction with sub fallback.
+//
+// Lookup order:
+//  1. If claimName is present in rawClaims and has a non-empty string value,
+//     return it.
+//  2. If claimName is missing (or empty/non-string), fall back to "sub" with a
+//     warning log (AC-F1-4).
+//  3. If neither claimName nor "sub" is present, return an error.
+//
+// This is a pure function (no I/O side effects besides logging) — easy to unit
+// test without OIDC infrastructure.
+func extractClaimFromMap(rawClaims map[string]interface{}, claimName string) (string, error) {
+	// Try the configured claim first.
+	if val, ok := rawClaims[claimName]; ok {
+		if s, ok := val.(string); ok && s != "" {
+			return s, nil
+		}
 	}
-	if claims.Name != "" {
-		return claims.Name, nil
+
+	// Configured claim missing or empty — fall back to "sub".
+	if sub, ok := rawClaims["sub"].(string); ok && sub != "" {
+		slog.Warn("media upload: configured OIDC claim not found, falling back to sub",
+			"configured_claim", claimName)
+		return sub, nil
 	}
-	return "", fmt.Errorf("token missing subject claim")
+
+	return "", fmt.Errorf("token missing both configured claim %q and sub", claimName)
 }
 
 // blockedContentTypes is the set of MIME types that must not be accepted at upload.
