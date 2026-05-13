@@ -1020,3 +1020,138 @@ func TestExtractClaimFromMap_ErrorWhenBothMissing(t *testing.T) {
 		t.Fatalf("[AT-12-11-7] expected error when both configured claim and sub are missing, got %q", got)
 	}
 }
+
+// ─── Story 12.15: Regression Test — Expired JWT Upload Returns 401 ────────────
+//
+// GAP-01 (P0): Story 12.7 AC2-2 requires "Upload with expired token → 401
+// M_UNKNOWN_TOKEN". go-oidc/v3 checks exp automatically, but no test proved this.
+// These tests close the traceability gap.
+//
+// Test strategy:
+//   - TestUpload_ExpiredJWT_Returns401: mockTokenVerifier with forcedErr simulates
+//     go-oidc returning an expiry error. The handler's VerifyToken error path
+//     (upload.go lines 237-242) maps any error → 401 M_UNKNOWN_TOKEN.
+//     fakeStorer.putCalled must remain empty (no storage write on 401).
+//   - TestUpload_ValidJWT_Returns200: non-regression guard — a succeeding mock
+//     verifier must still produce 200. Prevents false positives where a change
+//     accidentally breaks the success path.
+
+// AT-12-15-1: Upload with expired JWT → 401 M_UNKNOWN_TOKEN, no storage write
+//
+// AC-1 — Given a TokenVerifier that returns an expiry error,
+// When POST /_matrix/media/v3/upload is called with a Bearer token,
+// Then response is 401 with errcode M_UNKNOWN_TOKEN and storage is NOT written.
+//
+// RED: This test does not exist yet. Writing it first (ATDD gate, Story 12.15).
+// It will be GREEN immediately because the handler already handles VerifyToken errors.
+func TestUpload_ExpiredJWT_Returns401(t *testing.T) {
+	db := &mockMediaStore{}
+	storer := &fakeStorer{}
+
+	// Simulate go-oidc returning an expiry error.
+	// The handler maps any VerifyToken error → 401 M_UNKNOWN_TOKEN (upload.go:237-242).
+	expiredVerifier := &mockTokenVerifier{
+		forcedErr: errors.New("oidc: token is expired (exp=...): token has expired"),
+	}
+
+	h := NewHandler(HandlerConfig{
+		DB:           db,
+		Storage:      storer,
+		ServerName:   testServerName,
+		MaxBytes:     defaultMaxBytes,
+		OIDCVerifier: expiredVerifier,
+	})
+	mux := http.NewServeMux()
+	mux.Handle("POST /_matrix/media/v3/upload", h)
+
+	body := bytes.NewReader([]byte("some file content"))
+	req := httptest.NewRequest(http.MethodPost, "/_matrix/media/v3/upload", body)
+	req.Header.Set("Content-Type", "image/png")
+	req.Header.Set("Authorization", "Bearer expired.jwt.token")
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	// AC-1: expired token must yield 401.
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("[AT-12-15-1] expected 401, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var errResp matrixErrorResp
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("[AT-12-15-1] failed to decode 401 error response: %v", err)
+	}
+	if errResp.ErrCode != "M_UNKNOWN_TOKEN" {
+		t.Errorf("[AT-12-15-1] expected errcode M_UNKNOWN_TOKEN, got %q", errResp.ErrCode)
+	}
+	if errResp.Error == "" {
+		t.Error("[AT-12-15-1] expected non-empty error message in response body")
+	}
+
+	// AC-1: no storage write must occur on authentication failure.
+	if len(storer.putCalled) != 0 {
+		t.Errorf("[AT-12-15-1] Storer.Put must NOT be called on expired token, got %d calls", len(storer.putCalled))
+	}
+
+	// DB must NOT be called either.
+	if len(db.inserted) != 0 {
+		t.Errorf("[AT-12-15-1] InsertMediaFile must NOT be called on expired token, got %d calls", len(db.inserted))
+	}
+}
+
+// AT-12-15-2: Upload with valid JWT → 200 (non-regression guard)
+//
+// AC-2 — Given a TokenVerifier that succeeds (token not expired),
+// When POST /_matrix/media/v3/upload is called with a Bearer token,
+// Then response is 200 with a valid mxc:// content_uri.
+//
+// This is the non-regression guard: a change that breaks valid token acceptance
+// (e.g. inverting the error check) would be caught by this test.
+func TestUpload_ValidJWT_Returns200(t *testing.T) {
+	db := &mockMediaStore{}
+	storer := &fakeStorer{}
+
+	// Simulates a valid, non-expired token that passes verification.
+	validVerifier := &mockTokenVerifier{subject: "alice"}
+
+	h := NewHandler(HandlerConfig{
+		DB:           db,
+		Storage:      storer,
+		ServerName:   testServerName,
+		MaxBytes:     defaultMaxBytes,
+		OIDCVerifier: validVerifier,
+	})
+	mux := http.NewServeMux()
+	mux.Handle("POST /_matrix/media/v3/upload", h)
+
+	body := bytes.NewReader([]byte("valid file content"))
+	req := httptest.NewRequest(http.MethodPost, "/_matrix/media/v3/upload", body)
+	req.Header.Set("Content-Type", "image/png")
+	req.Header.Set("Authorization", "Bearer valid.jwt.token")
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	// AC-2: valid token must yield 200.
+	if w.Code != http.StatusOK {
+		t.Fatalf("[AT-12-15-2] expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp uploadSuccessResp
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("[AT-12-15-2] failed to decode 200 response: %v", err)
+	}
+
+	prefix := "mxc://" + testServerName + "/"
+	if !strings.HasPrefix(resp.ContentURI, prefix) {
+		t.Errorf("[AT-12-15-2] content_uri %q does not start with %q", resp.ContentURI, prefix)
+	}
+
+	// Storage and DB must both have been called exactly once.
+	if len(storer.putCalled) != 1 {
+		t.Errorf("[AT-12-15-2] expected Storer.Put called once, got %d", len(storer.putCalled))
+	}
+	if len(db.inserted) != 1 {
+		t.Errorf("[AT-12-15-2] expected InsertMediaFile called once, got %d", len(db.inserted))
+	}
+}
