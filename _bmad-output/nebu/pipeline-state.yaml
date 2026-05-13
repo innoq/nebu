@@ -1,6 +1,23 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-13
+# [13-2c] 2026-05-13T14:50Z arc42-update → done (07-deployment: AWS ALB+Secrets Manager+ECS services complete topology documented)
+# [13-2c] 2026-05-13T14:45Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 3 LOW — 3 LOW fixed inline)
+# [13-2c] 2026-05-13T14:35Z code-review → CLEAN (cycle 0) — 5 MINOR fixed inline: db_url secret added, oidc_issuer+release_cookie secrets added, kms:Decrypt note, acm_cert empty-str comment
+# [13-2c] 2026-05-13T14:22Z ci-gate → ✓ test-iac-validate (tofu fmt+validate: aws+stackit+k8s CLEAN)
+# [13-2c] 2026-05-13T14:20Z dev-story → done (cycle 0) — alb.tf, secrets.tf created; compute.tf updated (ECS services+secrets refs); variables.tf/outputs.tf updated; RUNBOOK.md written; tofu fmt+validate pass
+# [13-2c] 2026-05-13T14:01Z test-review → skipped (atdd skipped)
+# [13-2c] 2026-05-13T14:01Z atdd → skipped (infra)
+# [13-2c] 2026-05-13T13:58Z pipeline started
+# 13-2b 2026-05-13T10:36Z epic-loop → story done (RDS PostgreSQL 16 Multi-AZ + ECS Fargate cluster, 6 MINOR fixed)
+# [13-2b] 2026-05-13T12:30Z committed ✓ (6 MINOR fixed 1 cycle — RDS PostgreSQL 16 Multi-AZ+ECS Fargate+IAM+CW logs+arc42 07-deployment)
+# [13-2b] 2026-05-13T12:25Z arc42-update → done (07-deployment: AWS database + compute modules documented)
+# [13-2b] 2026-05-13T12:20Z security-review → skipped (not-needed)
+# [13-2b] 2026-05-13T12:20Z code-review → CLEAN (cycle 1) — 6 MINOR fixed: region param, IAM wildcard, db_password validation, log groups added, perf-insights var, snapshot comment
+# [13-2b] 2026-05-13T12:10Z ci-gate → ✓ test-iac-validate (tofu fmt+validate: aws+stackit+k8s CLEAN)
+# [13-2b] 2026-05-13T12:05Z dev-story → done (cycle 0) — database.tf, compute.tf created; variables.tf, outputs.tf, main.tf, variables.tf updated; tofu fmt+validate pass
+# [13-2b] 2026-05-13T12:00Z pipeline started
+# 13-2a 2026-05-13T10:26Z epic-loop → story done (AWS networking module: VPC, subnets, SGs, NAT GW, 9 MINOR fixed)
 # [13-2a] 2026-05-13T11:30Z epic-loop → story done (code-review CLEAN cycle 1 — 9 MINOR fixed: env naming, aws_region removed, CIDR validation, NAT GW comment, RDS egress scoped, ECS ports 8008+9000, route table length(), AZ postcondition, eip depends_on removed; arc42 07-deployment updated)
 # [13-2a] 2026-05-13T11:20Z code-review → CLEAN (cycle 1) — 9 MINOR fixed, security-review skipped (not-needed)
 # [13-2a] 2026-05-13T11:06Z ci-gate → ✓ test-iac-validate (tofu fmt+validate: aws+stackit+k8s CLEAN)
@@ -353,17 +370,16 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: "13-2a"
-current_step: "completed"
+story: "13-2c"
+current_step: "commit"
 completed:
-  - classify
-  - dev-story
-  - ci-gate
-  - oracle-gate
   - atdd
   - test-review
+  - dev-story
+  - ci-gate
   - code-review
+  - security-review
   - arc42-update
-cycle_count: 1
+cycle_count: 0
 blocked_reason: null
-last_updated: "2026-05-13T11:30Z"
+last_updated: "2026-05-13T10:48Z"

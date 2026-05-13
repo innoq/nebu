@@ -1,4 +1,4 @@
-# nebu-aws: ECS Fargate cluster, IAM task execution role, and task definition skeletons.
+# nebu-aws: ECS Fargate cluster, IAM task execution role, task definitions, and ECS services.
 
 # ── ECS Cluster ──────────────────────────────────────────────────────────────
 
@@ -44,7 +44,10 @@ resource "aws_iam_role_policy_attachment" "ecs_task_execution_managed" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-# Inline policy: allow reading Secrets Manager secrets referenced in task definitions.
+# Inline policy: allow reading Secrets Manager secrets scoped to nebu/{environment}/*.
+# Least-privilege: only the secrets this module provisions under nebu/{environment}/ are accessible.
+# NOTE: kms:Decrypt is omitted here. If your secrets use a customer-managed KMS key (CMK),
+# add kms:Decrypt with the CMK ARN to this policy — without it ECS cannot decrypt CMK-encrypted secrets.
 resource "aws_iam_role_policy" "ecs_task_execution_secrets" {
   name = "nebu-${var.environment}-ecs-secrets-read"
   role = aws_iam_role.ecs_task_execution.id
@@ -53,12 +56,12 @@ resource "aws_iam_role_policy" "ecs_task_execution_secrets" {
     Version = "2012-10-17"
     Statement = [
       {
+        Sid    = "ReadNebuSecrets"
         Effect = "Allow"
         Action = [
-          "secretsmanager:GetSecretValue",
-          "kms:Decrypt"
+          "secretsmanager:GetSecretValue"
         ]
-        Resource = var.nebu_secrets_arn != "" ? [var.nebu_secrets_arn] : ["arn:aws:secretsmanager:*:*:secret:placeholder"]
+        Resource = "arn:aws:secretsmanager:*:*:secret:nebu/${var.environment}/*"
       }
     ]
   })
@@ -117,24 +120,25 @@ resource "aws_ecs_task_definition" "gateway" {
         startPeriod = 60
       }
 
-      secrets = var.nebu_secrets_arn != "" ? [
+      # All NEBU_* environment variables sourced from Secrets Manager — never plaintext.
+      secrets = [
         {
           name      = "NEBU_DB_URL"
-          valueFrom = "${var.nebu_secrets_arn}:NEBU_DB_URL::"
+          valueFrom = aws_secretsmanager_secret.db_url.arn
         },
         {
           name      = "NEBU_OIDC_ISSUER"
-          valueFrom = "${var.nebu_secrets_arn}:NEBU_OIDC_ISSUER::"
+          valueFrom = aws_secretsmanager_secret.oidc_issuer.arn
         },
         {
-          name      = "NEBU_INTERNAL_SECRET_FILE"
-          valueFrom = "${var.nebu_secrets_arn}:NEBU_INTERNAL_SECRET_FILE::"
+          name      = "NEBU_OIDC_CLIENT_SECRET"
+          valueFrom = aws_secretsmanager_secret.oidc_client_secret.arn
         },
         {
-          name      = "NEBU_CORE_GRPC_ADDR"
-          valueFrom = "${var.nebu_secrets_arn}:NEBU_CORE_GRPC_ADDR::"
+          name      = "NEBU_INTERNAL_SECRET"
+          valueFrom = aws_secretsmanager_secret.nebu_internal_secret.arn
         }
-      ] : []
+      ]
 
       logConfiguration = {
         logDriver = "awslogs"
@@ -185,20 +189,21 @@ resource "aws_ecs_task_definition" "core" {
         startPeriod = 90
       }
 
-      secrets = var.nebu_secrets_arn != "" ? [
+      # All runtime credentials sourced from Secrets Manager — never plaintext.
+      secrets = [
         {
           name      = "DATABASE_URL"
-          valueFrom = "${var.nebu_secrets_arn}:DATABASE_URL::"
+          valueFrom = aws_secretsmanager_secret.db_url.arn
         },
         {
           name      = "RELEASE_COOKIE"
-          valueFrom = "${var.nebu_secrets_arn}:RELEASE_COOKIE::"
+          valueFrom = aws_secretsmanager_secret.release_cookie.arn
         },
         {
           name      = "NEBU_INTERNAL_SECRET"
-          valueFrom = "${var.nebu_secrets_arn}:NEBU_INTERNAL_SECRET::"
+          valueFrom = aws_secretsmanager_secret.nebu_internal_secret.arn
         }
-      ] : []
+      ]
 
       logConfiguration = {
         logDriver = "awslogs"
@@ -213,5 +218,70 @@ resource "aws_ecs_task_definition" "core" {
 
   tags = merge(var.common_tags, {
     Name = "nebu-${var.environment}-core-task"
+  })
+}
+
+# ── ECS Service: gateway ──────────────────────────────────────────────────────
+
+resource "aws_ecs_service" "gateway" {
+  name            = "nebu-${var.environment}-gateway"
+  cluster         = aws_ecs_cluster.this.id
+  task_definition = aws_ecs_task_definition.gateway.arn
+  desired_count   = var.ecs_desired_count
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets          = aws_subnet.private[*].id
+    security_groups  = [aws_security_group.ecs.id]
+    assign_public_ip = false
+  }
+
+  load_balancer {
+    target_group_arn = aws_lb_target_group.gateway.arn
+    container_name   = "gateway"
+    container_port   = 8008
+  }
+
+  # Allow ECS to update the service without tofu treating it as a drift.
+  lifecycle {
+    ignore_changes = [task_definition, desired_count]
+  }
+
+  depends_on = [
+    aws_lb_listener.https,
+    aws_iam_role_policy_attachment.ecs_task_execution_managed,
+  ]
+
+  tags = merge(var.common_tags, {
+    Name = "nebu-${var.environment}-gateway-service"
+  })
+}
+
+# ── ECS Service: core ─────────────────────────────────────────────────────────
+
+resource "aws_ecs_service" "core" {
+  name            = "nebu-${var.environment}-core"
+  cluster         = aws_ecs_cluster.this.id
+  task_definition = aws_ecs_task_definition.core.arn
+  desired_count   = var.ecs_desired_count
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets          = aws_subnet.private[*].id
+    security_groups  = [aws_security_group.ecs.id]
+    assign_public_ip = false
+  }
+
+  # Allow ECS to update the service without tofu treating it as a drift.
+  lifecycle {
+    ignore_changes = [task_definition, desired_count]
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.ecs_task_execution_managed,
+  ]
+
+  tags = merge(var.common_tags, {
+    Name = "nebu-${var.environment}-core-service"
   })
 }

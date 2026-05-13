@@ -87,14 +87,27 @@ variable "nebu_version" {
   default     = "latest"
 }
 
-variable "nebu_secrets_arn" {
-  description = "ARN of the AWS Secrets Manager secret containing Nebu runtime env vars (NEBU_DB_URL, NEBU_OIDC_ISSUER, etc.). Leave empty ('') to skip Secrets Manager references — validate will pass without real credentials."
-  type        = string
-  default     = ""
-}
-
 variable "aws_region" {
   description = "AWS region for CloudWatch Logs configuration in ECS task definitions."
   type        = string
   default     = "eu-central-1"
+}
+
+variable "acm_certificate_arn" {
+  description = "ARN of the ACM certificate used by the ALB HTTPS listener. Must be in the same region as the ALB. Required for apply — empty string ('') is accepted only for tofu validate and plan runs."
+  type        = string
+  default     = ""
+  # NOTE: An empty string will pass tofu validate but will cause an AWS API error at apply time.
+  # Always supply a valid ACM certificate ARN before running tofu apply in any environment.
+}
+
+variable "ecs_desired_count" {
+  description = "Desired number of running ECS tasks for gateway and core services."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.ecs_desired_count >= 1
+    error_message = "ecs_desired_count must be at least 1."
+  }
 }

@@ -46,10 +46,11 @@ module "nebu_aws" {
   enable_performance_insights = var.enable_performance_insights
 
   # Compute — task definitions reference nebu-core outputs for image/version
-  aws_region       = var.aws_region
-  image_registry   = module.nebu_core.image_registry
-  nebu_version     = module.nebu_core.nebu_version
-  nebu_secrets_arn = var.nebu_secrets_arn
+  aws_region          = var.aws_region
+  image_registry      = module.nebu_core.image_registry
+  nebu_version        = module.nebu_core.nebu_version
+  acm_certificate_arn = var.acm_certificate_arn
+  ecs_desired_count   = var.ecs_desired_count
 
   common_tags = {
     Project     = "nebu"

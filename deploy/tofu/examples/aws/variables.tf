@@ -61,10 +61,16 @@ variable "skip_final_snapshot" {
   default     = true
 }
 
-variable "nebu_secrets_arn" {
-  description = "ARN of the AWS Secrets Manager secret containing Nebu runtime env vars. Leave empty ('') to skip — validate passes without real credentials."
+variable "acm_certificate_arn" {
+  description = "ARN of the ACM certificate for the ALB HTTPS listener. Must be in the same AWS region."
   type        = string
   default     = ""
+}
+
+variable "ecs_desired_count" {
+  description = "Desired number of running ECS tasks for gateway and core services."
+  type        = number
+  default     = 1
 }
 
 variable "enable_performance_insights" {

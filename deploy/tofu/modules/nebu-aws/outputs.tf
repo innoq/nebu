@@ -44,3 +44,13 @@ output "task_execution_role_arn" {
   description = "ARN of the IAM role used by ECS task definitions for execution (image pull + Secrets Manager)."
   value       = aws_iam_role.ecs_task_execution.arn
 }
+
+output "alb_dns_name" {
+  description = "DNS name of the Application Load Balancer. Point your domain's CNAME or ALIAS record here."
+  value       = aws_lb.this.dns_name
+}
+
+output "alb_zone_id" {
+  description = "Route 53 hosted zone ID of the ALB (used for ALIAS records in Route 53)."
+  value       = aws_lb.this.zone_id
+}

@@ -193,19 +193,77 @@ Equivalent CI gate: `validate-iac` job in `.gitlab-ci.yml` (runs on every push t
 
 Key variables: `db_instance_class`, `db_password`, `skip_final_snapshot` (default `true` for dev), `enable_performance_insights`.
 
+### AWS ALB Module (nebu-aws — alb.tf)
+
+`deploy/tofu/modules/nebu-aws/alb.tf` provisions the internet-facing Application Load Balancer:
+
+- `aws_lb` — internet-facing ALB, placed in public subnets, `drop_invalid_header_fields = true` (header injection protection)
+- `aws_lb_target_group.gateway` — target type `ip` (required for Fargate awsvpc networking), port 8008, health check on `GET /_matrix/client/v3/versions` (HTTP 200)
+- `aws_lb_listener.https` — port 443, TLS policy `ELBSecurityPolicy-TLS13-1-2-2021-06` (TLS 1.3 minimum), ACM certificate via `var.acm_certificate_arn`, forwards to gateway target group
+- `aws_lb_listener.http_redirect` — port 80, permanent `HTTP_301` redirect to HTTPS/443; no plaintext traffic ever reaches the gateway
+
+Module outputs added: `alb_dns_name`, `alb_zone_id` (for Route 53 ALIAS records).
+
+Key variable: `acm_certificate_arn` — required for `tofu apply`; empty string is accepted for `tofu validate` only.
+
+### AWS Secrets Manager Module (nebu-aws — secrets.tf)
+
+`deploy/tofu/modules/nebu-aws/secrets.tf` provisions all Nebu runtime credentials as individual Secrets Manager secrets under the `nebu/${environment}/` namespace:
+
+| Secret path | Purpose |
+|---|---|
+| `nebu/{env}/db_url` | Full PostgreSQL DSN (used by gateway + core) |
+| `nebu/{env}/db_password` | RDS master password (plain string; kept separate for RDS rotation support) |
+| `nebu/{env}/internal_secret` | PSK for gateway ↔ core node registration (ADR-008) |
+| `nebu/{env}/oidc_client_secret` | OIDC client secret for identity provider registration |
+| `nebu/{env}/oidc_issuer` | OIDC issuer URL |
+| `nebu/{env}/release_cookie` | Erlang distribution cookie for OTP cluster authentication |
+
+All `aws_secretsmanager_secret_version` resources are provisioned with `PLACEHOLDER_*` initial values and `lifecycle { ignore_changes = [secret_string] }` — preventing `tofu apply` from overwriting operator-rotated values. Operators must set real values before go-live (see RUNBOOK.md).
+
 ### AWS Compute Module (nebu-aws — compute.tf)
 
-`deploy/tofu/modules/nebu-aws/compute.tf` provisions the ECS Fargate compute layer:
+`deploy/tofu/modules/nebu-aws/compute.tf` provisions the full ECS Fargate compute layer:
 
 - `aws_ecs_cluster` — Fargate cluster with Container Insights enabled (`"nebu-${environment}"`)
-- `aws_iam_role.ecs_task_execution` — Task execution role with `AmazonECSTaskExecutionRolePolicy` + inline policy for `secretsmanager:GetSecretValue` / `kms:Decrypt` scoped to `var.nebu_secrets_arn`
+- `aws_iam_role.ecs_task_execution` — Task execution role with `AmazonECSTaskExecutionRolePolicy` + inline policy for `secretsmanager:GetSecretValue` scoped to `arn:aws:secretsmanager:*:*:secret:nebu/${environment}/*` (least-privilege; no wildcard resource)
 - `aws_cloudwatch_log_group` — `/ecs/nebu-{env}-gateway` and `/ecs/nebu-{env}-core`, 30-day retention
-- `aws_ecs_task_definition.gateway` — Skeleton: image `{registry}/nebu-gateway:{version}`, CPU 256 / Memory 512, port 8008, health check `GET /_matrix/client/v3/versions`, Secrets Manager `secrets` references for NEBU_* env vars (omitted when `nebu_secrets_arn = ""`)
-- `aws_ecs_task_definition.core` — Skeleton: image `{registry}/nebu-core:{version}`, CPU 256 / Memory 512, port 9000, health check `GET /health`, Secrets Manager references for `DATABASE_URL`, `RELEASE_COOKIE`, `NEBU_INTERNAL_SECRET`
+- `aws_ecs_task_definition.gateway` — image `{registry}/nebu-gateway:{version}`, CPU 256 / Memory 512, port 8008, health check `GET /_matrix/client/v3/versions`, `secrets` field references individual Secrets Manager ARNs for `NEBU_DB_URL`, `NEBU_OIDC_ISSUER`, `NEBU_OIDC_CLIENT_SECRET`, `NEBU_INTERNAL_SECRET`
+- `aws_ecs_task_definition.core` — image `{registry}/nebu-core:{version}`, CPU 256 / Memory 512, port 9000, health check `GET /health`, `secrets` field references for `DATABASE_URL`, `RELEASE_COOKIE`, `NEBU_INTERNAL_SECRET`
+- `aws_ecs_service.gateway` — Fargate service in private subnets, attached to the ALB target group (port 8008), `lifecycle { ignore_changes = [task_definition, desired_count] }` for GitOps rolling deployments
+- `aws_ecs_service.core` — Fargate service in private subnets (no ALB attachment; accessed by gateway via gRPC on port 9000 within the VPC)
 
-Key variables: `aws_region` (for CloudWatch Logs), `image_registry`, `nebu_version`, `nebu_secrets_arn` (placeholder ARN, leave `""` for validate-only).
+**Security invariants:** No `environment` field used for secrets in any task definition — all sensitive values are injected exclusively via the `secrets` field with Secrets Manager ARNs. IAM permissions are scoped to the namespace `nebu/${environment}/*` only.
 
-Module outputs added: `ecs_cluster_arn`, `db_endpoint`, `task_execution_role_arn`.
+Key variables: `aws_region` (CloudWatch Logs), `image_registry`, `nebu_version`, `acm_certificate_arn`, `ecs_desired_count` (default 1).
+
+Module outputs: `ecs_cluster_arn`, `db_endpoint`, `task_execution_role_arn`, `alb_dns_name`, `alb_zone_id`.
+
+### AWS Deployment Topology (Complete)
+
+```
+Internet
+  │ HTTPS/443 (TLS 1.3)
+  ▼
+aws_lb (ALB, internet-facing)
+  │ port 443 → aws_lb_listener.https → aws_lb_target_group.gateway (port 8008)
+  │ port 80  → aws_lb_listener.http_redirect (HTTP 301 → HTTPS)
+  ▼
+aws_ecs_service.gateway (private subnets, ECS Fargate, no public IP)
+  │ gRPC port 9000 (VPC-internal, ECS SG)
+  ▼
+aws_ecs_service.core (private subnets, ECS Fargate, no public IP)
+  │ port 5432 (private subnets, RDS SG)
+  ▼
+aws_db_instance (RDS PostgreSQL 16, Multi-AZ, private subnets)
+
+Secrets Manager (nebu/{env}/*) ──► ECS task execution role (secretsmanager:GetSecretValue)
+                                        │
+                              injected into gateway + core containers
+                              via ECS secrets field at task start
+```
+
+Day-2 operations (rolling updates, secret rotation, teardown) are documented in `deploy/tofu/examples/aws/RUNBOOK.md`.
 
 ### Helm Chart
 
