@@ -1,6 +1,19 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-13
+# [13-4b] 2026-05-13T13:00Z test-review → skipped (atdd skipped)
+# 13-4a 2026-05-13T11:30Z epic-loop → story done (Helm chart core templates: 2 MAJOR+2 MINOR fixed, core-service.yaml added, independent image tags)
+# [13-4a] 2026-05-13T12:10Z ci-gate → ✓ test-iac-validate (tofu fmt+validate: aws+stackit+k8s CLEAN; helm lint 0 warnings 0 failures; helm template CLEAN)
+# [13-4a] 2026-05-13T12:05Z dev-story → done (cycle 0) — Chart.yaml updated, values.yaml restructured, values-dev.yaml created; gateway+core Deployment+Service+ConfigMap templates; make test-iac-validate extended with helm; validate-helm CI job added
+# [13-4a] 2026-05-13T12:00Z test-review → skipped (atdd skipped)
+# 13-3b 2026-05-13T11:17Z epic-loop → story done (cloud-init bootstrap: 11 bugs fixed, Kassandra CLEAN, init-db.sql+keycloak+systemd)
+# [13-3b] 2026-05-13T17:06Z ci-gate → ✓ test-iac-validate (tofu fmt+validate: aws+stackit+k8s CLEAN)
+# [13-3b] 2026-05-13T17:05Z dev-story → done (cycle 0) — cloud-init.tftpl, main.tf user_data, variables.tf secrets, tfvars.example, RUNBOOK.md created; tofu fmt+validate pass
+# [13-3b] 2026-05-13T17:00Z test-review → skipped (atdd skipped)
+# [13-3b] 2026-05-13T17:00Z atdd → skipped (infra)
+# [13-3b] 2026-05-13T17:00Z oracle-gate → skipped (no Matrix feature)
+# [13-3b] 2026-05-13T17:00Z pipeline started
+# 13-3a 2026-05-13T11:06Z epic-loop → story done (Stackit VM+networking+ALB, MAJOR-1 provider schema resolved, MAJOR-2 PROTOCOL_TCP+beta note, 5 MINOR fixed)
 # [13-3a] 2026-05-13T16:00Z committed ✓ (code-review CLEAN cycle 1 — 2 MAJOR + 6 MINOR fixed; arc42 07-deployment Stackit section added; story done)
 # [13-3a] 2026-05-13T15:55Z arc42-update → done (07-deployment: Stackit VM+Networking module documented; HTTPS upgrade path noted)
 # [13-3a] 2026-05-13T15:50Z security-review → skipped (not-needed)
@@ -380,13 +393,15 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: "13-3a"
-current_step: "done"
+story: "13-4b"
+current_step: "dev-story"
 completed:
   - dev-story
   - ci-gate
   - code-review
   - arc42-update
+  - atdd
+  - test-review
 cycle_count: 1
 blocked_reason: null
-last_updated: "2026-05-13T16:00Z"
+last_updated: "2026-05-13T11:31Z"

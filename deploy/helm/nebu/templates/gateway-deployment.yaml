@@ -32,6 +32,10 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "nebu.fullname" . }}-config
+            {{- if .Values.existingSecret.name }}
+            - secretRef:
+                name: {{ .Values.existingSecret.name }}
+            {{- end }}
           {{- with .Values.securityContext }}
           securityContext:
             {{- toYaml . | nindent 12 }}

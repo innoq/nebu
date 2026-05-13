@@ -310,24 +310,52 @@ Day-2 operations (updates, pg_dump backup, teardown) are documented in `deploy/t
 
 `deploy/helm/nebu/` is a standalone Helm Chart usable independently of OpenTofu.
 
-**Kubernetes resource topology:**
+**Kubernetes resource topology (Story 13-4a + 13-4b):**
 
-| Resource | Name pattern | Ports |
-|---|---|---|
-| Deployment | `{release}-nebu-gateway` | 8008 (Matrix API) |
-| Deployment | `{release}-nebu-core` | 9000 (gRPC), 4000 (HTTP/health) |
-| Service (ClusterIP) | `{release}-nebu-gateway` | 8008 → gateway pods |
-| Service (ClusterIP) | `{release}-nebu-core` | 9000 (gRPC) + 4000 (HTTP) → core pods |
-| ConfigMap | `{release}-nebu-config` | `NEBU_OIDC_ISSUER`, `NEBU_SERVER_NAME`, `NEBU_CORE_GRPC_ADDR` |
+| Resource | Name pattern | Conditional | Purpose |
+|---|---|---|---|
+| Deployment | `{release}-nebu-gateway` | always | Go gateway; loads ConfigMap + optional Secret via `envFrom` |
+| Deployment | `{release}-nebu-core` | always | Elixir/OTP core |
+| Service (ClusterIP) | `{release}-nebu-gateway` | always | Port 8008 → gateway pods |
+| Service (ClusterIP) | `{release}-nebu-core` | always | Port 9000 (gRPC) + 4000 (HTTP) → core pods |
+| ConfigMap | `{release}-nebu-config` | always | `NEBU_OIDC_ISSUER`, `NEBU_SERVER_NAME`, `NEBU_CORE_GRPC_ADDR` (non-secret) |
+| Ingress | `{release}-nebu` | `ingress.enabled: true` | nginx Ingress with configurable hostname and optional TLS secret |
+| PersistentVolumeClaim | `{release}-nebu-postgres` | `postgres.external: false` | Postgres storage when running in-cluster |
+| HorizontalPodAutoscaler | `{release}-nebu-gateway` | `autoscaling.gateway.enabled: true` | CPU-based HPA for gateway Deployment |
 
-`NEBU_CORE_GRPC_ADDR` is derived deterministically from the release name as `{release}-nebu-core:9000` — rendered by the ConfigMap template, not a values entry. This replaces the Docker Compose default of `core:9000` for Kubernetes deployments.
+`NEBU_CORE_GRPC_ADDR` is derived deterministically from the release name as `{release}-nebu-core:9000` — rendered by the ConfigMap template, not a values entry.
 
-Image tags must be set independently per component via `--set gateway.image.tag=X.Y.Z --set core.image.tag=X.Y.Z` (or a values file). Omitting either tag causes `helm template`/`helm install` to fail with an explicit error — preventing silent deployment of unversioned images.
+**Secret management (ExistingSecret pattern):**
+
+The chart never creates a Kubernetes Secret. Sensitive `NEBU_*` variables (`NEBU_DB_URL`, `NEBU_INTERNAL_SECRET`, `NEBU_OIDC_CLIENT_SECRET`) must be stored in a pre-existing Kubernetes Secret, created out-of-band by the operator:
 
 ```bash
+kubectl create secret generic nebu-sensitive \
+  --from-literal=NEBU_DB_URL='postgres://user:pass@host:5432/nebu' \
+  --from-literal=NEBU_INTERNAL_SECRET='<64-char-random-hex>' \
+  --from-literal=NEBU_OIDC_CLIENT_SECRET='<secret>'
+```
+
+The Secret name is referenced in `values.yaml` as `existingSecret.name`. When set, the gateway Deployment loads it via `envFrom.secretRef`. If the name is empty, no Secret is mounted and the gateway will fail to start — this is intentional (GitOps pre-deploy pattern) and documented in NOTES.txt.
+
+Image tags must be set independently per component. Omitting either tag causes `helm install` to fail with an explicit error — preventing silent deployment of unversioned images.
+
+```bash
+# Minimal production install:
 helm install nebu deploy/helm/nebu/ \
   --set gateway.image.tag=1.0.0 \
   --set core.image.tag=1.0.0 \
   --set config.oidcIssuer=https://your-idp.example.com \
-  --set config.serverName=your-server-name
+  --set config.serverName=your-server-name \
+  --set existingSecret.name=nebu-sensitive
+
+# With Ingress + HPA:
+helm install nebu deploy/helm/nebu/ \
+  --set gateway.image.tag=1.0.0 \
+  --set core.image.tag=1.0.0 \
+  --set existingSecret.name=nebu-sensitive \
+  --set ingress.enabled=true \
+  --set ingress.hostname=nebu.example.com \
+  --set ingress.tls.secretName=nebu-tls \
+  --set autoscaling.gateway.enabled=true
 ```

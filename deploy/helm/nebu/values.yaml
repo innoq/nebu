@@ -18,11 +18,6 @@ gateway:
     limits:
       cpu: "1000m"
       memory: "512Mi"
-  autoscaling:
-    enabled: false
-    minReplicas: 1
-    maxReplicas: 10
-    targetCPUUtilizationPercentage: 70
 
 core:
   # image.tag must be overridden via --set core.image.tag=<version> or a values file.
@@ -37,11 +32,6 @@ core:
     limits:
       cpu: "2000m"
       memory: "1Gi"
-  autoscaling:
-    enabled: false
-    minReplicas: 1
-    maxReplicas: 10
-    targetCPUUtilizationPercentage: 70
 
 # Non-secret application configuration (rendered into ConfigMap)
 config:
@@ -58,13 +48,31 @@ service:
   port: 8008
 
 ingress:
-  enabled: true
+  # Set enabled: true and provide a hostname to expose Nebu via an Ingress resource.
+  enabled: false
   className: "nginx"
   annotations: {}
-  host: chart-example.local
+  # hostname is the FQDN used for the Ingress rule and TLS certificate.
+  hostname: ""
   tls:
+    # secretName: name of the TLS Secret created out-of-band (e.g. cert-manager).
+    # Leave empty to disable TLS on the Ingress.
+    secretName: ""
+
+# existingSecret references a pre-created Kubernetes Secret that holds sensitive
+# NEBU_* environment variables (e.g. NEBU_DB_URL, NEBU_INTERNAL_SECRET).
+# Operators must create this Secret before deploying — see NOTES.txt.
+# If name is empty, no secretRef is mounted and the gateway will fail to start.
+existingSecret:
+  name: ""
+
+# autoscaling configures HorizontalPodAutoscaler resources.
+autoscaling:
+  gateway:
     enabled: false
-    secretName: nebu-tls
+    minReplicas: 1
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
 
 postgres:
   # Set external: true to use an external database (default: true).
@@ -75,6 +83,9 @@ postgres:
   database: nebu
   # Name of a Kubernetes Secret with keys: username, password
   secretName: nebu-db-credentials
+  # storage and storageClass configure the PVC when postgres.external is false.
+  storage: "10Gi"
+  storageClass: ""
 
 oidc:
   # Name of a Kubernetes Secret with keys: client_id, client_secret

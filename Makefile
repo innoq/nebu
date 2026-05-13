@@ -330,9 +330,9 @@ gen-api:
 
 ## test-iac-validate: Validate OpenTofu IaC files + Helm chart — format check, syntax validation, lint, and template render.
 ## Runs tofu fmt -check (formatting) and tofu validate (syntax/types) for all example directories.
-## Also runs helm lint and helm template on deploy/helm/nebu/ (Story 13-4a AC1+AC2).
+## Also runs helm lint and helm template on deploy/helm/nebu/ (Story 13-4a AC1+AC2, Story 13-4b AC3+AC5).
 ## No cloud credentials required — tofu validate checks syntax only, not provider resources.
-## Story 13-1 AC3 + AC7, Story 13-4a AC1 + AC2: equivalent to the validate-iac CI job.
+## Story 13-1 AC3 + AC7, Story 13-4a AC1 + AC2, Story 13-4b AC3 + AC5: equivalent to the validate-iac CI job.
 test-iac-validate:
 	@echo "==> OpenTofu: fmt check (recursive)"
 	$(DOCKER_TOFU) -c "tofu fmt -check -recursive deploy/tofu/"
@@ -344,6 +344,8 @@ test-iac-validate:
 	$(DOCKER_TOFU) -c "cd deploy/tofu/examples/k8s && tofu init -backend=false && tofu validate"
 	@echo "==> Helm: lint deploy/helm/nebu/"
 	$(DOCKER_HELM) -c "helm lint deploy/helm/nebu/"
-	@echo "==> Helm: template render check deploy/helm/nebu/"
+	@echo "==> Helm: template render check deploy/helm/nebu/ (default values)"
 	$(DOCKER_HELM) -c "helm template nebu deploy/helm/nebu/ --set gateway.image.tag=validate --set core.image.tag=validate > /dev/null"
+	@echo "==> Helm: template render check deploy/helm/nebu/ (ingress + HPA enabled)"
+	$(DOCKER_HELM) -c "helm template nebu deploy/helm/nebu/ --set gateway.image.tag=validate --set core.image.tag=validate --set ingress.enabled=true --set ingress.hostname=nebu.example.com --set autoscaling.gateway.enabled=true > /dev/null"
 	@echo "==> IaC validation passed."

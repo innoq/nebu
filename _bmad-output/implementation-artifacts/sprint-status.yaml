@@ -1,5 +1,6 @@
 # generated: 2026-03-20
 # last_updated: 2026-05-13
+# story 13-4b done (pipeline: Code CLEAN 0-cycle+Kassandra CLEAN+arc42 07-deployment): 2026-05-13
 # story 13-2c done (pipeline: Code CLEAN 0-cycle + Kassandra CLEAN — ALB+Secrets Manager+ECS services+RUNBOOK): 2026-05-13
 # story 13-2b done (pipeline: 6 MINOR fixed 1 cycle — RDS PostgreSQL 16 Multi-AZ + ECS Fargate cluster + task def skeletons + CloudWatch logs + IAM execution role): 2026-05-13
 # history: archived to _bmad-output/archived-artifacts/sprint-history.md
@@ -122,7 +123,7 @@ development_status:
   13-3a-stackit-vm-provisioning-networking: backlog
   13-3b-stackit-cloud-init-docker-compose-runbook: backlog
   13-4a-helm-chart-core-templates-deployment-service-configmap: backlog
-  13-4b-helm-chart-ingress-pvc-secrets-hpa: backlog
+  13-4b-helm-chart-ingress-pvc-secrets-hpa: done
   13-4c-opentofu-k8s-provider-kind-smoke-test-runbook: backlog
   13-5-load-test-gold-tier-1000-concurrent-users-multi-gateway: backlog
   13-6-horizontal-scaling-validation-core-clustering-libcluster-horde: backlog
