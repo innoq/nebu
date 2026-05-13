@@ -76,8 +76,9 @@ paths = [
 
   # (a) Matches fake secrets inside Go unit test files (package _test).
   # (b) These are in-process test values and never leave the test process.
-  # (c) Any *_test.go file throughout gateway/
+  # (c) Any *_test.go file throughout gateway/ and media/
   '''gateway/.*_test\.go''',
+  '''media/.*_test\.go''',
 
   # (a) Matches ExUnit test fixture files inside Elixir application test dirs.
   # (b) These are mock secrets used only within ExUnit sandboxes.
