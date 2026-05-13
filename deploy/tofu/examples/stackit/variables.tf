@@ -180,3 +180,31 @@ variable "image_registry" {
   description = "Container image registry prefix (e.g. 'registry.gitlab.com/myorg/open-chat'). Images pulled as <image_registry>/nebu-gateway:<nebu_version> and <image_registry>/nebu-core:<nebu_version>."
   type        = string
 }
+
+variable "dns_mode" {
+  description = "DNS record creation mode. 'default': OpenTofu creates DNS records in the cloud provider's DNS service (Route 53 for AWS, Stackit DNS for Stackit). 'external': No DNS resources are created; the operator registers the ALB hostname/IP in their own DNS server. The 'dns_name' output shows what to register. Default is 'external' to prevent accidental DNS changes on existing deployments."
+  type        = string
+  default     = "external"
+
+  validation {
+    condition     = contains(["default", "external"], var.dns_mode)
+    error_message = "dns_mode must be 'default' or 'external'."
+  }
+}
+
+variable "dex_subdomain_enabled" {
+  description = "When true and dns_mode = 'default', creates an additional DNS record for 'dex.<server_name>' pointing to the same floating IP. Intended for future host-based routing where Dex is accessible via a subdomain instead of a port number. Only meaningful when dns_mode = 'default'."
+  type        = bool
+  default     = false
+
+  validation {
+    condition     = !var.dex_subdomain_enabled || var.dns_mode == "default"
+    error_message = "dex_subdomain_enabled = true requires dns_mode = 'default' — DNS records cannot be created in external mode."
+  }
+}
+
+variable "dns_contact_email" {
+  description = "Contact email for the Stackit DNS zone (optional, recommended for production). If empty, the provider omits the contact_email field from the zone resource."
+  type        = string
+  default     = ""
+}

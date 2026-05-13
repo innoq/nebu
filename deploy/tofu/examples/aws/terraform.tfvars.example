@@ -23,3 +23,13 @@ acm_certificate_arn = ""
 
 # Number of desired ECS tasks for gateway and core services.
 ecs_desired_count = 2
+
+# ── DNS ──────────────────────────────────────────────────────────────────────
+# dns_mode = "default" creates a Route 53 A-record (ALIAS) pointing domain_name to the ALB.
+# Requires a Route 53 hosted zone named *exactly* domain_name (e.g. "chat.example.com").
+# A parent zone (e.g. "example.com") will NOT match — the zone name must be identical to domain_name.
+# dns_mode = "external" (default) skips DNS creation — register the 'dns_name' output
+# value as a CNAME in your DNS provider. Note: CNAME records are not supported at the zone
+# apex (e.g., "example.com"). For apex domains, use an ALIAS record (Route 53) or
+# equivalent in your DNS provider.
+dns_mode = "external"  # or: "default"

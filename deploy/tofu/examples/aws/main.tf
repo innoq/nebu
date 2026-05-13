@@ -58,3 +58,34 @@ module "nebu_aws" {
     ManagedBy   = "opentofu"
   }
 }
+
+# ── DNS (Route 53) ────────────────────────────────────────────────────────────
+# Created only when dns_mode = "default".
+# Requires a Route 53 hosted zone for var.domain_name to exist in the AWS account.
+# IMPORTANT: The hosted zone must be named *exactly* var.domain_name (e.g. if
+# domain_name = "chat.example.com", the zone must be named "chat.example.com").
+# A parent zone (e.g. "example.com") will NOT match and tofu plan will fail.
+# If no hosted zone exists for `domain_name`, create it first via the AWS console
+# or CLI (`aws route53 create-hosted-zone`). Do not add an `aws_route53_zone`
+# resource alongside this data source — that would conflict.
+
+data "aws_route53_zone" "nebu" {
+  count = var.dns_mode == "default" ? 1 : 0
+
+  name         = var.domain_name
+  private_zone = false
+}
+
+resource "aws_route53_record" "nebu" {
+  count = var.dns_mode == "default" ? 1 : 0
+
+  zone_id = data.aws_route53_zone.nebu[0].zone_id
+  name    = var.domain_name
+  type    = "A"
+
+  alias {
+    name                   = module.nebu_aws.alb_dns_name
+    zone_id                = module.nebu_aws.alb_zone_id
+    evaluate_target_health = true
+  }
+}

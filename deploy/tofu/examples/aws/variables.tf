@@ -78,3 +78,14 @@ variable "ecs_desired_count" {
   type        = number
   default     = 1
 }
+
+variable "dns_mode" {
+  description = "DNS record creation mode. 'default': OpenTofu creates DNS records in the cloud provider's DNS service (Route 53 for AWS, Stackit DNS for Stackit). 'external': No DNS resources are created; the operator registers the ALB hostname/IP in their own DNS server. The 'dns_name' output shows what to register. Default is 'external' to prevent accidental DNS changes on existing deployments."
+  type        = string
+  default     = "external"
+
+  validation {
+    condition     = contains(["default", "external"], var.dns_mode)
+    error_message = "dns_mode must be 'default' or 'external'."
+  }
+}

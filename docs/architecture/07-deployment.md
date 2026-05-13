@@ -349,6 +349,39 @@ The Stackit deployment supports two OIDC profiles selected via `var.oidc_mode`:
 
 A `lifecycle { precondition }` block on `stackit_server.nebu` enforces: `oidc_mode == "dex" → dex_static_password_hash != null` and `oidc_mode == "external" → length(oidc_issuer) > 0`.
 
+### DNS Mode — `dns_mode` variable (nebu-aws + nebu-stackit — Story 13-10)
+
+Both the AWS and Stackit deployment examples support a `dns_mode` variable that controls whether OpenTofu creates DNS records automatically or leaves DNS registration to the operator.
+
+| `dns_mode` | AWS behaviour | Stackit behaviour |
+|---|---|---|
+| `"external"` _(default)_ | No DNS resources created. `dns_name` output holds the ALB DNS hostname for manual CNAME/ALIAS registration. | No DNS resources created. `dns_name` output holds the floating IP for manual A-record registration. |
+| `"default"` | Creates `data.aws_route53_zone` + `aws_route53_record` (ALIAS A-record) in Route 53, guarded by `count = 1`. Requires the hosted zone for `var.domain_name` to exist in the AWS account with an exact name match. | Creates `stackit_dns_zone` + `stackit_dns_record_set.nebu` (A-record) for `var.server_name → floating IP`, guarded by `count = 1`. |
+
+Default is `"external"` to prevent accidental DNS changes on existing deployments.
+
+**Stackit-only: `dex_subdomain_enabled`**
+
+When `dns_mode = "default"` and `dex_subdomain_enabled = true`, an additional `stackit_dns_record_set.dex` resource creates a `dex.<server_name>` A-record pointing to the same floating IP. This lays groundwork for future host-based Dex routing (see story 13-9 dev notes). The variable is validated — setting it to `true` when `dns_mode = "external"` raises a validation error at plan time.
+
+**Stackit-only: `dns_contact_email`**
+
+An optional `dns_contact_email` variable (default `""`) sets the `contact_email` on the `stackit_dns_zone` resource. When empty, the field is omitted via null-coalescing (`var.dns_contact_email != "" ? var.dns_contact_email : null`).
+
+**AWS: `dns_name` output**
+
+A new `deploy/tofu/examples/aws/outputs.tf` exports `dns_name = module.nebu_aws.alb_dns_name`. Operators using `dns_mode = "external"` run `tofu output dns_name` to retrieve the ALB hostname to register as a CNAME. Note: CNAME is not supported at the zone apex — use Route 53 ALIAS or an ALIAS/ANAME record at your DNS provider for apex domains.
+
+**RUNBOOK coverage:** Both `deploy/tofu/examples/aws/RUNBOOK.md` and `deploy/tofu/examples/stackit/RUNBOOK.md` include a "DNS Configuration" section describing both modes, manual registration steps for `external` mode, and import instructions for existing Stackit DNS zones.
+
+**New variables (Story 13-10):**
+
+| Variable | Example | Type | Default | Purpose |
+|---|---|---|---|---|
+| `dns_mode` | AWS + Stackit | string | `"external"` | DNS record creation mode; validated against `["default", "external"]` |
+| `dex_subdomain_enabled` | Stackit only | bool | `false` | Create `dex.<server_name>` DNS record when `dns_mode = "default"` |
+| `dns_contact_email` | Stackit only | string | `""` | Contact email for Stackit DNS zone (omitted when empty) |
+
 ### Stackit cloud-init Bootstrap (nebu-stackit — 13-3b, updated 13-8, 13-9)
 
 `deploy/tofu/examples/stackit/cloud-init.tftpl` is rendered by `templatefile()` in `main.tf` and injected as `user_data` (base64-encoded) into the VM at provision time. On first boot, the VM:

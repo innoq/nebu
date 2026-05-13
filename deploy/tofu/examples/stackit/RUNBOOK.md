@@ -222,6 +222,36 @@ Confirm the prompt. This removes: VM, network, security group, ALB, floating IP,
 
 ---
 
+## DNS Configuration
+
+Nebu supports two DNS modes, configured via `dns_mode` in `terraform.tfvars`.
+
+### `dns_mode = "external"` (default) — Manual DNS Registration
+
+OpenTofu does not create DNS records. After `tofu apply`, retrieve the floating IP:
+
+```bash
+tofu output dns_name
+```
+
+Register this value in your DNS provider:
+- **Stackit:** Create an A-record pointing `<server_name>` to the floating IP shown in `dns_name`.
+
+### `dns_mode = "default"` — Managed DNS (Stackit DNS)
+
+OpenTofu creates DNS records automatically in Stackit DNS.
+
+**Stackit DNS:**
+- Creates a DNS zone + A-record for `server_name` pointing to the floating IP.
+- Requires Stackit DNS service to be enabled in your project.
+- If a zone for `server_name` already exists: import it before apply:
+  ```bash
+  tofu import stackit_dns_zone.nebu <zone_id>
+  ```
+- `dex_subdomain_enabled = true` additionally creates `dex.<server_name>` pointing to the floating IP (useful for future host-based Dex routing).
+
+---
+
 ## Troubleshooting
 
 | Symptom | Check |

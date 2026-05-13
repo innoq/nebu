@@ -153,6 +153,33 @@ tofu destroy -var-file=terraform.tfvars
 
 ---
 
+## DNS Configuration
+
+Nebu supports two DNS modes, configured via `dns_mode` in `terraform.tfvars`.
+
+### `dns_mode = "external"` (default) — Manual DNS Registration
+
+OpenTofu does not create DNS records. After `tofu apply`, retrieve the ALB endpoint:
+
+```bash
+tofu output dns_name
+```
+
+Register this value in your DNS provider:
+- **AWS:** Create a CNAME record pointing your domain to this value. **Note:** CNAME records are not supported at the zone apex (e.g., `example.com`). If your domain is a zone apex, use an ALIAS record (Route 53) or equivalent ALIAS/ANAME record in your DNS provider instead.
+
+### `dns_mode = "default"` — Managed DNS (Route 53)
+
+OpenTofu creates DNS records automatically in Route 53.
+
+**AWS Route 53:**
+- Requires a Route 53 hosted zone for `domain_name` to exist in your AWS account.
+- **The hosted zone must be named *exactly* `domain_name`** (e.g. if `domain_name = "chat.example.com"`, the zone must be named `chat.example.com`). A parent zone (e.g. `example.com`) will not match the data source lookup and `tofu plan` will fail with a zone-not-found error.
+- Creates an ALIAS A-record (no CNAME needed — ALIAS records support the zone apex).
+- If the hosted zone does not exist: create it first via the AWS console or via CLI (`aws route53 create-hosted-zone --name <domain_name> --caller-reference $(date +%s)`). Do not add an `aws_route53_zone` resource alongside this data source — that would conflict.
+
+---
+
 ## Troubleshooting
 
 | Symptom | First step |

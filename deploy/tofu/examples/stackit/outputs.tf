@@ -27,3 +27,8 @@ output "load_balancer_private_address" {
   description = "Transient private IP address of the Stackit ALB (used for internal routing). The public entry point is floating_ip."
   value       = stackit_loadbalancer.nebu.private_address
 }
+
+output "dns_name" {
+  description = "Floating IP address to register in your external DNS server when dns_mode = 'external'. Create an A-record pointing your domain to this IP address. When dns_mode = 'default', Stackit DNS is managing this automatically."
+  value       = stackit_public_ip.nebu.ip
+}
