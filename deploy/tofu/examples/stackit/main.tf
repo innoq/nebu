@@ -136,6 +136,22 @@ resource "stackit_server" "nebu" {
   network_interfaces = [
     stackit_network_interface.nebu.network_interface_id,
   ]
+
+  # SECURITY NOTE: cloud-init template including secrets is stored in Terraform state.
+  # Use encrypted state backend (Stackit Object Storage with server-side encryption) in production.
+  # Never commit .tfstate files. See the backend "s3" block above for the recommended configuration.
+  #
+  # cloud-init bootstrap: installs Docker, writes /opt/nebu/ layout, starts nebu.service.
+  # All secrets are injected from OpenTofu variables — no hardcoded values in the template.
+  user_data = base64encode(templatefile("${path.module}/cloud-init.tftpl", {
+    db_password        = var.db_password
+    internal_secret    = var.internal_secret
+    oidc_client_secret = var.oidc_client_secret
+    oidc_issuer        = var.oidc_issuer
+    server_name        = var.server_name
+    image_registry     = var.image_registry
+    nebu_version       = var.nebu_version
+  }))
 }
 
 # ── Floating IP ──────────────────────────────────────────────────────────────

@@ -1,0 +1,207 @@
+#cloud-config
+# Nebu bootstrap — cloud-init template rendered by OpenTofu templatefile().
+# Variables injected at apply time; no hardcoded secrets.
+# cloud-init reference: https://cloudinit.readthedocs.io/
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - ca-certificates
+  - curl
+  - gnupg
+  - lsb-release
+
+write_files:
+  # ── /opt/nebu/.secrets/internal_secret ────────────────────────────────────
+  # Quoted scalar — no trailing newline added by YAML block scalar.
+  - path: /opt/nebu/.secrets/internal_secret
+    owner: root:root
+    permissions: "0600"
+    content: "${internal_secret}"
+
+  # ── /opt/nebu/.env ─────────────────────────────────────────────────────────
+  # Mode 0600 — contains secrets; readable only by root / docker compose.
+  - path: /opt/nebu/.env
+    owner: root:root
+    permissions: "0600"
+    content: |
+      POSTGRES_PASSWORD=${db_password}
+      NEBU_DB_URL=postgresql://nebu_app:${db_password}@postgres:5432/nebu
+      NEBU_DB_URL_MIGRATE=postgresql://nebu_app:${db_password}@postgres:5432/nebu
+      NEBU_OIDC_ISSUER=${oidc_issuer}
+      NEBU_OIDC_CLIENT_SECRET=${oidc_client_secret}
+      NEBU_SERVER_NAME=${server_name}
+      NEBU_IMAGE_REGISTRY=${image_registry}
+      NEBU_VERSION=${nebu_version}
+
+  # ── /opt/nebu/init-db.sql ──────────────────────────────────────────────────
+  # Runs at postgres first-boot via /docker-entrypoint-initdb.d/.
+  # Creates keycloak DB + nebu_app user with appropriate grants.
+  # Mode 0600 — contains DB passwords; root-only. Deleted after first boot.
+  - path: /opt/nebu/init-db.sql
+    owner: root:root
+    permissions: "0600"
+    content: |
+      -- Keycloak database
+      CREATE DATABASE keycloak;
+      CREATE USER keycloak WITH PASSWORD '${db_password}';
+      GRANT ALL PRIVILEGES ON DATABASE keycloak TO keycloak;
+      \connect keycloak
+      GRANT ALL ON SCHEMA public TO keycloak;
+
+      -- nebu_app user (used by both gateway and core, including migrations)
+      CREATE USER nebu_app WITH PASSWORD '${db_password}';
+      GRANT ALL PRIVILEGES ON DATABASE nebu TO nebu_app;
+      \connect nebu
+      GRANT ALL ON SCHEMA public TO nebu_app;
+
+  # ── /opt/nebu/docker-compose.yml ───────────────────────────────────────────
+  - path: /opt/nebu/docker-compose.yml
+    owner: root:root
+    permissions: "0640"
+    content: |
+      name: nebu
+
+      secrets:
+        internal_secret:
+          file: .secrets/internal_secret
+
+      services:
+        postgres:
+          image: postgres:16-alpine
+          restart: unless-stopped
+          environment:
+            POSTGRES_DB: nebu
+            POSTGRES_USER: nebu
+            POSTGRES_PASSWORD: $${POSTGRES_PASSWORD}
+          volumes:
+            - postgres_data:/var/lib/postgresql/data
+            - /opt/nebu/init-db.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+          healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U nebu -d nebu"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+          env_file:
+            - .env
+
+        keycloak:
+          image: quay.io/keycloak/keycloak:24.0
+          restart: unless-stopped
+          command: ["start-optimized"]
+          environment:
+            KC_DB: postgres
+            KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+            KC_DB_USERNAME: keycloak
+            KC_DB_PASSWORD: $${POSTGRES_PASSWORD}
+            KC_HOSTNAME: $${NEBU_SERVER_NAME}
+          depends_on:
+            postgres:
+              condition: service_healthy
+          env_file:
+            - .env
+
+        core:
+          image: $${NEBU_IMAGE_REGISTRY}/nebu-core:$${NEBU_VERSION}
+          restart: unless-stopped
+          depends_on:
+            postgres:
+              condition: service_healthy
+          secrets: [internal_secret]
+          environment:
+            NEBU_DB_URL: $${NEBU_DB_URL}
+            NEBU_INTERNAL_SECRET_FILE: "/run/secrets/internal_secret"
+            NEBU_SERVER_NAME: $${NEBU_SERVER_NAME}
+          env_file:
+            - .env
+          healthcheck:
+            test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+            interval: 10s
+            timeout: 5s
+            retries: 3
+            start_period: 30s
+
+        gateway:
+          image: $${NEBU_IMAGE_REGISTRY}/nebu-gateway:$${NEBU_VERSION}
+          restart: unless-stopped
+          depends_on:
+            postgres:
+              condition: service_healthy
+            core:
+              condition: service_healthy
+          secrets: [internal_secret]
+          environment:
+            NEBU_DB_URL: $${NEBU_DB_URL}
+            NEBU_DB_URL_MIGRATE: $${NEBU_DB_URL_MIGRATE}
+            NEBU_CORE_GRPC_ADDR: "core:9000"
+            NEBU_INTERNAL_SECRET_FILE: "/run/secrets/internal_secret"
+            NEBU_SERVER_NAME: $${NEBU_SERVER_NAME}
+            NEBU_OIDC_ISSUER: $${NEBU_OIDC_ISSUER}
+            NEBU_OIDC_CLIENT_SECRET: $${NEBU_OIDC_CLIENT_SECRET}
+            NEBU_OIDC_CLIENT_ID: "nebu-gateway"
+          env_file:
+            - .env
+          ports:
+            - "8008:8008"
+          healthcheck:
+            test: ["CMD", "/healthcheck"]
+            interval: 10s
+            timeout: 5s
+            retries: 3
+            start_period: 10s
+
+      volumes:
+        postgres_data:
+
+  # ── /etc/systemd/system/nebu.service ───────────────────────────────────────
+  # Type=simple: systemd manages the docker compose process directly (no -d flag).
+  # This allows systemd to track health and restart on failure correctly.
+  - path: /etc/systemd/system/nebu.service
+    owner: root:root
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Nebu Chat Server (Docker Compose)
+      Requires=docker.service
+      After=docker.service network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=simple
+      WorkingDirectory=/opt/nebu
+      ExecStart=/usr/bin/docker compose -f /opt/nebu/docker-compose.yml up
+      ExecStop=/usr/bin/docker compose -f /opt/nebu/docker-compose.yml down
+      Restart=on-failure
+      RestartSec=10
+
+      [Install]
+      WantedBy=multi-user.target
+
+runcmd:
+  # ── Docker CE install ───────────────────────────────────────────────────────
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  - chmod a+r /etc/apt/keyrings/docker.asc
+  - |
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
+      https://download.docker.com/linux/ubuntu \
+      $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+      > /etc/apt/sources.list.d/docker.list
+  - apt-get update -y
+  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+  # ── Nebu directory + secrets ────────────────────────────────────────────────
+  - mkdir -p /opt/nebu/.secrets
+  - chmod 0700 /opt/nebu/.secrets
+  - chmod 0700 /opt/nebu
+  - chmod 0640 /opt/nebu/docker-compose.yml
+
+  # ── Enable + start nebu.service ─────────────────────────────────────────────
+  - systemctl daemon-reload
+  - systemctl enable nebu.service
+  - systemctl start docker.service
+  - sleep 2
+  - systemctl start nebu.service
+  # ── Cleanup: remove init-db.sql (contains DB passwords; no longer needed after first boot)
+  - rm -f /opt/nebu/init-db.sql

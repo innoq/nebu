@@ -283,6 +283,29 @@ Day-2 operations (rolling updates, secret rotation, teardown) are documented in 
 
 Key variables: `stackit_project_id`, `stackit_key_path`, `ssh_public_key`, `ubuntu_image_id`, `network_cidr`, `availability_zone`, `vm_plan_id`, `alb_plan_id`, `stackit_tls_certificate_arn`.
 
+### Stackit cloud-init Bootstrap (nebu-stackit — 13-3b)
+
+`deploy/tofu/examples/stackit/cloud-init.tftpl` is rendered by `templatefile()` in `main.tf` and injected as `user_data` (base64-encoded) into the VM at provision time. On first boot, the VM:
+
+1. Applies OS security patches (`package_upgrade: true`)
+2. Installs Docker CE + Docker Compose plugin via the official Docker apt repository
+3. Writes `/opt/nebu/` directory tree (permissions `0700`) with:
+   - `.secrets/internal_secret` (mode `0600`, quoted scalar — no trailing newline)
+   - `.env` (mode `0600`) — all runtime secrets injected from OpenTofu variables, including `NEBU_DB_URL` and `NEBU_DB_URL_MIGRATE` (same `nebu_app` user, simplifying PostgreSQL grants)
+   - `init-db.sql` — mounted into `/docker-entrypoint-initdb.d/` on the Postgres container to create the `keycloak` database + user and grant `nebu_app` schema-level access
+   - `docker-compose.yml` (mode `0640`) — four services: `postgres`, `keycloak`, `core`, `gateway`
+4. Installs `/etc/systemd/system/nebu.service` — `Type=simple`, no `-d` flag; systemd owns the process lifecycle with `Restart=on-failure RestartSec=10`
+5. Starts Docker (`systemctl start docker.service && sleep 2`) before starting `nebu.service`
+
+**Security invariants:**
+- `DATABASE_URL` bash parameter substitution removed — `nebu_app` user handles the `postgresql://` scheme natively
+- `nebu_migrate` user eliminated — `NEBU_DB_URL_MIGRATE` uses the same `nebu_app` credentials
+- `/opt/nebu/` is `0700` (root-only); `docker-compose.yml` is `0640`
+- `nebu_version` variable rejects `"latest"` — a specific semver tag is required
+- Secrets in Terraform state: use encrypted Stackit Object Storage backend (see `RUNBOOK.md` warning)
+
+Day-2 operations (updates, pg_dump backup, teardown) are documented in `deploy/tofu/examples/stackit/RUNBOOK.md`.
+
 ### Helm Chart
 
 `deploy/helm/nebu/` is a standalone Helm Chart usable independently of OpenTofu. Image tag defaults to `""` and must be overridden via `--set image.tag=<version>` or a values file — preventing accidental deployment of an unversioned image.
