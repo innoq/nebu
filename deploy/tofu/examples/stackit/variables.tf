@@ -65,18 +65,33 @@ variable "stackit_tls_certificate_arn" {
   # then set this to the certificate name returned by the API.
 }
 
-# ── cloud-init / bootstrap variables ─────────────────────────────────────────
+# ── PostgresFlex sizing variables ─────────────────────────────────────────────
 
-variable "db_password" {
-  description = "PostgreSQL password for the nebu database user. Injected into the VM via cloud-init at first boot. Never stored in state in plaintext — use a secrets backend or Stackit Secrets Manager."
-  type        = string
-  sensitive   = true
-
-  validation {
-    condition     = length(var.db_password) >= 16
-    error_message = "db_password must be at least 16 characters for production security."
-  }
+variable "postgres_replicas" {
+  description = "Number of PostgresFlex replicas. Use 1 for dev/testing. Use 3 for production HA."
+  type        = number
+  default     = 1
 }
+
+variable "postgres_cpu" {
+  description = "CPU cores for the PostgresFlex instance flavor."
+  type        = number
+  default     = 1
+}
+
+variable "postgres_ram" {
+  description = "RAM in GB for the PostgresFlex instance flavor."
+  type        = number
+  default     = 4
+}
+
+variable "postgres_storage_size" {
+  description = "Storage size in GB for the PostgresFlex instance."
+  type        = number
+  default     = 20
+}
+
+# ── cloud-init / bootstrap variables ─────────────────────────────────────────
 
 variable "internal_secret" {
   description = "Shared PSK used for gateway ↔ core node registration (see ADR-008). Injected into .secrets/internal_secret at first boot."

@@ -37,10 +37,24 @@ network_cidr = "10.0.0.0/24"
 # Optional: VM machine type (run `stackit compute server machine-types list` for options)
 vm_plan_id = "g2i.2"
 
-# ── cloud-init / bootstrap ────────────────────────────────────────────────────
+# ── PostgresFlex managed database ────────────────────────────────────────────
 
-# Required: PostgreSQL password for the nebu user (sensitive — do not commit real values)
-db_password = "<REPLACE_WITH_STRONG_PASSWORD>"
+# Optional: number of PostgresFlex replicas (1 = dev/testing, 3 = production HA recommended)
+postgres_replicas = 1
+
+# Optional: CPU cores for the PostgresFlex instance flavor
+postgres_cpu = 1
+
+# Optional: RAM in GB for the PostgresFlex instance flavor
+postgres_ram = 4
+
+# Optional: storage size in GB for the PostgresFlex instance
+# Production recommendation: start with 50 GB and enable autoscaling via the STACKIT portal.
+postgres_storage_size = 20
+
+# ── cloud-init / bootstrap ────────────────────────────────────────────────────
+# Note: db_password is no longer required — database credentials are auto-generated
+# by PostgresFlex and injected into cloud-init via OpenTofu computed attributes.
 
 # Required: shared PSK for gateway ↔ core node registration (ADR-008).
 # Generate with: openssl rand -hex 32

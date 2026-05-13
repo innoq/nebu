@@ -39,11 +39,11 @@ module "nebu_aws" {
   vpc_cidr    = var.vpc_cidr
   environment = var.environment
 
-  # Database
-  db_instance_class           = var.db_instance_class
-  db_password                 = var.db_password
-  skip_final_snapshot         = var.skip_final_snapshot
-  enable_performance_insights = var.enable_performance_insights
+  # Database — Aurora Serverless v2
+  db_password         = var.db_password
+  skip_final_snapshot = var.skip_final_snapshot
+  aurora_min_capacity = var.aurora_min_capacity
+  aurora_max_capacity = var.aurora_max_capacity
 
   # Compute — task definitions reference nebu-core outputs for image/version
   aws_region          = var.aws_region

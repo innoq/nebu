@@ -42,14 +42,8 @@ variable "environment" {
   default     = "prod"
 }
 
-variable "db_instance_class" {
-  description = "RDS instance class (e.g. 'db.t3.medium', 'db.r6g.large')."
-  type        = string
-  default     = "db.t3.medium"
-}
-
 variable "db_password" {
-  description = "Initial master password for the RDS PostgreSQL instance. Sensitive — do not commit."
+  description = "Initial master password for the Aurora PostgreSQL cluster. Sensitive — do not commit."
   type        = string
   sensitive   = true
   default     = "changeme"
@@ -59,6 +53,18 @@ variable "skip_final_snapshot" {
   description = "When true, no final DB snapshot is created on deletion. Set to false for production."
   type        = bool
   default     = true
+}
+
+variable "aurora_min_capacity" {
+  description = "Minimum Aurora Serverless v2 capacity in ACUs. Set to 0 for dev (scale-to-zero). Set to 0.5 for production to avoid cold-start latency."
+  type        = number
+  default     = 0
+}
+
+variable "aurora_max_capacity" {
+  description = "Maximum Aurora Serverless v2 capacity in ACUs. Default 4 is sufficient for Nebu MVP load. Increase for high-traffic production."
+  type        = number
+  default     = 4
 }
 
 variable "acm_certificate_arn" {
@@ -71,10 +77,4 @@ variable "ecs_desired_count" {
   description = "Desired number of running ECS tasks for gateway and core services."
   type        = number
   default     = 1
-}
-
-variable "enable_performance_insights" {
-  description = "Enable RDS Performance Insights. Disable for db.t3.micro or unsupported instance classes."
-  type        = bool
-  default     = true
 }

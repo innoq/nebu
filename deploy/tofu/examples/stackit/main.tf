@@ -139,19 +139,83 @@ resource "stackit_server" "nebu" {
 
   # SECURITY NOTE: cloud-init template including secrets is stored in Terraform state.
   # Use encrypted state backend (Stackit Object Storage with server-side encryption) in production.
+  # The stackit_postgresflex_user.nebu.password is stored in state — ensure state encryption is enabled.
   # Never commit .tfstate files. See the backend "s3" block above for the recommended configuration.
   #
   # cloud-init bootstrap: installs Docker, writes /opt/nebu/ layout, starts nebu.service.
   # All secrets are injected from OpenTofu variables — no hardcoded values in the template.
   user_data = base64encode(templatefile("${path.module}/cloud-init.tftpl", {
-    db_password        = var.db_password
+    # db_password removed — managed by PostgresFlex, credentials injected via pg_* vars below
     internal_secret    = var.internal_secret
     oidc_client_secret = var.oidc_client_secret
     oidc_issuer        = var.oidc_issuer
     server_name        = var.server_name
     image_registry     = var.image_registry
     nebu_version       = var.nebu_version
+    # PostgresFlex connection details for the Nebu application user
+    pg_host     = stackit_postgresflex_user.nebu.host
+    pg_port     = stackit_postgresflex_user.nebu.port
+    pg_user     = stackit_postgresflex_user.nebu.username
+    pg_password = stackit_postgresflex_user.nebu.password
+    # Keycloak-dedicated DB credentials (separate user, owns the keycloak database)
+    kc_user     = stackit_postgresflex_user.keycloak.username
+    kc_password = stackit_postgresflex_user.keycloak.password
   }))
+}
+
+# ── PostgresFlex Managed Database ────────────────────────────────────────────
+# Replaces the self-hosted postgres:16-alpine container in cloud-init.
+# Provides automated daily backups, PITR, and HA replication via the Stackit platform.
+
+resource "stackit_postgresflex_instance" "nebu" {
+  project_id      = var.stackit_project_id
+  name            = "nebu-${var.environment}-postgres"
+  version         = "16"
+  replicas        = var.postgres_replicas
+  backup_schedule = "0 2 * * *" # Daily at 02:00 UTC
+
+  # ACL: restrict to the VM's private network CIDR only.
+  # The VM connects via its private network interface — no public exposure.
+  acl = [var.network_cidr]
+
+  flavor = {
+    cpu = var.postgres_cpu
+    ram = var.postgres_ram
+  }
+
+  storage = {
+    class = "premium-perf6-stackit"
+    size  = var.postgres_storage_size
+  }
+}
+
+resource "stackit_postgresflex_user" "nebu" {
+  project_id  = var.stackit_project_id
+  instance_id = stackit_postgresflex_instance.nebu.instance_id
+  username    = "nebu_app"
+  roles       = ["login"]
+}
+
+# Dedicated Keycloak DB user — separate credentials from the application user.
+resource "stackit_postgresflex_user" "keycloak" {
+  project_id  = var.stackit_project_id
+  instance_id = stackit_postgresflex_instance.nebu.instance_id
+  username    = "keycloak_app"
+  roles       = ["login"]
+}
+
+resource "stackit_postgresflex_database" "nebu" {
+  project_id  = var.stackit_project_id
+  instance_id = stackit_postgresflex_instance.nebu.instance_id
+  name        = "nebu"
+  owner       = stackit_postgresflex_user.nebu.username
+}
+
+resource "stackit_postgresflex_database" "keycloak" {
+  project_id  = var.stackit_project_id
+  instance_id = stackit_postgresflex_instance.nebu.instance_id
+  name        = "keycloak"
+  owner       = stackit_postgresflex_user.keycloak.username
 }
 
 # ── Floating IP ──────────────────────────────────────────────────────────────

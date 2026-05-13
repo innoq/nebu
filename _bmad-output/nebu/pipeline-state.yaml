@@ -1,6 +1,19 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-13
+# [13-8] 2026-05-13T13:42Z code-review → CLEAN (cycle 2) — MINOR-A tfvars.example fixed, MINOR-B lifecycle ignore added
+# [13-8] 2026-05-13T13:38Z dev-story → done (cycle 2) — MINOR-A: tfvars.example stale var removed+aurora ACU examples; MINOR-B: lifecycle ignore final_snapshot_identifier
+# [13-8] 2026-05-13T13:35Z code-review → CLEAN cycle 1 (6 MINOR fixes verified) + 2 new MINOR → cycle 2
+# [13-8] 2026-05-13T13:30Z dev-story → done (cycle 1) — 6 MINOR fixed: snapshot ID timestamp, PI enabled, KC user isolated, 0600 perms, KC_DB_PASSWORD→.env, MINOR-5 comment
+# [13-8] 2026-05-13T13:25Z code-review → 1 MAJOR (13-2b stub removed inline) + 6 MINOR → cycle 1
+# [13-8] 2026-05-13T13:22Z ci-gate → ✓ test-iac-validate (tofu fmt+validate: aws+stackit+k8s CLEAN; helm lint CLEAN; k6 inspect CLEAN)
+# [13-8] 2026-05-13T13:20Z dev-story → done (cycle 0) — Aurora Serverless v2 cluster+instance, PostgresFlex instance+user+2 DBs, cloud-init postgres container removed
+# [13-8] 2026-05-13T13:13Z test-review → skipped (atdd skipped)
+# [13-8] 2026-05-13T13:13Z atdd → skipped (infra)
+# [13-8] 2026-05-13T13:12Z create-story → 13-8-managed-database-services-aurora-serverless-stackit-managed-postgres.md
+# [13-8] 2026-05-13T13:10Z pipeline started
+# epic-13 2026-05-13T12:58Z SEC Gate 2 → Kassandra CLEAN (0 CRIT, 0 HIGH, 4 MEDIUM, 5 LOW — non-blocking)
+# 13-7 2026-05-13T12:52Z epic-loop → story done (MSC2965 auth_issuer+auth_metadata, unstable+v1 paths, 5min TTL cache, context-aware HTTP, 7 unit tests green)
 # [13-7] 2026-05-13T17:05Z oracle-gate → spec context captured (v1 stable paths required, auth_issuer={issuer}, auth_metadata=proxy oidc-config, 503 M_UNAVAILABLE)
 # [13-7] 2026-05-13T17:00Z pipeline started (from Step 1c)
 # 13-6 2026-05-13T12:38Z epic-loop → story done (libcluster Gossip+K8s.DNS, Horde crash/restart AT passing, docker-compose.scale.yml core2, Helm headless Service)
@@ -421,10 +434,15 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: "13-7"
-current_step: "atdd"
+story: "13-8"
+current_step: "security-review"
 completed:
   - atdd
-cycle_count: 0
+  - create-story
+  - test-review
+  - dev-story
+  - ci-gate
+  - code-review
+cycle_count: 2
 blocked_reason: null
-last_updated: "2026-05-13T12:40Z"
+last_updated: "2026-05-13T13:44Z"

@@ -22,44 +22,29 @@ write_files:
 
   # ── /opt/nebu/.env ─────────────────────────────────────────────────────────
   # Mode 0600 — contains secrets; readable only by root / docker compose.
+  # Database credentials provided by Stackit PostgresFlex managed instance.
+  # NOTE: pg_password must not contain URL-reserved characters (@, :, /, ?, #).
+  # The Stackit PostgresFlex user is provisioned by OpenTofu and its password is
+  # auto-generated. If it ever contains reserved characters, use percent-encoding
+  # or rotate the credential. See MINOR-5 constraint documented in code review.
   - path: /opt/nebu/.env
     owner: root:root
     permissions: "0600"
     content: |
-      POSTGRES_PASSWORD=${db_password}
-      NEBU_DB_URL=postgresql://nebu_app:${db_password}@postgres:5432/nebu
-      NEBU_DB_URL_MIGRATE=postgresql://nebu_app:${db_password}@postgres:5432/nebu
+      NEBU_DB_URL=postgresql://${pg_user}:${pg_password}@${pg_host}:${pg_port}/nebu
+      NEBU_DB_URL_MIGRATE=postgresql://${pg_user}:${pg_password}@${pg_host}:${pg_port}/nebu
       NEBU_OIDC_ISSUER=${oidc_issuer}
       NEBU_OIDC_CLIENT_SECRET=${oidc_client_secret}
       NEBU_SERVER_NAME=${server_name}
       NEBU_IMAGE_REGISTRY=${image_registry}
       NEBU_VERSION=${nebu_version}
-
-  # ── /opt/nebu/init-db.sql ──────────────────────────────────────────────────
-  # Runs at postgres first-boot via /docker-entrypoint-initdb.d/.
-  # Creates keycloak DB + nebu_app user with appropriate grants.
-  # Mode 0600 — contains DB passwords; root-only. Deleted after first boot.
-  - path: /opt/nebu/init-db.sql
-    owner: root:root
-    permissions: "0600"
-    content: |
-      -- Keycloak database
-      CREATE DATABASE keycloak;
-      CREATE USER keycloak WITH PASSWORD '${db_password}';
-      GRANT ALL PRIVILEGES ON DATABASE keycloak TO keycloak;
-      \connect keycloak
-      GRANT ALL ON SCHEMA public TO keycloak;
-
-      -- nebu_app user (used by both gateway and core, including migrations)
-      CREATE USER nebu_app WITH PASSWORD '${db_password}';
-      GRANT ALL PRIVILEGES ON DATABASE nebu TO nebu_app;
-      \connect nebu
-      GRANT ALL ON SCHEMA public TO nebu_app;
+      KC_DB_PASSWORD=${kc_password}
 
   # ── /opt/nebu/docker-compose.yml ───────────────────────────────────────────
+  # Mode 0600 — contains KC_DB_PASSWORD reference from .env; tightened for security.
   - path: /opt/nebu/docker-compose.yml
     owner: root:root
-    permissions: "0640"
+    permissions: "0600"
     content: |
       name: nebu
 
@@ -68,46 +53,23 @@ write_files:
           file: .secrets/internal_secret
 
       services:
-        postgres:
-          image: postgres:16-alpine
-          restart: unless-stopped
-          environment:
-            POSTGRES_DB: nebu
-            POSTGRES_USER: nebu
-            POSTGRES_PASSWORD: $${POSTGRES_PASSWORD}
-          volumes:
-            - postgres_data:/var/lib/postgresql/data
-            - /opt/nebu/init-db.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
-          healthcheck:
-            test: ["CMD-SHELL", "pg_isready -U nebu -d nebu"]
-            interval: 10s
-            timeout: 5s
-            retries: 5
-          env_file:
-            - .env
-
         keycloak:
           image: quay.io/keycloak/keycloak:24.0
           restart: unless-stopped
           command: ["start-optimized"]
           environment:
             KC_DB: postgres
-            KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
-            KC_DB_USERNAME: keycloak
-            KC_DB_PASSWORD: $${POSTGRES_PASSWORD}
+            KC_DB_URL: jdbc:postgresql://${pg_host}:${pg_port}/keycloak
+            KC_DB_USERNAME: ${kc_user}
+            KC_DB_PASSWORD: $${KC_DB_PASSWORD}
             KC_HOSTNAME: $${NEBU_SERVER_NAME}
-          depends_on:
-            postgres:
-              condition: service_healthy
           env_file:
             - .env
 
         core:
           image: $${NEBU_IMAGE_REGISTRY}/nebu-core:$${NEBU_VERSION}
           restart: unless-stopped
-          depends_on:
-            postgres:
-              condition: service_healthy
+          # No depends_on: postgres — managed PostgresFlex is always available
           secrets: [internal_secret]
           environment:
             NEBU_DB_URL: $${NEBU_DB_URL}
@@ -126,10 +88,9 @@ write_files:
           image: $${NEBU_IMAGE_REGISTRY}/nebu-gateway:$${NEBU_VERSION}
           restart: unless-stopped
           depends_on:
-            postgres:
-              condition: service_healthy
             core:
               condition: service_healthy
+          # No depends_on: postgres — managed PostgresFlex is always available
           secrets: [internal_secret]
           environment:
             NEBU_DB_URL: $${NEBU_DB_URL}
@@ -150,9 +111,6 @@ write_files:
             timeout: 5s
             retries: 3
             start_period: 10s
-
-      volumes:
-        postgres_data:
 
   # ── /etc/systemd/system/nebu.service ───────────────────────────────────────
   # Type=simple: systemd manages the docker compose process directly (no -d flag).
@@ -195,7 +153,7 @@ runcmd:
   - mkdir -p /opt/nebu/.secrets
   - chmod 0700 /opt/nebu/.secrets
   - chmod 0700 /opt/nebu
-  - chmod 0640 /opt/nebu/docker-compose.yml
+  - chmod 0600 /opt/nebu/docker-compose.yml
 
   # ── Enable + start nebu.service ─────────────────────────────────────────────
   - systemctl daemon-reload
@@ -203,5 +161,3 @@ runcmd:
   - systemctl start docker.service
   - sleep 2
   - systemctl start nebu.service
-  # ── Cleanup: remove init-db.sql (contains DB passwords; no longer needed after first boot)
-  - rm -f /opt/nebu/init-db.sql

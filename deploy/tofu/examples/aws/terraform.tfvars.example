@@ -10,8 +10,10 @@ image_registry   = "registry.gitlab.com/myorg/open-chat"
 vpc_cidr         = "10.0.0.0/16"
 environment      = "prod"
 
-# RDS
-db_instance_class   = "db.t3.medium"
+# RDS / Aurora Serverless v2
+# Aurora Serverless v2 capacity (ACUs — 0 = scale to zero, 4 = max burst)
+# aurora_min_capacity = 0
+# aurora_max_capacity = 4
 db_password         = "REPLACE_ME_with_a_strong_password"
 skip_final_snapshot = false
 

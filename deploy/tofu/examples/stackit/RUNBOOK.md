@@ -2,7 +2,7 @@
 
 This runbook covers day-1 deploy and day-2 operations for Nebu hosted on a Stackit VM using Docker Compose, bootstrapped via cloud-init.
 
-> **SECURITY WARNING — Terraform State:** The cloud-init `user_data` rendered by `templatefile()` — including all injected secrets — is stored in Terraform state. Always use an encrypted remote state backend (Stackit Object Storage with server-side encryption) in production. Never commit `.tfstate` files to version control. See the commented `backend "s3"` block in `main.tf` for the recommended configuration.
+> **SECURITY WARNING — Terraform State:** The cloud-init `user_data` rendered by `templatefile()` — including all injected secrets — is stored in Terraform state. The PostgresFlex database password (`stackit_postgresflex_user.nebu.password`) is also stored in state. Always use an encrypted remote state backend (Stackit Object Storage with server-side encryption) in production. Never commit `.tfstate` files to version control. See the commented `backend "s3"` block in `main.tf` for the recommended configuration. To retrieve the database password after apply: `tofu output -json | jq` — note the password is intentionally not an output; read it from state via `tofu state show stackit_postgresflex_user.nebu`.
 
 ---
 
@@ -57,11 +57,12 @@ Expected output once healthy:
 
 ```
 NAME       IMAGE                           STATUS
-postgres   postgres:16-alpine              Up (healthy)
 keycloak   quay.io/keycloak/keycloak:24.0  Up
 core       <registry>/nebu-core:<ver>      Up (healthy)
 gateway    <registry>/nebu-gateway:<ver>   Up (healthy)
 ```
+
+> Note: the `postgres` container is no longer present — the database is now managed by Stackit PostgresFlex. Keycloak and Nebu services connect to the PostgresFlex instance directly via the private network.
 
 If cloud-init fails, check the log:
 
@@ -111,27 +112,25 @@ To deploy updated config (e.g. new environment variable):
 
 ---
 
-## Postgres Volume Backup
+## Database Backup (PostgresFlex)
 
-Backup to a local file, then upload to Stackit Object Storage:
+Backups are handled automatically by the Stackit PostgresFlex platform. Daily backups run at 02:00 UTC (as configured in `backup_schedule`). Point-in-time recovery (PITR) is available via the STACKIT portal.
+
+For manual dumps or cross-environment restores, connect to the PostgresFlex instance from the VM using the credentials stored in Terraform state:
 
 ```bash
 # SSH to the VM
 ssh ubuntu@<floating_ip>
 
-# Dump database to gzip archive
-sudo docker exec postgres pg_dump -U nebu nebu | gzip > /tmp/nebu-backup-$(date +%Y%m%d-%H%M%S).sql.gz
+# Retrieve connection details from Terraform state (run on your local machine)
+tofu state show stackit_postgresflex_user.nebu
 
-# Upload to Stackit Object Storage (requires s3cmd or rclone configured with your Stackit credentials)
-s3cmd put /tmp/nebu-backup-*.sql.gz s3://<your-bucket>/backups/
-# or:
+# Dump via pg_dump (install postgresql-client on the VM if needed)
+pg_dump "postgresql://<pg_user>:<pg_password>@<pg_host>:<pg_port>/nebu" | \
+  gzip > /tmp/nebu-backup-$(date +%Y%m%d-%H%M%S).sql.gz
+
+# Upload to Stackit Object Storage
 rclone copy /tmp/nebu-backup-*.sql.gz stackit:<your-bucket>/backups/
-```
-
-To restore from backup:
-
-```bash
-gunzip -c /tmp/nebu-backup-<timestamp>.sql.gz | sudo docker exec -i postgres psql -U nebu nebu
 ```
 
 ---

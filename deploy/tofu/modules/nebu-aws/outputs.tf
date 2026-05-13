@@ -36,8 +36,8 @@ output "ecs_cluster_arn" {
 }
 
 output "db_endpoint" {
-  description = "Connection endpoint for the RDS PostgreSQL instance (host:port)."
-  value       = aws_db_instance.this.endpoint
+  description = "Writer endpoint for the Aurora PostgreSQL cluster (host:port)."
+  value       = "${aws_rds_cluster.this.endpoint}:${aws_rds_cluster.this.port}"
 }
 
 output "task_execution_role_arn" {

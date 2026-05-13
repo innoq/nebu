@@ -3,6 +3,16 @@ output "floating_ip" {
   value       = stackit_public_ip.nebu.ip
 }
 
+output "postgres_instance_id" {
+  description = "STACKIT PostgresFlex instance ID."
+  value       = stackit_postgresflex_instance.nebu.instance_id
+}
+
+output "postgres_host" {
+  description = "PostgresFlex private host (only reachable from within the Stackit private network)."
+  value       = stackit_postgresflex_user.nebu.host
+}
+
 output "vm_id" {
   description = "STACKIT server ID of the Nebu VM."
   value       = stackit_server.nebu.server_id

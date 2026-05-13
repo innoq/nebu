@@ -1,5 +1,7 @@
 # generated: 2026-03-20
 # last_updated: 2026-05-13
+# story 13-8 done (pipeline: Aurora Serverless v2 + PostgresFlex — 2 MINOR cycles + Kassandra CLEAN): 2026-05-13
+# story 13-8 created (ready-for-dev): Aurora Serverless v2 + Stackit PostgresFlex managed DB
 # story 13-5 done (pipeline: ATDD+Code CLEAN 0-cycle+3 MINOR fixed inline+arc42 07-deployment load test topology): 2026-05-13
 # story 13-4b done (pipeline: Code CLEAN 0-cycle+Kassandra CLEAN+arc42 07-deployment): 2026-05-13
 # story 13-2c done (pipeline: Code CLEAN 0-cycle + Kassandra CLEAN — ALB+Secrets Manager+ECS services+RUNBOOK): 2026-05-13
@@ -129,6 +131,7 @@ development_status:
   13-5-load-test-gold-tier-1000-concurrent-users-multi-gateway: done
   13-6-horizontal-scaling-validation-core-clustering-libcluster-horde: backlog
   13-7-msc2965-oidc-discovery-endpoints-auth-issuer-auth-metadata: backlog
+  13-8-managed-database-services-aurora-serverless-stackit-managed-postgres: done
   epic-13-retrospective: optional
 
   # ─────────────────────────────────────────────────────────────────────────

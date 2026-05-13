@@ -41,14 +41,8 @@ variable "common_tags" {
 
 # ── Database variables ────────────────────────────────────────────────────────
 
-variable "db_instance_class" {
-  description = "RDS instance class (e.g. 'db.t3.medium', 'db.r6g.large')."
-  type        = string
-  default     = "db.t3.medium"
-}
-
 variable "db_password" {
-  description = "Initial master password for the RDS PostgreSQL instance. Must be replaced before apply in any non-dev environment. Sensitive — do not commit."
+  description = "Initial master password for the Aurora PostgreSQL cluster. Must be replaced before apply in any non-dev environment. Sensitive — do not commit."
   type        = string
   sensitive   = true
   # WARNING: 'changeme' is only a placeholder for tofu validate/plan in dev.
@@ -62,15 +56,31 @@ variable "db_password" {
 }
 
 variable "skip_final_snapshot" {
-  description = "When true, no final DB snapshot is created before the instance is deleted. Set to false for production."
+  description = "When true, no final DB snapshot is created before the cluster is deleted. Set to false for production."
   type        = bool
   default     = true
 }
 
-variable "enable_performance_insights" {
-  description = "Enable RDS Performance Insights. Supported on db.t3.medium and larger. Disable for db.t3.micro or unsupported instance classes."
-  type        = bool
-  default     = true
+variable "aurora_min_capacity" {
+  description = "Minimum Aurora Serverless v2 capacity in ACUs (0.5 ACU = ~1 vCPU/2 GB RAM). Set to 0 for dev (scale-to-zero). Set to 0.5 for production to avoid cold-start latency."
+  type        = number
+  default     = 0
+
+  validation {
+    condition     = var.aurora_min_capacity >= 0 && var.aurora_min_capacity <= 256
+    error_message = "aurora_min_capacity must be between 0 and 256 ACUs."
+  }
+}
+
+variable "aurora_max_capacity" {
+  description = "Maximum Aurora Serverless v2 capacity in ACUs. 1 ACU = approximately 2 GB RAM. Default 4 is sufficient for expected Nebu MVP load. Increase for high-traffic production."
+  type        = number
+  default     = 4
+
+  validation {
+    condition     = var.aurora_max_capacity >= 0.5 && var.aurora_max_capacity <= 256
+    error_message = "aurora_max_capacity must be between 0.5 and 256 ACUs."
+  }
 }
 
 # ── Compute variables ─────────────────────────────────────────────────────────

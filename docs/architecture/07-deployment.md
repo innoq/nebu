@@ -161,11 +161,11 @@ deploy/
 
 ### Platform Targets
 
-| Platform | Mechanism | Backend |
-|---|---|---|
-| AWS | ECS Fargate + RDS PostgreSQL | S3 + DynamoDB |
-| STACKIT | VMs + Docker Compose + ALB | STACKIT Object Storage (S3-compatible) |
-| Kubernetes | Helm Chart (`deploy/helm/nebu/`) | S3-compatible or PostgreSQL |
+| Platform | Mechanism | Database | Backend |
+|---|---|---|---|
+| AWS | ECS Fargate + Aurora Serverless v2 | AWS Aurora PostgreSQL 16 (Serverless v2) | S3 + DynamoDB |
+| STACKIT | VMs + Docker Compose + ALB | STACKIT PostgresFlex (managed PostgreSQL 16) | STACKIT Object Storage (S3-compatible) |
+| Kubernetes | Helm Chart (`deploy/helm/nebu/`) | External (operator-provided) | S3-compatible or PostgreSQL |
 
 ### Local IaC Validation
 
@@ -185,13 +185,19 @@ Equivalent CI gate: `validate-iac` job in `.gitlab-ci.yml` (runs on every push t
 
 ### AWS Database Module (nebu-aws — database.tf)
 
-`deploy/tofu/modules/nebu-aws/database.tf` provisions the RDS layer:
+`deploy/tofu/modules/nebu-aws/database.tf` provisions the Aurora Serverless v2 layer (Story 13-8 — replaces the previous RDS Multi-AZ `aws_db_instance`):
 
-- `aws_db_subnet_group` — uses private subnets from network.tf (no public access)
-- `aws_db_instance` — PostgreSQL 16, Multi-AZ, `db.t3.medium` (default), 20 GB gp3 encrypted storage, 7-day automated backups, Performance Insights enabled
-- DB master password: `var.db_password` (sensitive, minimum 8 chars). Secrets Manager integration for app credentials is added in story 13.2c.
+- `aws_db_subnet_group` — uses private subnets from network.tf (no public access); retained as Aurora clusters also require DB subnet groups
+- `aws_rds_cluster` — Aurora PostgreSQL 16.6, `engine_mode = "provisioned"` (Serverless v2 requirement — NOT `"serverless"`), storage encrypted, 7-day automated backups. Serverless v2 scaling is controlled by the `serverlessv2_scaling_configuration` block:
+  - `min_capacity = 0` (default dev) — scales to zero and auto-pauses after 1 hour idle (`seconds_until_auto_pause = 3600`). Set `min_capacity = 0.5` for production to avoid cold-start latency.
+  - `max_capacity = 4` (default) — sufficient for expected Nebu MVP load (approx. 2 vCPU equivalent). Increase for high-traffic production.
+- `aws_rds_cluster_instance` — one instance per cluster, `instance_class = "db.serverless"` (required for Serverless v2); Performance Insights enabled explicitly (7-day retention).
+- DB master password: `var.db_password` (sensitive, minimum 8 chars). Secrets Manager integration is provided via `secrets.tf`.
+- `db_endpoint` output references `aws_rds_cluster.this.endpoint` (writer endpoint) — Aurora clusters expose a dedicated writer endpoint; the reader endpoint is separate and not used for Nebu's primary DB connection.
 
-Key variables: `db_instance_class`, `db_password`, `skip_final_snapshot` (default `true` for dev), `enable_performance_insights`.
+Key variables: `aurora_min_capacity` (default `0`), `aurora_max_capacity` (default `4`), `db_password`, `skip_final_snapshot` (default `true` for dev). The former `db_instance_class` and `enable_performance_insights` variables have been removed — Aurora Serverless v2 uses a fixed `db.serverless` class and enables Performance Insights by default.
+
+**Cost model:** Aurora Serverless v2 charges per ACU-second consumed. At `min_capacity = 0`, a completely idle cluster costs near zero (vs. ~$50–100/month for the previous always-on `db.t3.medium` Multi-AZ instance).
 
 ### AWS ALB Module (nebu-aws — alb.tf)
 
@@ -255,7 +261,9 @@ aws_ecs_service.gateway (private subnets, ECS Fargate, no public IP)
 aws_ecs_service.core (private subnets, ECS Fargate, no public IP)
   │ port 5432 (private subnets, RDS SG)
   ▼
-aws_db_instance (RDS PostgreSQL 16, Multi-AZ, private subnets)
+aws_rds_cluster (Aurora PostgreSQL 16, Serverless v2, private subnets)
+  ├── aws_rds_cluster_instance (db.serverless — scales 0–4 ACUs)
+  └── writer endpoint: aws_rds_cluster.this.endpoint (port 5432)
 
 Secrets Manager (nebu/{env}/*) ──► ECS task execution role (secretsmanager:GetSecretValue)
                                         │
@@ -283,7 +291,30 @@ Day-2 operations (rolling updates, secret rotation, teardown) are documented in 
 
 Key variables: `stackit_project_id`, `stackit_key_path`, `ssh_public_key`, `ubuntu_image_id`, `network_cidr`, `availability_zone`, `vm_plan_id`, `alb_plan_id`, `stackit_tls_certificate_arn`.
 
-### Stackit cloud-init Bootstrap (nebu-stackit — 13-3b)
+### Stackit Managed Database (nebu-stackit — Story 13-8)
+
+`deploy/tofu/examples/stackit/main.tf` provisions a dedicated STACKIT PostgresFlex instance alongside the application VM. This replaces the previous `postgres:16-alpine` container bundled in docker-compose.
+
+**Resources provisioned:**
+
+- `stackit_postgresflex_instance.nebu` — managed PostgreSQL 16 cluster with daily automated backups (`0 2 * * *` UTC), configurable replicas (`var.postgres_replicas`, default `1`; use `3` for production HA), and ACL locked to the VM's private network CIDR (`var.network_cidr`) — no public exposure
+- `stackit_postgresflex_user.nebu` (`nebu_app`) — application user with `["login"]` role; owns the `nebu` database
+- `stackit_postgresflex_user.keycloak` (`keycloak_app`) — dedicated Keycloak user with `["login"]` role; owns the `keycloak` database. Using separate DB users per application is a defence-in-depth measure: a compromise of the Nebu application user does not grant access to Keycloak data.
+- `stackit_postgresflex_database.nebu` — `nebu` database, owner `nebu_app`
+- `stackit_postgresflex_database.keycloak` — `keycloak` database, owner `keycloak_app`
+
+PostgresFlex connection details (`host`, `port`, `username`, `password`) are computed by the provider after instance creation and passed directly into the cloud-init template as `pg_*` / `kc_*` variables. The password is **not** exposed as a Tofu output — operators retrieve it from Terraform state or via the STACKIT portal.
+
+**Stackit Sizing Variables:**
+
+| Variable | Default | Production recommendation |
+|---|---|---|
+| `postgres_replicas` | `1` | `3` (HA replication) |
+| `postgres_cpu` | `1` | 2+ (depending on load) |
+| `postgres_ram` | `4` GB | 8+ GB |
+| `postgres_storage_size` | `20` GB | 50+ GB |
+
+### Stackit cloud-init Bootstrap (nebu-stackit — 13-3b, updated 13-8)
 
 `deploy/tofu/examples/stackit/cloud-init.tftpl` is rendered by `templatefile()` in `main.tf` and injected as `user_data` (base64-encoded) into the VM at provision time. On first boot, the VM:
 
@@ -291,20 +322,27 @@ Key variables: `stackit_project_id`, `stackit_key_path`, `ssh_public_key`, `ubun
 2. Installs Docker CE + Docker Compose plugin via the official Docker apt repository
 3. Writes `/opt/nebu/` directory tree (permissions `0700`) with:
    - `.secrets/internal_secret` (mode `0600`, quoted scalar — no trailing newline)
-   - `.env` (mode `0600`) — all runtime secrets injected from OpenTofu variables, including `NEBU_DB_URL` and `NEBU_DB_URL_MIGRATE` (same `nebu_app` user, simplifying PostgreSQL grants)
-   - `init-db.sql` — mounted into `/docker-entrypoint-initdb.d/` on the Postgres container to create the `keycloak` database + user and grant `nebu_app` schema-level access
-   - `docker-compose.yml` (mode `0640`) — four services: `postgres`, `keycloak`, `core`, `gateway`
+   - `.env` (mode `0600`) — all runtime secrets injected from OpenTofu variables, including `NEBU_DB_URL` and `NEBU_DB_URL_MIGRATE` pointing to the PostgresFlex managed instance (`postgresql://${pg_user}:${pg_password}@${pg_host}:${pg_port}/nebu`)
+   - `docker-compose.yml` (mode `0640`) — three services: `keycloak`, `core`, `gateway` (the `postgres` service has been removed — the managed PostgresFlex instance is used instead)
 4. Installs `/etc/systemd/system/nebu.service` — `Type=simple`, no `-d` flag; systemd owns the process lifecycle with `Restart=on-failure RestartSec=10`
 5. Starts Docker (`systemctl start docker.service && sleep 2`) before starting `nebu.service`
 
+**Changes in Story 13-8:**
+- `postgres` docker-compose service and `postgres_data` volume removed — replaced by PostgresFlex managed instance
+- `init-db.sql` write_files block and its `runcmd` cleanup removed — databases and users are created by OpenTofu resources
+- `NEBU_DB_URL` / `NEBU_DB_URL_MIGRATE` now reference PostgresFlex host/port/credentials via template variables
+- Keycloak `KC_DB_URL` points to the PostgresFlex host (not the removed `postgres:5432` container)
+- `depends_on: postgres` removed from `core` and `gateway` services — the managed DB is available before the VM boots
+- Dedicated Keycloak user (`kc_user` / `kc_password`) injected separately from the Nebu application user
+
 **Security invariants:**
-- `DATABASE_URL` bash parameter substitution removed — `nebu_app` user handles the `postgresql://` scheme natively
-- `nebu_migrate` user eliminated — `NEBU_DB_URL_MIGRATE` uses the same `nebu_app` credentials
+- `pg_password` and `kc_password` appear only inside `.env` (mode `0600`), never in plain environment variables or log output
+- ACL on PostgresFlex is set to `[var.network_cidr]` — never `0.0.0.0/0`
+- `stackit_postgresflex_user.nebu.password` is stored in Terraform state — operators MUST use encrypted Stackit Object Storage backend (see `RUNBOOK.md`)
 - `/opt/nebu/` is `0700` (root-only); `docker-compose.yml` is `0640`
 - `nebu_version` variable rejects `"latest"` — a specific semver tag is required
-- Secrets in Terraform state: use encrypted Stackit Object Storage backend (see `RUNBOOK.md` warning)
 
-Day-2 operations (updates, pg_dump backup, teardown) are documented in `deploy/tofu/examples/stackit/RUNBOOK.md`.
+Day-2 operations (updates, backup, teardown) are documented in `deploy/tofu/examples/stackit/RUNBOOK.md`.
 
 ### Helm Chart
 
