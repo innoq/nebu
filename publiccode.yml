@@ -29,7 +29,7 @@ description:
     localisedName: Nebu
     shortDescription: >-
       Enterprise-fähiger, Matrix-kompatibler Chat-Server — Apache 2.0, kein Föderations-Overhead, horizontal skalierbar.
-    longDescription: >-
+    longDescription: |-
       Nebu (benannt nach dem Schiff „Nebukadnezar" aus dem Matrix-Film) ist ein Enterprise-Chat-Server,
       der die Matrix Client-Server API implementiert. Damit funktionieren Standard-Matrix-Clients
       (Element, Cinny, FluffyChat u.a.) ohne Anpassungen.
@@ -69,7 +69,7 @@ description:
     genericName: Chat
     shortDescription: >-
       Enterprise-grade, Matrix-compatible chat server — Apache 2.0, no federation overhead, horizontally scalable.
-    longDescription: >-
+    longDescription: |-
       Nebu (named after the Nebuchadnezzar, the ship of the free from The Matrix) is an enterprise chat
       server that implements the Matrix Client-Server API. Standard Matrix clients (Element, Cinny,
       FluffyChat and others) work out of the box without any modifications.
