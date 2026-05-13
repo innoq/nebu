@@ -99,6 +99,14 @@ paths = [
   #     specification — not credentials for any real service.
   # (c) skills/nebu-agent-oracle/matrix-spec/ (read-only spec snapshots)
   '''skills/nebu-agent-oracle/matrix-spec/.*''',
+
+  # (a) Matches AKIAIOSFODNN7EXAMPLE (AWS example key), key_type='ed25519_private',
+  #     key_type='x25519_private', and similar credential-shaped patterns in story
+  #     documents (acceptance test scenarios, architecture notes, DB schema references).
+  # (b) These are illustrative values in BMAD story files — not real credentials.
+  #     ed25519_private/x25519_private are DB column name references, not key material.
+  # (c) docs/stories/ (BMAD story definitions for all epics)
+  '''docs/stories/.*''',
 ]
 
 # Example of a regex-based false-positive suppression (currently not needed).
