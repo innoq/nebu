@@ -164,7 +164,37 @@ cross-referenced with the Matrix Client-Server API specification.
 | GET | `/_matrix/client/v3/account/3pid` | 🔶 | Returns empty list (3PIDs not supported) |
 | GET | `/_matrix/client/v3/thirdparty/protocols` | 🔶 | Returns {} |
 | GET | `/_matrix/client/v3/voip/turnServer` | 🔶 | Returns 404 (TURN not configured) |
-| GET | `/_matrix/media/v3/config` | 🔶 | Returns m.upload.size: 10 MiB |
+| GET | `/_matrix/media/v3/config` | ✅ | Returns `{"m.upload.size": N}` — unauthenticated, deprecated (Story 12.16) |
+
+## Media Repository (Media Gateway)
+
+These endpoints are served by the **Media Gateway** (`media/cmd/media/main.go`), not the API Gateway.
+
+**Deprecated unauthenticated endpoints (v3) — backward compatibility:**
+
+| Method | Endpoint | Status | Notes |
+|---|---|---|---|
+| POST | `/_matrix/media/v3/upload` | ✅ | AES-256-GCM encrypt → store → `mxc://` URI; OIDC auth required |
+| GET | `/_matrix/media/v3/download/{serverName}/{mediaId}` | ✅ | Decrypt + stream; CSP + CORP headers (Story 12.16) |
+| GET | `/_matrix/media/v3/download/{serverName}/{mediaId}/{fileName}` | ✅ | Same + `Content-Disposition: filename="{fileName}"` |
+| GET | `/_matrix/media/v3/thumbnail/{serverName}/{mediaId}` | ✅ | On-demand thumbnail; AES decrypt + resize; CSP + CORP headers (Story 12.16) |
+| GET | `/_matrix/media/v3/config` | ✅ | `{"m.upload.size": N}` — unauthenticated, deprecated (Story 12.16) |
+
+**Authenticated endpoints (v1.11+, Matrix CS API spec):**
+
+| Method | Endpoint | Auth | Status | Notes |
+|---|---|---|---|---|
+| GET | `/_matrix/client/v1/media/config` | Bearer | ✅ | `{"m.upload.size": N}` — 401 M_MISSING_TOKEN if no token (Story 12.16) |
+| GET | `/_matrix/client/v1/media/download/{serverName}/{mediaId}` | Bearer | ✅ | Auth-gated download; same handler as v3 (Story 12.16) |
+| GET | `/_matrix/client/v1/media/download/{serverName}/{mediaId}/{fileName}` | Bearer | ✅ | Auth-gated download with filename in `Content-Disposition` (Story 12.16) |
+| GET | `/_matrix/client/v1/media/thumbnail/{serverName}/{mediaId}` | Bearer | ✅ | Auth-gated thumbnail (Story 12.16) |
+
+**Auth error codes for all `/_matrix/client/v1/media/*` endpoints:**
+
+| Condition | HTTP | errcode |
+|---|---|---|
+| Missing / non-Bearer Authorization header | 401 | `M_MISSING_TOKEN` |
+| Invalid or expired Bearer token | 401 | `M_UNKNOWN_TOKEN` |
 
 ## Current E2EE Stubs
 
@@ -197,4 +227,4 @@ identity services.
 | `/_matrix/key/v2/server` | Server key exchange only needed for federation |
 | `POST /_matrix/client/v3/search` | Requires ADR-010 (FTS strategy) decision first — see [ADR-010](architecture/adr/ADR-010-fts-strategy.md) |
 
-_Source: `gateway/cmd/gateway/main.go` route registrations; `CLAUDE.md`, §Matrix API Scope; `_bmad-output/planning-artifacts/prd.md`, §Endpoint Specification; Story 9-28 (GET /_matrix/client/v1/rooms/{roomId}/relations/{eventId}/{relType}); Story 9-29 (base /relations/{eventId} route, three-segment /{relType}/{eventType} route, dir/recurse/from query params, prev_batch response field); Story 11-8 (GET /_matrix/client/v3/rooms/{roomId}/event/{eventId} — previously unregistered, now implemented with membership enforcement)_
+_Source: `gateway/cmd/gateway/main.go` route registrations; `media/cmd/media/main.go` route registrations; `CLAUDE.md`, §Matrix API Scope; `_bmad-output/planning-artifacts/prd.md`, §Endpoint Specification; Story 9-28 (GET /_matrix/client/v1/rooms/{roomId}/relations/{eventId}/{relType}); Story 9-29 (base /relations/{eventId} route, three-segment /{relType}/{eventType} route, dir/recurse/from query params, prev_batch response field); Story 11-8 (GET /_matrix/client/v3/rooms/{roomId}/event/{eventId} — previously unregistered, now implemented with membership enforcement); Story 12.16 (Media Gateway v1 authenticated endpoints — GET /_matrix/client/v1/media/config, download/{serverName}/{mediaId}[/{fileName}], thumbnail/{serverName}/{mediaId}; v3 config upgraded from stub to implemented; CSP + CORP headers on all download/thumbnail responses)_

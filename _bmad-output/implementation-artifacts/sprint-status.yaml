@@ -1,5 +1,21 @@
 # generated: 2026-03-20
-# last_updated: 2026-05-12
+# last_updated: 2026-05-13
+# story 12-16 done (pipeline: ATDD+Dev+Code CLEAN (1 cycle)+Kassandra CLEAN (4L)): 2026-05-13
+# story 12-15 done (pipeline: ATDD+Code CLEAN 0 cycles+no sec review (pure test-addition)): 2026-05-13
+# story 12-14 done (pipeline: ATDD+Code CLEAN 0 cycles+Kassandra CLEAN (1 LOW drain-window advisory)): 2026-05-13
+# story 12-13 done (pipeline: 1 MINOR fixed (slog.Info on signal abort) — 1 cycle+no sec review): 2026-05-13
+# story 12-12 done (pipeline: ATDD+Code CLEAN 0 cycles+Kassandra CLEAN): 2026-05-13
+# story 12-11 done (pipeline: ATDD+Code CLEAN 0 cycles+Kassandra CLEAN): 2026-05-13
+# story 12-10 done (pipeline: ATDD+Code CLEAN 0 cycles+Kassandra CLEAN 2 LOW advisory): 2026-05-13
+# story 12-9 done (pipeline: ATDD+Code CLEAN 0 cycles+Kassandra CLEAN 1 LOW advisory): 2026-05-13
+# story 12-8 done (pipeline: ATDD+Code CLEAN 1 cycle+Kassandra CLEAN): 2026-05-13
+# story 12-7 done (pipeline: ATDD+Dev+Code CLEAN+Kassandra CLEAN (1 LOW advisory)): 2026-05-12
+# story 12-6 done (pipeline: ATDD+Code CLEAN 0 cycles+Kassandra CLEAN — blurhash pass-through tests (AT-2+AT-5+AT-6) + animated=false regression guards (AT-3+AT-4)): 2026-05-12
+# story 12-5 done (pipeline: ATDD+Code CLEAN 0 cycles+Kassandra CLEAN 2 LOW advisory): 2026-05-12
+# story 12-4 done (pipeline: ATDD+Code CLEAN 0 cycles+Kassandra CLEAN 2 LOW advisory): 2026-05-12
+# story 12-3 done (pipeline: ATDD+Code 1 cycle+Kassandra CLEAN (5 LOW advisory)): 2026-05-12
+# story 12-2 done (pipeline: ATDD+Dev+Code CLEAN — Storer interface, LocalStorer, MinIOStorer, handler injection, minio-go/v7): 2026-05-12
+# story 12-1 done (pipeline: ready-for-dev): 2026-05-12
 # story 11-11 done (pipeline: ATDD+Code CLEAN 1 cycle+noproc guard added): 2026-05-12
 # story 11-10 done (pipeline: ATDD+Dev+Code CLEAN (3 cycles, 3 MAJOR fixed: configReader, claims wired, TTL cache)+UX 6 violations fixed+Kassandra CLEAN): 2026-05-12
 # story 11-10 created: 11-10 → ready-for-dev: 2026-05-12 (OIDC Claim Mapping — Bootstrap Wizard step 3 + Admin UI settings page + FormatUserIDFromClaims refactor; security_review required)
@@ -829,13 +845,23 @@ development_status:
   # Pre-Epic-TODO: ADR-013 finalisieren (MinIO, Thumbnail-Library, Pre-Signed-URL-Policy)
   #   — vor Sprint-Start
   # ─────────────────────────────────────────────────────────────────────────
-  epic-12: backlog
-  12-1-minio-docker-compose-credentials-via-secrets: backlog
-  12-2-storage-interface-refactor: backlog
-  12-3-media-upload-minio-backend-iam-hardening: backlog
-  12-4-media-download-minio-backend-pre-signed-url-security: backlog
-  12-5-thumbnail-generation-on-demand-sandboxed: backlog
-  12-6-blurhash-pass-through-animated-thumbnail-correctness: backlog
+  epic-12: in-progress
+  12-1-minio-docker-compose-credentials-via-secrets: ready-for-dev
+  12-2-storage-interface-refactor: done
+  12-3-media-upload-minio-backend-iam-hardening: done
+  12-4-media-download-minio-backend-pre-signed-url-security: done
+  12-5-thumbnail-generation-on-demand-sandboxed: done
+  12-6-blurhash-pass-through-animated-thumbnail-correctness: done
+  12-7-media-gateway-security-hardening-sec-gate-2-fixes: done
+  12-8-oidc-fail-open-hardening-media-gateway: done
+  12-9-canonical-matrix-user-id-in-media-audit-trail: done
+  12-10-per-ip-rate-limiting-media-gateway: done
+  12-11-media-gateway-rate-limit-audit-trail-sec-fixes: done
+  12-12-media-gateway-startup-rate-limiter-hardening: done
+  12-13-media-gateway-graceful-shutdown-signal-aware-oidc-retry: done
+  12-14-media-gateway-full-graceful-shutdown: done
+  12-15-regression-test-expired-jwt-upload-returns-401: done
+  12-16-authenticated-matrix-media-endpoints: done
   epic-12-retrospective: optional
 
 # story 6-11 done (pipeline: ATDD+Dev+CodeReview CLEAN — Godog E2E admin lifecycle/role/archive, compliance officer auth): 2026-05-02

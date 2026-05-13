@@ -1,6 +1,195 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
-# last_updated: 2026-05-12
+# last_updated: 2026-05-13
+# [12-16] 2026-05-13T17:00Z committed ✓ (ATDD+Code CLEAN 1 cycle+Kassandra CLEAN 4L)
+# [12-16] 2026-05-13T16:50Z arc42-update → done (05-building-blocks, 08-concepts, matrix-api-scope)
+# [12-16] 2026-05-13T16:35Z security-review → Kassandra CLEAN (0C/0H/4L all non-blocking)
+# [12-16] 2026-05-13T16:20Z code-review → CLEAN (cycle 1) — F-A/F-B/F-C all fixed; M1 sprint-status drift fixed inline
+# [12-16] 2026-05-13T16:05Z ci-gate → ✓ build+unit-go+unit-elixir; e2e+integration skipped (minio/mc image unavailable — pre-existing)
+# [12-16] 2026-05-13T16:00Z dev-story → done (cycle 1) — F-A empty-Bearer guard; F-B disposition-type subtests; F-C main_test.go v1 routing; all tests GREEN
+# [12-16] 2026-05-13T15:45Z code-review → 3 MINOR (F-A empty-Bearer M_MISSING_TOKEN, F-B fileName disposition-type test, F-C v1 CSP/CORP routing test) → cycle 1
+# [12-16] 2026-05-13T15:35Z ci-gate → ✓ build+unit-go+unit-elixir; e2e+integration skipped (minio/mc image unavailable — pre-existing)
+# [12-16] 2026-05-13T15:30Z dev-story → done (cycle 0) — auth+config packages; CSP/CORP headers; 5 new routes; all tests GREEN
+# [12-16] 2026-05-13T15:18Z test-review → CLEAN (0 MAJOR; 2 MINOR: F-1 v1-path CSP/CORP not explicit, F-3 fileName missing inline-assert; 5 INFO)
+# [12-16] 2026-05-13T15:10Z atdd → 16 failing tests (auth×7, config×4, download×3, thumbnail×2)
+# [12-16] 2026-05-13T15:05Z oracle-gate → spec context captured (M_MISSING_TOKEN/M_UNKNOWN_TOKEN; Content-Disposition+Content-Type MUST; CSP+CORP SHOULD; /{fileName} variant; timeout_ms)
+# [12-16] 2026-05-13T15:01Z create-story → 12-16-authenticated-matrix-media-endpoints.md
+# [12-15] 2026-05-13T14:42Z epic-loop → story done (GAP-01 P0 regression test)
+# [12-15] 2026-05-13T10:20Z committed ✓ (ATDD+Code CLEAN 0 cycles+no sec review)
+# [12-15] 2026-05-13T10:17Z arc42-update → no arch changes (pure test-addition story)
+# [12-15] 2026-05-13T10:16Z security-review → skipped (not-needed)
+# [12-15] 2026-05-13T10:15Z code-review → CLEAN (cycle 0) — M-1 auto-fixed (story status: done); 2 INFO
+# [12-15] 2026-05-13T10:10Z ci-gate → ✓ build+unit-go+unit-elixir; e2e+integration skipped (minio/mc image unavailable — pre-existing)
+# [12-15] 2026-05-13T10:07Z dev-story → done (cycle 0) — 2 new tests GREEN immediately (pure test-addition, no prod code)
+# [12-15] 2026-05-13T10:06Z test-review → CLEAN (0 MAJOR; AC-1+AC-2 covered; storage+DB side-effects asserted)
+# [12-15] 2026-05-13T10:05Z atdd → 2 failing tests (AT-12-15-1: expired JWT 401; AT-12-15-2: valid JWT 200)
+# [12-15] 2026-05-13T10:02Z oracle-gate → spec context captured (M_UNKNOWN_TOKEN for expired token confirmed)
+# [12-15] 2026-05-13T10:01Z create-story → 12-15-regression-test-expired-jwt-upload-returns-401.md
+# [12-15] 2026-05-13T10:00Z pipeline started
+# [12-14] 2026-05-13T14:01Z epic-loop → story done (full graceful shutdown)
+# [12-14] 2026-05-13T10:00Z committed ✓ (ATDD+Code CLEAN+Kassandra CLEAN)
+# [12-14] 2026-05-13T09:55Z arc42-update → done (08-concepts: rate-limit ctx param +12.14 stoppable goroutine; graceful shutdown section +HTTP drain+pool close+order)
+# [12-14] 2026-05-13T09:50Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW drain-window — accepted)
+# [12-14] 2026-05-13T09:45Z code-review → CLEAN (cycle 0) — M-1 auto-fixed (runMinimalGateway moved to _test.go); 2 INFO
+# [12-14] 2026-05-13T09:35Z ci-gate → ✓ build+unit-go+unit-elixir; e2e+integration skipped (minio/mc image unavailable — pre-existing)
+# [12-14] 2026-05-13T09:25Z dev-story → done (cycle 0) — ratelimit ctx+NewIPRateLimiter; main.go goroutine+Shutdown+runShutdownSequence; all 5 new tests GREEN
+# [12-14] 2026-05-13T09:12Z test-review → CLEAN (0 MAJOR; all 5 ACs covered; AT-3 goroutine count tolerance noted)
+# [12-14] 2026-05-13T09:10Z atdd → 5 failing tests (AT-1+AT-2: http drain; AT-3: cleanupLoop ctx; AT-4: runShutdownSequence; AT-5: subprocess exit 0)
+# [12-14] 2026-05-13T09:02Z create-story → 12-14-media-gateway-full-graceful-shutdown.md
+# [12-14] 2026-05-13T09:00Z pipeline started
+# [12-13] 2026-05-13T12:36Z epic-loop → story done (SIGTERM signal wiring)
+# [12-13] 2026-05-13T08:55Z committed ✓ (1 MINOR fixed 1 cycle+no sec review+arc42 done)
+# [12-13] 2026-05-13T08:50Z arc42-update → done (08-concepts: OIDC startup section +12.13 signal.NotifyContext + ctx-aware sleep)
+# [12-13] 2026-05-13T08:46Z security-review → skipped (not-needed)
+# [12-13] 2026-05-13T08:45Z code-review → CLEAN (cycle 1) — 0 MAJOR, 0 MINOR (F-1 fixed: slog.Info on signal abort), 2 INFO
+# [12-13] 2026-05-13T08:40Z code-review → 1 MINOR (F-1: misleading fatal log on SIGTERM abort) → cycle 1
+# [12-13] 2026-05-13T08:35Z ci-gate → ✓ build+unit-go+unit-elixir; e2e+integration skipped (minio/mc image unavailable — pre-existing)
+# [12-13] 2026-05-13T08:25Z dev-story → done (cycle 0) — main.go: signal.NotifyContext+ctx-aware select sleep; all 3 new tests GREEN
+# [12-13] 2026-05-13T08:20Z test-review → CLEAN (0 MAJOR; all 4 ACs covered; AC-4 non-regression verified by existing suite)
+# [12-13] 2026-05-13T08:15Z atdd → 3 failing tests (AT-12-13-1+AT-12-13-4: sleep-not-ctx-aware; AT-12-13-3: green baseline)
+# [12-13] 2026-05-13T08:05Z create-story → 12-13-media-gateway-graceful-shutdown-signal-aware-oidc-retry.md
+# [12-13] 2026-05-13T08:00Z pipeline started
+# [12-12] 2026-05-13T11:31Z epic-loop → story done (F-3/F-4/F-5 LOW resolved)
+# [12-12] 2026-05-13T15:00Z committed ✓ (ATDD+Code CLEAN 0 cycles+Kassandra CLEAN)
+# [12-12] 2026-05-13T14:55Z arc42-update → done (08-concepts: OIDC startup section +F-3 per-attempt timeout; rate-limit section +F-5 startup warn + F-4 cleanup correctness note)
+# [12-12] 2026-05-13T14:50Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW — F-3+F-4+F-5 LOW advisories fully closed; no new surface)
+# [12-12] 2026-05-13T14:45Z code-review → CLEAN (cycle 0) — 0 MAJOR, 0 MINOR (3 INFO: logIfRateLimitDisabled naming, attempt-count return, unused struct fields)
+# [12-12] 2026-05-13T14:40Z ci-gate → ✓ build+unit-go (all media+gateway+matrix packages green)+unit-elixir; e2e+integration skipped (minio/mc image unavailable — pre-existing)
+# [12-12] 2026-05-13T14:35Z dev-story → done (cycle 0) — main.go: initOIDCVerifierWith+attemptTimeout+logIfRateLimitDisabled; ratelimit_internal_test.go: cleanupOnce white-box tests
+# [12-12] 2026-05-13T14:27Z test-review → CLEAN (0 MAJOR; 1 MINOR: AT-12-12-2 needs test deadline guard)
+# [12-12] 2026-05-13T14:25Z atdd → 6 failing tests (AT-12-12-1..2: OIDC per-attempt timeout; AT-12-12-3..5: cleanup race coverage; AT-12-12-7..8: rate-limit-disabled startup log)
+# [12-12] 2026-05-13T14:16Z oracle-gate → skipped (no Matrix feature)
+# [12-12] 2026-05-13T14:15Z create-story → 12-12-media-gateway-startup-rate-limiter-hardening.md
+# [12-12] 2026-05-13T14:10Z pipeline started
+# [12-11] 2026-05-13T10:20Z epic-loop → story done (F-2 HIGH + F-1 MEDIUM resolved)
+# [12-11] 2026-05-13T14:05Z committed ✓ (ATDD+Code CLEAN 0 cycles+Kassandra CLEAN)
+# [12-11] 2026-05-13T14:00Z arc42-update → done (08-concepts: media gateway rate-limit trustedProxy gate table added; configurable OIDC claim for audit trail table + extractClaimFromMap contract added)
+# [12-11] 2026-05-13T13:55Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW — F-2+F-1 fully remediated; no new surface)
+# [12-11] 2026-05-13T13:45Z code-review → CLEAN (cycle 0) — 0 MAJOR, 0 MINOR (1 INFO: story AC-F2-2 text typo on XFF key value; impl correct)
+# [12-11] 2026-05-13T13:40Z ci-gate → ✓ build+unit-go (all media+gateway+matrix packages green)+unit-elixir (227); e2e+integration skipped (minio/mc image unavailable — pre-existing)
+# [12-11] 2026-05-13T13:35Z dev-story → done (cycle 0) — ratelimit.go trustedProxy field+clientIP method; upload.go extractClaimFromMap+OIDCTokenVerifier.claimName; main.go NEBU_TRUSTED_PROXY+NEBU_OIDC_USER_ID_CLAIM; docker-compose.yml updated
+# [12-11] 2026-05-13T13:20Z test-review → CLEAN (0 MAJOR)
+# [12-11] 2026-05-13T13:15Z atdd → 7 failing tests (AT-12-11-1..3: XFF gating ratelimit; AT-12-11-4..7: extractClaimFromMap)
+# [12-11] 2026-05-13T13:05Z create-story → 12-11-media-gateway-rate-limit-audit-trail-sec-fixes.md
+# [12-11] 2026-05-13T13:00Z pipeline started
+# [12-10] 2026-05-13T09:47Z epic-loop → story done
+# [12-10] 2026-05-13T12:32Z committed ✓ (ATDD+Code CLEAN 0 cycles+Kassandra CLEAN 2 LOW advisory)
+# [12-10] 2026-05-13T12:30Z arc42-update → done (08-concepts: gateway rate-limit section renamed; media gateway rate-limit table + implementation note added; sync.Map+cleanup goroutine approach documented)
+# [12-10] 2026-05-13T12:28Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW advisory — goroutine-per-instance + XFF single-entry; both accepted per 5.21+12.7 pattern)
+# [12-10] 2026-05-13T12:25Z code-review → CLEAN (cycle 0) — 0 MAJOR, 0 MINOR (go.mod direct dep fixed inline; 3 INFO cosmetic)
+# [12-10] 2026-05-13T12:20Z ci-gate → ✓ build+unit-go (all media+gateway+matrix packages green)+unit-elixir (227); e2e+integration skipped (minio/mc image unavailable — pre-existing)
+# [12-10] 2026-05-13T12:15Z dev-story → done (cycle 0) — ratelimit.go+ratelimit_test.go in media/internal/ratelimit; main.go wired upload(10/s burst 5)+download(100/s burst 20); go.mod+go.sum updated
+# [12-10] 2026-05-13T12:08Z test-review → CLEAN (0 MAJOR; AC-4 refill via burst math; AT-12-10-4b XFF added)
+# [12-10] 2026-05-13T12:06Z atdd → 5 failing tests (AT-12-10-1: upload blocks, AT-12-10-2: download blocks, AT-12-10-3: per-IP isolation, AT-12-10-4: 429 format, AT-12-10-5: disabled no-op)
+# [12-10] 2026-05-13T12:04Z oracle-gate → spec context captured (M_LIMIT_EXCEEDED + Retry-After SHOULD; retry_after_ms deprecated)
+# [12-10] 2026-05-13T12:02Z create-story → 12-10-per-ip-rate-limiting-media-gateway.md
+# [12-10] 2026-05-13T12:00Z pipeline started
+# [12-9] 2026-05-13T09:33Z epic-loop → story done
+# [12-9] 2026-05-13T11:45Z committed ✓ (ATDD+Code CLEAN 0 cycles+Kassandra CLEAN 1 LOW advisory)
+# [12-9] 2026-05-13T11:42Z arc42-update → done (08-concepts: media gateway upload JWT → canonical Matrix user ID section added; formatMatrixUserID contract + NEBU_SERVER_NAME mandatory; pre-12.9 rows grandfathered)
+# [12-9] 2026-05-13T11:38Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW advisory — serverName not validated for Matrix format; operator-controlled, deferred)
+# [12-9] 2026-05-13T11:32Z code-review → CLEAN (cycle 0) — 0 MAJOR, 0 MINOR (2 INFO: AT-12-9-3 self-referential subprocess follows 12.8 pattern; unknown fallback acceptable)
+# [12-9] 2026-05-13T11:28Z ci-gate → ✓ build+unit-go (all media+gateway+matrix packages green)+unit-elixir (227); e2e+integration skipped (minio/mc image unavailable — pre-existing)
+# [12-9] 2026-05-13T11:20Z dev-story → done (cycle 0) — formatMatrixUserID+sanitiseLocalpart in upload.go; NEBU_SERVER_NAME mandatory check in main.go; migration 000047 COMMENT ON COLUMN; docker-compose.yml updated
+# [12-9] 2026-05-13T11:15Z test-review → CLEAN (0 MAJOR, 0 MINOR — all ACs covered; AC-4 migration comment has no testable logic)
+# [12-9] 2026-05-13T11:10Z atdd → 3 failing tests (AT-12-9-1: canonical format, AT-12-9-2: server name, AT-12-9-3: missing NEBU_SERVER_NAME fatal exit)
+# [12-9] 2026-05-13T11:05Z create-story → 12-9-canonical-matrix-user-id-in-media-audit-trail.md
+# [12-9] 2026-05-13T11:00Z pipeline started
+# [12-8] 2026-05-13T09:19Z epic-loop → story done
+# [12-8] 2026-05-13T10:25Z committed ✓ (ATDD+Code CLEAN 1 cycle+Kassandra CLEAN)
+# [12-8] 2026-05-13T10:20Z arc42-update → done (08-concepts: media gateway upload JWT → OIDCTokenVerifier + fail-closed startup; initOIDCVerifier retry+exit pattern documented)
+# [12-8] 2026-05-13T10:15Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW — OIDC fail-open pattern directly remediated; uploader_user_id raw-sub pre-existing accepted)
+# [12-8] 2026-05-13T10:05Z code-review → CLEAN (cycle 1) — 2 MINOR fixed: double oidc.NewProvider → single call via oidcNewProviderFunc; no MAJOR
+# [12-8] 2026-05-13T09:55Z ci-gate → ✓ build+unit-go (all media+gateway+matrix packages green)+unit-elixir (1 suite); e2e+integration skipped (minio/mc image unavailable — pre-existing)
+# [12-8] 2026-05-13T09:45Z dev-story → done (cycle 0) — initOIDCVerifier+initOIDCVerifierWith in main.go; TokenVerifier→VerifyToken interface refactor; OIDCTokenVerifier wrapper; nil verifier 503 in upload handler; download/integration test mocks updated
+# [12-8] 2026-05-13T09:18Z test-review → CLEAN (0 MAJOR; MINOR: initOIDCVerifierWith must return (verifier, attempts, error) for testability — covered in dev notes)
+# [12-8] 2026-05-13T09:15Z atdd → 4 failing tests (AT-12-8-1: subprocess empty issuer, AT-12-8-2: subprocess retry exhausted, AT-12-8-3: retry count helper, AT-12-8-4: nil verifier 503)
+# [12-8] 2026-05-13T09:05Z create-story → 12-8-oidc-fail-open-hardening-media-gateway.md
+# [12-8] 2026-05-13T09:00Z pipeline started
+# [12-7] 2026-05-13T00:00Z epic-loop → story done (SEC Gate 2 fixes)
+# [12-7] 2026-05-12T01:10Z committed ✓ (ATDD+Code CLEAN+Kassandra CLEAN 1 LOW advisory — 10 SEC Gate 2 findings resolved)
+# [12-7] 2026-05-12T00:50Z arc42-update → done (08-concepts: thumbnail dim cap+100MP+GIF cap+nosniff; upload CT blocklist; download safe-inline allowlist; upload JWT validation; server_config RLS mutable keys; SSO nonce subtle.ConstantTimeCompare)
+# [12-7] 2026-05-12T00:45Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW advisory — OIDC fail-open on startup; same pattern as gateway)
+# [12-7] 2026-05-12T00:40Z code-review → CLEAN (cycle 0) — 0 MAJOR, 0 MINOR (const inside func idiomatic Go; map alignment cosmetic; shell double-dollar escaping verified correct)
+# [12-7] 2026-05-12T00:35Z ci-gate → ✓ build+unit-go (all media+gateway+matrix packages green)+unit-elixir (227); e2e+integration skipped (minio/mc image unavailable — pre-existing)
+# [12-7] 2026-05-12T00:30Z dev-story → done (cycle 0) — thumbnail dim cap+100MP+GIF-cap; CT blocklist upload; nosniff+attachment download; migration 000046; subtle.ConstantTimeCompare SSO; env file precedence; http.Server timeouts; go-oidc JWT verifier
+# [12-7] 2026-05-12T00:07Z test-review → CLEAN (0 MAJOR; MINOR: JWT upload tests deferred to impl — interface must be defined first; AT-3 testing.Short skip acceptable)
+# [12-7] 2026-05-12T00:05Z atdd → 14 failing tests (AT-1..AT-14: thumbnail dim cap, GIF frame cap, 100MP source, upload CT blocklist, download nosniff+attachment, migration 000046 RLS)
+# [12-7] 2026-05-12T00:02Z oracle-gate → spec context captured (media safety: nosniff+attachment MUST; upload 401 M_UNKNOWN_TOKEN; thumbnail 400 M_BAD_JSON for dim cap)
+# [12-7] 2026-05-12T00:01Z create-story → 12-7-media-gateway-security-hardening-sec-gate-2-fixes.md
+# [12-7] 2026-05-12T00:00Z pipeline started
+# [12-6] 2026-05-12T19:31Z epic-loop → story done
+# [12-6] 2026-05-12T23:36Z committed ✓ (ATDD+Code CLEAN 0 cycles+Kassandra CLEAN — test-only story, pass-through verified)
+# [12-6] 2026-05-12T23:34Z arc42-update → done (08-concepts: content.info opaque pass-through contract + blurhash, source line updated)
+# [12-6] 2026-05-12T23:32Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW — test-only diff, no production code changes)
+# [12-6] 2026-05-12T23:30Z code-review → CLEAN (cycle 0) — 0 MAJOR, 0 MINOR (2 INFO: heavier OIDC setup acceptable per existing pattern; nil-check for float64 correct)
+# [12-6] 2026-05-12T23:28Z ci-gate → ✓ build+unit-go (matrix+media all green)+unit-elixir (227 actual pass); e2e+integration skipped (minio/mc image unavailable — pre-existing)
+# [12-6] 2026-05-12T23:16Z dev-story → done (cycle 0) — all tests pass: AT-2 sync blurhash, AT-5+AT-6 send-event blurhash; AT-3+AT-4 animated regression guards pass; no implementation changes needed (pass-through already correct)
+# [12-6] 2026-05-12T23:14Z test-review → CLEAN (0 MAJOR, 0 MINOR — all ACs covered, gRPC mock pattern, deterministic)
+# [12-6] 2026-05-12T23:12Z atdd → 5 tests (AT-2 gRPC sync blurhash, AT-5+AT-6 send-event blurhash — all pass immediately: pass-through already correct; AT-3+AT-4 are 12.5 regression guards — pass)
+# [12-6] 2026-05-12T23:07Z oracle-gate → spec context captured (content.info MUST pass-through unchanged; animated=false MUST NOT return animated; width+height REQUIRED; 400 for non-integer/negative)
+# [12-6] 2026-05-12T23:05Z create-story → 12-6-blurhash-pass-through-animated-thumbnail-correctness.md
+# [12-6] 2026-05-12T23:00Z pipeline started
+# [12-5] 2026-05-12T19:14Z epic-loop → story done
+# [12-5] 2026-05-12T22:35Z committed ✓ (ATDD+Code CLEAN 0 cycles+Kassandra CLEAN 2 LOW advisory)
+# [12-5] 2026-05-12T22:30Z arc42-update → done (05-building-blocks: thumbnail package + pgThumbnailStore adapter; 08-concepts: thumbnail generation table — library/MIME/methods/headers)
+# [12-5] 2026-05-12T22:25Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW advisory — serverName pre-existing, large-GIF bounded by upload MaxBytes)
+# [12-5] 2026-05-12T22:20Z code-review → CLEAN (cycle 0) — 0 MAJOR, 0 MINOR (pgThumbnailStore adapter pattern correct; all AC+spec MUST satisfied)
+# [12-5] 2026-05-12T22:15Z ci-gate → ✓ build+unit-go (70 media tests)+unit-elixir (227); e2e+integration skipped (minio/mc image unavailable in env — pre-existing)
+# [12-5] 2026-05-12T22:10Z dev-story → done (cycle 0) — thumbnail package: GenerateThumbnail+DetectMIMEType+Handler; disintegration/imaging v1.6.2; pgThumbnailStore adapter; thumbnailStub removed; 70 tests green
+# [12-5] 2026-05-12T21:20Z test-review → 0 MAJOR, 3 MINOR (M-1: fakeThumbStorer io.Reader signature; M-2: weak traversal assert; M-3: PS/EPS not tested)
+# [12-5] 2026-05-12T21:15Z atdd → 13 failing tests (thumbnail_test.go: 9 unit; handler_test.go: 13 HTTP — compile fails: undefined thumbnail package)
+# [12-5] 2026-05-12T21:08Z oracle-gate → spec context captured (Content-Disposition MUST, mediaId validation MUST, animated=false MUST NOT animate, M_UNKNOWN vs M_BAD_JSON for 400)
+# [12-5] 2026-05-12T21:05Z create-story → 12-5-thumbnail-generation-on-demand-sandboxed.md
+# [12-5] 2026-05-12T21:00Z pipeline started
+# [12-4] 2026-05-12T18:47Z epic-loop → story done
+# [12-4] 2026-05-12T20:45Z committed ✓ (ATDD+Code CLEAN 0 cycles+Kassandra CLEAN 2 LOW advisory)
+# [12-4] 2026-05-12T20:40Z arc42-update → done (05-building-blocks: Storer sentinel errors+ClassifyMinIOError+LocalStorer alignment, 08-concepts: media storage error classification table+pattern)
+# [12-4] 2026-05-12T20:35Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW advisory — path traversal blocked by DB gate, observability gap in MinIO error logging)
+# [12-4] 2026-05-12T20:30Z code-review → CLEAN (cycle 0) — 0 MAJOR, 4 MINOR acceptable: ClassifyMinIOError exported (testability), Stat() double round-trip (MVP OK), OS errors → 502 consistent, AccessDenied → 502 acceptable
+# [12-4] 2026-05-12T20:25Z ci-gate → ✓ build+unit-go (media: 5 pkgs, AT-1..AT-8+existing green)+unit-elixir (227); e2e+integration skipped (minio/mc image unavailable in env — pre-existing)
+# [12-4] 2026-05-12T20:20Z dev-story → done (cycle 0) — ErrNotFound+ErrStorageUnavailable sentinels, ClassifyMinIOError (errors.As), MinIOStorer.Get(Stat eager), LocalStorer.Get ErrNotFound alignment, handler 404/502 mapping
+# [12-4] 2026-05-12T20:12Z test-review → CLEAN (0 MAJOR, 1 MINOR: test naming overlap AT-2/3/4 in both pkg — acceptable)
+# [12-4] 2026-05-12T20:10Z atdd → 8 failing tests (AT-1..AT-5 storage: ErrNotFound+ErrStorageUnavailable+ClassifyMinIOError undefined; AT-2..AT-4 download: ErrNotFound→404, ErrStorageUnavailable→502, credential-leak guard)
+# [12-4] 2026-05-12T20:05Z oracle-gate → spec context captured (download endpoint deprecated v1.11, Content-Type+Content-Disposition required v1.12, 502 M_UNKNOWN for storage unavailable)
+# [12-4] 2026-05-12T20:02Z create-story → 12-4-media-download-minio-backend-pre-signed-url-security.md
+# [12-4] 2026-05-12T20:00Z pipeline started
+# [12-3] 2026-05-12T18:30Z epic-loop → story done
+# [12-3] 2026-05-12T19:42Z committed ✓ (ATDD+Code 1 cycle+Kassandra CLEAN 5 LOW advisory)
+# [12-3] 2026-05-12T19:40Z arc42-update → done (07-deployment: media service+port map+MinIO IAM section, 05-building-blocks: selectStorer wiring+mediaConfig)
+# [12-3] 2026-05-12T19:35Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 5 LOW advisory — IAM hardening approved)
+# [12-3] 2026-05-12T19:30Z code-review → CLEAN (cycle 1) — M1 empty creds fail-fast, M2 restart policy, M3 mc policy create fallback — all fixed
+# [12-3] 2026-05-12T19:25Z code-review → 0 MAJOR, 3 MINOR → cycle 1
+# [12-3] 2026-05-12T19:22Z ci-gate → ✓ build+unit-go (media: 5 pkgs, AT-1..AT-5 green)+unit-elixir (227); e2e+integration skipped (minio/mc image unavailable in env — pre-existing)
+# [12-3] 2026-05-12T19:15Z dev-story → done (cycle 0) — mediaConfig+selectStorer+readSecretFile in main.go, media Dockerfile, docker-compose secrets+createbuckets+media service, Makefile test-unit-go+test-compose-minio extended
+# [12-3] 2026-05-12T19:08Z test-review → CLEAN (0 MAJOR, 3 MINOR acceptable)
+# [12-3] 2026-05-12T19:05Z atdd → 5 failing tests (AT-1..AT-3 compile: undefined selectStorer+mediaConfig; AT-4..AT-5 policy: green with policy file; AT-6 integration: conditional skip)
+# [12-3] 2026-05-12T19:01Z oracle-gate → skipped (no Matrix feature — mxc:// false positive)
+# [12-3] 2026-05-12T19:00Z pipeline started
+# [12-2] 2026-05-12T18:09Z epic-loop → story done
+# [12-2] 2026-05-12T18:50Z committed ✓ (ATDD+Code CLEAN+security skipped — 0 cycles)
+# [12-2] 2026-05-12T18:45Z arc42-update → done (05-building-blocks: Media Gateway Level 2 structure, 12-glossary: Storer interface)
+# [12-2] 2026-05-12T18:41Z security-review → skipped (not-needed)
+# [12-2] 2026-05-12T18:40Z code-review → CLEAN (cycle 0) — 0 MAJOR, 2 MINOR fixed inline (splitKey dedup, no cycle needed)
+# [12-2] 2026-05-12T18:35Z ci-gate → ✓ build+unit-go (media: 3 pkgs, 227 tests)+unit-elixir (227 tests)
+# [12-2] 2026-05-12T18:30Z dev-story → done (cycle 0) — storage.go (Storer interface), local.go (LocalStorer), minio.go (MinIOStorer+minio-go/v7), upload+download handlers refactored to Storer, main.go wired
+# [12-2] 2026-05-12T18:15Z test-review → CLEAN (0 MAJOR, 2 MINOR acceptable)
+# [12-2] 2026-05-12T18:10Z atdd → 8 failing tests (AT-1..AT-4 storage, AT-5..AT-6 upload, AT-7..AT-8 download — compile failures: undefined Storer, LocalStorer, Storage field)
+# [12-2] 2026-05-12T18:03Z oracle-gate → skipped (no Matrix feature — mxc:// false positive in story text)
+# [12-2] 2026-05-12T18:02Z create-story → 12-2-storage-interface-refactor.md
+# [12-2] 2026-05-12T18:00Z pipeline started
+# [12-1] 2026-05-12T17:50Z epic-loop → story done
+# [12-1] 2026-05-12T17:55Z committed ✓ (ATDD+Code CLEAN 1 cycle+Kassandra 2 MEDIUM advisory)
+# [12-1] 2026-05-12T17:50Z arc42-update → done (07-deployment: MinIO ports+setup, 12-glossary: MinIO+nebu-media)
+# [12-1] 2026-05-12T17:45Z security-review → Kassandra 0 CRITICAL, 0 HIGH, 2 MEDIUM advisory (ports+file perms, dev-only)
+# [12-1] 2026-05-12T17:40Z code-review → CLEAN (cycle 1) — 0 MAJOR, 2 MINOR fixed (mc latest→pinned, restart policy)
+# [12-1] 2026-05-12T17:30Z ci-gate → ✓ build+unit-go (1459 tests)+unit-elixir (227 tests)+MinIO integration (7/7)
+# [12-1] 2026-05-12T17:20Z dev-story → done (cycle 0) — ADR-013, docker-compose.yml (minio+createbuckets), Makefile setup, README
+# [12-1] 2026-05-12T17:10Z test-review → CLEAN (0 MAJOR, 1 MINOR: AT-2 requires make setup pre-run, acceptable)
+# [12-1] 2026-05-12T13:15Z atdd → 6 integration tests (4 failing: AC1+AC2+AC4; 2 guards: AC3+AC5)
+# [12-1] 2026-05-12T13:06Z oracle-gate → skipped (no Matrix feature)
+# [12-1] 2026-05-12T13:05Z create-story → 12-1-minio-docker-compose-credentials-via-secrets.md
+# [12-1] 2026-05-12T13:00Z pipeline started
 # [11-11] 2026-05-12T12:42Z committed ✓ (ATDD+Code CLEAN 1 cycle+noproc guard)
 # [11-11] 2026-05-12T12:40Z arc42-update → done (06-runtime: Scenario 3n receipt restart, 08-concepts: start_room pattern)
 # [11-11] 2026-05-12T12:36Z security-review → skipped (not-needed)
@@ -155,4 +344,4 @@ current_step: null
 completed: []
 cycle_count: 0
 blocked_reason: null
-last_updated: "2026-05-12T12:21Z"
+last_updated: "2026-05-13T14:14Z"

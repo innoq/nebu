@@ -3641,3 +3641,150 @@ func TestHandleIncrementalSync_CorePath_NextBatchUnchanged(t *testing.T) {
 		t.Errorf("AC4 FAIL: Core path next_batch must not start with 'buf_', got %q", resp.NextBatch)
 	}
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Story 12.6: Blurhash Pass-Through — Sync Response Tests
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// AC2: /sync returns m.room.message events with content.info.blurhash intact.
+// The sync handler reads content as raw JSON from gRPC and passes it through
+// as json.RawMessage — blurhash must NOT be stripped.
+//
+// Oracle context: content.info is an opaque object per Matrix spec.
+// The server MUST NOT modify it. blurhash is a client extension field.
+//
+// Test strategy: inject a mock gRPC response with a m.image event containing
+// content.info.blurhash, then verify it appears verbatim in the sync response
+// JSON without being stripped or modified.
+
+// ─── AT-2: Blurhash present in /sync timeline event content ───────────────────
+//
+// AC2: sync returns content.info.blurhash if client provided it during send.
+//
+// Given: Core returns a timeline event with content {"msgtype":"m.image","info":{"blurhash":"..."}}
+// When:  GET /sync is called
+// Then:  The timeline event in the response has content.info.blurhash == provided value
+
+func TestGetSync_BlurhashInTimelineContent_PassedThrough(t *testing.T) {
+	// m.image event with blurhash in info — the value to be preserved.
+	const expectedBlurhash = "LEHV6nWB2yk8pyo0adR*.7kCMdnj"
+
+	imageContentBytes := []byte(`{
+		"msgtype": "m.image",
+		"body": "photo.jpg",
+		"url": "mxc://test.local/abc123",
+		"info": {
+			"w": 800,
+			"h": 600,
+			"mimetype": "image/jpeg",
+			"size": 12345,
+			"blurhash": "LEHV6nWB2yk8pyo0adR*.7kCMdnj"
+		}
+	}`)
+
+	memberContentBytes := []byte(`{"membership":"join"}`)
+
+	mock := &mockGetSyncCoreClient{
+		resp: &pb.GetInitialSyncResponse{
+			SinceToken: "next_batch_blurhash_test",
+			Rooms: []*pb.SyncRoom{
+				{
+					RoomId: "!room-bh:test.local",
+					StateEvents: []*pb.SyncRoomStateEvent{
+						{
+							Type:     "m.room.member",
+							StateKey: "@alice:test.local",
+							Content:  memberContentBytes,
+							Sender:   "@alice:test.local",
+						},
+					},
+					TimelineEvents: []*pb.Event{
+						{
+							EventId:   "$bh-event-1:test.local",
+							RoomId:    "!room-bh:test.local",
+							SenderId:  "@alice:test.local",
+							EventType: "m.room.message",
+							Content:   imageContentBytes,
+							OriginTs:  1700000000001,
+						},
+					},
+					Limited:   false,
+					PrevBatch: "",
+				},
+			},
+		},
+	}
+
+	authed, oidcSrv, makeToken := buildAuthedSyncHandler(t, mock)
+	defer oidcSrv.Close()
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/client/v3/sync", nil)
+	req.Header.Set("Authorization", "Bearer "+makeToken())
+
+	w := httptest.NewRecorder()
+	authed.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("AT-2: expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	// Parse the sync response.
+	var syncResp struct {
+		Rooms struct {
+			Join map[string]struct {
+				Timeline struct {
+					Events []struct {
+						Type    string          `json:"type"`
+						Content json.RawMessage `json:"content"`
+					} `json:"events"`
+				} `json:"timeline"`
+			} `json:"join"`
+		} `json:"rooms"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&syncResp); err != nil {
+		t.Fatalf("AT-2: cannot decode sync response: %v", err)
+	}
+
+	room, ok := syncResp.Rooms.Join["!room-bh:test.local"]
+	if !ok {
+		t.Fatal("AT-2: room !room-bh:test.local not in sync response rooms.join")
+	}
+
+	if len(room.Timeline.Events) == 0 {
+		t.Fatal("AT-2: no timeline events in sync response")
+	}
+
+	// Find the m.room.message event.
+	var foundContent map[string]any
+	for _, ev := range room.Timeline.Events {
+		if ev.Type == "m.room.message" {
+			if err := json.Unmarshal(ev.Content, &foundContent); err != nil {
+				t.Fatalf("AT-2: cannot unmarshal event content: %v", err)
+			}
+			break
+		}
+	}
+
+	if foundContent == nil {
+		t.Fatal("AT-2: no m.room.message event found in timeline")
+	}
+
+	// content.info must be present.
+	infoRaw, ok := foundContent["info"]
+	if !ok {
+		t.Fatal("AT-2: sync response content missing 'info' key — server stripped content.info")
+	}
+	info, ok := infoRaw.(map[string]any)
+	if !ok {
+		t.Fatalf("AT-2: content.info is not a map (got %T)", infoRaw)
+	}
+
+	// blurhash MUST be present and equal to the original value.
+	blurhash, ok := info["blurhash"]
+	if !ok {
+		t.Fatal("AT-2: sync response content.info.blurhash is missing — server stripped blurhash")
+	}
+	if blurhash != expectedBlurhash {
+		t.Errorf("AT-2: expected info.blurhash = %q, got %q", expectedBlurhash, blurhash)
+	}
+}

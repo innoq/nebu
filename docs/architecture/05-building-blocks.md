@@ -126,6 +126,96 @@ gateway/
     └── config/                 ← NEBU_* env-var configuration
 ```
 
+## Level 2 — Go Media Gateway Internal Structure
+
+```
+media/
+├── cmd/media/main.go           ← Startup: readSecretFile → selectStorer(cfg) → DB pool → HTTP routing
+│                                  mediaConfig struct: serverName, storagePath, storageBackend,
+│                                  minioEndpoint, minioAccessKey, minioSecretKey, minioBucket, minioUseSSL;
+│                                  routes: v3 unauthenticated (upload, download, thumbnail, config) +
+│                                  v1 authenticated (config, download, download/{fileName}, thumbnail)
+│                                  via authMW.Wrap(handler) pattern (Story 12.16)
+└── internal/
+    ├── crypto/                 ← AES-256-GCM key generation, encrypt, decrypt
+    │   └── aes.go
+    ├── storage/                ← Storage abstraction (Story 12.2)
+    │   ├── storage.go          ← Storer interface: Put / Get / Delete
+    │   │                          Sentinel errors (Story 12.4):
+    │   │                            ErrNotFound          → HTTP 404 M_NOT_FOUND
+    │   │                            ErrStorageUnavailable → HTTP 502 M_UNKNOWN
+    │   ├── local.go            ← LocalStorer: filesystem backend (BasePath/<key>)
+    │   │                          Get: os.ErrNotExist → ErrNotFound (Story 12.4)
+    │   └── minio.go            ← MinIOStorer: S3-compatible backend via minio-go/v7
+    │                              Get: calls obj.Stat() eagerly to detect NoSuchKey;
+    │                              ClassifyMinIOError: NoSuchKey/404 → ErrNotFound,
+    │                              network/other → ErrStorageUnavailable (Story 12.4)
+    ├── auth/                   ← Bearer token auth middleware (Story 12.16)
+    │   └── middleware.go       ← TokenVerifier interface (consumer-defined, no import cycle);
+    │                              Middleware.Wrap(http.Handler) http.Handler;
+    │                              missing/non-Bearer Authorization → 401 M_MISSING_TOKEN;
+    │                              empty Bearer token → 401 M_MISSING_TOKEN;
+    │                              verifier error → 401 M_UNKNOWN_TOKEN;
+    │                              nil verifier guard → 503 M_UNAVAILABLE (fail-closed);
+    │                              *upload.OIDCTokenVerifier satisfies TokenVerifier structurally
+    ├── config/                 ← Media config handler (Story 12.16)
+    │   └── handler.go          ← Handler struct with MaxBytes int64;
+    │                              ServeHTTP returns {"m.upload.size": N} as JSON;
+    │                              no auth logic — auth applied via middleware at routing layer
+    ├── upload/                 ← POST /_matrix/media/v3/upload
+    │   └── upload.go           ← Handler; depends on MediaStore (DB) + Storer (storage);
+    │                              encrypts body AES-256-GCM, calls Storer.Put("<server>/<id>"),
+    │                              inserts row in media_files, returns mxc:// URI
+    ├── download/               ← GET /_matrix/media/v3/download/{serverName}/{mediaId}
+    │                              GET /_matrix/client/v1/media/download/{serverName}/{mediaId}[/{fileName}]
+    │   └── handler.go          ← Handler; looks up row in media_files, calls Storer.Get,
+    │                              decrypts AES-256-GCM, streams plaintext to client;
+    │                              ErrNotFound → 404 M_NOT_FOUND; storage errors → 502 M_UNKNOWN;
+    │                              slog.Error logs raw error; response body sanitized (no leaks)
+    │                              (Story 12.4);
+    │                              r.PathValue("fileName") for Content-Disposition filename when
+    │                              non-empty, falls back to mediaId (AC-6, Story 12.16);
+    │                              Content-Security-Policy + Cross-Origin-Resource-Policy: cross-origin
+    │                              headers set on all 200 responses (Matrix spec §Media Repository
+    │                              SHOULD requirements — Story 12.16)
+    └── thumbnail/              ← GET /_matrix/media/v3/thumbnail/{serverName}/{mediaId}
+                                   GET /_matrix/client/v1/media/thumbnail/{serverName}/{mediaId}
+        ├── thumbnail.go        ← GenerateThumbnail + DetectMIMEType + ThumbnailParams
+        │                          Library: github.com/disintegration/imaging v1.6.2 (pure Go, MIT,
+        │                          no cgo — sandboxed by construction, AC4 Story 12.5)
+        │                          method=scale → imaging.Fit (aspect-ratio-preserved, ≤W×H)
+        │                          method=crop  → imaging.Fill (center-crop, exactly W×H)
+        │                          animated=true + GIF → generateAnimatedGIFThumbnail (all frames)
+        │                          animated=false → static JPEG (spec MUST NOT animate)
+        │                          MIME detection: net/http.DetectContentType on first 512 bytes
+        │                          (magic bytes, NOT Content-Type header)
+        │                          AllowedMIMETypes: {image/jpeg, image/png, image/gif, image/webp}
+        │                          All others (SVG, PDF, PS, EPS) → 400 M_BAD_JSON (deny-by-default)
+        └── handler.go          ← HTTP handler; consumer-defined MediaStore interface;
+                                   width+height required (400 M_BAD_JSON if missing/non-integer);
+                                   mediaId validated: ^[A-Za-z0-9_\-]+$ (path traversal prevention);
+                                   Content-Disposition: inline; filename="thumbnail.ext" (spec v1.12);
+                                   Cache-Control: max-age=86400 (AC5);
+                                   ErrNotFound → 404 M_NOT_FOUND; storage errors → 502 M_UNKNOWN
+                                   (Story 12.5);
+                                   Content-Security-Policy + Cross-Origin-Resource-Policy: cross-origin
+                                   headers set on all 200 responses (Story 12.16)
+```
+
+**pgThumbnailStore adapter (Story 12.5):** `thumbnail.MediaStore` and `download.MediaStore` both
+require `GetMediaFile` returning different row types (Go structural constraint). `pgThumbnailStore`
+wraps `pgMediaStore` and converts `*download.MediaFileRow` to `*thumbnail.MediaFileRow` — zero
+additional SQL queries. Both handlers share the same underlying DB access.
+
+**Storer injection (Story 12.3):** `main.go` uses `selectStorer(cfg mediaConfig)` to select the backend:
+- `NEBU_STORAGE_BACKEND=local` (default) → `&storage.LocalStorer{BasePath: storagePath}`
+- `NEBU_STORAGE_BACKEND=minio` → `&storage.MinIOStorer{Client: minioClient, Bucket: cfg.minioBucket}`
+
+Credentials are loaded from Docker Secrets via `readSecretFile(path)` (mirrors the Gateway PSK pattern):
+`NEBU_MINIO_ACCESS_KEY_FILE=/run/secrets/minio_app_access_key` → file read at startup.
+
+The `minio-go/v7` client is lazily constructed in `selectStorer`; empty `minioEndpoint`, `minioAccessKey`, or `minioSecretKey` returns an error (fail-fast, no silent anonymous access).
+
 ## Level 2 — Elixir/OTP Core Internal Structure
 
 ```
@@ -305,7 +395,7 @@ Key gRPC services: `SendEvent`, `CreateRoom`, `JoinRoom`, `GetMessages`, `GetRoo
 | `device_id` | string | When set, only invalidates this device; when empty, invalidates all user sessions |
 
 
-_Source: `_bmad-output/planning-artifacts/architecture.md`, §Project Structure & Boundaries, §Complete Project Directory Structure; Story 9-19 (room_moderation.go, sync.go, event_dispatcher/server.ex, forgotten_rooms migration); Story 9-22 (per-device sync tokens, device_id in proto); Story 9-24 (GlobalAccountDataDB interface, ListGlobalAccountData, top-level account_data in syncResponse); Story 9-25 (syntheticNextBatch helper, syntheticBatchSeq atomic counter, sinceToken param removed from buildResponseFromBufferedEvents); Story 9-27 (upgrade_room/2 full Matrix §11.35.1 flow, GRPC.RPCError error handling, archive_room_atomic, terminate_child, try/rescue failure audit); Story 11-2 (Nebu.Search.DB, membership-scoped FTS SQL contract, encrypted-room exclusion, integration test infrastructure); Story 11-10 (ClaimMappingHandler admin settings page, ClaimSelectionHandler bootstrap extension, ServerConfigReader interface with LoadClaimMapping/SaveClaimMapping, FormatUserIDFromClaims refactored signature, JWTMiddleware userIDClaimLoader param, migration 000044 default claim mapping seed)_
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Project Structure & Boundaries, §Complete Project Directory Structure; Story 9-19 (room_moderation.go, sync.go, event_dispatcher/server.ex, forgotten_rooms migration); Story 9-22 (per-device sync tokens, device_id in proto); Story 9-24 (GlobalAccountDataDB interface, ListGlobalAccountData, top-level account_data in syncResponse); Story 9-25 (syntheticNextBatch helper, syntheticBatchSeq atomic counter, sinceToken param removed from buildResponseFromBufferedEvents); Story 9-27 (upgrade_room/2 full Matrix §11.35.1 flow, GRPC.RPCError error handling, archive_room_atomic, terminate_child, try/rescue failure audit); Story 11-2 (Nebu.Search.DB, membership-scoped FTS SQL contract, encrypted-room exclusion, integration test infrastructure); Story 11-10 (ClaimMappingHandler admin settings page, ClaimSelectionHandler bootstrap extension, ServerConfigReader interface with LoadClaimMapping/SaveClaimMapping, FormatUserIDFromClaims refactored signature, JWTMiddleware userIDClaimLoader param, migration 000044 default claim mapping seed); Story 12.16 (media/internal/auth middleware package — TokenVerifier interface + fail-closed nil guard; media/internal/config handler package; CSP + Cross-Origin-Resource-Policy headers on download/thumbnail; v1 authenticated media routes in main.go)_
 **`Event` message — `unsigned_relations` field (Story 9-28):**
 
 The shared `Event` proto message gained field 9:
@@ -389,4 +479,4 @@ Response: `Event event` — the full event proto (same `Event` message used by s
 > `core.proto`; the Elixir `core_grpc.pb.ex` service stub was updated manually (`rpc :GetEvent` entry
 > added alongside the pre-existing `rpc :GetRelations` fix).
 
-_Source: `_bmad-output/planning-artifacts/architecture.md`, §Project Structure & Boundaries, §Complete Project Directory Structure; Story 9-19 (room_moderation.go, sync.go, event_dispatcher/server.ex, forgotten_rooms migration); Story 9-22 (per-device sync tokens, device_id in proto); Story 9-24 (GlobalAccountDataDB interface, ListGlobalAccountData, top-level account_data in syncResponse); Story 9-25 (syntheticNextBatch helper, syntheticBatchSeq atomic counter, sinceToken param removed from buildResponseFromBufferedEvents); Story 9-27 (upgrade_room/2 full Matrix §11.35.1 flow, GRPC.RPCError error handling, archive_room_atomic, terminate_child, try/rescue failure audit); Story 9-28 (GetRelations RPC, unsigned_relations field on Event, attach_thread_aggregations, fetch_events_by_relation, count_thread_children, event_in_room?, migration 000042); Story 9-29 (base /relations/{eventId} route, three-segment /{relType}/{eventType} route, dir/event_type/recurse/from query params, prev_batch in response, fetch_events_by_relation/5 dynamic WHERE builder); Story 11-3 (SearchMessages gRPC handler, proto extension, delegated search_db_module pattern, offset-cap security fix); Story 11-4 (search.go Gateway handler, SearchCoreClient consumer interface, §11.14.1 response shape, gRPC error mapping); Story 11-5 (NewUserRateLimiter middleware, per-user 10 req/min for /search, retry_after_ms in body); Story 11-8 (GetEvent RPC, event.go Go handler, fetch_event/2 DB function, core_grpc.pb.ex rpc :GetEvent + rpc :GetRelations bug fix); Story 11-9 (health/info.go NewInfoHandler, Nebu.BuildInfo module, GET /info on pubMux + health server, Admin UI footer via page_data.go SetBuildInfo/newPageData, ErrorMode on PageData, Dockerfile ARG/ldflags injection, docker-compose.yml build args); Story 11-10 (ClaimMappingHandler + ClaimMappingPageData + ClaimMappingConfig in claim_mapping.go, claim-mapping.html template, ClaimSelectionHandler atomic claim persistence in auth.go, ServerConfigReader LoadClaimMapping/SaveClaimMapping extension, FormatUserIDFromClaims signature refactor in grpc/metadata.go, JWTMiddleware userIDClaimLoader param, LoginHandler per-request claim resolution, migration 000044 claim mapping defaults seed)_
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Project Structure & Boundaries, §Complete Project Directory Structure; Story 9-19 (room_moderation.go, sync.go, event_dispatcher/server.ex, forgotten_rooms migration); Story 9-22 (per-device sync tokens, device_id in proto); Story 9-24 (GlobalAccountDataDB interface, ListGlobalAccountData, top-level account_data in syncResponse); Story 9-25 (syntheticNextBatch helper, syntheticBatchSeq atomic counter, sinceToken param removed from buildResponseFromBufferedEvents); Story 9-27 (upgrade_room/2 full Matrix §11.35.1 flow, GRPC.RPCError error handling, archive_room_atomic, terminate_child, try/rescue failure audit); Story 9-28 (GetRelations RPC, unsigned_relations field on Event, attach_thread_aggregations, fetch_events_by_relation, count_thread_children, event_in_room?, migration 000042); Story 9-29 (base /relations/{eventId} route, three-segment /{relType}/{eventType} route, dir/event_type/recurse/from query params, prev_batch in response, fetch_events_by_relation/5 dynamic WHERE builder); Story 11-3 (SearchMessages gRPC handler, proto extension, delegated search_db_module pattern, offset-cap security fix); Story 11-4 (search.go Gateway handler, SearchCoreClient consumer interface, §11.14.1 response shape, gRPC error mapping); Story 11-5 (NewUserRateLimiter middleware, per-user 10 req/min for /search, retry_after_ms in body); Story 11-8 (GetEvent RPC, event.go Go handler, fetch_event/2 DB function, core_grpc.pb.ex rpc :GetEvent + rpc :GetRelations bug fix); Story 11-9 (health/info.go NewInfoHandler, Nebu.BuildInfo module, GET /info on pubMux + health server, Admin UI footer via page_data.go SetBuildInfo/newPageData, ErrorMode on PageData, Dockerfile ARG/ldflags injection, docker-compose.yml build args); Story 11-10 (ClaimMappingHandler + ClaimMappingPageData + ClaimMappingConfig in claim_mapping.go, claim-mapping.html template, ClaimSelectionHandler atomic claim persistence in auth.go, ServerConfigReader LoadClaimMapping/SaveClaimMapping extension, FormatUserIDFromClaims signature refactor in grpc/metadata.go, JWTMiddleware userIDClaimLoader param, LoginHandler per-request claim resolution, migration 000044 claim mapping defaults seed); Story 12.16 (media/internal/auth middleware — TokenVerifier interface + fail-closed nil guard; media/internal/config handler; CSP + Cross-Origin-Resource-Policy headers on download/thumbnail; v1 authenticated routes in main.go)_

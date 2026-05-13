@@ -7,10 +7,13 @@ All builds run via Docker containers — no local Go, Elixir, or buf installatio
 ```yaml
 # Simplified docker-compose.yml topology
 services:
-  gateway:      # Go binary (port 8008: Matrix API + Admin; port 8080: metrics)
-  core:         # Elixir OTP release (port 4000: health; port 9000: gRPC)
-  postgres:     # PostgreSQL 16 (port 5432)
-  dex:          # OIDC provider for development (port 5556)
+  gateway:        # Go binary (port 8008: Matrix API + Admin; port 8080: metrics)
+  core:           # Elixir OTP release (port 4000: health; port 9000: gRPC)
+  postgres:       # PostgreSQL 16 (port 5432)
+  dex:            # OIDC provider for development (port 5556)
+  minio:          # MinIO S3-compatible object store (port 9000: API; port 9001: console) — Story 12.1
+  createbuckets:  # Init container: creates nebu-media bucket + nebu-app IAM user+policy — Story 12.1/12.3
+  media:          # Go Media Gateway (port 8009: upload/download) — Story 12.3
 ```
 
 **Port map:**
@@ -19,10 +22,13 @@ services:
 |---|---|---|
 | Go Gateway | 8008 | Matrix Client-Server API + Admin UI + Admin API |
 | Go Gateway | 8080 (dev) / 8443 (TLS) | Health, Readiness, Prometheus metrics |
+| Go Media Gateway | 8009 | Matrix Media API (upload + download) |
 | Elixir Core | 4000 | Health endpoint (internal Docker network only) |
 | Elixir Core | 9000 | gRPC CoreService (internal Docker network only) |
 | PostgreSQL | 5432 | Database (internal Docker network only) |
 | Dex (dev) | 5556 | OIDC provider (development only) |
+| MinIO S3 API | 9000 | Object storage API (S3-compatible) — local dev only |
+| MinIO Console | 9001 | Object storage management UI — local dev only |
 
 ## Network Boundaries
 
@@ -41,7 +47,7 @@ Internal boundary (Docker network, not exposed):
 ## Makefile Targets
 
 ```makefile
-make setup              # Generate .secrets/internal_secret and dev credentials
+make setup              # Generate .secrets/internal_secret, MinIO credentials, and dev credentials
 make dev                # docker compose up (gateway, core, postgres, dex)
 make build-gateway      # Docker multi-stage build for Go gateway
 make build-core         # Docker multi-stage build for Elixir core
@@ -97,9 +103,34 @@ Secrets are never passed as environment variables directly. They are mounted via
 secrets and referenced via `NEBU_*_FILE` environment variables pointing to the mounted file:
 
 ```bash
-make setup   # openssl rand -hex 32 > .secrets/internal_secret
-# docker-compose.yml mounts .secrets/internal_secret as Docker secret
-# Gateway reads it via NEBU_INTERNAL_SECRET_FILE=/run/secrets/internal_secret
+make setup   # generates .secrets/internal_secret, .secrets/minio_root_user,
+             # .secrets/minio_root_password, .secrets/minio_app_access_key,
+             # and .secrets/minio_app_secret_key via openssl rand
+# docker-compose.yml mounts all five as Docker secrets
+# Gateway reads internal secret via NEBU_INTERNAL_SECRET_FILE=/run/secrets/internal_secret
+# MinIO reads root credentials via MINIO_ROOT_USER_FILE / MINIO_ROOT_PASSWORD_FILE
+# Media Gateway reads app credentials via NEBU_MINIO_ACCESS_KEY_FILE / NEBU_MINIO_SECRET_KEY_FILE
+# createbuckets creates the nebu-app MinIO user and attaches the nebu-app-policy (PutObject+GetObject only)
+# WARNING: These are example credentials for local development only.
+# Replace before first production start.
 ```
+
+### MinIO IAM Hardening (Story 12.3)
+
+The media gateway uses a dedicated `nebu-app` MinIO user with a least-privilege IAM policy:
+
+```json
+{
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": ["s3:PutObject", "s3:GetObject"],
+    "Resource": ["arn:aws:s3:::nebu-media/*"]
+  }]
+}
+```
+
+Intentionally absent: `s3:DeleteObject` (soft-delete only), `s3:ListBucket` (prevents enumeration), `s3:*` (no admin ops from app). The `createbuckets` init container creates and attaches this policy at startup. The media gateway runs as this user, never as the MinIO root. Root credentials are never passed to the media gateway.
+
+Policy source: `dev/minio/nebu-app-policy.json`.
 
 _Source: `_bmad-output/planning-artifacts/architecture.md`, §Infrastructure & Deployment, §Build-Container-Strategie, §Resilienz & Selbst-Heilung_
