@@ -591,15 +591,16 @@ func main() {
 		w.Write([]byte(`{"capabilities":{"m.change_password":{"enabled":false},"m.room_versions":{"default":"10","available":{"6":"stable","10":"stable"}}}}`))
 	})))
 
-	// MSC2965 OIDC-native auth metadata — not supported; return explicit 404 so
-	// Element Web falls back to the standard m.login.sso flow instead of caching
-	// a silent failure and breaking subsequent login attempts in non-private windows.
-	// looseRL: unauthenticated metadata endpoint.
-	mux.Handle("GET /_matrix/client/unstable/org.matrix.msc2965/auth_metadata", looseRL(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte(`{"errcode":"M_UNRECOGNIZED","error":"MSC2965 OIDC-native auth is not supported by this server. Use m.login.sso."}`))
-	})))
+	// Story 13-7: MSC2965 OIDC Discovery Endpoints — auth_issuer + auth_metadata.
+	// Both the unstable MSC2965 path and the stable v1 path are registered.
+	// All four routes are unauthenticated (looseRL).
+	oidcHTTPClient := &http.Client{Timeout: 10 * time.Second}
+	authIssuerHandler := matrix.AuthIssuerHandler(&cfg)
+	authMetadataHandler := matrix.AuthMetadataHandler(&cfg, oidcHTTPClient)
+	mux.Handle("GET /_matrix/client/unstable/org.matrix.msc2965/auth_issuer", looseRL(authIssuerHandler))
+	mux.Handle("GET /_matrix/client/v1/auth_issuer", looseRL(authIssuerHandler))
+	mux.Handle("GET /_matrix/client/unstable/org.matrix.msc2965/auth_metadata", looseRL(authMetadataHandler))
+	mux.Handle("GET /_matrix/client/v1/auth_metadata", looseRL(authMetadataHandler))
 
 	// Story 7-30: Push Rules API — GET/PUT/DELETE /pushrules + Pushers.
 	// Replaces the empty stub with a full database-backed implementation.

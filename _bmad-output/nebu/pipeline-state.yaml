@@ -1,6 +1,9 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-13
+# [13-7] 2026-05-13T17:05Z oracle-gate → spec context captured (v1 stable paths required, auth_issuer={issuer}, auth_metadata=proxy oidc-config, 503 M_UNAVAILABLE)
+# [13-7] 2026-05-13T17:00Z pipeline started (from Step 1c)
+# 13-6 2026-05-13T12:38Z epic-loop → story done (libcluster Gossip+K8s.DNS, Horde crash/restart AT passing, docker-compose.scale.yml core2, Helm headless Service)
 # [13-6] 2026-05-13T16:05Z atdd → 3 failing tests (ExUnit crash/restart x2, Godog feature x1)
 # [13-6] 2026-05-13T16:00Z pipeline started
 # 13-5 2026-05-13T11:56Z epic-loop → story done (k6 Gold+Silver tier scenarios, docker-compose.scale.yml, make test-load-syntax, 3 MINOR fixed)
@@ -418,10 +421,10 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: "13-6"
-current_step: "test-review"
+story: "13-7"
+current_step: "atdd"
 completed:
   - atdd
 cycle_count: 0
 blocked_reason: null
-last_updated: "2026-05-13T12:02Z"
+last_updated: "2026-05-13T12:40Z"

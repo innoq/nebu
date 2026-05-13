@@ -19,7 +19,10 @@ cross-referenced with the Matrix Client-Server API specification.
 | GET | `/_matrix/client/versions` | ✅ | Returns v1.1–v1.11 |
 | GET | `/.well-known/matrix/client` | ✅ | Dynamic base_url from request Host |
 | GET | `/_matrix/client/v3/capabilities` | 🔶 | Returns change_password: false, room_versions: {6: stable} |
-| GET | `/_matrix/client/unstable/org.matrix.msc2965/auth_metadata` | 🔶 | Returns 404 (MSC2965 not supported; forces fallback to m.login.sso) |
+| GET | `/_matrix/client/unstable/org.matrix.msc2965/auth_issuer` | ✅ | Returns `{"issuer":"<NEBU_OIDC_ISSUER>"}` — MSC2965 OIDC discovery (Story 13-7) |
+| GET | `/_matrix/client/v1/auth_issuer` | ✅ | Stable v1 path — same handler as unstable (Story 13-7) |
+| GET | `/_matrix/client/unstable/org.matrix.msc2965/auth_metadata` | ✅ | Proxies OIDC discovery document from `<NEBU_OIDC_ISSUER>/.well-known/openid-configuration`; 5-min TTL cache; 503 M_UNAVAILABLE on provider failure (Story 13-7) |
+| GET | `/_matrix/client/v1/auth_metadata` | ✅ | Stable v1 path — same handler as unstable (Story 13-7) |
 
 ## Authentication
 
@@ -250,4 +253,3 @@ identity services.
 | `/_matrix/key/v2/server` | Server key exchange only needed for federation |
 | `POST /_matrix/client/v3/search` | Requires ADR-010 (FTS strategy) decision first — see [ADR-010](architecture/adr/ADR-010-fts-strategy.md) |
 
-_Source: `gateway/cmd/gateway/main.go` route registrations; `media/cmd/media/main.go` route registrations; `CLAUDE.md`, §Matrix API Scope; `_bmad-output/planning-artifacts/prd.md`, §Endpoint Specification; Story 9-28 (GET /_matrix/client/v1/rooms/{roomId}/relations/{eventId}/{relType}); Story 9-29 (base /relations/{eventId} route, three-segment /{relType}/{eventType} route, dir/recurse/from query params, prev_batch response field); Story 11-8 (GET /_matrix/client/v3/rooms/{roomId}/event/{eventId} — previously unregistered, now implemented with membership enforcement); Story 12.16 (Media Gateway v1 authenticated endpoints — GET /_matrix/client/v1/media/config, download/{serverName}/{mediaId}[/{fileName}], thumbnail/{serverName}/{mediaId}; v3 config upgraded from stub to implemented; CSP + CORP headers on all download/thumbnail responses)_

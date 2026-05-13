@@ -62,6 +62,12 @@ gateway/
     │   │                          maps gRPC PERMISSION_DENIED → 403 M_FORBIDDEN (non-member),
     │   │                          NOT_FOUND → 404 M_NOT_FOUND; returns Matrix event JSON via
     │   │                          protoEventToMatrix (shared with other event handlers)
+    │   ├── oidc_discovery.go   ← MSC2965 OIDC discovery endpoints (Story 13-7):
+    │   │                          AuthIssuerHandler — GET auth_issuer returns {"issuer":"<cfg.OIDCIssuer>"};
+    │   │                          AuthMetadataHandler — GET auth_metadata proxies OIDC provider's
+    │   │                          /.well-known/openid-configuration; 5-minute TTL cache (metadataCache,
+    │   │                          sync.RWMutex); 503 M_UNAVAILABLE on provider error; registered on
+    │   │                          both unstable/org.matrix.msc2965/ and stable v1/ paths; unauthenticated
     │   └── ...                 ← typing, receipts, messages, keys
     ├── admin/                  ← Admin UI (Go Templates + SSR) + Admin API
     │   ├── api.go              ← /api/v1/* Router (oapi-codegen StrictHandler)
