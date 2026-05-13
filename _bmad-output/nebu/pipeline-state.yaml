@@ -1,6 +1,7 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-12
+# [12-7] 2026-05-13T00:00Z epic-loop → story done (SEC Gate 2 fixes)
 # [12-7] 2026-05-12T01:10Z committed ✓ (ATDD+Code CLEAN+Kassandra CLEAN 1 LOW advisory — 10 SEC Gate 2 findings resolved)
 # [12-7] 2026-05-12T00:50Z arc42-update → done (08-concepts: thumbnail dim cap+100MP+GIF cap+nosniff; upload CT blocklist; download safe-inline allowlist; upload JWT validation; server_config RLS mutable keys; SSO nonce subtle.ConstantTimeCompare)
 # [12-7] 2026-05-12T00:45Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW advisory — OIDC fail-open on startup; same pattern as gateway)

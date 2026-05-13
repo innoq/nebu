@@ -25,6 +25,8 @@ _Finding types that appear across multiple stories — indicators of systemic is
 | MinIO mc entrypoint secret leak via argv | 12 | `$(cat /run/secrets/x)` in shell entrypoints expands secrets into `mc` argv → recoverable via `/proc/<pid>/cmdline`. Defeats Docker Secrets. Use `MC_HOST_<alias>` env var or `--stdin` form. |
 | Unauthenticated media endpoint + unbounded resource | 12 | Thumbnail (`width`/`height`) and download (`io.ReadAll`) handlers do expensive per-request work without auth and without bounds. Every unauthenticated Matrix v3 endpoint MUST have hard caps on input dimensions, output size, and concurrency. |
 | Inline Content-Type echoed back with `inline` disposition | 12 (4) | Stored XSS surface: attacker uploads `Content-Type: text/html`, download serves it back inline. Matrix spec v1.12+ requires `attachment` for unsafe types. Add `X-Content-Type-Options: nosniff` always; allowlist server-controlled types on download. |
+| OIDC fail-open at startup | 12 | When an OIDC-required service falls back to "any bearer accepted" if the provider can't be reached at boot, an operator misconfiguration (empty issuer env, Dex offline) silently produces an anonymous-upload surface. Pattern: services that require OIDC must support a `_REQUIRED=true` knob to refuse startup when the verifier is nil. Logged `slog.Warn` is necessary but insufficient. |
+| `uploader_user_id` ≠ Matrix user ID | 12 | When media stores identity claims (raw `sub` or `name`) without going through the gateway's `FormatUserIDFromClaims` translation, audit-trail correlation breaks. Any service that records "user IDs" must store the canonical Matrix `@localpart:server` form, not raw OIDC claims. |
 
 ## Epic Review History
 _Summary of completed epic-end reviews._
@@ -33,3 +35,4 @@ _Summary of completed epic-end reviews._
 |------|------|---------|------|--------|-----|--------|
 | 9 (9-19 to 9-25) | 2026-05-06 | 0 | 0 | 2 | 1 | epic-9-sec-gate2-final-2026-05-06.md |
 | 12 (12.1–12.6 + 11.7–11.11 carry-over) | 2026-05-12 | 0 | 3 | 3 | 5 | epic-12-security-review-2026-05-12.md |
+| 12 (re-review after 12.7 remediation) | 2026-05-13 | 0 | 0 | 0 | 3+1 | epic-12-security-review-2026-05-13.md — PASS |
