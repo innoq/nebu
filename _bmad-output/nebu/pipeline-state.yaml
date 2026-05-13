@@ -1,6 +1,10 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-13
+# [12-9] 2026-05-13T11:45Z committed ✓ (ATDD+Code CLEAN 0 cycles+Kassandra CLEAN 1 LOW advisory)
+# [12-9] 2026-05-13T11:42Z arc42-update → done (08-concepts: media gateway upload JWT → canonical Matrix user ID section added; formatMatrixUserID contract + NEBU_SERVER_NAME mandatory; pre-12.9 rows grandfathered)
+# [12-9] 2026-05-13T11:38Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW advisory — serverName not validated for Matrix format; operator-controlled, deferred)
+# [12-9] 2026-05-13T11:32Z code-review → CLEAN (cycle 0) — 0 MAJOR, 0 MINOR (2 INFO: AT-12-9-3 self-referential subprocess follows 12.8 pattern; unknown fallback acceptable)
 # [12-9] 2026-05-13T11:28Z ci-gate → ✓ build+unit-go (all media+gateway+matrix packages green)+unit-elixir (227); e2e+integration skipped (minio/mc image unavailable — pre-existing)
 # [12-9] 2026-05-13T11:20Z dev-story → done (cycle 0) — formatMatrixUserID+sanitiseLocalpart in upload.go; NEBU_SERVER_NAME mandatory check in main.go; migration 000047 COMMENT ON COLUMN; docker-compose.yml updated
 # [12-9] 2026-05-13T11:15Z test-review → CLEAN (0 MAJOR, 0 MINOR — all ACs covered; AC-4 migration comment has no testable logic)
@@ -251,14 +255,9 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: "12-9"
-current_step: "code-review"
-completed:
-  - create-story
-  - atdd
-  - test-review
-  - dev-story
-  - ci-gate
+story: null
+current_step: null
+completed: []
 cycle_count: 0
 blocked_reason: null
-last_updated: "2026-05-13T07:30Z"
+last_updated: "2026-05-13T07:33Z"
