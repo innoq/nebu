@@ -1,6 +1,7 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-13
+# [12-16] 2026-05-13T17:00Z committed ✓ (ATDD+Code CLEAN 1 cycle+Kassandra CLEAN 4L)
 # [12-16] 2026-05-13T16:50Z arc42-update → done (05-building-blocks, 08-concepts, matrix-api-scope)
 # [12-16] 2026-05-13T16:35Z security-review → Kassandra CLEAN (0C/0H/4L all non-blocking)
 # [12-16] 2026-05-13T16:20Z code-review → CLEAN (cycle 1) — F-A/F-B/F-C all fixed; M1 sprint-status drift fixed inline
@@ -338,17 +339,9 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: "12-16"
-current_step: "commit"
-completed:
-  - create-story
-  - atdd
-  - test-review
-  - dev-story
-  - ci-gate
-  - code-review
-  - security-review
-  - arc42-update
-cycle_count: 1
+story: null
+current_step: null
+completed: []
+cycle_count: 0
 blocked_reason: null
 last_updated: "2026-05-13T14:14Z"
