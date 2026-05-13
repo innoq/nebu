@@ -75,6 +75,23 @@ resource "stackit_security_group_rule" "inbound_matrix" {
   }
 }
 
+# Inbound: Dex OIDC port (dex mode only — browser follows OIDC redirects to port 5556).
+# Restricted to dex_allowed_cidr (default 0.0.0.0/0 for demo; restrict to your IP/VPN range in shared environments).
+resource "stackit_security_group_rule" "inbound_dex" {
+  count             = var.oidc_mode == "dex" ? 1 : 0
+  project_id        = var.stackit_project_id
+  security_group_id = stackit_security_group.nebu.security_group_id
+  direction         = "ingress"
+  ip_range          = var.dex_allowed_cidr
+  protocol = {
+    name = "tcp"
+  }
+  port_range = {
+    min = 5556
+    max = 5556
+  }
+}
+
 # Inbound: SSH from anywhere (restrict to a bastion CIDR in production)
 resource "stackit_security_group_rule" "inbound_ssh" {
   project_id        = var.stackit_project_id
@@ -112,6 +129,19 @@ resource "stackit_key_pair" "nebu" {
   public_key = var.ssh_public_key
 }
 
+# ── OIDC Profile ─────────────────────────────────────────────────────────────
+
+locals {
+  # When oidc_mode = "dex", the issuer is the Dex sidecar exposed on port 5556 of the VM's public IP.
+  # The gateway resolves Dex via a Docker hairpin (host IP → port 5556 → Dex container).
+  # Standard Linux SNAT/masquerade handles this — no additional routing configuration needed.
+  # Dex's issuer in config.yaml is also set to http://<server_name>:5556/dex so iss validation passes.
+  # Port 5556 is opened in the SG (inbound_dex rule) so browsers can follow OIDC redirects directly.
+  # Future: when TLS is configured, switch to host-based nginx routing (dex.<server_name>) instead.
+  # When oidc_mode = "external", the operator provides the issuer explicitly.
+  effective_oidc_issuer = var.oidc_mode == "dex" ? "http://${var.server_name}:5556/dex" : var.oidc_issuer
+}
+
 # ── VM ───────────────────────────────────────────────────────────────────────
 # Ubuntu 24.04 LTS — image ID for eu01 region.
 # Update this ID if deploying to a different region (check STACKIT image catalog).
@@ -144,23 +174,46 @@ resource "stackit_server" "nebu" {
   #
   # cloud-init bootstrap: installs Docker, writes /opt/nebu/ layout, starts nebu.service.
   # All secrets are injected from OpenTofu variables — no hardcoded values in the template.
+  #
+  # Traffic flow when oidc_mode = "dex":
+  #   Browser → ALB:443 (TCP passthrough) → gateway:8008 (host port, bound directly)
+  #   Gateway OIDC discovery (hairpin): gateway → http://<server_name>:5556/dex (host IP → Dex container)
+  #     Standard Linux SNAT/masquerade handles the hairpin — no extra routing needed.
+  #   Browser OIDC redirect: browser → http://<server_name>:5556/dex/auth (SG port 5556 open)
+  # Traffic flow when oidc_mode = "external":
+  #   ALB:443 (TCP passthrough) → gateway:8008 (host)
+  #   Gateway OIDC discovery: gateway → <oidc_issuer> (external HTTPS provider)
+  # No ALB target port change is needed — both modes use port 8008 on the host.
+  # TODO (future): when TLS is configured, implement host-based routing via nginx
+  #   (dex.<server_name>:443 → dex, <server_name>:443 → gateway) in a follow-up story.
   user_data = base64encode(templatefile("${path.module}/cloud-init.tftpl", {
-    # db_password removed — managed by PostgresFlex, credentials injected via pg_* vars below
-    internal_secret    = var.internal_secret
-    oidc_client_secret = var.oidc_client_secret
-    oidc_issuer        = var.oidc_issuer
-    server_name        = var.server_name
-    image_registry     = var.image_registry
-    nebu_version       = var.nebu_version
+    internal_secret          = var.internal_secret
+    oidc_client_secret       = var.oidc_client_secret
+    oidc_issuer              = local.effective_oidc_issuer
+    oidc_mode                = var.oidc_mode
+    dex_static_password_hash = var.oidc_mode == "dex" ? var.dex_static_password_hash : ""
+    server_name              = var.server_name
+    image_registry           = var.image_registry
+    nebu_version             = var.nebu_version
     # PostgresFlex connection details for the Nebu application user
     pg_host     = stackit_postgresflex_user.nebu.host
     pg_port     = stackit_postgresflex_user.nebu.port
     pg_user     = stackit_postgresflex_user.nebu.username
     pg_password = stackit_postgresflex_user.nebu.password
-    # Keycloak-dedicated DB credentials (separate user, owns the keycloak database)
-    kc_user     = stackit_postgresflex_user.keycloak.username
-    kc_password = stackit_postgresflex_user.keycloak.password
+    # kc_user and kc_password are removed — Keycloak is no longer deployed
   }))
+
+  lifecycle {
+    precondition {
+      condition     = var.oidc_mode != "dex" || var.dex_static_password_hash != null
+      error_message = "dex_static_password_hash is required when oidc_mode = 'dex'."
+    }
+
+    precondition {
+      condition     = var.oidc_mode == "dex" || length(var.oidc_issuer) > 0
+      error_message = "oidc_issuer must be set when oidc_mode = 'external'."
+    }
+  }
 }
 
 # ── PostgresFlex Managed Database ────────────────────────────────────────────
@@ -196,26 +249,11 @@ resource "stackit_postgresflex_user" "nebu" {
   roles       = ["login"]
 }
 
-# Dedicated Keycloak DB user — separate credentials from the application user.
-resource "stackit_postgresflex_user" "keycloak" {
-  project_id  = var.stackit_project_id
-  instance_id = stackit_postgresflex_instance.nebu.instance_id
-  username    = "keycloak_app"
-  roles       = ["login"]
-}
-
 resource "stackit_postgresflex_database" "nebu" {
   project_id  = var.stackit_project_id
   instance_id = stackit_postgresflex_instance.nebu.instance_id
   name        = "nebu"
   owner       = stackit_postgresflex_user.nebu.username
-}
-
-resource "stackit_postgresflex_database" "keycloak" {
-  project_id  = var.stackit_project_id
-  instance_id = stackit_postgresflex_instance.nebu.instance_id
-  name        = "keycloak"
-  owner       = stackit_postgresflex_user.keycloak.username
 }
 
 # ── Floating IP ──────────────────────────────────────────────────────────────

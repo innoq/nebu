@@ -314,7 +314,42 @@ PostgresFlex connection details (`host`, `port`, `username`, `password`) are com
 | `postgres_ram` | `4` GB | 8+ GB |
 | `postgres_storage_size` | `20` GB | 50+ GB |
 
-### Stackit cloud-init Bootstrap (nebu-stackit — 13-3b, updated 13-8)
+### Stackit OIDC Deployment Profiles (nebu-stackit — Story 13-9)
+
+The Stackit deployment supports two OIDC profiles selected via `var.oidc_mode`:
+
+| `oidc_mode` | Bundled IdP | Use case |
+|---|---|---|
+| `"dex"` | Dex IdP sidecar (`dexidp/dex:v2.45.1`) | Test, demo, integration environments |
+| `"external"` _(default)_ | None | Production — operator provides an external OIDC provider |
+
+**`"dex"` profile:**
+- Dex runs as a Docker Compose sidecar on port 5556 with a static in-memory config (no database).
+- `/opt/nebu/dex/config.yaml` is written at boot (mode `0600`) with a static client (`nebu-gateway`) and a static password user (`operator@example.com`).
+- `effective_oidc_issuer` is auto-derived as `http://<server_name>:5556/dex`; the gateway resolves Dex via Docker hairpin NAT (Linux SNAT/masquerade — no extra routing required).
+- A conditional SG rule `inbound_dex` opens port 5556 to `var.dex_allowed_cidr` (default `0.0.0.0/0` for demos; restrict to VPN/developer CIDR in shared environments).
+- `var.dex_static_password_hash` (required when `oidc_mode = "dex"`) must be a bcrypt hash (`$2a$`/`$2b$`/`$2y$` prefix). Generate with: `htpasswd -bnBC 12 '' 'yourpassword' | tr -d ':' | sed 's/$2y/$2a/'`.
+- Expected `docker compose ps` output: `dex` (healthy), `core` (healthy), `gateway` (healthy).
+
+**`"external"` profile:**
+- No bundled IdP is deployed.
+- `var.oidc_issuer` (required, non-empty) is passed directly into `.env` as `NEBU_OIDC_ISSUER`.
+- `var.oidc_client_secret` must match the secret registered in the external OIDC provider.
+- Expected `docker compose ps` output: `core` (healthy), `gateway` (healthy).
+
+**Keycloak is fully removed in both profiles.** `stackit_postgresflex_user.keycloak` and `stackit_postgresflex_database.keycloak` no longer exist. There are no Keycloak-specific docker-compose services or secrets.
+
+**New variables (Story 13-9):**
+
+| Variable | Type | Default | Purpose |
+|---|---|---|---|
+| `oidc_mode` | string | `"external"` | Profile selection; validated against `["dex", "external"]` |
+| `dex_allowed_cidr` | string | `"0.0.0.0/0"` | Source CIDR for SG rule on Dex port 5556 (dex mode only) |
+| `dex_static_password_hash` | string (sensitive) | `null` | bcrypt hash for Dex static user; required when `oidc_mode = "dex"` |
+
+A `lifecycle { precondition }` block on `stackit_server.nebu` enforces: `oidc_mode == "dex" → dex_static_password_hash != null` and `oidc_mode == "external" → length(oidc_issuer) > 0`.
+
+### Stackit cloud-init Bootstrap (nebu-stackit — 13-3b, updated 13-8, 13-9)
 
 `deploy/tofu/examples/stackit/cloud-init.tftpl` is rendered by `templatefile()` in `main.tf` and injected as `user_data` (base64-encoded) into the VM at provision time. On first boot, the VM:
 
@@ -322,27 +357,29 @@ PostgresFlex connection details (`host`, `port`, `username`, `password`) are com
 2. Installs Docker CE + Docker Compose plugin via the official Docker apt repository
 3. Writes `/opt/nebu/` directory tree (permissions `0700`) with:
    - `.secrets/internal_secret` (mode `0600`, quoted scalar — no trailing newline)
-   - `.env` (mode `0600`) — all runtime secrets injected from OpenTofu variables, including `NEBU_DB_URL` and `NEBU_DB_URL_MIGRATE` pointing to the PostgresFlex managed instance (`postgresql://${pg_user}:${pg_password}@${pg_host}:${pg_port}/nebu`)
-   - `docker-compose.yml` (mode `0640`) — three services: `keycloak`, `core`, `gateway` (the `postgres` service has been removed — the managed PostgresFlex instance is used instead)
+   - `.env` (mode `0600`) — all runtime secrets injected from OpenTofu variables, including `NEBU_DB_URL` and `NEBU_DB_URL_MIGRATE` pointing to the PostgresFlex managed instance
+   - `/opt/nebu/dex/config.yaml` (mode `0600`, `oidc_mode = "dex"` only) — Dex static configuration
+   - `docker-compose.yml` (mode `0640`) — two or three services: `core`, `gateway`, and conditionally `dex` (when `oidc_mode = "dex"`). No `postgres` service (managed PostgresFlex); no `keycloak` service.
 4. Installs `/etc/systemd/system/nebu.service` — `Type=simple`, no `-d` flag; systemd owns the process lifecycle with `Restart=on-failure RestartSec=10`
 5. Starts Docker (`systemctl start docker.service && sleep 2`) before starting `nebu.service`
 
-**Changes in Story 13-8:**
-- `postgres` docker-compose service and `postgres_data` volume removed — replaced by PostgresFlex managed instance
-- `init-db.sql` write_files block and its `runcmd` cleanup removed — databases and users are created by OpenTofu resources
-- `NEBU_DB_URL` / `NEBU_DB_URL_MIGRATE` now reference PostgresFlex host/port/credentials via template variables
-- Keycloak `KC_DB_URL` points to the PostgresFlex host (not the removed `postgres:5432` container)
-- `depends_on: postgres` removed from `core` and `gateway` services — the managed DB is available before the VM boots
-- Dedicated Keycloak user (`kc_user` / `kc_password`) injected separately from the Nebu application user
+**Changes in Story 13-9:**
+- `keycloak` docker-compose service removed in both profiles — Keycloak is no longer deployed
+- `KC_DB_PASSWORD` removed from `.env` — no Keycloak credentials
+- Conditional Dex `write_files` entry and `dex:` service block added (guarded by `%{ if oidc_mode == "dex" ~}` template directive)
+- `templatefile()` call no longer passes `kc_user`/`kc_password`; now passes `oidc_mode` and `dex_static_password_hash`
+- `local.effective_oidc_issuer` computed in `main.tf` — auto-set to `http://<server_name>:5556/dex` for dex mode; uses `var.oidc_issuer` for external mode
 
 **Security invariants:**
-- `pg_password` and `kc_password` appear only inside `.env` (mode `0600`), never in plain environment variables or log output
+- `pg_password` appears only inside `.env` (mode `0600`), never in plain environment variables or log output
+- `dex_static_password_hash` is written only to `/opt/nebu/dex/config.yaml` (mode `0600`)
 - ACL on PostgresFlex is set to `[var.network_cidr]` — never `0.0.0.0/0`
 - `stackit_postgresflex_user.nebu.password` is stored in Terraform state — operators MUST use encrypted Stackit Object Storage backend (see `RUNBOOK.md`)
 - `/opt/nebu/` is `0700` (root-only); `docker-compose.yml` is `0640`
 - `nebu_version` variable rejects `"latest"` — a specific semver tag is required
+- `oidc_client_secret` must not contain `"` or `\` characters (YAML interpolation constraint, enforced by variable validation)
 
-Day-2 operations (updates, backup, teardown) are documented in `deploy/tofu/examples/stackit/RUNBOOK.md`.
+Day-2 operations (updates, OIDC profile switching, backup, teardown) are documented in `deploy/tofu/examples/stackit/RUNBOOK.md`.
 
 ### Helm Chart
 

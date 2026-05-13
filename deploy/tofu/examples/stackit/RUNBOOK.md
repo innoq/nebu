@@ -16,6 +16,73 @@ This runbook covers day-1 deploy and day-2 operations for Nebu hosted on a Stack
 
 ---
 
+## OIDC Profiles
+
+Nebu on Stackit supports two OIDC deployment modes, configured via `oidc_mode` in `terraform.tfvars`.
+
+### `oidc_mode = "dex"` — Bundled Dex (test/demo)
+
+Deploys [Dex IdP](https://dexidp.io/) as a Docker Compose sidecar alongside Nebu. Dex uses a static YAML configuration — no database is required.
+
+**When to use:** Development, demo, or integration test environments where you do not have an external OIDC provider.
+
+**Traffic routing (dex mode):**
+
+The gateway binds host port 8008 directly (same as external mode). The ALB targets port 8008 — no configuration change required between modes.
+
+Dex is exposed on host port 5556 (plain HTTP). The SG rule `inbound_dex` is created conditionally in dex mode to allow browsers to follow OIDC redirects directly to port 5556.
+
+The gateway performs OIDC discovery via a Docker hairpin: it calls `http://<server_name>:5556/dex/.well-known/openid-configuration` using the VM's public IP. Standard Linux SNAT/masquerade handles this routing correctly.
+
+> **Note:** Host-based routing via nginx (`dex.<server_name>`) is a planned improvement for when TLS is configured. This will be implemented in a follow-up story.
+
+**What gets deployed:**
+
+```bash
+sudo docker compose ps
+# NAME     IMAGE                        STATUS
+# dex      dexidp/dex:v2.45.1           Up (healthy)
+# core     <registry>/nebu-core:...     Up (healthy)
+# gateway  <registry>/nebu-gateway:...  Up (healthy)
+```
+
+The Dex config file is at `/opt/nebu/dex/config.yaml`. It contains a static OIDC client (`nebu-gateway`) and a static user (`operator@example.com` — in the `instance_admin` group).
+
+> **Admin access:** The static Dex user is placed in the `instance_admin` group claim. For admin access to work, the Nebu Bootstrap Wizard must be configured with `admin_group_claim = "groups"` and the claim value `instance_admin`. Complete the Bootstrap Wizard after first deploy to enable admin login.
+
+> **Security:** The `dex_static_password_hash` variable is required when using this mode. Generate a unique bcrypt hash with: `htpasswd -bnBC 12 '' 'yourpassword' | tr -d ':' | sed 's/$2y/$2a/'`. Never share or reuse password hashes across environments.
+
+The OIDC issuer is automatically set to `http://<server_name>:5556/dex`. You do not need to set `oidc_issuer` in `terraform.tfvars` when using this mode.
+
+> **Note on HTTP (not HTTPS) for Dex:** Dex runs on port 5556 with plain HTTP. **Dex mode is intended for test/demo environments only — not for production deployments where HTTPS for the IdP is required.**
+
+To confirm Dex is reachable (port 5556, plain HTTP):
+
+```bash
+curl http://<server_name>:5556/dex/.well-known/openid-configuration
+# Expected: {"issuer":"http://<server_name>:5556/dex", ...}
+```
+
+To confirm the gateway is reachable on port 8008:
+
+```bash
+curl http://<server_name>:8008/_matrix/client/v3/versions
+# Expected: Matrix version list from gateway
+```
+
+### `oidc_mode = "external"` — External OIDC Provider (production)
+
+No bundled IdP is deployed. You must provide:
+
+- `oidc_issuer` — the OIDC issuer URL of your external provider (Keycloak, Authentik, Azure AD, etc.)
+- `oidc_client_secret` — the client secret issued to `nebu-gateway` by your provider
+
+**When to use:** Production deployments where you already manage an OIDC provider or use a cloud IdP service.
+
+Configure the external IdP client using the Nebu Bootstrap Wizard (step 3 — OIDC configuration), then copy the issued client secret into `terraform.tfvars` as `oidc_client_secret`.
+
+---
+
 ## First Deploy
 
 ```bash
@@ -53,16 +120,24 @@ cd /opt/nebu
 sudo docker compose ps
 ```
 
-Expected output once healthy:
+Expected output once healthy (`oidc_mode = "dex"`):
 
 ```
 NAME       IMAGE                           STATUS
-keycloak   quay.io/keycloak/keycloak:24.0  Up
+dex        dexidp/dex:v2.45.1              Up (healthy)
 core       <registry>/nebu-core:<ver>      Up (healthy)
 gateway    <registry>/nebu-gateway:<ver>   Up (healthy)
 ```
 
-> Note: the `postgres` container is no longer present — the database is now managed by Stackit PostgresFlex. Keycloak and Nebu services connect to the PostgresFlex instance directly via the private network.
+Expected output once healthy (`oidc_mode = "external"`):
+
+```
+NAME       IMAGE                           STATUS
+core       <registry>/nebu-core:<ver>      Up (healthy)
+gateway    <registry>/nebu-gateway:<ver>   Up (healthy)
+```
+
+> Note: the `postgres` container is no longer present — the database is now managed by Stackit PostgresFlex. Nebu services connect to the PostgresFlex instance directly via the private network.
 
 If cloud-init fails, check the log:
 
@@ -86,7 +161,7 @@ Expected response:
 {"versions":["v1.1","v1.2","v1.3","v1.4","v1.5"]}
 ```
 
-> Note: if you are using a self-signed certificate or TCP passthrough (current default), add `-k` to skip TLS verification until a trusted certificate is configured.
+> Note: the ALB currently uses TCP passthrough (`PROTOCOL_TCP`). TLS termination is handled by the gateway. In `oidc_mode = "dex"`, the Dex OIDC endpoint (`http://<server_name>:5556/dex/`) is plain HTTP — no TLS. The Matrix API on port 8008 is served directly by the gateway container.
 
 ---
 

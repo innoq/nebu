@@ -105,7 +105,7 @@ variable "internal_secret" {
 }
 
 variable "oidc_client_secret" {
-  description = "OIDC client secret for the nebu-gateway application, issued by the identity provider (Keycloak / Dex)."
+  description = "Required. When oidc_mode = 'dex': embedded into Dex staticClients config (same value used by both gateway and Dex). When oidc_mode = 'external': must match the client secret registered in your external OIDC provider. Minimum 16 characters."
   type        = string
   sensitive   = true
 
@@ -113,11 +113,51 @@ variable "oidc_client_secret" {
     condition     = length(var.oidc_client_secret) >= 16
     error_message = "oidc_client_secret must be at least 16 characters."
   }
+
+  validation {
+    condition     = !strcontains(var.oidc_client_secret, "\"") && !strcontains(var.oidc_client_secret, "\\")
+    error_message = "oidc_client_secret must not contain double-quote or backslash characters (YAML interpolation constraint)."
+  }
 }
 
 variable "oidc_issuer" {
-  description = "OIDC issuer URL of the identity provider (e.g. 'https://auth.example.com/realms/nebu')."
+  description = "OIDC issuer URL. Required when oidc_mode = 'external' (e.g. 'https://auth.example.com/realms/nebu'). When oidc_mode = 'dex', this value is ignored — the issuer is automatically set to 'http://<server_name>:5556/dex'. The gateway reaches Dex via Docker hairpin NAT through the VM's public IP (standard Linux SNAT/masquerade)."
   type        = string
+  default     = "" # Empty default enables `tofu validate` without providing a value
+}
+
+variable "oidc_mode" {
+  description = "OIDC deployment profile. 'dex': deploy Dex as a sidecar (static config, no database — for test/demo environments). 'external': no bundled IdP; operator must provide oidc_issuer and oidc_client_secret (for production with a managed OIDC provider)."
+  type        = string
+  default     = "external"
+
+  validation {
+    condition     = contains(["dex", "external"], var.oidc_mode)
+    error_message = "oidc_mode must be 'dex' or 'external'."
+  }
+}
+
+variable "dex_allowed_cidr" {
+  description = "CIDR block allowed to reach Dex on port 5556 (only used when oidc_mode = 'dex'). Restrict to your test network or developer IP range. Default '0.0.0.0/0' is intentionally permissive for demo setups — always restrict in shared environments."
+  type        = string
+  default     = "0.0.0.0/0"
+
+  validation {
+    condition     = can(cidrnetmask(var.dex_allowed_cidr))
+    error_message = "dex_allowed_cidr must be a valid CIDR block (e.g. '10.0.0.0/8' or '203.0.113.1/32')."
+  }
+}
+
+variable "dex_static_password_hash" {
+  description = "bcrypt hash for the Dex static user (operator@example.com). Required when oidc_mode = 'dex'. Generate with: htpasswd -bnBC 12 '' 'yourpassword' | tr -d ':' | sed 's/$2y/$2a/'. This value is written to dex/config.yaml on the VM (mode 0600)."
+  type        = string
+  sensitive   = true
+  default     = null
+
+  validation {
+    condition     = var.dex_static_password_hash == null || startswith(var.dex_static_password_hash, "$2a$") || startswith(var.dex_static_password_hash, "$2b$") || startswith(var.dex_static_password_hash, "$2y$")
+    error_message = "dex_static_password_hash must be a bcrypt hash starting with '$2a$', '$2b$', or '$2y$' (all are equivalent bcrypt variants)."
+  }
 }
 
 variable "server_name" {

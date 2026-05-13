@@ -38,10 +38,52 @@ write_files:
       NEBU_SERVER_NAME=${server_name}
       NEBU_IMAGE_REGISTRY=${image_registry}
       NEBU_VERSION=${nebu_version}
-      KC_DB_PASSWORD=${kc_password}
 
+%{ if oidc_mode == "dex" ~}
+  # ── /opt/nebu/dex/config.yaml ──────────────────────────────────────────────
+  # Dex static configuration — no database required.
+  # Static client: nebu-gateway with the oidc_client_secret from tfvars.
+  # Static user: operator@example.com — see RUNBOOK.md 'OIDC Profiles' to rotate the password hash.
+  - path: /opt/nebu/dex/config.yaml
+    owner: root:root
+    permissions: "0600"
+    content: |
+      issuer: "http://${server_name}:5556/dex"
+
+      storage:
+        type: memory
+
+      web:
+        http: 0.0.0.0:5556
+
+      oauth2:
+        responseTypes: [code]
+        skipApprovalScreen: true
+        grantTypes:
+          - authorization_code
+          - refresh_token
+
+      enablePasswordDB: true
+
+      staticClients:
+        - id: nebu-gateway
+          secret: "${oidc_client_secret}"
+          redirectURIs:
+            - "http://${server_name}:8008/_matrix/client/v3/login/sso/redirect/oidc"
+            - "http://${server_name}:8008/admin/callback"
+          name: Nebu Gateway
+
+      staticPasswords:
+        - email: "operator@example.com"
+          hash: "${dex_static_password_hash}"
+          username: "operator"
+          userID: "operator-00000000-0000-0000-0000-000000000001"
+          groups:
+            - instance_admin
+
+%{ endif ~}
   # ── /opt/nebu/docker-compose.yml ───────────────────────────────────────────
-  # Mode 0600 — contains KC_DB_PASSWORD reference from .env; tightened for security.
+  # Mode 0600 — tightened for security.
   - path: /opt/nebu/docker-compose.yml
     owner: root:root
     permissions: "0600"
@@ -53,19 +95,23 @@ write_files:
           file: .secrets/internal_secret
 
       services:
-        keycloak:
-          image: quay.io/keycloak/keycloak:24.0
+%{ if oidc_mode == "dex" ~}
+        dex:
+          image: dexidp/dex:v2.45.1
           restart: unless-stopped
-          command: ["start-optimized"]
-          environment:
-            KC_DB: postgres
-            KC_DB_URL: jdbc:postgresql://${pg_host}:${pg_port}/keycloak
-            KC_DB_USERNAME: ${kc_user}
-            KC_DB_PASSWORD: $${KC_DB_PASSWORD}
-            KC_HOSTNAME: $${NEBU_SERVER_NAME}
-          env_file:
-            - .env
-
+          command: ["dex", "serve", "/etc/dex/config.yaml"]
+          volumes:
+            - /opt/nebu/dex/config.yaml:/etc/dex/config.yaml:ro
+          ports:
+            - "5556:5556"
+          healthcheck:
+            # dexidp/dex:v2.45.1 is Alpine-based and includes busybox wget
+            test: ["CMD", "wget", "-qO-", "http://localhost:5556/dex/.well-known/openid-configuration"]
+            interval: 10s
+            timeout: 5s
+            retries: 3
+            start_period: 10s
+%{ endif ~}
         core:
           image: $${NEBU_IMAGE_REGISTRY}/nebu-core:$${NEBU_VERSION}
           restart: unless-stopped
@@ -151,6 +197,9 @@ runcmd:
 
   # ── Nebu directory + secrets ────────────────────────────────────────────────
   - mkdir -p /opt/nebu/.secrets
+%{ if oidc_mode == "dex" ~}
+  - mkdir -p /opt/nebu/dex
+%{ endif ~}
   - chmod 0700 /opt/nebu/.secrets
   - chmod 0700 /opt/nebu
   - chmod 0600 /opt/nebu/docker-compose.yml

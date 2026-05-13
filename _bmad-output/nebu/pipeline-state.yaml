@@ -1,6 +1,23 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-13
+# [13-9] 2026-05-14T08:25Z security-review → HIGH (port 5556 open 0.0.0.0/0) + 2 MEDIUM + 3 LOW — fixing inline before commit
+# [13-9] 2026-05-14T08:20Z code-review → CLEAN (cycle 3) — 0 MAJOR, 4 MINOR fixed inline (MINOR-1/2/5/7), 3 MINOR accepted papercuts
+# [13-9] 2026-05-14T08:00Z ci-gate → ✓ test-iac-validate (tofu fmt+validate: aws+stackit+k8s CLEAN; helm lint CLEAN; k6 inspect CLEAN)
+# [13-9] 2026-05-13T15:10Z code-review → 3 MAJOR (issuer mismatch, redirect_uri scheme, nginx/TLS) → cycle 3 (user: host-header routing dex.<server_name> via ALB)
+# [13-9] 2026-05-13T14:58Z ci-gate → ✓ test-iac-validate (tofu fmt+validate: aws+stackit+k8s CLEAN; helm lint CLEAN; k6 inspect CLEAN)
+# [13-9] 2026-05-13T14:45Z code-review → 3 MAJOR (hairpin TLS, nginx healthcheck, admin/callback missing) + 7 MINOR → cycle 2
+# [13-9] 2026-05-13T14:35Z ci-gate → ✓ test-iac-validate (tofu fmt+validate: aws+stackit+k8s CLEAN; helm lint CLEAN; k6 inspect CLEAN)
+# [13-9] 2026-05-13T14:32Z dev-story → done (cycle 1) — nginx sidecar, dex_static_password_hash var, cross-validation, MAJOR-3 docstring, MINOR-2/3/5 fixed
+# [13-9] 2026-05-13T14:20Z code-review → CRITICAL-1 (no /dex routing) + 3 MAJOR + 7 MINOR → cycle 1 (user: fix all, nginx sidecar)
+# [13-9] 2026-05-13T14:13Z ci-gate → ✓ test-iac-validate (tofu fmt+validate: aws+stackit+k8s CLEAN; helm lint CLEAN; k6 inspect CLEAN)
+# [13-9] 2026-05-13T14:10Z dev-story → done (cycle 0) — oidc_mode var, Dex sidecar block, Keycloak resources removed, RUNBOOK updated
+# [13-9] 2026-05-13T14:04Z oracle-gate → skipped (no Matrix feature)
+# [13-9] 2026-05-13T14:03Z create-story → 13-9-oidc-deployment-profile-dex-sidecar-vs-external.md
+# [13-9] 2026-05-13T14:00Z pipeline started
+# [13-8] 2026-05-13T13:50Z committed ✓ (Aurora Serverless v2+PostgresFlex — 2 MINOR cycles+Kassandra CLEAN)
+# [13-8] 2026-05-13T13:48Z arc42-update → done (07-deployment: Aurora Serverless v2 + PostgresFlex dual-user documented)
+# [13-8] 2026-05-13T13:45Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 2 MEDIUM advisory, 4 LOW)
 # [13-8] 2026-05-13T13:42Z code-review → CLEAN (cycle 2) — MINOR-A tfvars.example fixed, MINOR-B lifecycle ignore added
 # [13-8] 2026-05-13T13:38Z dev-story → done (cycle 2) — MINOR-A: tfvars.example stale var removed+aurora ACU examples; MINOR-B: lifecycle ignore final_snapshot_identifier
 # [13-8] 2026-05-13T13:35Z code-review → CLEAN cycle 1 (6 MINOR fixes verified) + 2 new MINOR → cycle 2
@@ -434,15 +451,14 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: "13-8"
+story: "13-9"
 current_step: "security-review"
 completed:
-  - atdd
   - create-story
-  - test-review
+  - atdd
   - dev-story
   - ci-gate
   - code-review
-cycle_count: 2
+cycle_count: 3
 blocked_reason: null
-last_updated: "2026-05-13T13:44Z"
+last_updated: "2026-05-13T22:11Z"

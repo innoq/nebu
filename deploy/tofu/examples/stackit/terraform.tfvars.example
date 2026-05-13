@@ -60,12 +60,32 @@ postgres_storage_size = 20
 # Generate with: openssl rand -hex 32
 internal_secret = "<REPLACE_WITH_RANDOM_SECRET>"
 
-# Required: OIDC client secret issued by your identity provider (Keycloak / Dex)
+# ── OIDC Profile ────────────────────────────────────────────────────────────
+# Choose 'dex' to deploy a bundled Dex IdP sidecar (test/demo environments).
+# Choose 'external' to use an external OIDC provider you manage (production).
+#
+# WARNING (dex mode): Dex runs on plain HTTP (port 5556). Auth codes, tokens, and
+# session cookies are transmitted unencrypted over the public network. Use dex mode
+# ONLY in isolated test/demo environments — NEVER for production deployments.
+oidc_mode = "external"  # or: "dex"
+
+# Required only when oidc_mode = "external".
+# When oidc_mode = "dex", this value is ignored (issuer = http://<server_name>:5556/dex).
+oidc_issuer = "https://auth.example.com/realms/nebu"
+
+# Required. When oidc_mode = "dex": embedded into Dex staticClients config (same value used by
+# both gateway and Dex). When oidc_mode = "external": must match the client secret registered in
+# your external OIDC provider. Minimum 16 characters.
 oidc_client_secret = "<REPLACE_WITH_OIDC_CLIENT_SECRET>"
 
-# Required: OIDC issuer URL of your identity provider
-# Example (Keycloak): "https://auth.example.com/realms/nebu"
-oidc_issuer = "https://auth.example.com/realms/nebu"
+# Required when oidc_mode = "dex". bcrypt hash for the Dex static user (operator@example.com).
+# Generate with: htpasswd -bnBC 12 '' 'yourpassword' | tr -d ':' | sed 's/$2y/$2a/'
+# Tip: $2y$ output from htpasswd is also accepted directly (no sed needed).
+dex_static_password_hash = "<REPLACE_WITH_BCRYPT_HASH>"
+
+# CIDR range allowed to reach Dex on port 5556 (only used in dex mode).
+# Default 0.0.0.0/0 allows all — restrict to your IP or VPN CIDR in shared environments.
+# dex_allowed_cidr = "0.0.0.0/0"  # e.g. "203.0.113.1/32" for a single developer IP
 
 # Required: public domain name of the Nebu instance (used as NEBU_SERVER_NAME)
 server_name = "chat.example.com"

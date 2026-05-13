@@ -1,5 +1,6 @@
 # generated: 2026-03-20
-# last_updated: 2026-05-13
+# last_updated: 2026-05-14
+# story 13-9 done (pipeline: Keycloak removed; oidc_mode=dex (Dex sidecar port 5556) + external profile; 3 cycles+Kassandra HIGH fixed): 2026-05-14
 # story 13-8 done (pipeline: Aurora Serverless v2 + PostgresFlex — 2 MINOR cycles + Kassandra CLEAN): 2026-05-13
 # story 13-8 created (ready-for-dev): Aurora Serverless v2 + Stackit PostgresFlex managed DB
 # story 13-5 done (pipeline: ATDD+Code CLEAN 0-cycle+3 MINOR fixed inline+arc42 07-deployment load test topology): 2026-05-13
@@ -132,6 +133,7 @@ development_status:
   13-6-horizontal-scaling-validation-core-clustering-libcluster-horde: backlog
   13-7-msc2965-oidc-discovery-endpoints-auth-issuer-auth-metadata: backlog
   13-8-managed-database-services-aurora-serverless-stackit-managed-postgres: done
+  13-9-oidc-deployment-profile-dex-sidecar-vs-external: done
   epic-13-retrospective: optional
 
   # ─────────────────────────────────────────────────────────────────────────
