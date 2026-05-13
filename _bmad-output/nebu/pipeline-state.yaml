@@ -1,6 +1,16 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
-# last_updated: 2026-05-12
+# last_updated: 2026-05-13
+# [12-8] 2026-05-13T10:25Z committed ✓ (ATDD+Code CLEAN 1 cycle+Kassandra CLEAN)
+# [12-8] 2026-05-13T10:20Z arc42-update → done (08-concepts: media gateway upload JWT → OIDCTokenVerifier + fail-closed startup; initOIDCVerifier retry+exit pattern documented)
+# [12-8] 2026-05-13T10:15Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW — OIDC fail-open pattern directly remediated; uploader_user_id raw-sub pre-existing accepted)
+# [12-8] 2026-05-13T10:05Z code-review → CLEAN (cycle 1) — 2 MINOR fixed: double oidc.NewProvider → single call via oidcNewProviderFunc; no MAJOR
+# [12-8] 2026-05-13T09:55Z ci-gate → ✓ build+unit-go (all media+gateway+matrix packages green)+unit-elixir (1 suite); e2e+integration skipped (minio/mc image unavailable — pre-existing)
+# [12-8] 2026-05-13T09:45Z dev-story → done (cycle 0) — initOIDCVerifier+initOIDCVerifierWith in main.go; TokenVerifier→VerifyToken interface refactor; OIDCTokenVerifier wrapper; nil verifier 503 in upload handler; download/integration test mocks updated
+# [12-8] 2026-05-13T09:18Z test-review → CLEAN (0 MAJOR; MINOR: initOIDCVerifierWith must return (verifier, attempts, error) for testability — covered in dev notes)
+# [12-8] 2026-05-13T09:15Z atdd → 4 failing tests (AT-12-8-1: subprocess empty issuer, AT-12-8-2: subprocess retry exhausted, AT-12-8-3: retry count helper, AT-12-8-4: nil verifier 503)
+# [12-8] 2026-05-13T09:05Z create-story → 12-8-oidc-fail-open-hardening-media-gateway.md
+# [12-8] 2026-05-13T09:00Z pipeline started
 # [12-7] 2026-05-13T00:00Z epic-loop → story done (SEC Gate 2 fixes)
 # [12-7] 2026-05-12T01:10Z committed ✓ (ATDD+Code CLEAN+Kassandra CLEAN 1 LOW advisory — 10 SEC Gate 2 findings resolved)
 # [12-7] 2026-05-12T00:50Z arc42-update → done (08-concepts: thumbnail dim cap+100MP+GIF cap+nosniff; upload CT blocklist; download safe-inline allowlist; upload JWT validation; server_config RLS mutable keys; SSO nonce subtle.ConstantTimeCompare)
@@ -239,4 +249,4 @@ current_step: null
 completed: []
 cycle_count: 0
 blocked_reason: null
-last_updated: "2026-05-12T22:00Z"
+last_updated: "2026-05-13T07:19Z"
