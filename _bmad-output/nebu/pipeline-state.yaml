@@ -1,6 +1,17 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-13
+# [12-12] 2026-05-13T14:55Z arc42-update → done (08-concepts: OIDC startup section +F-3 per-attempt timeout; rate-limit section +F-5 startup warn + F-4 cleanup correctness note)
+# [12-12] 2026-05-13T14:50Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW — F-3+F-4+F-5 LOW advisories fully closed; no new surface)
+# [12-12] 2026-05-13T14:45Z code-review → CLEAN (cycle 0) — 0 MAJOR, 0 MINOR (3 INFO: logIfRateLimitDisabled naming, attempt-count return, unused struct fields)
+# [12-12] 2026-05-13T14:40Z ci-gate → ✓ build+unit-go (all media+gateway+matrix packages green)+unit-elixir; e2e+integration skipped (minio/mc image unavailable — pre-existing)
+# [12-12] 2026-05-13T14:35Z dev-story → done (cycle 0) — main.go: initOIDCVerifierWith+attemptTimeout+logIfRateLimitDisabled; ratelimit_internal_test.go: cleanupOnce white-box tests
+# [12-12] 2026-05-13T14:27Z test-review → CLEAN (0 MAJOR; 1 MINOR: AT-12-12-2 needs test deadline guard)
+# [12-12] 2026-05-13T14:25Z atdd → 6 failing tests (AT-12-12-1..2: OIDC per-attempt timeout; AT-12-12-3..5: cleanup race coverage; AT-12-12-7..8: rate-limit-disabled startup log)
+# [12-12] 2026-05-13T14:16Z oracle-gate → skipped (no Matrix feature)
+# [12-12] 2026-05-13T14:15Z create-story → 12-12-media-gateway-startup-rate-limiter-hardening.md
+# [12-12] 2026-05-13T14:10Z pipeline started
+# [12-11] 2026-05-13T10:20Z epic-loop → story done (F-2 HIGH + F-1 MEDIUM resolved)
 # [12-11] 2026-05-13T14:05Z committed ✓ (ATDD+Code CLEAN 0 cycles+Kassandra CLEAN)
 # [12-11] 2026-05-13T14:00Z arc42-update → done (08-concepts: media gateway rate-limit trustedProxy gate table added; configurable OIDC claim for audit trail table + extractClaimFromMap contract added)
 # [12-11] 2026-05-13T13:55Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW — F-2+F-1 fully remediated; no new surface)
@@ -278,9 +289,17 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: null
-current_step: null
-completed: []
+story: "12-12"
+current_step: "commit"
+completed:
+  - create-story
+  - atdd
+  - test-review
+  - dev-story
+  - ci-gate
+  - code-review
+  - security-review
+  - arc42-update
 cycle_count: 0
 blocked_reason: null
-last_updated: "2026-05-13T08:19Z"
+last_updated: "2026-05-13T09:30Z"

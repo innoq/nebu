@@ -239,9 +239,13 @@ func main() {
 	// Story 12.11 — SEC Fix F-2: NEBU_TRUSTED_PROXY gates XFF extraction.
 	//   false (default): always key on RemoteAddr — XFF spoofing bypass not possible.
 	//   true: use rightmost XFF entry — only set when behind a trusted reverse proxy.
+	// Story 12.12 — F-5: Emit a single startup warning when rate limiting is disabled.
+	//   Exactly one log line at startup — not per-request, not per-limiter-instance.
+	//   Allows operators to verify via startup logs whether rate limiting is active.
 	// Upload tier: 10 req/s per IP (burst 5).
 	// Download/thumbnail tier: 100 req/s per IP (burst 20).
 	// NEBU_RATE_LIMIT_DISABLED=true disables both tiers (dev/test escape hatch).
+	logIfRateLimitDisabled()
 	trustedProxy := os.Getenv("NEBU_TRUSTED_PROXY") == "true"
 	uploadRL := ratelimit.NewIPRateLimiter(ratelimit.Config{
 		Rate:  rate.Limit(10),
@@ -324,10 +328,25 @@ func getenv(key, defaultVal string) string {
 	return defaultVal
 }
 
+// logIfRateLimitDisabled emits a single slog.Warn at startup when
+// NEBU_RATE_LIMIT_DISABLED=true, so operators can verify via startup logs
+// whether rate limiting is active. Exactly one call per startup.
+// Story 12.12 — F-5 (AC-F5-1, AC-F5-2).
+func logIfRateLimitDisabled() {
+	if os.Getenv("NEBU_RATE_LIMIT_DISABLED") == "true" {
+		slog.Warn("rate limiting disabled — NEBU_RATE_LIMIT_DISABLED is set")
+	}
+}
+
 // initOIDCVerifier initialises an OIDC token verifier for the given issuer.
 // It retries up to maxAttempts times, sleeping retryDelay between attempts.
+// Each attempt is bounded by a 10-second per-attempt timeout so a hung OIDC
+// provider (accepts TCP but never responds) cannot block startup indefinitely.
 // If all attempts fail, it logs a FATAL error and calls os.Exit(1) — the service
 // must not start without a working OIDC verifier (fail-closed, Story 12.8).
+//
+// Story 12.12 — F-3: parent ctx cancellation (e.g. SIGTERM during startup)
+// propagates immediately into the retry loop, causing early exit.
 //
 // claimName is the OIDC claim used as the uploader identity (Story 12.11, AC-F1-3).
 // An empty issuer triggers an immediate fatal exit (AC-1).
@@ -338,7 +357,7 @@ func initOIDCVerifier(ctx context.Context, issuer, clientID, claimName string, m
 		os.Exit(1)
 		return nil // unreachable
 	}
-	v, _, err := initOIDCVerifierWith(ctx, issuer, clientID, claimName, maxAttempts, retryDelay, oidc.NewProvider)
+	v, _, err := initOIDCVerifierWith(ctx, issuer, clientID, claimName, maxAttempts, retryDelay, 10*time.Second, oidc.NewProvider)
 	if err != nil {
 		slog.Error("FATAL: media: OIDC provider unreachable after retries",
 			"issuer", issuer, "attempts", maxAttempts, "err", err)
@@ -356,6 +375,15 @@ type oidcNewProviderFunc func(ctx context.Context, issuer string) (*oidc.Provide
 // It accepts an injectable newProvider function — the real path passes oidc.NewProvider;
 // tests inject a mock that returns controlled errors to verify retry behavior.
 //
+// Story 12.12 — F-3: Per-attempt timeout (AC-F3-1..3):
+//   - attemptTimeout bounds each newProvider call. A hung provider (accepts TCP,
+//     never responds) cannot block for more than attemptTimeout per attempt.
+//   - Parent ctx cancellation is checked at the top of every retry iteration.
+//     If ctx is cancelled (e.g. SIGTERM during startup), the loop exits immediately
+//     without waiting for the per-attempt timeout to expire.
+//   - Production callers pass 10*time.Second as attemptTimeout.
+//     Tests pass short timeouts (e.g. 50ms) for fast iteration.
+//
 // claimName is the OIDC claim used as the uploader identity (Story 12.11).
 // Returns (verifier, attemptCount, lastErr).
 // When all attempts are exhausted, returns (nil, maxAttempts, lastErr).
@@ -365,11 +393,24 @@ func initOIDCVerifierWith(
 	issuer, clientID, claimName string,
 	maxAttempts int,
 	retryDelay time.Duration,
+	attemptTimeout time.Duration,
 	newProvider oidcNewProviderFunc,
 ) (upload.TokenVerifier, int, error) {
 	var lastErr error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		provider, err := newProvider(ctx, issuer)
+		// F-3 AC-F3-3: check parent context cancellation before each attempt.
+		// Exits immediately on SIGTERM or other cancellation without waiting
+		// for the per-attempt timeout to expire.
+		if ctx.Err() != nil {
+			return nil, attempt - 1, ctx.Err()
+		}
+
+		// F-3 AC-F3-1: per-attempt timeout prevents indefinite blocking on hung providers.
+		// Each attempt has its own deadline; the parent ctx carries the SIGTERM cancellation.
+		attemptCtx, cancel := context.WithTimeout(ctx, attemptTimeout)
+		provider, err := newProvider(attemptCtx, issuer)
+		cancel()
+
 		if err == nil {
 			idTokenVerifier := provider.Verifier(&oidc.Config{ClientID: clientID})
 			verifier := upload.NewOIDCTokenVerifier(idTokenVerifier, claimName)

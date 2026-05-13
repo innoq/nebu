@@ -39,3 +39,4 @@ _Summary of completed epic-end reviews._
 | 12 (12.1–12.6 + 11.7–11.11 carry-over) | 2026-05-12 | 0 | 3 | 3 | 5 | epic-12-security-review-2026-05-12.md |
 | 12 (re-review after 12.7 remediation) | 2026-05-13 | 0 | 0 | 0 | 3+1 | epic-12-security-review-2026-05-13.md — PASS |
 | 12 (final SEC Gate 2 after 12.8/12.9/12.10) | 2026-05-13 | 0 | 1 | 1 | 3 | epic-12-security-review-final-2026-05-13.md — BLOCKED (F-2 XFF spoof HIGH, F-1 canonical claim MEDIUM) |
+| 12 (definitive SEC Gate 2 after 12.11) | 2026-05-13 | 0 | 0 | 0 | 3 | epic-12-security-review-final2-2026-05-13.md — **PASS** (F-1 + F-2 remediated; LOW advisories carried) |

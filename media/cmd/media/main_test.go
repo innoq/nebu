@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"strings"
@@ -214,9 +215,10 @@ func TestInitOIDCVerifier_RetryCountOnFailure(t *testing.T) {
 		context.Background(),
 		"http://localhost:1", // always refused
 		"nebu",
-		"name",        // claimName (Story 12.11)
-		3,             // maxAttempts
-		0*time.Second, // zero delay for test speed
+		"name",         // claimName (Story 12.11)
+		3,              // maxAttempts
+		0*time.Second,  // zero delay for test speed
+		10*time.Second, // attemptTimeout (Story 12.12)
 		func(_ context.Context, _ string) (*oidc.Provider, error) {
 			callCount++
 			return nil, fmt.Errorf("mock: unreachable (call %d)", callCount)
@@ -289,4 +291,162 @@ func filterEnv(env []string, excludeKey string) []string {
 		}
 	}
 	return result
+}
+
+// ─── Story 12.12: Media Gateway Startup + Rate Limiter Hardening (F-3) ────────
+//
+// AT-12-12-1 — OIDC retry exits immediately when parent context is cancelled.
+//
+// AC-F3-3 — Given the parent context is cancelled before initOIDCVerifierWith is called,
+// when initOIDCVerifierWith is invoked with the cancelled context,
+// then it returns immediately (does not block for maxAttempts × timeout seconds).
+//
+// RED: Currently initOIDCVerifierWith does not check ctx.Err() at the start of
+// each retry loop iteration. This test will FAIL until the early-exit check is added.
+func TestInitOIDCVerifierWith_CancelledCtx_ExitsImmediately(t *testing.T) {
+	t.Parallel()
+
+	// Create a context that is already cancelled.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	calls := 0
+	mockProvider := func(ctx context.Context, _ string) (*oidc.Provider, error) {
+		calls++
+		// Simulate a slow provider — if the loop does not check ctx.Err(),
+		// it will call this repeatedly and the test will time out.
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(5 * time.Second):
+			return nil, fmt.Errorf("mock: provider timeout")
+		}
+	}
+
+	start := time.Now()
+	_, _, err := initOIDCVerifierWith(
+		ctx,
+		"http://localhost:1",
+		"nebu",
+		"name",
+		5,                // maxAttempts — must not all be tried
+		0*time.Second,    // no backoff delay for test speed
+		10*time.Second,   // attemptTimeout — doesn't matter since ctx is already cancelled
+		mockProvider,
+	)
+
+	elapsed := time.Since(start)
+
+	if elapsed > 500*time.Millisecond {
+		t.Errorf("[AT-12-12-1] initOIDCVerifierWith took %v with cancelled context — expected < 500ms (immediate exit on ctx.Err())", elapsed)
+	}
+	if err == nil {
+		t.Fatal("[AT-12-12-1] expected non-nil error when context is cancelled, got nil")
+	}
+	if calls > 1 {
+		t.Errorf("[AT-12-12-1] mockProvider called %d times — expected at most 1 call (loop should exit on cancelled context)", calls)
+	}
+}
+
+// AT-12-12-2 — OIDC retry uses per-attempt timeout (not unbounded).
+//
+// AC-F3-1 — Given a provider that blocks until its context is done (simulating hung TCP),
+// when initOIDCVerifierWith is called with maxAttempts=2 and attemptTimeout=50ms,
+// then each attempt times out in ~50ms and all retries complete within 300ms total.
+//
+// RED: initOIDCVerifierWith does not yet accept an attemptTimeout parameter.
+// This test will FAIL TO COMPILE until the function signature is updated to accept
+// an `attemptTimeout time.Duration` parameter that wraps each newProvider call with
+// context.WithTimeout(ctx, attemptTimeout).
+func TestInitOIDCVerifierWith_PerAttemptTimeout(t *testing.T) {
+	t.Parallel()
+
+	const attemptTimeout = 50 * time.Millisecond
+	const maxAttempts = 2
+	const maxExpectedTotal = 300 * time.Millisecond // 2×50ms + scheduling slack
+
+	calls := 0
+	mockProvider := func(ctx context.Context, _ string) (*oidc.Provider, error) {
+		calls++
+		// Block until the provided attempt context is done — simulates hung TCP.
+		// When per-attempt timeout is implemented, ctx here is the attempt context
+		// with the 50ms timeout, so this returns in ~50ms.
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+
+	start := time.Now()
+	_, attempts, err := initOIDCVerifierWith(
+		context.Background(),
+		"http://localhost:1",
+		"nebu",
+		"name",
+		maxAttempts,
+		0*time.Second, // no inter-attempt backoff for test speed
+		attemptTimeout, // new parameter: per-attempt timeout
+		mockProvider,
+	)
+	elapsed := time.Since(start)
+
+	if elapsed > maxExpectedTotal {
+		t.Errorf("[AT-12-12-2] total elapsed %v > %v — per-attempt timeout must bound each retry at %v",
+			elapsed, maxExpectedTotal, attemptTimeout)
+	}
+	if err == nil {
+		t.Fatal("[AT-12-12-2] expected non-nil error when all retries fail")
+	}
+	if attempts != maxAttempts {
+		t.Errorf("[AT-12-12-2] expected %d attempts, got %d", maxAttempts, attempts)
+	}
+	if calls != maxAttempts {
+		t.Errorf("[AT-12-12-2] mockProvider called %d times, expected %d", calls, maxAttempts)
+	}
+}
+
+// AT-12-12-7 — Rate limit disabled warning emitted once at startup when disabled.
+//
+// AC-F5-1 — Given NEBU_RATE_LIMIT_DISABLED=true, when logIfRateLimitDisabled() is called,
+// then it emits slog.Warn with message containing "rate limiting disabled".
+//
+// RED: logIfRateLimitDisabled() does not exist yet.
+func TestLogIfRateLimitDisabled_EmitsWarning(t *testing.T) {
+	t.Setenv("NEBU_RATE_LIMIT_DISABLED", "true")
+
+	// Capture slog output.
+	var buf strings.Builder
+	handler := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})
+	original := slog.Default()
+	slog.SetDefault(slog.New(handler))
+	defer slog.SetDefault(original)
+
+	logIfRateLimitDisabled()
+
+	output := buf.String()
+	if !strings.Contains(output, "rate limiting disabled") {
+		t.Errorf("[AT-12-12-7] expected slog.Warn with 'rate limiting disabled' in output, got: %q", output)
+	}
+}
+
+// AT-12-12-8 — No rate-limit-disabled warning when rate limiting is enabled.
+//
+// AC-F5-2 — Given NEBU_RATE_LIMIT_DISABLED is unset (or not "true"),
+// when logIfRateLimitDisabled() is called,
+// then no rate-limit-disabled warning is emitted.
+//
+// RED: logIfRateLimitDisabled() does not exist yet.
+func TestLogIfRateLimitDisabled_NoWarning_WhenEnabled(t *testing.T) {
+	t.Setenv("NEBU_RATE_LIMIT_DISABLED", "false")
+
+	var buf strings.Builder
+	handler := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})
+	original := slog.Default()
+	slog.SetDefault(slog.New(handler))
+	defer slog.SetDefault(original)
+
+	logIfRateLimitDisabled()
+
+	output := buf.String()
+	if strings.Contains(output, "rate limiting disabled") {
+		t.Errorf("[AT-12-12-8] unexpected rate-limit-disabled warning when NEBU_RATE_LIMIT_DISABLED=false: %q", output)
+	}
 }

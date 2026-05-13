@@ -78,7 +78,9 @@ Implementation: `media/internal/ratelimit/ratelimit.go` — `NewIPRateLimiter(cf
 | `false` (default) | Always use `RemoteAddr`; ignore `X-Forwarded-For`. Attacker cannot bypass per-IP limit by rotating XFF header values. Use when the media gateway is directly exposed. |
 | `true` | Use rightmost `X-Forwarded-For` entry (proxy-appended) when header has 2+ entries; fall back to `RemoteAddr`. Use only when behind a trusted reverse proxy that strips client-supplied XFF. |
 
-`NEBU_RATE_LIMIT_DISABLED=true` disables both tiers (dev/test escape hatch). 429 response format: `{"errcode":"M_LIMIT_EXCEEDED","error":"Too many requests"}` + `Retry-After: N` header (Matrix CS API §rate-limiting compliant).
+`NEBU_RATE_LIMIT_DISABLED=true` disables both tiers (dev/test escape hatch). **Story 12.12 (F-5):** When disabled, the media gateway emits `slog.Warn("rate limiting disabled — NEBU_RATE_LIMIT_DISABLED is set")` exactly once at startup, enabling operators to confirm rate-limiting status via startup logs. 429 response format: `{"errcode":"M_LIMIT_EXCEEDED","error":"Too many requests"}` + `Retry-After: N` header (Matrix CS API §rate-limiting compliant).
+
+**Cleanup correctness (Story 12.12 F-4):** The background cleanup goroutine (`cleanupLoop`) evicts entries where `time.Since(entry.lastSeen) > 5 minutes`. `entry.lastSeen` is updated by `getOrCreate` on every request — before the handler executes. An in-flight request updates `lastSeen` before the handler runs, so a concurrent cleanup tick never evicts a bucket for a request that is actively being processed.
 
 ## Cryptography
 
@@ -199,7 +201,9 @@ Content-Type enforcement to prevent stored XSS:
 
 The upload handler uses a `TokenVerifier` interface (`HandlerConfig.OIDCVerifier`). `OIDCTokenVerifier` wraps `*oidc.IDTokenVerifier` and implements `VerifyToken(ctx, rawToken) (string, error)` — returning the uploader's subject identity from the operator-configured OIDC claim (see Story 12.11 below). Uploads with a nil verifier receive `503 M_UNAVAILABLE` (fail-closed, not fail-open).
 
-**Startup hardening (Story 12.8):** `NEBU_OIDC_ISSUER` is mandatory. If empty, the media gateway exits immediately with `FATAL: NEBU_OIDC_ISSUER is required`. If Dex is unreachable at startup, `initOIDCVerifier` retries up to 5 times with 2s backoff, then exits (`FATAL: media: OIDC provider unreachable after retries`). The service never starts with a nil verifier. This eliminates the "OIDC fail-open at startup" pattern documented as a recurring vulnerability.
+**Startup hardening (Story 12.8 + Story 12.12 F-3):** `NEBU_OIDC_ISSUER` is mandatory. If empty, the media gateway exits immediately with `FATAL: NEBU_OIDC_ISSUER is required`. If Dex is unreachable at startup, `initOIDCVerifier` retries up to 5 times with 2s backoff, then exits (`FATAL: media: OIDC provider unreachable after retries`). The service never starts with a nil verifier. This eliminates the "OIDC fail-open at startup" pattern documented as a recurring vulnerability.
+
+Story 12.12 (F-3) adds a **10-second per-attempt timeout** to each `oidc.NewProvider` call via `context.WithTimeout(ctx, 10s)`. A provider that accepts the TCP connection but never sends a response (hung Dex, firewall issue) can no longer block startup indefinitely — each attempt fails within 10s, and the 5-retry cycle completes within ≤60s total. Parent context cancellation (SIGTERM during startup) is checked at the top of every retry iteration for immediate exit.
 
 **Canonical Matrix user ID in audit trail (Story 12.9):** After OIDC verification, the upload handler constructs a canonical Matrix user ID before storing `uploader_user_id` in `media_files`:
 
