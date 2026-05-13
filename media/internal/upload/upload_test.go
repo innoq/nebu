@@ -43,6 +43,32 @@ const (
 	defaultMaxBytes = int64(52428800) // 50 MiB
 )
 
+// ─── Mock TokenVerifier ───────────────────────────────────────────────────────
+
+// mockTokenVerifier implements TokenVerifier for tests that don't specifically
+// test OIDC validation. It accepts any token and returns a fixed subject identity.
+//
+// Story 12.8: buildHandler requires a non-nil OIDCVerifier (fail-closed).
+// Tests focused on storage, size limits, CT blocks, DB errors, etc. use this mock.
+// Tests that specifically test nil-verifier 503 behavior (AT-12-8-4) must NOT use it.
+type mockTokenVerifier struct {
+	// forcedErr, if non-nil, is returned by VerifyToken (simulates OIDC failure).
+	forcedErr error
+	// subject is the uploader identity returned on success.
+	// Defaults to "test-user-alice" if empty.
+	subject string
+}
+
+func (m *mockTokenVerifier) VerifyToken(_ context.Context, _ string) (string, error) {
+	if m.forcedErr != nil {
+		return "", m.forcedErr
+	}
+	if m.subject == "" {
+		return "test-user-alice", nil
+	}
+	return m.subject, nil
+}
+
 // ─── Mock MediaStore ──────────────────────────────────────────────────────────
 
 // mockMediaStore implements MediaStore (defined in upload.go).
@@ -96,10 +122,11 @@ func buildHandler(t *testing.T, store *mockMediaStore, storagePath string, maxBy
 	}
 
 	h := NewHandler(HandlerConfig{
-		DB:         store,
-		Storage:    &storage.LocalStorer{BasePath: storagePath},
-		ServerName: testServerName,
-		MaxBytes:   maxBytes,
+		DB:           store,
+		Storage:      &storage.LocalStorer{BasePath: storagePath},
+		ServerName:   testServerName,
+		MaxBytes:     maxBytes,
+		OIDCVerifier: &mockTokenVerifier{}, // Story 12.8: non-nil required (fail-closed)
 	})
 
 	mux := http.NewServeMux()
@@ -490,10 +517,11 @@ func buildHandlerWithStorer(t *testing.T, db *mockMediaStore, storer *fakeStorer
 		maxBytes = defaultMaxBytes
 	}
 	h := NewHandler(HandlerConfig{
-		DB:         db,
-		Storage:    storer,
-		ServerName: testServerName,
-		MaxBytes:   maxBytes,
+		DB:           db,
+		Storage:      storer,
+		ServerName:   testServerName,
+		MaxBytes:     maxBytes,
+		OIDCVerifier: &mockTokenVerifier{}, // Story 12.8: non-nil required (fail-closed)
 	})
 	mux := http.NewServeMux()
 	mux.Handle("POST /_matrix/media/v3/upload", h)
@@ -737,5 +765,62 @@ func TestUpload_BlockedContentType_TextHTMLWithCharset(t *testing.T) {
 	}
 	if errResp.ErrCode != "M_BAD_JSON" {
 		t.Errorf("[AT-7c] expected errcode M_BAD_JSON, got %q", errResp.ErrCode)
+	}
+}
+
+// ─── Story 12.8: OIDC Fail-Open Hardening ─────────────────────────────────────
+//
+// AT-12-8-4: Upload handler with nil OIDC verifier → 503 M_UNAVAILABLE.
+//
+// AC-4 — Given an upload Handler created with OIDCVerifier: nil,
+// when a POST /_matrix/media/v3/upload request arrives with a valid Bearer token,
+// then the handler must return 503 with errcode M_UNAVAILABLE (fail-closed).
+// No file must be written, no DB row must be inserted.
+//
+// RED: The current code has a nil-verifier fallback that accepts any Bearer token
+// as the uploaderUserID. This test FAILS until the else branch is replaced with 503.
+
+func TestUpload_NilVerifier_Returns503(t *testing.T) {
+	store := &mockMediaStore{}
+	storer := &fakeStorer{}
+
+	// Build handler with nil OIDCVerifier (explicitly no OIDC configured).
+	h := NewHandler(HandlerConfig{
+		DB:           store,
+		Storage:      storer,
+		ServerName:   testServerName,
+		MaxBytes:     defaultMaxBytes,
+		OIDCVerifier: nil, // nil → must return 503 M_UNAVAILABLE after Story 12.8
+	})
+	mux := http.NewServeMux()
+	mux.Handle("POST /_matrix/media/v3/upload", h)
+
+	body := bytes.NewReader([]byte("some file content"))
+	req := httptest.NewRequest(http.MethodPost, "/_matrix/media/v3/upload", body)
+	req.Header.Set("Content-Type", "image/png")
+	req.Header.Set("Authorization", "Bearer somevalidlookingtoken")
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	// AC-4: nil verifier must be fail-closed — 503 M_UNAVAILABLE.
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("[AT-12-8-4] nil verifier: expected 503, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var errResp matrixErrorResp
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("[AT-12-8-4] could not decode 503 response: %v", err)
+	}
+	if errResp.ErrCode != "M_UNAVAILABLE" {
+		t.Errorf("[AT-12-8-4] expected errcode M_UNAVAILABLE, got %q", errResp.ErrCode)
+	}
+
+	// Neither storage nor DB must have been touched.
+	if len(storer.putCalled) != 0 {
+		t.Errorf("[AT-12-8-4] Storer.Put must NOT be called on 503 response, got %d calls", len(storer.putCalled))
+	}
+	if len(store.inserted) != 0 {
+		t.Errorf("[AT-12-8-4] InsertMediaFile must NOT be called on 503 response, got %d calls", len(store.inserted))
 	}
 }

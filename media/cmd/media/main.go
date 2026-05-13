@@ -187,26 +187,17 @@ func main() {
 	}
 	defer pool.Close()
 
-	// HIGH-2 [Story 12.7]: OIDC JWT verification for media upload.
-	// If NEBU_OIDC_ISSUER is set, create a verifier that validates upload tokens
-	// against the same OIDC provider as the API gateway.
-	// If not configured, the upload handler falls back to MVP bearer-presence check.
-	var uploadVerifier upload.TokenVerifier
-	if oidcIssuer := getenv("NEBU_OIDC_ISSUER", ""); oidcIssuer != "" {
-		oidcClientID := getenv("NEBU_OIDC_CLIENT_ID", "nebu")
-		oidcProvider, err := oidc.NewProvider(ctx, oidcIssuer)
-		if err != nil {
-			slog.Warn("media: OIDC provider unavailable — upload JWT validation disabled until resolved",
-				"issuer", oidcIssuer, "err", err)
-			// Fail-open: allow startup without OIDC (provider may come up after media).
-			// The handler will fall back to MVP bearer-presence check.
-		} else {
-			uploadVerifier = oidcProvider.Verifier(&oidc.Config{ClientID: oidcClientID})
-			slog.Info("media: OIDC JWT validation enabled for uploads", "issuer", oidcIssuer)
-		}
-	} else {
-		slog.Warn("media: NEBU_OIDC_ISSUER not set — upload JWT validation disabled (MVP mode)")
+	// Story 12.8 — Fail-closed OIDC startup.
+	// NEBU_OIDC_ISSUER is mandatory. An empty value causes a fatal exit (AC-1).
+	// If Dex is unreachable, initOIDCVerifier retries up to 5 times with 2s backoff
+	// and then calls os.Exit(1) (AC-2). On success it returns a non-nil verifier (AC-3).
+	oidcIssuer := os.Getenv("NEBU_OIDC_ISSUER")
+	if oidcIssuer == "" {
+		slog.Error("FATAL: NEBU_OIDC_ISSUER is required")
+		os.Exit(1)
 	}
+	oidcClientID := getenv("NEBU_OIDC_CLIENT_ID", "nebu")
+	uploadVerifier := initOIDCVerifier(ctx, oidcIssuer, oidcClientID, 5, 2*time.Second)
 
 	store := &pgMediaStore{pool: pool}
 	thumbStore := &pgThumbnailStore{inner: store}
@@ -299,5 +290,65 @@ func getenv(key, defaultVal string) string {
 		return v
 	}
 	return defaultVal
+}
+
+// initOIDCVerifier initialises an OIDC token verifier for the given issuer.
+// It retries up to maxAttempts times, sleeping retryDelay between attempts.
+// If all attempts fail, it logs a FATAL error and calls os.Exit(1) — the service
+// must not start without a working OIDC verifier (fail-closed, Story 12.8).
+//
+// An empty issuer triggers an immediate fatal exit (AC-1).
+// On success it returns a non-nil upload.TokenVerifier (AC-3).
+func initOIDCVerifier(ctx context.Context, issuer, clientID string, maxAttempts int, retryDelay time.Duration) upload.TokenVerifier {
+	if issuer == "" {
+		slog.Error("FATAL: NEBU_OIDC_ISSUER is required")
+		os.Exit(1)
+		return nil // unreachable
+	}
+	v, _, err := initOIDCVerifierWith(ctx, issuer, clientID, maxAttempts, retryDelay, oidc.NewProvider)
+	if err != nil {
+		slog.Error("FATAL: media: OIDC provider unreachable after retries",
+			"issuer", issuer, "attempts", maxAttempts, "err", err)
+		os.Exit(1)
+		return nil // unreachable
+	}
+	return v
+}
+
+// oidcNewProviderFunc is the function type for constructing an OIDC provider.
+// It matches the signature of oidc.NewProvider and is used by initOIDCVerifierWith.
+type oidcNewProviderFunc func(ctx context.Context, issuer string) (*oidc.Provider, error)
+
+// initOIDCVerifierWith is the testable variant of initOIDCVerifier.
+// It accepts an injectable newProvider function — the real path passes oidc.NewProvider;
+// tests inject a mock that returns controlled errors to verify retry behavior.
+//
+// Returns (verifier, attemptCount, lastErr).
+// When all attempts are exhausted, returns (nil, maxAttempts, lastErr).
+// Callers (initOIDCVerifier) are responsible for calling os.Exit on non-nil err.
+func initOIDCVerifierWith(
+	ctx context.Context,
+	issuer, clientID string,
+	maxAttempts int,
+	retryDelay time.Duration,
+	newProvider oidcNewProviderFunc,
+) (upload.TokenVerifier, int, error) {
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		provider, err := newProvider(ctx, issuer)
+		if err == nil {
+			idTokenVerifier := provider.Verifier(&oidc.Config{ClientID: clientID})
+			verifier := upload.NewOIDCTokenVerifier(idTokenVerifier)
+			slog.Info("media: OIDC verifier initialised", "issuer", issuer, "attempt", attempt)
+			return verifier, attempt, nil
+		}
+		lastErr = err
+		slog.Warn("media: OIDC provider unavailable, retrying",
+			"attempt", attempt, "max", maxAttempts, "err", lastErr)
+		if attempt < maxAttempts {
+			time.Sleep(retryDelay)
+		}
+	}
+	return nil, maxAttempts, lastErr
 }
 

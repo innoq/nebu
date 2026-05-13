@@ -19,11 +19,49 @@ import (
 	"github.com/nebu/nebu/media/internal/storage"
 )
 
-// TokenVerifier abstracts OIDC token verification to allow mocking in tests.
-// In production, this is a *oidc.IDTokenVerifier from go-oidc/v3.
-// When nil, the handler falls back to MVP behaviour (bearer-presence check only).
+// TokenVerifier abstracts identity extraction from a bearer token.
+// Implementations verify the token and return the uploader's subject identity.
+// In production, use NewOIDCTokenVerifier to wrap a *oidc.IDTokenVerifier.
+// In tests, implement a simple mock that returns a fixed subject string.
+// When nil, the handler returns 503 M_UNAVAILABLE (Story 12.8 fail-closed).
 type TokenVerifier interface {
-	Verify(ctx context.Context, rawIDToken string) (*oidc.IDToken, error)
+	// VerifyToken verifies rawToken and returns the uploader's subject identity.
+	// Returns ("", error) on any verification failure.
+	VerifyToken(ctx context.Context, rawToken string) (string, error)
+}
+
+// OIDCTokenVerifier wraps *oidc.IDTokenVerifier to implement TokenVerifier.
+// It extracts the subject (sub) claim from the verified token.
+type OIDCTokenVerifier struct {
+	verifier *oidc.IDTokenVerifier
+}
+
+// NewOIDCTokenVerifier creates an OIDCTokenVerifier from an *oidc.IDTokenVerifier.
+func NewOIDCTokenVerifier(v *oidc.IDTokenVerifier) *OIDCTokenVerifier {
+	return &OIDCTokenVerifier{verifier: v}
+}
+
+// VerifyToken implements TokenVerifier using go-oidc/v3 JWT verification.
+// Extracts sub claim as the uploader identity; falls back to name if sub is empty.
+func (o *OIDCTokenVerifier) VerifyToken(ctx context.Context, rawToken string) (string, error) {
+	idToken, err := o.verifier.Verify(ctx, rawToken)
+	if err != nil {
+		return "", err
+	}
+	var claims struct {
+		Sub  string `json:"sub"`
+		Name string `json:"name"`
+	}
+	if err := idToken.Claims(&claims); err != nil {
+		return "", err
+	}
+	if claims.Sub != "" {
+		return claims.Sub, nil
+	}
+	if claims.Name != "" {
+		return claims.Name, nil
+	}
+	return "", fmt.Errorf("token missing subject claim")
 }
 
 // blockedContentTypes is the set of MIME types that must not be accepted at upload.
@@ -62,7 +100,7 @@ type HandlerConfig struct {
 	Storage      storage.Storer // replaces StoragePath — use LocalStorer or MinIOStorer
 	ServerName   string         // Matrix server name
 	MaxBytes     int64          // NEBU_MEDIA_MAX_UPLOAD_BYTES (default 50 MiB)
-	OIDCVerifier TokenVerifier  // HIGH-2: JWT verifier. nil = MVP bearer-presence only.
+	OIDCVerifier TokenVerifier  // Story 12.7: JWT verifier. nil = 503 M_UNAVAILABLE (Story 12.8 fail-closed).
 }
 
 // Handler handles POST /_matrix/media/v3/upload.
@@ -127,38 +165,26 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var uploaderUserID string
 	if h.oidcVerifier != nil {
-		// HIGH-2 [Story 12.7]: Full JWT verification — signature, expiry, audience.
-		// Reject with 401 M_UNKNOWN_TOKEN on any validation failure.
-		idToken, err := h.oidcVerifier.Verify(r.Context(), rawToken)
+		// Story 12.7/12.8: JWT verification — signature, expiry, audience, subject extraction.
+		// Reject with 401 M_UNKNOWN_TOKEN on any verification failure.
+		subject, err := h.oidcVerifier.VerifyToken(r.Context(), rawToken)
 		if err != nil {
 			slog.Error("media upload: JWT verification failed", "err", err)
 			writeError(w, http.StatusUnauthorized, "M_UNKNOWN_TOKEN", "Invalid or expired access token")
 			return
 		}
-		// Extract subject claim as the authoritative uploader identity.
-		var claims struct {
-			Sub  string `json:"sub"`
-			Name string `json:"name"`
-		}
-		if err := idToken.Claims(&claims); err != nil {
-			slog.Error("media upload: failed to extract JWT claims", "err", err)
-			writeError(w, http.StatusUnauthorized, "M_UNKNOWN_TOKEN", "Invalid token claims")
-			return
-		}
-		// Use sub as the primary identity; fall back to name claim if sub is empty.
-		if claims.Sub != "" {
-			uploaderUserID = claims.Sub
-		} else if claims.Name != "" {
-			uploaderUserID = claims.Name
-		} else {
+		if subject == "" {
+			slog.Error("media upload: JWT subject claim empty")
 			writeError(w, http.StatusUnauthorized, "M_UNKNOWN_TOKEN", "Token missing subject claim")
 			return
 		}
+		uploaderUserID = subject
 	} else {
-		// MVP fallback: OIDC verifier not configured — accept any Bearer token.
-		// Used in tests and during initial setup before OIDC is wired in.
-		// NOTE: This path should not be reachable in production deployments.
-		uploaderUserID = rawToken
+		// Story 12.8 — fail-closed: nil verifier means OIDC startup failed.
+		// Reject with 503 M_UNAVAILABLE. This path must NOT be reachable in production
+		// (initOIDCVerifier calls os.Exit before wiring a nil verifier).
+		writeError(w, http.StatusServiceUnavailable, "M_UNAVAILABLE", "OIDC verifier not available")
+		return
 	}
 
 	// AC #2 — Check Content-Length header before reading body.

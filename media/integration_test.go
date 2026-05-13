@@ -31,6 +31,15 @@ func (f *fakeMediaStoreIntegration) InsertMediaFile(_ context.Context, row uploa
 	return nil
 }
 
+// fakeTokenVerifierIntegration implements upload.TokenVerifier for integration tests.
+// It accepts any bearer token and returns a fixed subject identity.
+// Story 12.8: OIDCVerifier must be non-nil (fail-closed).
+type fakeTokenVerifierIntegration struct{}
+
+func (fakeTokenVerifierIntegration) VerifyToken(_ context.Context, _ string) (string, error) {
+	return "test-integration-user", nil
+}
+
 // AT-6 — TestUpload_MinIOBackend_StoresEncryptedFile
 // Conditional: skipped when NEBU_TEST_MINIO_ENDPOINT is not set.
 // Verifies that a real MinIO upload:
@@ -85,10 +94,11 @@ func TestUpload_MinIOBackend_StoresEncryptedFile(t *testing.T) {
 
 	fakeStore := &fakeMediaStoreIntegration{}
 	handler := upload.NewHandler(upload.HandlerConfig{
-		DB:         fakeStore,
-		Storage:    storer,
-		ServerName: serverName,
-		MaxBytes:   52428800,
+		DB:           fakeStore,
+		Storage:      storer,
+		ServerName:   serverName,
+		MaxBytes:     52428800,
+		OIDCVerifier: &fakeTokenVerifierIntegration{}, // Story 12.8: non-nil required
 	})
 
 	// Upload a small plaintext body

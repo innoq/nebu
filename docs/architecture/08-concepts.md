@@ -175,9 +175,11 @@ Content-Type enforcement to prevent stored XSS:
 | Download — unsafe fallback | All other stored types → `Content-Type: application/octet-stream`, `Content-Disposition: attachment` | Prevents inline rendering of pre-allowlist uploads |
 | All download responses | `X-Content-Type-Options: nosniff` always set | Prevent MIME sniffing |
 
-**Media Gateway — Upload JWT Validation (Story 12.7 HIGH-2):**
+**Media Gateway — Upload JWT Validation + Fail-Closed OIDC Startup (Stories 12.7, 12.8):**
 
-The upload handler supports a `TokenVerifier` interface (`HandlerConfig.OIDCVerifier`). When set, uploads are validated against the OIDC provider (same Dex instance as API gateway). The `sub` claim is used as `uploader_user_id`; `name` claim as fallback. If `NEBU_OIDC_ISSUER` is unset at startup, or if the provider is temporarily unavailable, the handler falls back to MVP bearer-presence check (logged at WARN).
+The upload handler uses a `TokenVerifier` interface (`HandlerConfig.OIDCVerifier`). `OIDCTokenVerifier` wraps `*oidc.IDTokenVerifier` and implements `VerifyToken(ctx, rawToken) (string, error)` — returning the uploader's subject identity (sub claim; name claim as fallback). Uploads with a nil verifier receive `503 M_UNAVAILABLE` (fail-closed, not fail-open).
+
+**Startup hardening (Story 12.8):** `NEBU_OIDC_ISSUER` is mandatory. If empty, the media gateway exits immediately with `FATAL: NEBU_OIDC_ISSUER is required`. If Dex is unreachable at startup, `initOIDCVerifier` retries up to 5 times with 2s backoff, then exits (`FATAL: media: OIDC provider unreachable after retries`). The service never starts with a nil verifier. This eliminates the "OIDC fail-open at startup" pattern documented as a recurring vulnerability.
 
 **server_config RLS UPDATE Policy (Story 12.7 MEDIUM-5):**
 

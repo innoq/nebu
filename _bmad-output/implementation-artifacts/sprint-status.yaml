@@ -1,5 +1,6 @@
 # generated: 2026-03-20
-# last_updated: 2026-05-12
+# last_updated: 2026-05-13
+# story 12-8 done (pipeline: ATDD+Code CLEAN 1 cycle+Kassandra CLEAN): 2026-05-13
 # story 12-7 done (pipeline: ATDD+Dev+Code CLEAN+Kassandra CLEAN (1 LOW advisory)): 2026-05-12
 # story 12-6 done (pipeline: ATDD+Code CLEAN 0 cycles+Kassandra CLEAN — blurhash pass-through tests (AT-2+AT-5+AT-6) + animated=false regression guards (AT-3+AT-4)): 2026-05-12
 # story 12-5 done (pipeline: ATDD+Code CLEAN 0 cycles+Kassandra CLEAN 2 LOW advisory): 2026-05-12
@@ -843,6 +844,8 @@ development_status:
   12-4-media-download-minio-backend-pre-signed-url-security: done
   12-5-thumbnail-generation-on-demand-sandboxed: done
   12-6-blurhash-pass-through-animated-thumbnail-correctness: done
+  12-7-media-gateway-security-hardening-sec-gate-2-fixes: done
+  12-8-oidc-fail-open-hardening-media-gateway: done
   epic-12-retrospective: optional
 
 # story 6-11 done (pipeline: ATDD+Dev+CodeReview CLEAN — Godog E2E admin lifecycle/role/archive, compliance officer auth): 2026-05-02

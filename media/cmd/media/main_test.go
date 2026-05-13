@@ -1,8 +1,14 @@
 package main
 
 import (
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
 	"testing"
+	"time"
 
+	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/nebu/nebu/media/internal/storage"
 )
 
@@ -110,5 +116,118 @@ func TestMain_StorageBackend_Minio_MissingSecretKey(t *testing.T) {
 	_, err := selectStorer(cfg)
 	if err == nil {
 		t.Fatal("expected error when NEBU_MINIO_SECRET_KEY is empty, got nil")
+	}
+}
+
+// ─── Story 12.8: OIDC Fail-Open Hardening ────────────────────────────────────
+//
+// AC-1: Empty NEBU_OIDC_ISSUER → fatal exit (non-zero exit code)
+// AC-2: Set issuer but Dex unreachable → retries exhausted → fatal exit
+// AC-3: Retry succeeds on later attempt → returns non-nil verifier
+//
+// AC-1 and AC-2 use the subprocess pattern to test os.Exit(1) behavior.
+// The subprocess re-runs the test binary with CRASH_EXPECTED set.
+//
+// RED: initOIDCVerifier(ctx, issuer, clientID, maxAttempts, retryDelay) does not
+// yet exist. These tests will FAIL TO COMPILE until Step T2 of the implementation.
+
+// AT-12-8-1: NEBU_OIDC_ISSUER empty → initOIDCVerifier must fatal-exit.
+//
+// AC-1 — Given issuer is an empty string, when initOIDCVerifier is called,
+// then the process exits with a non-zero exit code (early fail-closed check).
+func TestInitOIDCVerifier_EmptyIssuer_FatalExit(t *testing.T) {
+	if os.Getenv("NEBU_TEST_CRASH_12_8_1") == "1" {
+		// Subprocess arm: call initOIDCVerifier with empty issuer.
+		// Must os.Exit(1) — should never return.
+		initOIDCVerifier(context.Background(), "", "nebu", 1, 0)
+		return // unreachable if implementation is correct
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=TestInitOIDCVerifier_EmptyIssuer_FatalExit")
+	// Pass through env but unset any NEBU_OIDC_ISSUER that may be set.
+	env := os.Environ()
+	filtered := make([]string, 0, len(env))
+	for _, e := range env {
+		if len(e) >= 16 && e[:16] == "NEBU_OIDC_ISSUER" {
+			continue
+		}
+		filtered = append(filtered, e)
+	}
+	filtered = append(filtered, "NEBU_TEST_CRASH_12_8_1=1")
+	cmd.Env = filtered
+
+	err := cmd.Run()
+	if err == nil {
+		t.Fatal("[AT-12-8-1] expected subprocess to exit non-zero for empty issuer, but it exited 0")
+	}
+	if exitErr, ok := err.(*exec.ExitError); ok && !exitErr.Success() {
+		return // expected non-zero exit
+	}
+	// Signal kill or other error also counts as non-zero — pass.
+}
+
+// AT-12-8-2: NEBU_OIDC_ISSUER set, Dex unreachable → all retries exhausted → fatal exit.
+//
+// AC-2 — Given NEBU_OIDC_ISSUER points to a dead URL (localhost:1, always refused),
+// when initOIDCVerifier is called with maxAttempts=2 and retryDelay=0,
+// then all retries are exhausted and the process exits with a non-zero exit code.
+func TestInitOIDCVerifier_AllRetriesFail_FatalExit(t *testing.T) {
+	if os.Getenv("NEBU_TEST_CRASH_12_8_2") == "1" {
+		// Subprocess arm: use a dead URL with short retry params (0 delay for speed).
+		initOIDCVerifier(context.Background(), "http://localhost:1", "nebu", 2, 0)
+		return // unreachable if implementation is correct
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=TestInitOIDCVerifier_AllRetriesFail_FatalExit")
+	cmd.Env = append(os.Environ(), "NEBU_TEST_CRASH_12_8_2=1")
+
+	err := cmd.Run()
+	if err == nil {
+		t.Fatal("[AT-12-8-2] expected subprocess to exit non-zero for unreachable Dex, but it exited 0")
+	}
+	if exitErr, ok := err.(*exec.ExitError); ok && !exitErr.Success() {
+		return // expected non-zero exit
+	}
+}
+
+// AT-12-8-3: Retry count verification — retryAttempts is called maxAttempts times on failure.
+//
+// AC-2 (retry count) — Tests the retry loop directly via the exported helper.
+// Uses initOIDCVerifierWith (testable variant that accepts an injected provider func).
+//
+// RED: initOIDCVerifierWith does not yet exist. Will fail to compile until Step T2.
+func TestInitOIDCVerifier_RetryCountOnFailure(t *testing.T) {
+	if testing.Short() {
+		t.Skip("[AT-12-8-3] skipping retry count test in short mode")
+	}
+
+	callCount := 0
+
+	// providerFn always fails — we want to verify it's called exactly maxAttempts times.
+	// initOIDCVerifierWith must not panic or os.Exit in test mode; it should return
+	// the attempt count so we can assert. For the actual exit path, use AT-12-8-2.
+	//
+	// Expected: providerFn called maxAttempts=3 times, then function returns an error.
+	// (In production initOIDCVerifier calls os.Exit; the With variant returns error.)
+	_, attempts, err := initOIDCVerifierWith(
+		context.Background(),
+		"http://localhost:1", // always refused
+		"nebu",
+		3,             // maxAttempts
+		0*time.Second, // zero delay for test speed
+		func(_ context.Context, _ string) (*oidc.Provider, error) {
+			callCount++
+			return nil, fmt.Errorf("mock: unreachable (call %d)", callCount)
+		},
+	)
+
+	if err == nil {
+		t.Fatal("[AT-12-8-3] expected error when all retries fail, got nil")
+	}
+	if attempts != 3 {
+		t.Errorf("[AT-12-8-3] expected 3 retry attempts, got %d", attempts)
+	}
+	if callCount != 3 {
+		t.Errorf("[AT-12-8-3] providerFn called %d times, expected 3", callCount)
 	}
 }

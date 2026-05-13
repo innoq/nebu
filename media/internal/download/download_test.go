@@ -470,14 +470,24 @@ func (m *mockUploadStore) InsertMediaFile(_ context.Context, row upload.MediaFil
 // storagePath is shared with the download handler so files land in the same LocalStorer tree.
 // After the Story 12.2 refactor, uses storage.LocalStorer instead of StoragePath string.
 
+// testTokenVerifier is a minimal upload.TokenVerifier for download integration tests.
+// It accepts any bearer token and returns a fixed subject ("test-user-download").
+// Story 12.8: upload.HandlerConfig.OIDCVerifier must be non-nil (fail-closed).
+type testTokenVerifier struct{}
+
+func (testTokenVerifier) VerifyToken(_ context.Context, _ string) (string, error) {
+	return "test-user-download", nil
+}
+
 func buildUploadHandler(t *testing.T, store *mockUploadStore, storagePath string) http.Handler {
 	t.Helper()
 
 	h := upload.NewHandler(upload.HandlerConfig{
-		DB:         store,
-		Storage:    &storage.LocalStorer{BasePath: storagePath},
-		ServerName: testServerName,
-		MaxBytes:   52428800,
+		DB:           store,
+		Storage:      &storage.LocalStorer{BasePath: storagePath},
+		ServerName:   testServerName,
+		MaxBytes:     52428800,
+		OIDCVerifier: testTokenVerifier{}, // Story 12.8: non-nil required (fail-closed)
 	})
 
 	mux := http.NewServeMux()
