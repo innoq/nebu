@@ -9,7 +9,7 @@ DOCKER_NODE   = docker run --rm -v $(PWD):/workspace -w /workspace node:22-alpin
 DOCKER_TOFU   = docker run --rm --entrypoint sh -v $(PWD):/workspace -w /workspace ghcr.io/opentofu/opentofu:1.9
 DOCKER_HELM   = docker run --rm --entrypoint sh -v $(PWD):/workspace -w /workspace alpine/helm:3.17
 
-.PHONY: build-gateway build-core redeploy build-admin-css download-fonts download-vendor dev setup test-unit-go test-unit-elixir test-integration test-integration-elixir test-integration-ci test-e2e test-matrix-compat test-load-silber build-element-e2e test-e2e-element build-fluffychat-e2e test-e2e-fluffychat proto gen-api test-compose-ports test-compose-minio test-iac-validate
+.PHONY: build-gateway build-core redeploy build-admin-css download-fonts download-vendor dev setup test-unit-go test-unit-elixir test-integration test-integration-elixir test-integration-ci test-e2e test-matrix-compat test-load-silber build-element-e2e test-e2e-element build-fluffychat-e2e test-e2e-fluffychat proto gen-api test-compose-ports test-compose-minio test-iac-validate test-load-syntax
 
 ## download-fonts: Download Inter + JetBrains Mono WOFF2 fonts (run once; commit results)
 download-fonts:
@@ -328,13 +328,14 @@ gen-api:
 		--config gateway/api/oapi-codegen.yaml \
 		gateway/api/openapi.yaml"
 
-## test-iac-validate: Validate OpenTofu IaC files + Helm chart — format check, syntax validation, lint, and template render.
+## test-iac-validate: Validate OpenTofu IaC files + Helm chart + k6 load test syntax.
 ## Runs tofu fmt -check (formatting) and tofu validate (syntax/types) for all example directories.
 ## Also runs helm lint and helm template on deploy/helm/nebu/ (Story 13-4a AC1+AC2, Story 13-4b AC3+AC5).
 ## If kubectl is available, runs helm template | kubectl apply --dry-run=client (Story 13-4c AC2).
+## Also runs k6 inspect on load test scenarios and validates docker-compose.scale.yml (Story 13-5 AC1+AC3+AC4).
 ## No cloud credentials required — tofu validate checks syntax only, not provider resources.
-## Story 13-1 AC3 + AC7, Story 13-4a AC1 + AC2, Story 13-4b AC3 + AC5, Story 13-4c AC3: equivalent to the validate-iac CI job.
-test-iac-validate:
+## Story 13-1 AC3 + AC7, Story 13-4a AC1 + AC2, Story 13-4b AC3 + AC5, Story 13-4c AC3, Story 13-5 AC1+AC3+AC4: equivalent to the validate-iac CI job.
+test-iac-validate: test-load-syntax
 	@echo "==> OpenTofu: fmt check (recursive)"
 	$(DOCKER_TOFU) -c "tofu fmt -check -recursive deploy/tofu/"
 	@echo "==> OpenTofu: validate deploy/tofu/examples/aws"
@@ -360,3 +361,16 @@ test-iac-validate:
 		echo "==> Helm: no reachable cluster — skipping kubectl dry-run (run against a live kind cluster to enable)"; \
 	fi
 	@echo "==> IaC validation passed."
+
+## test-load-syntax: Validate k6 load test scenario syntax and docker-compose.scale.yml config.
+## Uses Docker-based k6 (no local k6 installation required).
+## Story 13-5 AC1+AC3+AC4: syntax gate for gold-tier.js, silver-tier.js, and compose scale override.
+## Runs: k6 inspect (syntax-only, no network, no VUs started) + docker compose config --quiet.
+test-load-syntax:
+	@echo "==> k6: inspect k6/scenarios/gold-tier.js"
+	docker run --rm -v $(PWD)/k6:/scripts grafana/k6:0.55.0 inspect /scripts/scenarios/gold-tier.js
+	@echo "==> k6: inspect k6/scenarios/silver-tier.js"
+	docker run --rm -v $(PWD)/k6:/scripts grafana/k6:0.55.0 inspect /scripts/scenarios/silver-tier.js
+	@echo "==> Docker Compose: validate scale override config"
+	docker compose -f docker-compose.yml -f docker-compose.scale.yml config --quiet
+	@echo "==> Load test syntax validation passed."

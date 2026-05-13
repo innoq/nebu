@@ -1,0 +1,27 @@
+# docker-compose.scale.yml — Multi-gateway scale override
+#
+# Story 13-5 AC3: Runs 2 gateway instances sharing Core at core:9000.
+# Both instances use the same PSK via the internal_secret Compose secret.
+# Core stays at 1 replica (Core clustering is Story 13-6).
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.scale.yml up --scale gateway=2
+#
+# Note: When scaling to 2+ replicas the published host port is removed to
+# avoid port conflicts.  Place an external load balancer (nginx, haproxy,
+# or the ALB/Stackit ALB from ADR-014) in front of the gateway replicas.
+# For local k6 load testing, attach k6 to the nebu_default network and
+# point BASE_URL at a specific container's internal address, or add a
+# reverse-proxy sidecar. See k6/README.md for examples.
+
+name: nebu
+
+services:
+  gateway:
+    # Remove the fixed host-port binding so Docker Compose can start N replicas
+    # without "address already in use" conflicts.
+    ports: []
+    # Both replicas share the same Core gRPC address and internal secret.
+    environment:
+      NEBU_CORE_GRPC_ADDR: "core:9000"
+      NEBU_INTERNAL_SECRET_FILE: "/run/secrets/internal_secret"

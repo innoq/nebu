@@ -419,3 +419,49 @@ kind delete cluster --name nebu-dev
 ```
 
 Full operator procedures (upgrade, rollback, HPA configuration, teardown) are in `deploy/tofu/examples/k8s/RUNBOOK.md`.
+
+---
+
+## Load Test Topology (Story 13-5)
+
+`docker-compose.scale.yml` is a Compose override that removes the fixed host-port binding from the gateway service so Docker Compose can start multiple replicas without port conflicts.
+
+### Multi-Gateway Scale-Up
+
+```bash
+# Start full stack with 2 gateway replicas
+docker compose -f docker-compose.yml -f docker-compose.scale.yml up \
+  --scale gateway=2 --build -d --wait
+```
+
+Both replicas connect to the same Core instance via `core:9000` (gRPC) and share the `internal_secret` PSK. Core stays at 1 replica — horizontal Core clustering is Story 13-6.
+
+```
+k6 load generator
+  │ HTTP  (nebu_default Docker network)
+  ▼
+[gateway replica 1] ──gRPC:9000──▶ core
+[gateway replica 2] ──gRPC:9000──▶ core
+                                     │
+                                     ▼
+                               PostgreSQL 16
+```
+
+### k6 Scenario Files
+
+| File | Tier | VUs | Duration | Send p95 threshold |
+|---|---|---|---|---|
+| `k6/scenarios/gold-tier.js` | Gold | 1000 | 5 min | < 500 ms |
+| `k6/scenarios/silver-tier.js` | Silver | 500 | 5 min | < 800 ms |
+
+Each scenario exercises three endpoints per VU per iteration: `POST /_matrix/client/v3/login`, `GET /_matrix/client/v3/sync`, `PUT /_matrix/client/v3/rooms/{roomId}/send/m.room.message/{txnId}`.
+
+Custom metrics reported: `nebu_login_duration`, `nebu_sync_duration`, `nebu_send_duration` (each as a Trend with p50/p95/p99), plus per-endpoint error rates. See `k6/README.md` for full operator instructions.
+
+### CI Syntax Gate
+
+```bash
+make test-load-syntax   # k6 inspect (both scenarios) + docker compose config --quiet
+```
+
+This gate runs as part of `make test-iac-validate` (no running stack required).
