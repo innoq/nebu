@@ -214,6 +214,29 @@ the roadmap toward Managed E2EE.
 | GET | `/_matrix/client/v3/room_keys/version` | 🔶 | Returns 404 (no backup) |
 | POST | `/_matrix/client/v3/room_keys/version` | 🔶 | Returns version: "1" (not stored) |
 
+## Spaces (Phase 3 — MSC1772 / MSC2946 / MSC3083)
+
+These endpoints are planned for Phase 3 (Epic 12). Not yet implemented.
+
+| Method | Endpoint | Status | Notes |
+|---|---|---|---|
+| POST | `/_matrix/client/v3/createRoom` (with `creation_content.type: "m.space"`) | ⏳ | Space creation via existing endpoint — `type` field added to `m.room.create`; see [spaces-spec §4.2](stories/phase3/spaces-spec.md) |
+| PUT | `/_matrix/client/v3/rooms/{roomId}/state/m.space.child/{childRoomId}` | ⏳ | Add/remove child room from space; validated in Core (power level + `via` field) |
+| PUT | `/_matrix/client/v3/rooms/{roomId}/state/m.space.parent/{parentSpaceId}` | ⏳ | Link child room to parent space; security check: sender must have PL in parent space |
+| GET | `/_matrix/client/v1/rooms/{roomId}/hierarchy` | ⏳ | MSC2946 — BFS traversal over `m.space.child` state events; `limit`, `max_depth`, `suggested_only`, `from` params; paginated SpaceSummary response |
+
+**Dependent changes to existing endpoints (Phase 3):**
+
+| Method | Endpoint | Change |
+|---|---|---|
+| GET | `/_matrix/client/v3/capabilities` | Room versions extended to 6–10, default `"10"` (required for `restricted` join rules) |
+| POST | `/_matrix/client/v3/join/{roomIdOrAlias}` | Restricted join rule enforcement (MSC3083): checks caller membership in `allow`-listed spaces |
+| POST | `/_matrix/client/v3/rooms/{roomId}/join` | Same restricted join rule check |
+
+_Source: [docs/stories/phase3/spaces-spec.md](stories/phase3/spaces-spec.md) — full endpoint, event schema, and architecture spec_
+
+---
+
 ## Intentionally Excluded
 
 The following endpoint namespaces are deliberately not implemented. Nebu is designed as a

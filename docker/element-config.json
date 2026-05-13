@@ -1,12 +1,28 @@
 {
   "default_server_config": {
     "m.homeserver": {
-      "base_url": "http://localhost:7070"
+      "base_url": "http://localhost:7070",
+      "server_name": "localhost"
     }
   },
-  "brand": "Nebu E2E",
+  "brand": "Nebu",
   "disable_custom_urls": true,
   "disable_guests": true,
+  "disable_3pid_login": true,
+  "default_federate": false,
   "default_theme": "light",
-  "room_directory": { "servers": ["localhost"] }
+  "room_directory": { "servers": ["localhost"] },
+  "integrations_ui_url": null,
+  "integrations_rest_url": null,
+  "integrations_widgets_urls": [],
+  "sso_redirect_options": {
+    "immediate": true
+  },
+  "setting_defaults": {
+    "UIFeature.registration": false,
+    "UIFeature.passwordReset": false,
+    "UIFeature.identityServer": false,
+    "UIFeature.thirdPartyId": false,
+    "breadcrumbs": true
+  }
 }
