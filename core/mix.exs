@@ -27,7 +27,9 @@ defmodule Nebu.MixProject do
   defp deps do
     [
       {:ecto_sql, "~> 3.12"},
-      {:postgrex, "~> 0.19"}
+      {:postgrex, "~> 0.19"},
+      # Story 13-6: libcluster for multi-node Core clustering (Gossip + Epmd strategies)
+      {:libcluster, "~> 3.3"}
     ]
   end
 end

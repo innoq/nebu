@@ -35,6 +35,33 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "nebu.fullname" . }}-config
+          {{- if gt (int .Values.core.replicaCount) 1 }}
+          # Story 13-6 AC4: clustering env vars injected when core.replicaCount > 1.
+          # libcluster Kubernetes DNS strategy connects nodes via a headless Service.
+          # RELEASE_NODE is set to the pod's Erlang node name (hostname-based).
+          # CLUSTER_STRATEGY=kubernetes triggers the Kubernetes.DNS libcluster topology.
+          env:
+            # MY_POD_IP must be defined BEFORE RELEASE_NODE so that Kubernetes
+            # resolves the $(MY_POD_IP) variable reference in definition order.
+            - name: MY_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: RELEASE_DISTRIBUTION
+              value: "name"
+            - name: RELEASE_NODE
+              value: "nebu@$(MY_POD_IP)"
+            - name: CLUSTER_STRATEGY
+              value: "kubernetes"
+            - name: KUBERNETES_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: KUBERNETES_SELECTOR
+              value: "app.kubernetes.io/name={{ include "nebu.name" . }},app.kubernetes.io/component=core"
+            - name: KUBERNETES_SERVICE_NAME
+              value: "{{ include "nebu.fullname" . }}-core-headless"
+          {{- end }}
           {{- with .Values.securityContext }}
           securityContext:
             {{- toYaml . | nindent 12 }}

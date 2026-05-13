@@ -434,7 +434,7 @@ docker compose -f docker-compose.yml -f docker-compose.scale.yml up \
   --scale gateway=2 --build -d --wait
 ```
 
-Both replicas connect to the same Core instance via `core:9000` (gRPC) and share the `internal_secret` PSK. Core stays at 1 replica — horizontal Core clustering is Story 13-6.
+Both replicas connect to the same Core instance via `core:9000` (gRPC) and share the `internal_secret` PSK. For 2-core clustering, see Story 13-6 below.
 
 ```
 k6 load generator
@@ -446,6 +446,95 @@ k6 load generator
                                      ▼
                                PostgreSQL 16
 ```
+
+---
+
+## Core Clustering (Story 13-6): libcluster + Horde Failover
+
+The Elixir Core supports horizontal scaling via libcluster for node discovery and Horde for distributed Room GenServer supervision. When a Core node fails, Horde automatically restarts Room GenServers on the surviving node within seconds (no manual intervention).
+
+### Architecture
+
+```
+[gateway] ──gRPC:9000──▶ [core (nebu@core)]   ←── Horde CRDT cluster ───▶ [core2 (nebu@core2)]
+                               │                                                    │
+                          Room GenServers                                   Room GenServers
+                           (Horde Registry)                               (Horde Registry)
+                               │                                                    │
+                               └───────────────┬──────────────────────────────────┘
+                                               ▼
+                                        PostgreSQL 16
+```
+
+When `core` (nebu@core) is stopped:
+1. Horde CRDT reconciliation detects the node departure
+2. Room GenServers that were running on `core` are restarted on `core2`
+3. Horde Registry re-registers the rooms under `core2`'s node
+4. Gateway's next gRPC call succeeds (Room GenServer is alive on `core2`)
+
+### Clustering Strategies
+
+| Environment | Strategy | Discovery |
+|---|---|---|
+| Docker Compose | `Cluster.Strategy.Gossip` | UDP broadcast (port 45892) within Docker network |
+| Kubernetes | `Cluster.Strategy.Kubernetes.DNS` | Headless Service DNS lookup (`core-headless`) |
+
+### Environment Variables
+
+| Variable | Purpose | Example |
+|---|---|---|
+| `CLUSTER_STRATEGY` | Selects libcluster strategy (`gossip` / `kubernetes`) | `gossip` |
+| `RELEASE_NODE` | Erlang node name for distribution | `nebu@core` |
+| `RELEASE_DISTRIBUTION` | Erlang distribution mode (`name` = long names) | `name` |
+| `CLUSTER_NODES` | Comma-separated peer list (informational; Gossip discovers dynamically) | `nebu@core` |
+
+### Local 2-Core Stack
+
+```bash
+# Start full stack with 2 Core nodes + scaled gateways
+docker compose -f docker-compose.yml -f docker-compose.scale.yml up -d
+
+# Simulate node failure (AC1 test)
+docker stop $(docker compose -f docker-compose.yml -f docker-compose.scale.yml ps --format json | jq -r 'select(.Service=="core") | .Name')
+
+# Verify room availability after failover (rooms migrate to core2 within 10 seconds)
+```
+
+The `docker-compose.scale.yml` override adds:
+- `core` service: sets `RELEASE_NODE=nebu@core` and `CLUSTER_STRATEGY=gossip`
+- `core2` service: same image, `RELEASE_NODE=nebu@core2`, connects to core1 via Gossip multicast
+
+### Kubernetes Clustering
+
+When `core.replicaCount > 1` in `values.yaml`, the Helm chart automatically injects:
+- `CLUSTER_STRATEGY=kubernetes` → activates `Cluster.Strategy.Kubernetes.DNS`
+- `RELEASE_NODE=nebu@$(MY_POD_IP)` → unique long-form node name per pod
+- `RELEASE_DISTRIBUTION=name` → enables Erlang long-name distribution
+- `KUBERNETES_SERVICE_NAME` pointing to the headless Service (`core-headless`)
+
+A headless Service (`core-deployment-headless`) is automatically provisioned alongside the standard ClusterIP Service when `replicaCount > 1`. The headless Service returns A records for each pod, enabling libcluster to discover peers via DNS.
+
+### Health Endpoint — Cluster Status
+
+`GET http://core:4000/health` now includes `cluster_nodes` in its JSON response:
+
+```json
+{
+  "status": "UP",
+  "node": "nebu@core",
+  "cluster_nodes": ["nebu@core2"],
+  "components": { ... }
+}
+```
+
+`cluster_nodes` is an empty list in single-node mode (no libcluster configured).
+
+### Erlang Cookie (Security)
+
+Erlang distribution requires all nodes in a cluster to share the same cookie. In production deployments:
+- **Docker Compose:** uses Erlang's default auto-generated cookie (acceptable for dev; nodes on the same Docker network)
+- **Kubernetes/AWS:** `RELEASE_COOKIE` is injected from Secrets Manager (see AWS secrets.tf) to ensure all Core pods use the same pre-shared cookie
+- **STACKIT:** operators must set a consistent `RELEASE_COOKIE` in the cloud-init bootstrap across all Core VMs
 
 ### k6 Scenario Files
 

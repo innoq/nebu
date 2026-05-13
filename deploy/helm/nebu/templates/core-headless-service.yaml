@@ -1,0 +1,25 @@
+{{- if gt (int .Values.core.replicaCount) 1 }}
+# Story 13-6 AC4: Headless Service for libcluster Kubernetes DNS discovery.
+# Required when core.replicaCount > 1 so that libcluster Cluster.Strategy.Kubernetes.DNS
+# can resolve individual pod IP addresses for Erlang distribution peering.
+# A headless Service (clusterIP: None) returns A records for each pod IP,
+# allowing libcluster to connect nodes via Erlang long-name distribution.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "nebu.fullname" . }}-core-headless
+  labels:
+    {{- include "nebu.labels" . | nindent 4 }}
+    app.kubernetes.io/component: core
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: false
+  ports:
+    - port: 4369
+      targetPort: 4369
+      protocol: TCP
+      name: epmd
+  selector:
+    {{- include "nebu.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: core
+{{- end }}
