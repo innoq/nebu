@@ -9,3 +9,12 @@ postgres_db_name = "nebu"
 image_registry   = "registry.gitlab.com/myorg/open-chat"
 vpc_cidr         = "10.0.0.0/16"
 environment      = "prod"
+
+# RDS
+db_instance_class   = "db.t3.medium"
+db_password         = "REPLACE_ME_with_a_strong_password"
+skip_final_snapshot = false
+
+# Secrets Manager ARN for Nebu runtime env vars (NEBU_DB_URL, NEBU_OIDC_ISSUER, etc.)
+# Created in story 13.2c. Leave empty ("") for validate-only runs.
+nebu_secrets_arn = ""

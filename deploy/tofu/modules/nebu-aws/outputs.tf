@@ -29,3 +29,18 @@ output "rds_sg_id" {
   description = "ID of the RDS security group."
   value       = aws_security_group.rds.id
 }
+
+output "ecs_cluster_arn" {
+  description = "ARN of the ECS Fargate cluster."
+  value       = aws_ecs_cluster.this.arn
+}
+
+output "db_endpoint" {
+  description = "Connection endpoint for the RDS PostgreSQL instance (host:port)."
+  value       = aws_db_instance.this.endpoint
+}
+
+output "task_execution_role_arn" {
+  description = "ARN of the IAM role used by ECS task definitions for execution (image pull + Secrets Manager)."
+  value       = aws_iam_role.ecs_task_execution.arn
+}

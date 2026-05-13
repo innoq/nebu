@@ -183,6 +183,30 @@ Equivalent CI gate: `validate-iac` job in `.gitlab-ci.yml` (runs on every push t
 
 `deploy/tofu/modules/nebu-aws/network.tf` provisions the AWS network foundation: one VPC, two public and two private subnets across two AZs, a single NAT Gateway (cost-optimized; one per AZ for HA production), and scoped security groups for ALB (80/443 from internet), ECS (ports 8008 + 9000 from ALB SG), and RDS (5432 from ECS SG only, egress limited to VPC CIDR). Resource names incorporate the `environment` variable (e.g. `nebu-prod-alb-sg`) for multi-environment deployments.
 
+### AWS Database Module (nebu-aws — database.tf)
+
+`deploy/tofu/modules/nebu-aws/database.tf` provisions the RDS layer:
+
+- `aws_db_subnet_group` — uses private subnets from network.tf (no public access)
+- `aws_db_instance` — PostgreSQL 16, Multi-AZ, `db.t3.medium` (default), 20 GB gp3 encrypted storage, 7-day automated backups, Performance Insights enabled
+- DB master password: `var.db_password` (sensitive, minimum 8 chars). Secrets Manager integration for app credentials is added in story 13.2c.
+
+Key variables: `db_instance_class`, `db_password`, `skip_final_snapshot` (default `true` for dev), `enable_performance_insights`.
+
+### AWS Compute Module (nebu-aws — compute.tf)
+
+`deploy/tofu/modules/nebu-aws/compute.tf` provisions the ECS Fargate compute layer:
+
+- `aws_ecs_cluster` — Fargate cluster with Container Insights enabled (`"nebu-${environment}"`)
+- `aws_iam_role.ecs_task_execution` — Task execution role with `AmazonECSTaskExecutionRolePolicy` + inline policy for `secretsmanager:GetSecretValue` / `kms:Decrypt` scoped to `var.nebu_secrets_arn`
+- `aws_cloudwatch_log_group` — `/ecs/nebu-{env}-gateway` and `/ecs/nebu-{env}-core`, 30-day retention
+- `aws_ecs_task_definition.gateway` — Skeleton: image `{registry}/nebu-gateway:{version}`, CPU 256 / Memory 512, port 8008, health check `GET /_matrix/client/v3/versions`, Secrets Manager `secrets` references for NEBU_* env vars (omitted when `nebu_secrets_arn = ""`)
+- `aws_ecs_task_definition.core` — Skeleton: image `{registry}/nebu-core:{version}`, CPU 256 / Memory 512, port 9000, health check `GET /health`, Secrets Manager references for `DATABASE_URL`, `RELEASE_COOKIE`, `NEBU_INTERNAL_SECRET`
+
+Key variables: `aws_region` (for CloudWatch Logs), `image_registry`, `nebu_version`, `nebu_secrets_arn` (placeholder ARN, leave `""` for validate-only).
+
+Module outputs added: `ecs_cluster_arn`, `db_endpoint`, `task_execution_role_arn`.
+
 ### Helm Chart
 
 `deploy/helm/nebu/` is a standalone Helm Chart usable independently of OpenTofu. Image tag defaults to `""` and must be overridden via `--set image.tag=<version>` or a values file — preventing accidental deployment of an unversioned image.

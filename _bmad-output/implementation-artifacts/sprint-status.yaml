@@ -1,5 +1,6 @@
 # generated: 2026-03-20
 # last_updated: 2026-05-13
+# story 13-2b done (pipeline: 6 MINOR fixed 1 cycle — RDS PostgreSQL 16 Multi-AZ + ECS Fargate cluster + task def skeletons + CloudWatch logs + IAM execution role): 2026-05-13
 # history: archived to _bmad-output/archived-artifacts/sprint-history.md
 project: open-chat
 project_key: NOKEY
@@ -115,7 +116,7 @@ development_status:
   epic-13: backlog
   13-1-opentofu-project-structure-shared-modules: backlog
   13-2a-aws-networking-module-vpc-subnets-security-groups: backlog
-  13-2b-aws-rds-postgresql-ecs-cluster: backlog
+  13-2b-aws-rds-postgresql-ecs-cluster: done
   13-2c-aws-ecs-task-definitions-gateway-core-alb-secrets-runbook: backlog
   13-3a-stackit-vm-provisioning-networking: backlog
   13-3b-stackit-cloud-init-docker-compose-runbook: backlog

@@ -41,3 +41,34 @@ variable "environment" {
   type        = string
   default     = "prod"
 }
+
+variable "db_instance_class" {
+  description = "RDS instance class (e.g. 'db.t3.medium', 'db.r6g.large')."
+  type        = string
+  default     = "db.t3.medium"
+}
+
+variable "db_password" {
+  description = "Initial master password for the RDS PostgreSQL instance. Sensitive — do not commit."
+  type        = string
+  sensitive   = true
+  default     = "changeme"
+}
+
+variable "skip_final_snapshot" {
+  description = "When true, no final DB snapshot is created on deletion. Set to false for production."
+  type        = bool
+  default     = true
+}
+
+variable "nebu_secrets_arn" {
+  description = "ARN of the AWS Secrets Manager secret containing Nebu runtime env vars. Leave empty ('') to skip — validate passes without real credentials."
+  type        = string
+  default     = ""
+}
+
+variable "enable_performance_insights" {
+  description = "Enable RDS Performance Insights. Disable for db.t3.micro or unsupported instance classes."
+  type        = bool
+  default     = true
+}

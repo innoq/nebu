@@ -39,6 +39,18 @@ module "nebu_aws" {
   vpc_cidr    = var.vpc_cidr
   environment = var.environment
 
+  # Database
+  db_instance_class           = var.db_instance_class
+  db_password                 = var.db_password
+  skip_final_snapshot         = var.skip_final_snapshot
+  enable_performance_insights = var.enable_performance_insights
+
+  # Compute — task definitions reference nebu-core outputs for image/version
+  aws_region       = var.aws_region
+  image_registry   = module.nebu_core.image_registry
+  nebu_version     = module.nebu_core.nebu_version
+  nebu_secrets_arn = var.nebu_secrets_arn
+
   common_tags = {
     Project     = "nebu"
     Environment = var.environment

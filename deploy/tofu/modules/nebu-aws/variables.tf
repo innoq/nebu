@@ -38,3 +38,63 @@ variable "common_tags" {
   type        = map(string)
   default     = {}
 }
+
+# ── Database variables ────────────────────────────────────────────────────────
+
+variable "db_instance_class" {
+  description = "RDS instance class (e.g. 'db.t3.medium', 'db.r6g.large')."
+  type        = string
+  default     = "db.t3.medium"
+}
+
+variable "db_password" {
+  description = "Initial master password for the RDS PostgreSQL instance. Must be replaced before apply in any non-dev environment. Sensitive — do not commit."
+  type        = string
+  sensitive   = true
+  # WARNING: 'changeme' is only a placeholder for tofu validate/plan in dev.
+  # Always supply a strong password via a tfvars file or environment variable at apply time.
+  default = "changeme"
+
+  validation {
+    condition     = length(var.db_password) >= 8
+    error_message = "db_password must be at least 8 characters."
+  }
+}
+
+variable "skip_final_snapshot" {
+  description = "When true, no final DB snapshot is created before the instance is deleted. Set to false for production."
+  type        = bool
+  default     = true
+}
+
+variable "enable_performance_insights" {
+  description = "Enable RDS Performance Insights. Supported on db.t3.medium and larger. Disable for db.t3.micro or unsupported instance classes."
+  type        = bool
+  default     = true
+}
+
+# ── Compute variables ─────────────────────────────────────────────────────────
+
+variable "image_registry" {
+  description = "Container image registry prefix (e.g. 'registry.gitlab.com/myorg/open-chat'). Used in ECS task definitions."
+  type        = string
+  default     = ""
+}
+
+variable "nebu_version" {
+  description = "Nebu container image tag to deploy (e.g. '0.3.0' or 'latest'). Used in ECS task definitions."
+  type        = string
+  default     = "latest"
+}
+
+variable "nebu_secrets_arn" {
+  description = "ARN of the AWS Secrets Manager secret containing Nebu runtime env vars (NEBU_DB_URL, NEBU_OIDC_ISSUER, etc.). Leave empty ('') to skip Secrets Manager references — validate will pass without real credentials."
+  type        = string
+  default     = ""
+}
+
+variable "aws_region" {
+  description = "AWS region for CloudWatch Logs configuration in ECS task definitions."
+  type        = string
+  default     = "eu-central-1"
+}
