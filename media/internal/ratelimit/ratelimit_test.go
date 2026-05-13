@@ -12,6 +12,7 @@ package ratelimit_test
 //   AT-12-10-5 — NEBU_RATE_LIMIT_DISABLED=true → no-op middleware
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -43,7 +44,7 @@ func TestUploadRateLimit_BlocksAfterBurst(t *testing.T) {
 		Rate:  rate.Limit(10), // 10 req/s
 		Burst: 10,
 	}
-	handler := ratelimit.NewIPRateLimiter(cfg, false)(okHandler)
+	handler := ratelimit.NewIPRateLimiter(context.Background(), cfg, false)(okHandler)
 
 	const ip = "192.0.2.1:12345"
 
@@ -86,7 +87,7 @@ func TestDownloadRateLimit_BlocksAfterBurst(t *testing.T) {
 		Rate:  rate.Limit(100), // 100 req/s
 		Burst: 100,
 	}
-	handler := ratelimit.NewIPRateLimiter(cfg, false)(okHandler)
+	handler := ratelimit.NewIPRateLimiter(context.Background(), cfg, false)(okHandler)
 
 	const ip = "198.51.100.5:8080"
 
@@ -127,7 +128,7 @@ func TestRateLimit_DifferentIPs_IndependentBuckets(t *testing.T) {
 		Rate:  rate.Limit(5),
 		Burst: 5,
 	}
-	handler := ratelimit.NewIPRateLimiter(cfg, false)(okHandler)
+	handler := ratelimit.NewIPRateLimiter(context.Background(), cfg, false)(okHandler)
 
 	ipA := "10.0.0.1:11111"
 	ipB := "10.0.0.2:22222"
@@ -173,7 +174,7 @@ func TestRateLimit_429ResponseFormat(t *testing.T) {
 		Rate:  rate.Limit(1), // 1 req/s — next token in ~1s
 		Burst: 1,
 	}
-	handler := ratelimit.NewIPRateLimiter(cfg, false)(okHandler)
+	handler := ratelimit.NewIPRateLimiter(context.Background(), cfg, false)(okHandler)
 
 	const ip = "203.0.113.42:9999"
 
@@ -244,7 +245,7 @@ func TestRateLimit_XForwardedFor_Extraction(t *testing.T) {
 		Burst: 1,
 	}
 	// trustedProxy=true: XFF extraction is active.
-	handler := ratelimit.NewIPRateLimiter(cfg, true)(okHandler)
+	handler := ratelimit.NewIPRateLimiter(context.Background(), cfg, true)(okHandler)
 
 	// Request from proxy: X-Forwarded-For: spoofed-client, real-client
 	// The limiter must key on "9.9.9.9" (last / proxy-appended entry).
@@ -293,7 +294,7 @@ func TestRateLimit_Disabled_NoOp(t *testing.T) {
 		Rate:  rate.Limit(1),
 		Burst: 1,
 	}
-	handler := ratelimit.NewIPRateLimiter(cfg, false)(okHandler)
+	handler := ratelimit.NewIPRateLimiter(context.Background(), cfg, false)(okHandler)
 
 	const ip = "10.10.10.10:5000"
 
@@ -331,7 +332,7 @@ func TestRateLimit_TrustedProxyFalse_IgnoresXFF(t *testing.T) {
 		Burst: 1,
 	}
 	// trustedProxy=false: XFF must be ignored.
-	handler := ratelimit.NewIPRateLimiter(cfg, false)(okHandler)
+	handler := ratelimit.NewIPRateLimiter(context.Background(), cfg, false)(okHandler)
 
 	// First request: RemoteAddr=5.6.7.8, XFF=1.2.3.4.
 	// Must succeed and consume RemoteAddr bucket for 5.6.7.8.
@@ -372,7 +373,7 @@ func TestRateLimit_TrustedProxyTrue_UsesXFF(t *testing.T) {
 		Burst: 1,
 	}
 	// trustedProxy=true: must use XFF rightmost entry.
-	handler := ratelimit.NewIPRateLimiter(cfg, true)(okHandler)
+	handler := ratelimit.NewIPRateLimiter(context.Background(), cfg, true)(okHandler)
 
 	// First request: XFF: 1.2.3.4, 10.0.0.1 → key = 10.0.0.1
 	req1 := httptest.NewRequest(http.MethodPost, "/_matrix/media/v3/upload", nil)
@@ -409,7 +410,7 @@ func TestRateLimit_TrustedProxyFalse_BypassNotPossible(t *testing.T) {
 		Rate:  rate.Limit(10),
 		Burst: 10,
 	}
-	handler := ratelimit.NewIPRateLimiter(cfg, false)(okHandler)
+	handler := ratelimit.NewIPRateLimiter(context.Background(), cfg, false)(okHandler)
 
 	const remoteAddr = "5.6.7.8:4321"
 

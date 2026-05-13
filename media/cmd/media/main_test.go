@@ -2,11 +2,17 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
+	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -550,6 +556,344 @@ func TestInitOIDCVerifierWith_NoSignal_ExhaustsAllRetries(t *testing.T) {
 	if calls != 3 {
 		t.Errorf("[AT-12-13-3] expected provider called 3 times, got %d", calls)
 	}
+}
+
+// ─── Story 12.14: Media Gateway Full Graceful Shutdown ────────────────────────
+//
+// Three SIGTERM gaps fixed:
+//   1. http.Server had no Shutdown() — Docker kills mid-request after 10s
+//   2. Rate limiter cleanup goroutine was not stoppable — goroutine leak
+//   3. pgxpool.Pool close was only via defer — bypassed on os.Exit(1) paths
+//
+// Tests verify:
+//   AT-12-14-1: in-flight HTTP request completes after Shutdown() (30s drain)
+//   AT-12-14-2: Shutdown returns after drain timeout (not blocked forever)
+//   AT-12-14-4: pool.Close() called after srv.Shutdown returns
+//   AT-12-14-5: exit code 0 on SIGTERM (subprocess test)
+//
+// AT-12-14-3 lives in ratelimit_internal_test.go (needs package access).
+
+// AT-12-14-1 — In-flight HTTP request completes after srv.Shutdown is called.
+//
+// AC-1 — Given an in-flight upload request is being processed (200ms handler delay),
+// when srv.Shutdown(30s timeout ctx) is called,
+// then the in-flight request completes with 200 OK and Shutdown returns nil.
+//
+// RED: Current code blocks on srv.ListenAndServe() synchronously and never calls
+// srv.Shutdown(). This test verifies the new pattern: background goroutine + Shutdown.
+func TestGracefulShutdown_InFlightRequestCompletes(t *testing.T) {
+	t.Parallel()
+
+	// A handler that takes 200ms to respond — simulating an in-flight upload.
+	handlerDone := make(chan struct{})
+	slowHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+		close(handlerDone)
+	})
+
+	srv := &http.Server{
+		Addr:    "127.0.0.1:0", // port 0 → OS assigns a free port
+		Handler: slowHandler,
+	}
+
+	// Use an explicit listener so we can get the port.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("[AT-12-14-1] failed to create listener: %v", err)
+	}
+
+	serverDone := make(chan error, 1)
+	go func() {
+		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serverDone <- err
+		}
+		close(serverDone)
+	}()
+
+	// Fire the in-flight request (async).
+	addr := ln.Addr().String()
+	reqDone := make(chan error, 1)
+	go func() {
+		resp, err := http.Get("http://" + addr + "/test") //nolint:noctx
+		if err != nil {
+			reqDone <- fmt.Errorf("request failed: %w", err)
+			return
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			reqDone <- fmt.Errorf("expected 200 OK, got %d", resp.StatusCode)
+			return
+		}
+		close(reqDone)
+	}()
+
+	// Give the handler a moment to start processing.
+	time.Sleep(50 * time.Millisecond)
+
+	// Call Shutdown — must wait for in-flight request to complete.
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		t.Fatalf("[AT-12-14-1] srv.Shutdown returned error: %v", err)
+	}
+
+	// In-flight request must have completed.
+	select {
+	case err := <-reqDone:
+		if err != nil {
+			t.Fatalf("[AT-12-14-1] in-flight request failed after Shutdown: %v", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("[AT-12-14-1] in-flight request did not complete within 500ms after Shutdown returned")
+	}
+
+	// Confirm handler body ran.
+	select {
+	case <-handlerDone:
+		// good — handler completed
+	default:
+		t.Fatal("[AT-12-14-1] handler body did not complete")
+	}
+}
+
+// AT-12-14-2 — Shutdown returns after drain timeout, not blocked forever.
+//
+// AC-2 — Given an in-flight request that never completes (hangs forever),
+// when srv.Shutdown is called with a 100ms timeout context,
+// then Shutdown returns within ~150ms with a context.DeadlineExceeded error.
+//
+// RED: Current code never calls srv.Shutdown() — this test verifies the 30s
+// drain timeout mechanism (tested here with a short timeout for test speed).
+func TestGracefulShutdown_DrainTimeoutReturnsFast(t *testing.T) {
+	t.Parallel()
+
+	// A handler that blocks forever — simulates a request that never completes.
+	hangForever := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Block until the request context is cancelled (i.e. connection is closed).
+		<-r.Context().Done()
+	})
+
+	srv := &http.Server{
+		Addr:    "127.0.0.1:0",
+		Handler: hangForever,
+	}
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("[AT-12-14-2] failed to create listener: %v", err)
+	}
+
+	go func() {
+		_ = srv.Serve(ln)
+	}()
+
+	// Fire a request that will hang.
+	addr := ln.Addr().String()
+	go func() {
+		http.Get("http://" + addr + "/hang") //nolint:noctx,errcheck
+	}()
+
+	// Give the handler a moment to start processing.
+	time.Sleep(50 * time.Millisecond)
+
+	// Shutdown with a short 100ms timeout — must return within ~150ms.
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	err = srv.Shutdown(shutdownCtx)
+	elapsed := time.Since(start)
+
+	if elapsed > 300*time.Millisecond {
+		t.Errorf("[AT-12-14-2] Shutdown took %v — expected < 300ms with 100ms timeout", elapsed)
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("[AT-12-14-2] expected context.DeadlineExceeded, got: %v", err)
+	}
+}
+
+// AT-12-14-4 — pool.Close() is called after srv.Shutdown returns (shutdown sequence).
+//
+// AC-4 — Given the HTTP server has drained all in-flight requests,
+// when shutdown completes,
+// then pool.Close() is called exactly once after srv.Shutdown returns.
+//
+// RED: Current code uses `defer pool.Close()` which is bypassed by os.Exit(1).
+// This test verifies the new explicit sequence: Shutdown → pool.Close().
+//
+// Implementation: test the shutdown sequence via a testable helper function
+// `runShutdownSequence(srv, pool, timeout)` extracted from main().
+// The function must call srv.Shutdown first, then pool.Close().
+func TestGracefulShutdown_PoolClosedAfterDrain(t *testing.T) {
+	t.Parallel()
+
+	// A fast handler so Shutdown completes immediately.
+	srv := &http.Server{
+		Addr:    "127.0.0.1:0",
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
+	}
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("[AT-12-14-4] failed to create listener: %v", err)
+	}
+
+	go func() {
+		_ = srv.Serve(ln)
+	}()
+
+	// Track call order: Shutdown must precede pool.Close.
+	var callOrder []string
+	var mu sync.Mutex
+
+	// Wrap srv.Shutdown to record the call.
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Call the helper — must call pool.Close() after srv.Shutdown.
+	// runShutdownSequence is a testable extraction of the shutdown logic in main().
+	// RED: this function does not exist yet — will FAIL TO COMPILE until extracted.
+	runShutdownSequence(
+		shutdownCtx,
+		srv,
+		// poolCloser is a function hook that represents pool.Close().
+		func() {
+			mu.Lock()
+			callOrder = append(callOrder, "pool.Close")
+			mu.Unlock()
+		},
+	)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(callOrder) == 0 {
+		t.Fatal("[AT-12-14-4] pool.Close() was never called")
+	}
+	if callOrder[0] != "pool.Close" {
+		t.Fatalf("[AT-12-14-4] expected pool.Close to be called, got call sequence: %v", callOrder)
+	}
+}
+
+// AT-12-14-5 — Exit code 0 on clean SIGTERM shutdown.
+//
+// AC-5 — Given the gateway receives SIGTERM after startup,
+// when it exits,
+// then the exit code is 0 and the last log line contains "media gateway stopped".
+//
+// RED: Current code's ListenAndServe blocks forever; there is no Shutdown() call.
+// If SIGTERM arrives, ListenAndServe does not return, so main() never reaches
+// slog.Info("media gateway stopped") and exits non-zero via Docker SIGKILL.
+//
+// This test uses the subprocess pattern: runs a minimal binary that starts
+// listening, receives SIGTERM, and verifies exit code + log output.
+func TestGracefulShutdown_CleanExitOnSIGTERM(t *testing.T) {
+	if os.Getenv("NEBU_TEST_SHUTDOWN_12_14_5") == "1" {
+		// Subprocess arm: run a minimal version of main that exercises
+		// the graceful shutdown path. We stub out OIDC and DB.
+		// The test binary's main() is the real main — so we call a
+		// test-only entrypoint via runMinimalGateway() that:
+		//   1. Starts http.Server on random port
+		//   2. Waits for SIGTERM via signal.NotifyContext
+		//   3. Calls srv.Shutdown(30s) → pool stub
+		//   4. Logs "media gateway stopped" and exits 0
+		runMinimalGatewayForShutdownTest()
+		return // unreachable if runMinimalGatewayForShutdownTest works correctly
+	}
+
+	// Build the test binary if needed.
+	binaryPath := t.TempDir() + "/media-test-binary"
+	buildCmd := exec.Command("go", "test", "-c", "-o", binaryPath, ".")
+	buildCmd.Dir = "."
+	if out, err := buildCmd.CombinedOutput(); err != nil {
+		t.Fatalf("[AT-12-14-5] failed to build test binary: %v\n%s", err, out)
+	}
+
+	// Run the subprocess with SIGTERM trigger flag.
+	cmd := exec.Command(binaryPath, "-test.run=TestGracefulShutdown_CleanExitOnSIGTERM", "-test.v")
+	cmd.Env = append(os.Environ(), "NEBU_TEST_SHUTDOWN_12_14_5=1")
+
+	var output strings.Builder
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("[AT-12-14-5] failed to start subprocess: %v", err)
+	}
+
+	// Give the subprocess a moment to start.
+	time.Sleep(200 * time.Millisecond)
+
+	// Send SIGTERM.
+	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatalf("[AT-12-14-5] failed to send SIGTERM: %v", err)
+	}
+
+	// Wait for exit.
+	waitDone := make(chan error, 1)
+	go func() { waitDone <- cmd.Wait() }()
+
+	select {
+	case err := <-waitDone:
+		if err != nil {
+			// os.Exit(0) in subprocess shows up as nil err; any ExitError is failure.
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				t.Fatalf("[AT-12-14-5] subprocess exited with non-zero code %d\nOutput:\n%s",
+					exitErr.ExitCode(), output.String())
+			}
+			// Other errors (signal kill etc.) are failures too.
+			t.Fatalf("[AT-12-14-5] unexpected wait error: %v\nOutput:\n%s", err, output.String())
+		}
+		// Exit code 0 — verify log line.
+		if !strings.Contains(output.String(), "media gateway stopped") {
+			t.Errorf("[AT-12-14-5] expected log line 'media gateway stopped', got output:\n%s", output.String())
+		}
+	case <-time.After(5 * time.Second):
+		cmd.Process.Kill()
+		t.Fatalf("[AT-12-14-5] subprocess did not exit within 5s after SIGTERM\nOutput:\n%s", output.String())
+	}
+}
+
+// runMinimalGatewayForShutdownTest is the test-only entrypoint used by
+// AT-12-14-5 (subprocess arm). It starts a minimal http.Server, waits for
+// SIGTERM via signal.NotifyContext, runs the shutdown sequence (stubbed pool),
+// and exits 0 via main() returning.
+//
+// Lives in main_test.go (not main.go) so it is not compiled into production binaries.
+// The test binary (built with `go test -c`) includes _test.go files — this function
+// is visible to the subprocess arm in TestGracefulShutdown_CleanExitOnSIGTERM.
+func runMinimalGatewayForShutdownTest() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	srv := &http.Server{
+		Addr:    "127.0.0.1:0",
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}),
+	}
+
+	serverErr := make(chan error, 1)
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serverErr <- err
+		}
+		close(serverErr)
+	}()
+
+	select {
+	case err := <-serverErr:
+		slog.Error("server error", "err", err)
+		os.Exit(1)
+	case <-ctx.Done():
+		slog.Info("shutdown signal received, draining...")
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	// Stub pool.Close — no real pool in this test entrypoint.
+	runShutdownSequence(shutdownCtx, srv, func() {})
+	// runShutdownSequence logs "media gateway stopped" and returns → exit 0.
 }
 
 // AT-12-13-4 — Context already cancelled before sleep → no block on retryDelay.

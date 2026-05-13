@@ -201,7 +201,10 @@ func main() {
 		slog.Error("failed to connect to database", "err", err)
 		os.Exit(1)
 	}
-	defer pool.Close()
+	// Story 12.14 — pool.Close() is called explicitly in the shutdown sequence
+	// (after srv.Shutdown drains in-flight HTTP requests) so in-flight DB queries
+	// can complete. The defer form is removed because os.Exit(1) bypasses defers.
+	// See runShutdownSequence below.
 
 	// Story 12.8 — Fail-closed OIDC startup.
 	// NEBU_OIDC_ISSUER is mandatory. An empty value causes a fatal exit (AC-1).
@@ -254,11 +257,12 @@ func main() {
 	// NEBU_RATE_LIMIT_DISABLED=true disables both tiers (dev/test escape hatch).
 	logIfRateLimitDisabled()
 	trustedProxy := os.Getenv("NEBU_TRUSTED_PROXY") == "true"
-	uploadRL := ratelimit.NewIPRateLimiter(ratelimit.Config{
+	// Story 12.14 — pass ctx so the cleanup goroutine exits on SIGTERM (AC-3).
+	uploadRL := ratelimit.NewIPRateLimiter(ctx, ratelimit.Config{
 		Rate:  rate.Limit(10),
 		Burst: 5,
 	}, trustedProxy)
-	downloadRL := ratelimit.NewIPRateLimiter(ratelimit.Config{
+	downloadRL := ratelimit.NewIPRateLimiter(ctx, ratelimit.Config{
 		Rate:  rate.Limit(100),
 		Burst: 20,
 	}, trustedProxy)
@@ -283,11 +287,56 @@ func main() {
 		WriteTimeout:      120 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
-	slog.Info("Nebu Media Gateway listening", "addr", listenAddr)
-	if err := srv.ListenAndServe(); err != nil {
+
+	// Story 12.14 — Graceful HTTP shutdown (AC-1, AC-2, AC-4, AC-5).
+	// Run ListenAndServe in a background goroutine so SIGTERM (ctx.Done) is not
+	// blocked. On SIGTERM we call srv.Shutdown to drain in-flight requests, then
+	// close the DB pool and exit cleanly with code 0.
+	serverErr := make(chan error, 1)
+	go func() {
+		slog.Info("media gateway listening", "addr", listenAddr)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serverErr <- err
+		}
+		close(serverErr)
+	}()
+
+	// Block until SIGTERM/SIGINT (ctx.Done) or a fatal server error.
+	select {
+	case err := <-serverErr:
 		slog.Error("server error", "err", err)
 		os.Exit(1)
+	case <-ctx.Done():
+		slog.Info("shutdown signal received, draining...")
 	}
+
+	// Drain in-flight requests with a 30s timeout.
+	// Use context.Background() — the parent ctx is already cancelled.
+	// Story 12.14 AC-2: after 30s, Shutdown returns and we proceed.
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	runShutdownSequence(shutdownCtx, srv, pool.Close)
+}
+
+// runShutdownSequence performs the ordered shutdown steps (Story 12.14):
+//  1. srv.Shutdown(ctx) — drains in-flight HTTP requests (up to 30s)
+//  2. poolClose() — closes the DB connection pool after all requests finish
+//  3. Logs "media gateway stopped"
+//
+// The poolClose parameter is a function (not *pgxpool.Pool) so the sequence
+// can be unit-tested with a spy closure without a real DB pool.
+//
+// On drain timeout srv.Shutdown returns context.DeadlineExceeded — we log a
+// warning but continue with pool close and clean exit (Docker SIGKILL avoided).
+func runShutdownSequence(ctx context.Context, srv *http.Server, poolClose func()) {
+	if err := srv.Shutdown(ctx); err != nil {
+		// AC-2: timeout expired before all requests drained — log warning, continue.
+		slog.Warn("graceful shutdown timed out", "err", err)
+	}
+	// AC-4: pool.Close() after HTTP drain so in-flight DB queries complete.
+	poolClose()
+	// AC-5: final log line before clean exit.
+	slog.Info("media gateway stopped")
 }
 
 // selectStorer returns the appropriate Storer implementation based on cfg.storageBackend.

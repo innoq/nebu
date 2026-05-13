@@ -69,7 +69,9 @@ Implementation: `gateway/internal/middleware/ratelimit.go` — `NewIPRateLimiter
 | upload | 10 req/s | 5 | `POST /_matrix/media/v3/upload` |
 | download | 100 req/s | 20 | `GET /_matrix/media/v3/download/…`, `GET /_matrix/media/v3/thumbnail/…` |
 
-Implementation: `media/internal/ratelimit/ratelimit.go` — `NewIPRateLimiter(cfg Config, trustedProxy bool)` with `sync.Map` keyed by IP and a background cleanup goroutine (evicts entries not seen for >5 minutes, runs every 1 minute). No LRU dependency — simpler sync.Map + time-based eviction.
+Implementation: `media/internal/ratelimit/ratelimit.go` — `NewIPRateLimiter(ctx context.Context, cfg Config, trustedProxy bool)` with `sync.Map` keyed by IP and a background cleanup goroutine (evicts entries not seen for >5 minutes, runs every 1 minute). No LRU dependency — simpler sync.Map + time-based eviction.
+
+**Story 12.14 — Stoppable cleanup goroutine:** `NewIPRateLimiter` now accepts `ctx context.Context` as its first parameter. The `cleanupLoop` goroutine uses a `select { case <-ticker.C: ... case <-ctx.Done(): return }` instead of `for range ticker.C`. When SIGTERM cancels the main context, the cleanup goroutine exits within one ticker interval (≤1 minute), preventing goroutine leaks during graceful shutdown.
 
 **IP extraction — trusted-proxy gate (Story 12.11 SEC Fix F-2):**
 
@@ -206,6 +208,16 @@ The upload handler uses a `TokenVerifier` interface (`HandlerConfig.OIDCVerifier
 Story 12.12 (F-3) adds a **10-second per-attempt timeout** to each `oidc.NewProvider` call via `context.WithTimeout(ctx, 10s)`. A provider that accepts the TCP connection but never sends a response (hung Dex, firewall issue) can no longer block startup indefinitely — each attempt fails within 10s, and the 5-retry cycle completes within ≤60s total. Parent context cancellation (SIGTERM during startup) is checked at the top of every retry iteration for immediate exit.
 
 Story 12.13 completes **graceful shutdown during OIDC retries**: `main()` creates a SIGTERM-aware context via `signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)`. This makes the parent `ctx` actually cancel on SIGTERM — previously `context.Background()` was used and the ctx.Err() guard was dead code for signal handling. Additionally, the inter-retry sleep (`time.Sleep(retryDelay)`) is replaced by a ctx-aware `select { case <-time.After(retryDelay): case <-ctx.Done(): return error }`. A SIGTERM received during the 2-second backoff sleep now interrupts immediately rather than waiting up to 2s, ensuring `docker compose stop` completes within Docker's 10-second grace window. Log messages distinguish signal abort (`slog.Info`) from retry exhaustion (`slog.Error`).
+
+**Story 12.14 — Full runtime graceful shutdown (HTTP + DB Pool + Rate Limiter):** Completes the SIGTERM story. Three runtime gaps are closed:
+
+1. **HTTP drain** — `srv.ListenAndServe()` runs in a background goroutine. `main()` blocks on `select { case err := <-serverErr; case <-ctx.Done() }`. On SIGTERM, `srv.Shutdown(shutdownCtx)` is called with a 30-second timeout. In-flight HTTP requests complete before the server stops accepting new connections. After 30s, `Shutdown` returns `context.DeadlineExceeded` and shutdown proceeds regardless.
+
+2. **DB pool close** — `pool.Close()` is called explicitly after `srv.Shutdown` returns (not via `defer`). The `defer pool.Close()` pattern was removed because `os.Exit(1)` bypasses defers; explicit sequencing ensures DB connections are always released. The shutdown order is: `srv.Shutdown` → `pool.Close()` → `slog.Info("media gateway stopped")` → `main()` returns (exit code 0).
+
+3. **Rate limiter goroutine** — `NewIPRateLimiter` now accepts `ctx context.Context` (see Rate Limiting section above). The cleanup goroutine exits cleanly when SIGTERM cancels the context.
+
+Shutdown helper: `runShutdownSequence(ctx context.Context, srv *http.Server, poolClose func())` encapsulates the ordered shutdown steps and is unit-testable with a spy closure for `poolClose` (no real DB pool required in tests).
 
 **Canonical Matrix user ID in audit trail (Story 12.9):** After OIDC verification, the upload handler constructs a canonical Matrix user ID before storing `uploader_user_id` in `media_files`:
 

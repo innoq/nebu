@@ -2,6 +2,7 @@ package ratelimit
 
 // Story 12.10 — Per-IP Rate Limiting on Media Gateway
 // Story 12.11 — SEC Fix F-2: XFF trusted-proxy gate
+// Story 12.14 — Full Graceful Shutdown: ctx-aware cleanupLoop
 //
 // Acceptance Criteria implemented:
 //   AC-1 — upload tier: 10 req/s per IP (burst 5), 429 M_LIMIT_EXCEEDED on exhaustion
@@ -19,11 +20,14 @@ package ratelimit
 // Memory management:
 //   Background cleanup goroutine removes entries not seen for >5 minutes to prevent
 //   unbounded sync.Map growth. Runs every 1 minute.
+//   Story 12.14: cleanupLoop now accepts ctx context.Context so the goroutine
+//   exits cleanly when SIGTERM cancels the context (no goroutine leak on shutdown).
 //
 // Dev/test escape hatch:
 //   NEBU_RATE_LIMIT_DISABLED=true makes NewIPRateLimiter return a no-op wrapper.
 
 import (
+	"context"
 	"encoding/json"
 	"math"
 	"net"
@@ -64,25 +68,32 @@ type IPRateLimiter struct {
 }
 
 // newCore creates the core struct and starts the cleanup goroutine.
-func newCore(cfg Config, trustedProxy bool) *IPRateLimiter {
+// Story 12.14 — ctx is threaded through so cleanupLoop exits on SIGTERM (AC-3).
+func newCore(ctx context.Context, cfg Config, trustedProxy bool) *IPRateLimiter {
 	rl := &IPRateLimiter{
 		rate:         cfg.Rate,
 		burst:        cfg.Burst,
 		trustedProxy: trustedProxy,
 	}
 	// Background cleanup: remove stale entries every minute.
-	go rl.cleanupLoop(1*time.Minute, 5*time.Minute)
+	// Story 12.14: ctx cancellation (SIGTERM) stops the goroutine cleanly.
+	go rl.cleanupLoop(ctx, 1*time.Minute, 5*time.Minute)
 	return rl
 }
 
-// cleanupLoop runs forever, calling cleanupOnce at the given interval.
+// cleanupLoop runs until ctx is cancelled, calling cleanupOnce at the given interval.
 // Stale entries are those not seen for longer than maxAge.
-// The goroutine is intentionally not stoppable — it runs for the process lifetime.
-func (rl *IPRateLimiter) cleanupLoop(interval, maxAge time.Duration) {
+// Story 12.14: ctx cancellation exits the goroutine cleanly (no goroutine leak on shutdown).
+func (rl *IPRateLimiter) cleanupLoop(ctx context.Context, interval, maxAge time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-	for range ticker.C {
-		rl.cleanupOnce(maxAge)
+	for {
+		select {
+		case <-ticker.C:
+			rl.cleanupOnce(maxAge)
+		case <-ctx.Done():
+			return
+		}
 	}
 }
 
@@ -153,6 +164,9 @@ func (rl *IPRateLimiter) clientIP(r *http.Request) string {
 
 // NewIPRateLimiter returns a per-IP token-bucket middleware function.
 //
+// The ctx parameter is used to stop the background cleanup goroutine when
+// SIGTERM cancels the context (Story 12.14, AC-3). Pass the main signal context.
+//
 // The trustedProxy parameter controls X-Forwarded-For handling (Story 12.11):
 //   - false (default): XFF is ignored; rate limiting always keys on RemoteAddr.
 //     Use this unless the media gateway sits behind a trusted reverse proxy.
@@ -165,12 +179,12 @@ func (rl *IPRateLimiter) clientIP(r *http.Request) string {
 //	Retry-After: <seconds until next token available>
 //
 // Dev/test escape hatch: NEBU_RATE_LIMIT_DISABLED=true returns a no-op wrapper.
-func NewIPRateLimiter(cfg Config, trustedProxy bool) func(http.Handler) http.Handler {
+func NewIPRateLimiter(ctx context.Context, cfg Config, trustedProxy bool) func(http.Handler) http.Handler {
 	if os.Getenv("NEBU_RATE_LIMIT_DISABLED") == "true" {
 		return func(next http.Handler) http.Handler { return next }
 	}
 
-	rl := newCore(cfg, trustedProxy)
+	rl := newCore(ctx, cfg, trustedProxy)
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
