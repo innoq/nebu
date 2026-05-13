@@ -40,6 +40,7 @@ stages:
   - unit
   - scan
   - verify
+  - validate-iac
   - build
   - integration
 
@@ -397,3 +398,40 @@ integration-test-k8s:
      - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
        when: manual
        allow_failure: true
+
+# ─── IaC Validation ───────────────────────────────────────────────────────────
+# Story 13-1 AC6: Validates OpenTofu formatting and syntax on every push that
+# touches deploy/. No cloud credentials required — tofu validate checks HCL
+# syntax and type correctness only, without connecting to any provider.
+
+validate-iac:
+  stage: validate-iac
+  image: ghcr.io/opentofu/opentofu:1.9
+  cache:
+    key: "tofu-${CI_COMMIT_REF_SLUG}"
+    paths:
+      - deploy/tofu/examples/aws/.terraform/
+      - deploy/tofu/examples/stackit/.terraform/
+      - deploy/tofu/examples/k8s/.terraform/
+  script:
+    - echo "==> OpenTofu version"
+    - tofu version
+    - echo "==> Checking HCL formatting (tofu fmt -check -recursive)"
+    - tofu fmt -check -recursive deploy/tofu/
+    - echo "==> Validating deploy/tofu/examples/aws"
+    - (cd deploy/tofu/examples/aws && tofu init -backend=false && tofu validate)
+    - echo "==> Validating deploy/tofu/examples/stackit"
+    - (cd deploy/tofu/examples/stackit && tofu init -backend=false && tofu validate)
+    - echo "==> Validating deploy/tofu/examples/k8s"
+    - (cd deploy/tofu/examples/k8s && tofu init -backend=false && tofu validate)
+    - echo "==> IaC validation passed."
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - deploy/**/*
+    - if: '$CI_COMMIT_BRANCH =~ /^feature\//'
+      changes:
+        - deploy/**/*
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - deploy/**/*

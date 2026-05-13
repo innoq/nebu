@@ -134,3 +134,51 @@ Intentionally absent: `s3:DeleteObject` (soft-delete only), `s3:ListBucket` (pre
 Policy source: `dev/minio/nebu-app-policy.json`.
 
 _Source: `_bmad-output/planning-artifacts/architecture.md`, §Infrastructure & Deployment, §Build-Container-Strategie, §Resilienz & Selbst-Heilung_
+
+---
+
+## Production Deployment (OpenTofu IaC)
+
+Story 13-1 introduces a production-grade Infrastructure-as-Code layer under `deploy/`. Three target platforms are supported — see [ADR-014](adr/ADR-014-deployment-strategy-iac.md) for the full decision rationale.
+
+### deploy/ Directory Structure
+
+```
+deploy/
+  tofu/
+    modules/
+      nebu-core/      # Shared variables, validations, outputs (no provider resources)
+      nebu-aws/       # AWS: ECS Fargate + RDS + S3 + ACM (Story 13-2)
+      nebu-stackit/   # STACKIT: VMs + Docker Compose + ALB + DBaaS (Story 13-3)
+      nebu-k8s/       # Kubernetes: Helm Release wrapper (Story 13-4)
+    examples/
+      aws/            # AWS quick-start root module
+      stackit/        # STACKIT quick-start root module
+      k8s/            # Kubernetes quick-start root module
+  helm/
+    nebu/             # Standalone Helm Chart (usable without OpenTofu)
+```
+
+### Platform Targets
+
+| Platform | Mechanism | Backend |
+|---|---|---|
+| AWS | ECS Fargate + RDS PostgreSQL | S3 + DynamoDB |
+| STACKIT | VMs + Docker Compose + ALB | STACKIT Object Storage (S3-compatible) |
+| Kubernetes | Helm Chart (`deploy/helm/nebu/`) | S3-compatible or PostgreSQL |
+
+### Local IaC Validation
+
+```bash
+make test-iac-validate   # tofu fmt -check + tofu validate (all examples, no cloud credentials)
+```
+
+Equivalent CI gate: `validate-iac` job in `.gitlab-ci.yml` (runs on every push touching `deploy/**`).
+
+### Shared Module: nebu-core
+
+`deploy/tofu/modules/nebu-core/` defines shared input variables consumed by all platform modules: `nebu_version`, `domain_name`, `admin_email`, `postgres_db_name`, `image_registry`. All variables carry validation constraints (non-empty checks, semver regex for `nebu_version`).
+
+### Helm Chart
+
+`deploy/helm/nebu/` is a standalone Helm Chart usable independently of OpenTofu. Image tag defaults to `""` and must be overridden via `--set image.tag=<version>` or a values file — preventing accidental deployment of an unversioned image.

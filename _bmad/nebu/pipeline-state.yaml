@@ -65,10 +65,14 @@
 # [11-1] 2026-05-08T11:15Z atdd → 4 failing tests (unit x1 + integration x3)
 # [11-1] 2026-05-08T11:05Z create-story → 11-1-db-migration-search-index.md
 # [11-1] 2026-05-08T11:00Z pipeline started
+# [13-1] 2026-05-13T00:00Z completed ✓ (code-review CLEAN cycle 1; 9 MINOR fixed; security-review skipped not-needed; arc42 updated)
+# [13-1] 2026-05-13T00:00Z arc42-update → 07-deployment.md: IaC deploy/ structure + OpenTofu + platform targets + Helm chart
+# [13-1] 2026-05-13T00:00Z security-review → skipped (not-needed)
+# [13-1] 2026-05-13T00:00Z code-review → CLEAN cycle 1 (9 MINOR fixed: DOCKER_TOFU moved, subshell form, image_registry validation, k8s backend "s3", stackit comment, helm tag="", CI cache, story done, README 3-cmd)
 # --- pipeline log (newest first) ---
 story: null
 current_step: null
 completed: []
 cycle_count: 0
 blocked_reason: null
-last_updated: "2026-05-10T23:21Z"
+last_updated: "2026-05-13T00:00Z"

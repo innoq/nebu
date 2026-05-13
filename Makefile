@@ -6,8 +6,9 @@ DOCKER_GO     = docker run --rm -v $(PWD):/workspace -w /workspace golang:1.26-a
 DOCKER_ELIXIR = docker run --rm -v $(PWD):/workspace -w /workspace elixir:1.19-alpine
 DOCKER_BUF    = docker run --rm -v $(PWD):/workspace -w /workspace bufbuild/buf
 DOCKER_NODE   = docker run --rm -v $(PWD):/workspace -w /workspace node:22-alpine
+DOCKER_TOFU   = docker run --rm --entrypoint sh -v $(PWD):/workspace -w /workspace ghcr.io/opentofu/opentofu:1.9
 
-.PHONY: build-gateway build-core redeploy build-admin-css download-fonts download-vendor dev setup test-unit-go test-unit-elixir test-integration test-integration-elixir test-integration-ci test-e2e test-matrix-compat test-load-silber build-element-e2e test-e2e-element build-fluffychat-e2e test-e2e-fluffychat proto gen-api test-compose-ports test-compose-minio
+.PHONY: build-gateway build-core redeploy build-admin-css download-fonts download-vendor dev setup test-unit-go test-unit-elixir test-integration test-integration-elixir test-integration-ci test-e2e test-matrix-compat test-load-silber build-element-e2e test-e2e-element build-fluffychat-e2e test-e2e-fluffychat proto gen-api test-compose-ports test-compose-minio test-iac-validate
 
 ## download-fonts: Download Inter + JetBrains Mono WOFF2 fonts (run once; commit results)
 download-fonts:
@@ -325,3 +326,18 @@ gen-api:
 	$(DOCKER_GO) sh -c "go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest \
 		--config gateway/api/oapi-codegen.yaml \
 		gateway/api/openapi.yaml"
+
+## test-iac-validate: Validate OpenTofu IaC files — format check + syntax validation.
+## Runs tofu fmt -check (formatting) and tofu validate (syntax/types) for all example directories.
+## No cloud credentials required — tofu validate checks syntax only, not provider resources.
+## Story 13-1 AC3 + AC7: equivalent to the validate-iac CI job.
+test-iac-validate:
+	@echo "==> OpenTofu: fmt check (recursive)"
+	$(DOCKER_TOFU) -c "tofu fmt -check -recursive deploy/tofu/"
+	@echo "==> OpenTofu: validate deploy/tofu/examples/aws"
+	$(DOCKER_TOFU) -c "cd deploy/tofu/examples/aws && tofu init -backend=false && tofu validate"
+	@echo "==> OpenTofu: validate deploy/tofu/examples/stackit"
+	$(DOCKER_TOFU) -c "cd deploy/tofu/examples/stackit && tofu init -backend=false && tofu validate"
+	@echo "==> OpenTofu: validate deploy/tofu/examples/k8s"
+	$(DOCKER_TOFU) -c "cd deploy/tofu/examples/k8s && tofu init -backend=false && tofu validate"
+	@echo "==> IaC validation passed."
