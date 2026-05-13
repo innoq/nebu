@@ -435,3 +435,28 @@ validate-iac:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       changes:
         - deploy/**/*
+
+# Story 13-4a: Helm chart lint and template render check.
+# Uses alpine/helm which ships only helm — separate job from validate-iac (different image).
+# AC1: helm lint 0 warnings; AC2: helm template renders valid YAML.
+validate-helm:
+  stage: validate-iac
+  image: alpine/helm:3.17
+  script:
+    - echo "==> Helm version"
+    - helm version
+    - echo "==> Linting deploy/helm/nebu/"
+    - helm lint deploy/helm/nebu/
+    - echo "==> Template render check deploy/helm/nebu/"
+    - helm template nebu deploy/helm/nebu/ > /dev/null
+    - echo "==> Helm validation passed."
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - deploy/**/*
+    - if: '$CI_COMMIT_BRANCH =~ /^feature\//'
+      changes:
+        - deploy/**/*
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - deploy/**/*

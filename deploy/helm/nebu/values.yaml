@@ -4,16 +4,13 @@
 image:
   registry: registry.gitlab.com/philippb/open-chat
   pullPolicy: IfNotPresent
-  # Tag must be overridden via --set image.tag=<version> or a values file.
-  # Leaving this empty prevents accidental deployment of an unversioned image.
-  tag: ""
 
 gateway:
-  replicaCount: 2
-  service:
-    type: ClusterIP
-    port: 8080
-    matrixPort: 8008
+  # image.tag must be overridden via --set gateway.image.tag=<version> or a values file.
+  # Leaving this empty prevents accidental deployment of an unversioned image.
+  image:
+    tag: ""
+  replicaCount: 1
   resources:
     requests:
       cpu: "250m"
@@ -23,29 +20,16 @@ gateway:
       memory: "512Mi"
   autoscaling:
     enabled: false
-    minReplicas: 2
+    minReplicas: 1
     maxReplicas: 10
     targetCPUUtilizationPercentage: 70
 
-mediaGateway:
-  replicaCount: 1
-  service:
-    type: ClusterIP
-    port: 8081
-  resources:
-    requests:
-      cpu: "250m"
-      memory: "256Mi"
-    limits:
-      cpu: "1000m"
-      memory: "512Mi"
-
 core:
-  replicaCount: 2
-  service:
-    type: ClusterIP
-    grpcPort: 9000
-    httpPort: 4000
+  # image.tag must be overridden via --set core.image.tag=<version> or a values file.
+  # Leaving this empty prevents accidental deployment of an unversioned image.
+  image:
+    tag: ""
+  replicaCount: 1
   resources:
     requests:
       cpu: "500m"
@@ -55,9 +39,23 @@ core:
       memory: "1Gi"
   autoscaling:
     enabled: false
-    minReplicas: 2
+    minReplicas: 1
     maxReplicas: 10
     targetCPUUtilizationPercentage: 70
+
+# Non-secret application configuration (rendered into ConfigMap)
+config:
+  oidcIssuer: ""
+  serverName: ""
+  # coreGrpcAddr is intentionally left empty: the ConfigMap derives the address from the
+  # release name as "{{ fullname }}-core:9000" — a template expression that cannot be a
+  # values default. Override only if you deploy core outside this chart.
+  coreGrpcAddr: ""
+
+# Gateway Service configuration
+service:
+  type: ClusterIP
+  port: 8008
 
 ingress:
   enabled: true
@@ -68,8 +66,9 @@ ingress:
     enabled: false
     secretName: nebu-tls
 
-postgresql:
-  # Set external: true and provide host/port/database when using an external DB.
+postgres:
+  # Set external: true to use an external database (default: true).
+  # Set to false in local/dev environments to include a bundled PostgreSQL.
   external: true
   host: ""
   port: 5432
@@ -78,7 +77,6 @@ postgresql:
   secretName: nebu-db-credentials
 
 oidc:
-  issuer: ""
   # Name of a Kubernetes Secret with keys: client_id, client_secret
   secretName: nebu-oidc-credentials
 

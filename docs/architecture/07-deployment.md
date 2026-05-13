@@ -308,4 +308,26 @@ Day-2 operations (updates, pg_dump backup, teardown) are documented in `deploy/t
 
 ### Helm Chart
 
-`deploy/helm/nebu/` is a standalone Helm Chart usable independently of OpenTofu. Image tag defaults to `""` and must be overridden via `--set image.tag=<version>` or a values file — preventing accidental deployment of an unversioned image.
+`deploy/helm/nebu/` is a standalone Helm Chart usable independently of OpenTofu.
+
+**Kubernetes resource topology:**
+
+| Resource | Name pattern | Ports |
+|---|---|---|
+| Deployment | `{release}-nebu-gateway` | 8008 (Matrix API) |
+| Deployment | `{release}-nebu-core` | 9000 (gRPC), 4000 (HTTP/health) |
+| Service (ClusterIP) | `{release}-nebu-gateway` | 8008 → gateway pods |
+| Service (ClusterIP) | `{release}-nebu-core` | 9000 (gRPC) + 4000 (HTTP) → core pods |
+| ConfigMap | `{release}-nebu-config` | `NEBU_OIDC_ISSUER`, `NEBU_SERVER_NAME`, `NEBU_CORE_GRPC_ADDR` |
+
+`NEBU_CORE_GRPC_ADDR` is derived deterministically from the release name as `{release}-nebu-core:9000` — rendered by the ConfigMap template, not a values entry. This replaces the Docker Compose default of `core:9000` for Kubernetes deployments.
+
+Image tags must be set independently per component via `--set gateway.image.tag=X.Y.Z --set core.image.tag=X.Y.Z` (or a values file). Omitting either tag causes `helm template`/`helm install` to fail with an explicit error — preventing silent deployment of unversioned images.
+
+```bash
+helm install nebu deploy/helm/nebu/ \
+  --set gateway.image.tag=1.0.0 \
+  --set core.image.tag=1.0.0 \
+  --set config.oidcIssuer=https://your-idp.example.com \
+  --set config.serverName=your-server-name
+```

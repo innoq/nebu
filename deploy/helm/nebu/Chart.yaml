@@ -3,7 +3,7 @@ name: nebu
 description: Nebu — Enterprise-grade, sovereign Matrix-compatible chat server.
 type: application
 version: 0.1.0
-appVersion: "0.1.0"
+appVersion: "latest"
 keywords:
   - matrix
   - chat
