@@ -1,6 +1,15 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-13
+# [13-3a] 2026-05-13T16:00Z committed ✓ (code-review CLEAN cycle 1 — 2 MAJOR + 6 MINOR fixed; arc42 07-deployment Stackit section added; story done)
+# [13-3a] 2026-05-13T15:55Z arc42-update → done (07-deployment: Stackit VM+Networking module documented; HTTPS upgrade path noted)
+# [13-3a] 2026-05-13T15:50Z security-review → skipped (not-needed)
+# [13-3a] 2026-05-13T15:45Z code-review → CLEAN (cycle 1) — MAJOR-1: project_id on key_pair (global resource, not supported); MAJOR-2: PROTOCOL_HTTPS beta not in schema, uses TCP+upgrade-path comment; MIN-1: service_account_key_path; MIN-2: network_cidr var; MIN-3: availability_zone var; MIN-4: lifecycle.ignore_changes removed; MIN-5: vm_plan_id var; MIN-6: health check comment updated; tofu fmt+validate CLEAN
+# [13-3a] 2026-05-13T15:06Z ci-gate → ✓ test-iac-validate (tofu fmt+validate: aws+stackit+k8s CLEAN)
+# [13-3a] 2026-05-13T15:05Z dev-story → done (cycle 0) — main.tf, variables.tf, outputs.tf, terraform.tfvars.example created; provider fixed (service_account_token); tofu fmt+validate pass
+# [13-3a] 2026-05-13T15:00Z test-review → skipped (atdd skipped)
+# [13-3a] 2026-05-13T15:00Z pipeline started
+# 13-2c 2026-05-13T10:49Z epic-loop → story done (ALB+Secrets Manager+ECS services+RUNBOOK, Kassandra CLEAN)
 # [13-2c] 2026-05-13T14:55Z committed ✓ (Code CLEAN 0-cycle+Kassandra CLEAN+arc42 07-deployment)
 # [13-2c] 2026-05-13T14:50Z arc42-update → done (07-deployment: AWS ALB+Secrets Manager+ECS services complete topology documented)
 # [13-2c] 2026-05-13T14:45Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 3 LOW — 3 LOW fixed inline)
@@ -371,9 +380,13 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: null
-current_step: null
-completed: []
-cycle_count: 0
+story: "13-3a"
+current_step: "done"
+completed:
+  - dev-story
+  - ci-gate
+  - code-review
+  - arc42-update
+cycle_count: 1
 blocked_reason: null
-last_updated: "2026-05-13T10:49Z"
+last_updated: "2026-05-13T16:00Z"

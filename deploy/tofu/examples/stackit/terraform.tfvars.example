@@ -1,9 +1,38 @@
 # Copy this file to terraform.tfvars and fill in the values.
 # Do NOT commit terraform.tfvars — it contains secrets.
 
-stackit_region   = "eu01"
-nebu_version     = "0.3.0"
-domain_name      = "chat.example.com"
-admin_email      = "admin@example.com"
-postgres_db_name = "nebu"
-image_registry   = "registry.gitlab.com/myorg/open-chat"
+# Required: your STACKIT project UUID (visible in the STACKIT portal)
+stackit_project_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+# Required: path to your STACKIT service account key JSON file
+# Download from: STACKIT portal → IAM → Service Accounts → Keys → Create Key (JSON)
+# Keep this file out of version control.
+stackit_key_path = "/path/to/stackit-sa-key.json"
+
+# Required: contents of your SSH public key (e.g. ~/.ssh/id_ed25519.pub)
+ssh_public_key = "ssh-ed25519 AAAA... operator@example.com"
+
+# Required: Ubuntu 24.04 LTS image ID for your STACKIT region.
+# Look up the current ID: STACKIT portal → Compute → Images → Ubuntu 24.04 LTS
+ubuntu_image_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+# Required for production (HTTPS at ALB):
+# Name of the Stackit-managed TLS certificate for ALB HTTPS termination.
+# Obtain via: STACKIT portal → Load Balancing → Certificates → Upload/Create
+# Leave empty for `tofu validate` only — must be set before `tofu apply`.
+stackit_tls_certificate_arn = ""
+
+# Optional: deployment environment label (used in resource names)
+environment = "dev"
+
+# Optional: STACKIT region
+region = "eu01"
+
+# Optional: availability zone within the region
+availability_zone = "eu01-1"
+
+# Optional: network CIDR block
+network_cidr = "10.0.0.0/24"
+
+# Optional: VM machine type (run `stackit compute server machine-types list` for options)
+vm_plan_id = "g2i.2"

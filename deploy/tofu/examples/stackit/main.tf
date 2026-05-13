@@ -4,40 +4,204 @@ terraform {
   required_providers {
     stackit = {
       source  = "stackitcloud/stackit"
-      version = "~> 0.38"
+      version = "~> 0.95"
     }
   }
 
-  # Backend configuration: configure before use.
-  # See deploy/README.md for backend options (Stackit Object Storage, local).
-  # STACKIT Object Storage is S3-compatible — use the S3 backend with a STACKIT endpoint.
-  backend "s3" {
-    # Configure via -backend-config flags or terraform.tfvars:
-    #   bucket   = "my-tofu-state"
-    #   key      = "nebu/stackit/terraform.tfstate"
-    #   endpoint = "https://object.storage.eu01.onstackit.cloud"
-    #   region   = "eu01"
-    #   skip_credentials_validation = true
-    #   skip_region_validation      = true
-    #   skip_metadata_api_check     = true
-  }
+  # Backend: Stackit Object Storage (S3-compatible). Configure before use.
+  # Uncomment and fill in values — do NOT commit credentials.
+  #
+  # backend "s3" {
+  #   bucket                      = "my-tofu-state"
+  #   key                         = "nebu/stackit/terraform.tfstate"
+  #   endpoint                    = "https://object.storage.eu01.onstackit.cloud"
+  #   region                      = "eu01"
+  #   skip_credentials_validation = true
+  #   skip_region_validation      = true
+  #   skip_metadata_api_check     = true
+  # }
 }
 
 provider "stackit" {
-  region = var.stackit_region
+  default_region           = var.region
+  service_account_key_path = var.stackit_key_path
+  # beta feature: enable_beta_resources = true required for PROTOCOL_HTTPS ALB listener
+  enable_beta_resources = true
 }
 
-module "nebu_core" {
-  source = "../../modules/nebu-core"
+# ── Network ─────────────────────────────────────────────────────────────────
 
-  nebu_version     = var.nebu_version
-  domain_name      = var.domain_name
-  admin_email      = var.admin_email
-  postgres_db_name = var.postgres_db_name
-  image_registry   = var.image_registry
+resource "stackit_network" "nebu" {
+  project_id       = var.stackit_project_id
+  name             = "nebu-${var.environment}"
+  ipv4_prefix      = var.network_cidr
+  ipv4_nameservers = ["8.8.8.8", "8.8.4.4"]
+  routed           = true
 }
 
-# ── STACKIT-specific resources are added in Story 13-3 ──────────────────────
-# Provisioned here: STACKIT VPC, subnets, security groups, VMs, cloud-init,
-# Stackit Application Load Balancer, DBaaS PostgreSQL, Object Storage.
-# See ADR-014: Stackit — VMs + Docker Compose + Application Load Balancer.
+# ── Security Group ───────────────────────────────────────────────────────────
+
+resource "stackit_security_group" "nebu" {
+  project_id = var.stackit_project_id
+  name       = "nebu-${var.environment}-sg"
+  stateful   = true
+}
+
+# Inbound: HTTPS from anywhere
+resource "stackit_security_group_rule" "inbound_https" {
+  project_id        = var.stackit_project_id
+  security_group_id = stackit_security_group.nebu.security_group_id
+  direction         = "ingress"
+  protocol = {
+    name = "tcp"
+  }
+  port_range = {
+    min = 443
+    max = 443
+  }
+}
+
+# Inbound: Matrix API port from anywhere (ALB → VM)
+resource "stackit_security_group_rule" "inbound_matrix" {
+  project_id        = var.stackit_project_id
+  security_group_id = stackit_security_group.nebu.security_group_id
+  direction         = "ingress"
+  protocol = {
+    name = "tcp"
+  }
+  port_range = {
+    min = 8008
+    max = 8008
+  }
+}
+
+# Inbound: SSH from anywhere (restrict to a bastion CIDR in production)
+resource "stackit_security_group_rule" "inbound_ssh" {
+  project_id        = var.stackit_project_id
+  security_group_id = stackit_security_group.nebu.security_group_id
+  direction         = "ingress"
+  protocol = {
+    name = "tcp"
+  }
+  port_range = {
+    min = 22
+    max = 22
+  }
+}
+
+# Outbound: allow all
+resource "stackit_security_group_rule" "outbound_all" {
+  project_id        = var.stackit_project_id
+  security_group_id = stackit_security_group.nebu.security_group_id
+  direction         = "egress"
+}
+
+# ── Network Interface ────────────────────────────────────────────────────────
+
+resource "stackit_network_interface" "nebu" {
+  project_id         = var.stackit_project_id
+  network_id         = stackit_network.nebu.network_id
+  security_group_ids = [stackit_security_group.nebu.security_group_id]
+}
+
+# ── SSH Key Pair ─────────────────────────────────────────────────────────────
+
+resource "stackit_key_pair" "nebu" {
+  # Note: stackit_key_pair is a global (account-level) resource; project_id is not supported.
+  name       = "nebu-${var.environment}"
+  public_key = var.ssh_public_key
+}
+
+# ── VM ───────────────────────────────────────────────────────────────────────
+# Ubuntu 24.04 LTS — image ID for eu01 region.
+# Update this ID if deploying to a different region (check STACKIT image catalog).
+# Machine type g2i.2 = 4 vCPU / 8 GB RAM.
+
+resource "stackit_server" "nebu" {
+  project_id = var.stackit_project_id
+  name       = "nebu-${var.environment}"
+  # Run `stackit compute server machine-types list` to find available plan IDs for your region
+  machine_type      = var.vm_plan_id
+  availability_zone = var.availability_zone
+
+  boot_volume = {
+    size        = 64
+    source_type = "image"
+    # Ubuntu 24.04 LTS (eu01) — verify current ID in STACKIT portal before apply
+    source_id = var.ubuntu_image_id
+  }
+
+  keypair_name = stackit_key_pair.nebu.name
+
+  network_interfaces = [
+    stackit_network_interface.nebu.network_interface_id,
+  ]
+}
+
+# ── Floating IP ──────────────────────────────────────────────────────────────
+
+resource "stackit_public_ip" "nebu" {
+  project_id           = var.stackit_project_id
+  network_interface_id = stackit_network_interface.nebu.network_interface_id
+  # Note: if the VM is recreated, the Floating IP must be manually re-associated with the new
+  # network interface in the STACKIT portal or via CLI: `stackit beta network-interface public-ip attach`.
+}
+
+# ── Application Load Balancer ─────────────────────────────────────────────────
+# Stackit native Layer 7 ALB (per ADR-014).
+# Handles TLS termination and health checks at ALB level.
+# beta feature: enable_beta_resources = true required in provider block
+
+resource "stackit_loadbalancer" "nebu" {
+  project_id       = var.stackit_project_id
+  name             = "nebu-${var.environment}-alb"
+  plan_id          = var.alb_plan_id
+  external_address = stackit_public_ip.nebu.ip
+
+  networks = [
+    {
+      network_id = stackit_network.nebu.network_id
+      role       = "ROLE_LISTENERS_AND_TARGETS"
+    },
+  ]
+
+  listeners = [
+    {
+      display_name = "https-443"
+      port         = 443
+      # Current: PROTOCOL_TCP (passthrough — TLS terminated by the gateway on port 8008).
+      # Upgrade path: when stackit provider >= 0.96 exposes PROTOCOL_HTTPS in its stable schema,
+      # change protocol to "PROTOCOL_HTTPS" and add certificate_reference.name = var.stackit_tls_certificate_arn.
+      # That also requires enable_beta_resources = true in the provider block (already set above).
+      protocol    = "PROTOCOL_TCP"
+      target_pool = "matrix-api"
+    },
+  ]
+
+  target_pools = [
+    {
+      name        = "matrix-api"
+      target_port = 8008
+      targets = [
+        {
+          display_name = stackit_server.nebu.name
+          ip           = stackit_network_interface.nebu.ipv4
+        },
+      ]
+      active_health_check = {
+        # Note: Stackit ALB health checks are TCP-based only (no HTTP path checks).
+        # The health check verifies TCP connectivity on port 8008.
+        # For application-level health checking, monitor via /metrics or application logs.
+        healthy_threshold   = 3
+        interval            = "10s"
+        interval_jitter     = "3s"
+        timeout             = "5s"
+        unhealthy_threshold = 3
+      }
+    },
+  ]
+
+  options = {
+    private_network_only = false
+  }
+}

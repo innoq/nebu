@@ -265,6 +265,24 @@ Secrets Manager (nebu/{env}/*) ──► ECS task execution role (secretsmanager
 
 Day-2 operations (rolling updates, secret rotation, teardown) are documented in `deploy/tofu/examples/aws/RUNBOOK.md`.
 
+### Stackit VM + Networking Module (nebu-stackit — 13-3a)
+
+`deploy/tofu/examples/stackit/main.tf` provisions the STACKIT compute and network foundation:
+
+- `stackit_network` — private routed network with configurable CIDR (`var.network_cidr`, default `10.0.0.0/24`)
+- `stackit_security_group` + rules — stateful SG with inbound rules for 443 (HTTPS), 8008 (Matrix API), 22 (SSH); egress unrestricted
+- `stackit_network_interface` — VM NIC attached to the network and SG
+- `stackit_key_pair` — account-level SSH key pair (global resource; no `project_id`)
+- `stackit_server` — Ubuntu 24.04 LTS VM; machine type via `var.vm_plan_id` (default `g2i.2`); AZ via `var.availability_zone` (default `eu01-1`)
+- `stackit_public_ip` — Floating IP associated to the VM NIC. If the VM is recreated, re-attach manually via STACKIT portal or `stackit beta network-interface public-ip attach`
+- `stackit_loadbalancer` — ALB with `PROTOCOL_TCP` listener on port 443 → target pool on VM port 8008; health check is TCP-only (no HTTP path checks); plan via `var.alb_plan_id` (default `p10`)
+
+**HTTPS at ALB (upgrade path):** `enable_beta_resources = true` is already set in the provider block. Once `stackit` provider >= 0.96 exposes `PROTOCOL_HTTPS` in its stable schema, change the listener protocol to `PROTOCOL_HTTPS` and set `certificate_reference.name = var.stackit_tls_certificate_arn` (Stackit-managed certificate ARN). Until then, TLS is terminated at the gateway on port 8008.
+
+**Authentication:** provider uses `service_account_key_path` (JSON key file) instead of a token. Path configured via `var.stackit_key_path` (sensitive).
+
+Key variables: `stackit_project_id`, `stackit_key_path`, `ssh_public_key`, `ubuntu_image_id`, `network_cidr`, `availability_zone`, `vm_plan_id`, `alb_plan_id`, `stackit_tls_certificate_arn`.
+
 ### Helm Chart
 
 `deploy/helm/nebu/` is a standalone Helm Chart usable independently of OpenTofu. Image tag defaults to `""` and must be overridden via `--set image.tag=<version>` or a values file — preventing accidental deployment of an unversioned image.
