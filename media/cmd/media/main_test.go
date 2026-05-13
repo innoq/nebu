@@ -450,3 +450,150 @@ func TestLogIfRateLimitDisabled_NoWarning_WhenEnabled(t *testing.T) {
 		t.Errorf("[AT-12-12-8] unexpected rate-limit-disabled warning when NEBU_RATE_LIMIT_DISABLED=false: %q", output)
 	}
 }
+
+// ─── Story 12.13: Media Gateway Graceful Shutdown — Signal-Aware OIDC Retry ──
+//
+// Two changes make SIGTERM live during the OIDC retry loop:
+//   1. main() creates ctx via signal.NotifyContext — so the context cancels on SIGTERM.
+//   2. The time.Sleep between retries is replaced by a ctx-aware select.
+//
+// Tests verify:
+//   AT-12-13-1: ctx cancelled during retry sleep exits immediately (< 200ms)
+//   AT-12-13-3: no signal → all retries exhausted, no early exit
+//   AT-12-13-4: ctx already cancelled before sleep → no block on retryDelay
+
+// AT-12-13-1 — SIGTERM (simulated via context cancel) during retry sleep exits immediately.
+//
+// AC-2 — Given the parent context is cancelled while initOIDCVerifierWith is sleeping
+// between retries (retryDelay = 500ms), when ctx.Done() fires, then the function
+// returns within 200ms (not after the full 500ms sleep).
+//
+// RED: Currently initOIDCVerifierWith uses time.Sleep(retryDelay) which is not
+// ctx-aware. After replacing with a select, this test will PASS (the sleep is
+// interrupted). With the old implementation it takes ~500ms and FAILS the threshold.
+func TestInitOIDCVerifierWith_SleepInterrupted_OnCtxCancel(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	const retryDelay = 500 * time.Millisecond
+
+	calls := 0
+	mockProvider := func(_ context.Context, _ string) (*oidc.Provider, error) {
+		calls++
+		if calls == 1 {
+			// Cancel the parent context immediately after the first attempt fails,
+			// simulating a SIGTERM arriving at the start of the inter-retry sleep.
+			// With a ctx-aware sleep, the select will fire ctx.Done() and return.
+			// With time.Sleep, we block the full 500ms.
+			cancel()
+		}
+		return nil, fmt.Errorf("mock: provider unavailable (call %d)", calls)
+	}
+
+	start := time.Now()
+	_, _, err := initOIDCVerifierWith(
+		ctx,
+		"http://localhost:1",
+		"nebu",
+		"name",
+		3,                   // maxAttempts — should stop after 1
+		retryDelay,          // 500ms inter-attempt sleep that must be interrupted
+		10*time.Millisecond, // per-attempt timeout (fast)
+		mockProvider,
+	)
+	elapsed := time.Since(start)
+
+	// With ctx-aware sleep: ~10ms (attempt timeout) + negligible select wakeup = < 200ms.
+	// With time.Sleep: ~10ms + 500ms sleep = ~510ms — FAILS this assertion.
+	if elapsed > 200*time.Millisecond {
+		t.Errorf("[AT-12-13-1] elapsed %v > 200ms — ctx-aware sleep must interrupt on cancel (current time.Sleep blocks the full 500ms retryDelay)", elapsed)
+	}
+	if err == nil {
+		t.Fatal("[AT-12-13-1] expected non-nil error when context is cancelled during retry sleep")
+	}
+	if calls != 1 {
+		t.Errorf("[AT-12-13-1] expected exactly 1 provider call before cancellation, got %d", calls)
+	}
+}
+
+// AT-12-13-3 — No signal → all retries exhausted, behaviour unchanged from 12.12.
+//
+// AC-3 — Given SIGTERM is NOT received and Dex remains unreachable,
+// when all retries are exhausted, then the function returns an error after
+// all maxAttempts have been tried (not before).
+func TestInitOIDCVerifierWith_NoSignal_ExhaustsAllRetries(t *testing.T) {
+	t.Parallel()
+
+	calls := 0
+	mockProvider := func(_ context.Context, _ string) (*oidc.Provider, error) {
+		calls++
+		return nil, fmt.Errorf("mock: always fails (call %d)", calls)
+	}
+
+	_, attempts, err := initOIDCVerifierWith(
+		context.Background(), // no cancellation — must run all retries
+		"http://localhost:1",
+		"nebu",
+		"name",
+		3,              // maxAttempts
+		0*time.Second,  // zero retryDelay: time.After(0) fires immediately
+		0*time.Second,  // zero attemptTimeout: context.WithTimeout(ctx, 0) fires immediately
+		mockProvider,
+	)
+
+	if err == nil {
+		t.Fatal("[AT-12-13-3] expected non-nil error when all retries fail")
+	}
+	if attempts != 3 {
+		t.Errorf("[AT-12-13-3] expected 3 attempts, got %d", attempts)
+	}
+	if calls != 3 {
+		t.Errorf("[AT-12-13-3] expected provider called 3 times, got %d", calls)
+	}
+}
+
+// AT-12-13-4 — Context already cancelled before sleep → no block on retryDelay.
+//
+// AC-2 (pre-cancelled variant) — Given the parent context is cancelled before
+// the inter-retry sleep fires, when the select is reached, then ctx.Done() fires
+// immediately without waiting for time.After(retryDelay).
+func TestInitOIDCVerifierWith_CancelledCtxDuringSleep_NoBlockOnSleep(t *testing.T) {
+	t.Parallel()
+
+	// Context cancelled immediately after first attempt starts.
+	ctx, cancel := context.WithCancel(context.Background())
+
+	const retryDelay = 500 * time.Millisecond
+
+	calls := 0
+	mockProvider := func(_ context.Context, _ string) (*oidc.Provider, error) {
+		calls++
+		cancel() // cancel synchronously on first call, before we return
+		return nil, fmt.Errorf("mock: provider unavailable (call %d)", calls)
+	}
+
+	start := time.Now()
+	_, _, err := initOIDCVerifierWith(
+		ctx,
+		"http://localhost:1",
+		"nebu",
+		"name",
+		3,                   // maxAttempts — should stop after 1
+		retryDelay,          // 500ms sleep that must NOT be honoured
+		10*time.Millisecond, // per-attempt timeout (fast)
+		mockProvider,
+	)
+	elapsed := time.Since(start)
+
+	// Without ctx-aware sleep, we'd wait 500ms before noticing the cancellation.
+	// With it, we return immediately after the select fires ctx.Done().
+	if elapsed > 200*time.Millisecond {
+		t.Errorf("[AT-12-13-4] elapsed %v > 200ms — ctx-aware sleep must not block when ctx is already done (current time.Sleep blocks full 500ms)", elapsed)
+	}
+	if err == nil {
+		t.Fatal("[AT-12-13-4] expected non-nil error when context cancelled before sleep")
+	}
+	if calls != 1 {
+		t.Errorf("[AT-12-13-4] expected 1 provider call, got %d", calls)
+	}
+}

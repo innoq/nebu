@@ -205,6 +205,8 @@ The upload handler uses a `TokenVerifier` interface (`HandlerConfig.OIDCVerifier
 
 Story 12.12 (F-3) adds a **10-second per-attempt timeout** to each `oidc.NewProvider` call via `context.WithTimeout(ctx, 10s)`. A provider that accepts the TCP connection but never sends a response (hung Dex, firewall issue) can no longer block startup indefinitely — each attempt fails within 10s, and the 5-retry cycle completes within ≤60s total. Parent context cancellation (SIGTERM during startup) is checked at the top of every retry iteration for immediate exit.
 
+Story 12.13 completes **graceful shutdown during OIDC retries**: `main()` creates a SIGTERM-aware context via `signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)`. This makes the parent `ctx` actually cancel on SIGTERM — previously `context.Background()` was used and the ctx.Err() guard was dead code for signal handling. Additionally, the inter-retry sleep (`time.Sleep(retryDelay)`) is replaced by a ctx-aware `select { case <-time.After(retryDelay): case <-ctx.Done(): return error }`. A SIGTERM received during the 2-second backoff sleep now interrupts immediately rather than waiting up to 2s, ensuring `docker compose stop` completes within Docker's 10-second grace window. Log messages distinguish signal abort (`slog.Info`) from retry exhaustion (`slog.Error`).
+
 **Canonical Matrix user ID in audit trail (Story 12.9):** After OIDC verification, the upload handler constructs a canonical Matrix user ID before storing `uploader_user_id` in `media_files`:
 
 ```

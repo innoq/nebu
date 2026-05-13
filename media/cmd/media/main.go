@@ -7,8 +7,10 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -188,7 +190,12 @@ func main() {
 
 	slog.Info("storage backend initialised", "backend", cfg.storageBackend)
 
-	ctx := context.Background()
+	// Story 12.13 — Signal-aware context: SIGTERM (and SIGINT/Ctrl-C) cancel ctx,
+	// which propagates into the OIDC retry loop and its inter-retry sleep.
+	// stop() must be deferred to clean up the OS signal registration.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	pool, err := pgxpool.New(ctx, dbURL)
 	if err != nil {
 		slog.Error("failed to connect to database", "err", err)
@@ -359,8 +366,15 @@ func initOIDCVerifier(ctx context.Context, issuer, clientID, claimName string, m
 	}
 	v, _, err := initOIDCVerifierWith(ctx, issuer, clientID, claimName, maxAttempts, retryDelay, 10*time.Second, oidc.NewProvider)
 	if err != nil {
-		slog.Error("FATAL: media: OIDC provider unreachable after retries",
-			"issuer", issuer, "attempts", maxAttempts, "err", err)
+		// Story 12.13 — distinguish SIGTERM abort from retry exhaustion for observability.
+		// Both paths exit with os.Exit(1); the log message tells the operator why.
+		if ctx.Err() != nil {
+			slog.Info("media: OIDC init aborted by signal — shutting down",
+				"issuer", issuer, "reason", ctx.Err())
+		} else {
+			slog.Error("FATAL: media: OIDC provider unreachable after retries",
+				"issuer", issuer, "attempts", maxAttempts, "err", err)
+		}
 		os.Exit(1)
 		return nil // unreachable
 	}
@@ -422,7 +436,15 @@ func initOIDCVerifierWith(
 		slog.Warn("media: OIDC provider unavailable, retrying",
 			"attempt", attempt, "max", maxAttempts, "err", lastErr)
 		if attempt < maxAttempts {
-			time.Sleep(retryDelay)
+			// Story 12.13 — ctx-aware sleep: SIGTERM cancels ctx which fires ctx.Done(),
+			// interrupting the sleep immediately instead of blocking for retryDelay.
+			// Without this, a SIGTERM during the 2s backoff would delay process exit by up
+			// to 2s, causing docker compose stop to hard-kill after the 10s grace window.
+			select {
+			case <-time.After(retryDelay):
+			case <-ctx.Done():
+				return nil, attempt, fmt.Errorf("OIDC verifier init aborted: %w", ctx.Err())
+			}
 		}
 	}
 	return nil, maxAttempts, lastErr
