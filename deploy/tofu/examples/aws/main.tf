@@ -33,7 +33,15 @@ module "nebu_core" {
   image_registry   = var.image_registry
 }
 
-# ── AWS-specific resources are added in Story 13-2 ──────────────────────────
-# Provisioned here: VPC, subnets, security groups, ECS Fargate cluster,
-# task definitions, ALB, ACM certificate, RDS PostgreSQL, S3 media bucket.
-# See ADR-014: AWS — ECS Fargate.
+module "nebu_aws" {
+  source = "../../modules/nebu-aws"
+
+  vpc_cidr    = var.vpc_cidr
+  environment = var.environment
+
+  common_tags = {
+    Project     = "nebu"
+    Environment = var.environment
+    ManagedBy   = "opentofu"
+  }
+}

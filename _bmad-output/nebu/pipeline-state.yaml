@@ -1,6 +1,20 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-13
+# [13-2a] 2026-05-13T11:30Z epic-loop → story done (code-review CLEAN cycle 1 — 9 MINOR fixed: env naming, aws_region removed, CIDR validation, NAT GW comment, RDS egress scoped, ECS ports 8008+9000, route table length(), AZ postcondition, eip depends_on removed; arc42 07-deployment updated)
+# [13-2a] 2026-05-13T11:20Z code-review → CLEAN (cycle 1) — 9 MINOR fixed, security-review skipped (not-needed)
+# [13-2a] 2026-05-13T11:06Z ci-gate → ✓ test-iac-validate (tofu fmt+validate: aws+stackit+k8s CLEAN)
+# [13-2a] 2026-05-13T11:05Z dev-story → done (cycle 0) — network.tf, outputs.tf, variables.tf created; main.tf updated; tofu fmt+validate pass
+# [13-2a] 2026-05-13T11:00Z test-review → skipped (atdd skipped)
+# 13-1 2026-05-13T10:19Z epic-loop → story done (OpenTofu project structure + shared modules, 9 MINOR fixed, Arc42 updated)
+# [13-1] 2026-05-13T10:20Z ux-gate → skipped (no UI)
+# [13-1] 2026-05-13T10:20Z ci-gate → ✓ test-iac-validate (tofu fmt+validate: aws+stackit+k8s CLEAN)
+# [13-1] 2026-05-13T10:15Z dev-story → done (cycle 0) — deploy/ structure, nebu-core vars, AWS/Stackit/K8s examples, Helm chart scaffold, make test-iac-validate, validate-iac CI job
+# [13-1] 2026-05-13T10:01Z test-review → skipped (atdd skipped)
+# [13-1] 2026-05-13T10:01Z atdd → skipped (infra)
+# [13-1] 2026-05-13T10:01Z oracle-gate → skipped (no Matrix feature)
+# [13-1] 2026-05-13T10:00Z pipeline started
+# last_updated: 2026-05-13
 # [12-16] 2026-05-13T17:00Z committed ✓ (ATDD+Code CLEAN 1 cycle+Kassandra CLEAN 4L)
 # [12-16] 2026-05-13T16:50Z arc42-update → done (05-building-blocks, 08-concepts, matrix-api-scope)
 # [12-16] 2026-05-13T16:35Z security-review → Kassandra CLEAN (0C/0H/4L all non-blocking)
@@ -339,9 +353,17 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: null
-current_step: null
-completed: []
-cycle_count: 0
+story: "13-2a"
+current_step: "completed"
+completed:
+  - classify
+  - dev-story
+  - ci-gate
+  - oracle-gate
+  - atdd
+  - test-review
+  - code-review
+  - arc42-update
+cycle_count: 1
 blocked_reason: null
-last_updated: "2026-05-13T14:14Z"
+last_updated: "2026-05-13T11:30Z"

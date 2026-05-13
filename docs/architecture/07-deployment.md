@@ -179,6 +179,10 @@ Equivalent CI gate: `validate-iac` job in `.gitlab-ci.yml` (runs on every push t
 
 `deploy/tofu/modules/nebu-core/` defines shared input variables consumed by all platform modules: `nebu_version`, `domain_name`, `admin_email`, `postgres_db_name`, `image_registry`. All variables carry validation constraints (non-empty checks, semver regex for `nebu_version`).
 
+### AWS Networking Module (nebu-aws)
+
+`deploy/tofu/modules/nebu-aws/network.tf` provisions the AWS network foundation: one VPC, two public and two private subnets across two AZs, a single NAT Gateway (cost-optimized; one per AZ for HA production), and scoped security groups for ALB (80/443 from internet), ECS (ports 8008 + 9000 from ALB SG), and RDS (5432 from ECS SG only, egress limited to VPC CIDR). Resource names incorporate the `environment` variable (e.g. `nebu-prod-alb-sg`) for multi-environment deployments.
+
 ### Helm Chart
 
 `deploy/helm/nebu/` is a standalone Helm Chart usable independently of OpenTofu. Image tag defaults to `""` and must be overridden via `--set image.tag=<version>` or a values file — preventing accidental deployment of an unversioned image.
