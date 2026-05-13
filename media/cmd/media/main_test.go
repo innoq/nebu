@@ -1,12 +1,19 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"image"
+	"image/color"
+	"image/jpeg"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -17,7 +24,13 @@ import (
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/nebu/nebu/media/internal/auth"
+	mediacrypto "github.com/nebu/nebu/media/internal/crypto"
+	"github.com/nebu/nebu/media/internal/download"
+	"github.com/nebu/nebu/media/internal/ratelimit"
 	"github.com/nebu/nebu/media/internal/storage"
+	"github.com/nebu/nebu/media/internal/thumbnail"
+	"golang.org/x/time/rate"
 )
 
 // AT-1 — TestMain_StorageBackend_Local_Default
@@ -939,5 +952,238 @@ func TestInitOIDCVerifierWith_CancelledCtxDuringSleep_NoBlockOnSleep(t *testing.
 	}
 	if calls != 1 {
 		t.Errorf("[AT-12-13-4] expected 1 provider call, got %d", calls)
+	}
+}
+
+// ─── Story 12.16 Code Review F-C: v1 routes exercise CSP and CORP headers ────
+//
+// Code Review finding F-C: The existing CSP/CORP unit tests cover the handler logic
+// directly but do not go through the full v1 routing layer (authMW.Wrap(downloadHandler)
+// and authMW.Wrap(thumbnailHandler)). These integration-style unit tests build a real
+// ServeMux identical to main.go and verify the security headers survive the full path.
+//
+// Both tests:
+//   1. Wire a real ServeMux with the v1 download (or thumbnail) route:
+//      downloadRL(authMW.Wrap(downloadHandler))
+//   2. Send a GET with a valid mock Bearer token
+//   3. Assert Content-Security-Policy and Cross-Origin-Resource-Policy: cross-origin are present
+
+// ─── Local mocks for F-C tests ────────────────────────────────────────────────
+
+// alwaysValidVerifier implements auth.TokenVerifier and always accepts any token.
+type alwaysValidVerifier struct{}
+
+func (alwaysValidVerifier) VerifyToken(_ context.Context, _ string) (string, error) {
+	return "test-user", nil
+}
+
+// mainTestDownloadStore implements download.MediaStore.
+type mainTestDownloadStore struct {
+	row *download.MediaFileRow
+}
+
+func (m *mainTestDownloadStore) GetMediaFile(_ context.Context, _, _ string) (*download.MediaFileRow, error) {
+	return m.row, nil
+}
+
+// mainTestThumbnailStore implements thumbnail.MediaStore.
+type mainTestThumbnailStore struct {
+	row *thumbnail.MediaFileRow
+}
+
+func (m *mainTestThumbnailStore) GetMediaFile(_ context.Context, _, _ string) (*thumbnail.MediaFileRow, error) {
+	return m.row, nil
+}
+
+// mainTestStorer is an in-memory storage.Storer used by F-C tests.
+type mainTestStorer struct {
+	objects map[string][]byte
+}
+
+func newMainTestStorer() *mainTestStorer {
+	return &mainTestStorer{objects: make(map[string][]byte)}
+}
+
+func (s *mainTestStorer) Put(_ context.Context, key string, r io.Reader, _ int64) error {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return err
+	}
+	s.objects[key] = data
+	return nil
+}
+
+func (s *mainTestStorer) Get(_ context.Context, key string) (io.ReadCloser, error) {
+	data, ok := s.objects[key]
+	if !ok {
+		return nil, storage.ErrNotFound
+	}
+	return io.NopCloser(bytes.NewReader(data)), nil
+}
+
+func (s *mainTestStorer) Delete(_ context.Context, key string) error {
+	delete(s.objects, key)
+	return nil
+}
+
+// encryptAndStore encrypts plaintext and stores it in the in-memory storer under storageKey.
+// Returns (aesKeyHex, nonceHex).
+func encryptAndStore(t *testing.T, storer *mainTestStorer, storageKey string, plaintext []byte) (aesKeyHex, nonceHex string) {
+	t.Helper()
+	aesKey, err := mediacrypto.GenerateKey()
+	if err != nil {
+		t.Fatalf("encryptAndStore: GenerateKey: %v", err)
+	}
+	nonce, err := mediacrypto.GenerateNonce()
+	if err != nil {
+		t.Fatalf("encryptAndStore: GenerateNonce: %v", err)
+	}
+	ct, err := mediacrypto.Encrypt(plaintext, aesKey, nonce)
+	if err != nil {
+		t.Fatalf("encryptAndStore: Encrypt: %v", err)
+	}
+	storer.objects[storageKey] = ct
+	return hex.EncodeToString(aesKey), hex.EncodeToString(nonce)
+}
+
+// F-C-1: v1 download route (authMW.Wrap(downloadHandler)) returns CSP and CORP headers.
+//
+// AC-9 (Story 12.16) — The CSP and CORP headers must survive the full routing
+// stack: downloadRL(authMW.Wrap(downloadHandler)), not just the handler in isolation.
+func TestV1DownloadRoute_CSPandCORPHeaders(t *testing.T) {
+	const serverName = "test.local"
+	const mediaID = "main-test-media-id"
+
+	storer := newMainTestStorer()
+	plaintext := []byte("integration test content for CSP/CORP assertion on v1 download route")
+	storageKey := serverName + "/" + mediaID
+	aesKeyHex, nonceHex := encryptAndStore(t, storer, storageKey, plaintext)
+
+	db := &mainTestDownloadStore{
+		row: &download.MediaFileRow{
+			MediaID:     mediaID,
+			ServerName:  serverName,
+			ContentType: "image/png",
+			AESKeyHex:   aesKeyHex,
+			NonceHex:    nonceHex,
+		},
+	}
+
+	downloadHandler := download.NewHandler(download.HandlerConfig{
+		DB:      db,
+		Storage: storer,
+	})
+	authMW := auth.New(alwaysValidVerifier{})
+	// Wire the same rate-limiter + auth wrapper as main.go (ctx background — no SIGTERM in tests).
+	downloadRL := ratelimit.NewIPRateLimiter(context.Background(), ratelimit.Config{
+		Rate:  rate.Limit(100),
+		Burst: 20,
+	}, false /* trustedProxy */)
+
+	mux := http.NewServeMux()
+	mux.Handle("GET /_matrix/client/v1/media/download/{serverName}/{mediaId}",
+		downloadRL(authMW.Wrap(downloadHandler)))
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/_matrix/client/v1/media/download/"+serverName+"/"+mediaID, nil)
+	req.Header.Set("Authorization", "Bearer valid-test-token")
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("[F-C-1] expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	// AC-9: Content-Security-Policy must be present and contain "sandbox".
+	csp := w.Header().Get("Content-Security-Policy")
+	if csp == "" {
+		t.Error("[F-C-1] Content-Security-Policy header must be present on v1 download 200 response")
+	}
+	if !strings.Contains(csp, "sandbox") {
+		t.Errorf("[F-C-1] CSP must contain 'sandbox', got: %q", csp)
+	}
+
+	// AC-9: Cross-Origin-Resource-Policy must be "cross-origin".
+	corp := w.Header().Get("Cross-Origin-Resource-Policy")
+	if corp != "cross-origin" {
+		t.Errorf("[F-C-1] Cross-Origin-Resource-Policy: expected 'cross-origin', got %q", corp)
+	}
+}
+
+// F-C-2: v1 thumbnail route (authMW.Wrap(thumbnailHandler)) returns CSP and CORP headers.
+//
+// AC-9 (Story 12.16) — The CSP and CORP headers must survive the full v1 routing
+// stack: downloadRL(authMW.Wrap(thumbnailHandler)), not just the handler in isolation.
+func TestV1ThumbnailRoute_CSPandCORPHeaders(t *testing.T) {
+	const serverName = "test.local"
+	const mediaID = "main-test-thumb-id"
+
+	storer := newMainTestStorer()
+
+	// Create a synthetic JPEG for the thumbnail handler (requires real image bytes).
+	img := image.NewRGBA(image.Rect(0, 0, 100, 100))
+	for y := 0; y < 100; y++ {
+		for x := 0; x < 100; x++ {
+			img.Set(x, y, color.RGBA{R: uint8(x % 256), G: uint8(y % 256), B: 100, A: 255})
+		}
+	}
+	var imgBuf bytes.Buffer
+	if err := jpeg.Encode(&imgBuf, img, &jpeg.Options{Quality: 75}); err != nil {
+		t.Fatalf("[F-C-2] failed to encode synthetic JPEG: %v", err)
+	}
+	plaintext := imgBuf.Bytes()
+
+	storageKey := serverName + "/" + mediaID
+	aesKeyHex, nonceHex := encryptAndStore(t, storer, storageKey, plaintext)
+
+	db := &mainTestThumbnailStore{
+		row: &thumbnail.MediaFileRow{
+			MediaID:     mediaID,
+			ServerName:  serverName,
+			ContentType: "image/jpeg",
+			AESKeyHex:   aesKeyHex,
+			NonceHex:    nonceHex,
+		},
+	}
+
+	thumbnailHandler := thumbnail.NewHandler(thumbnail.HandlerConfig{
+		DB:      db,
+		Storage: storer,
+	})
+	authMW := auth.New(alwaysValidVerifier{})
+	downloadRL := ratelimit.NewIPRateLimiter(context.Background(), ratelimit.Config{
+		Rate:  rate.Limit(100),
+		Burst: 20,
+	}, false /* trustedProxy */)
+
+	mux := http.NewServeMux()
+	mux.Handle("GET /_matrix/client/v1/media/thumbnail/{serverName}/{mediaId}",
+		downloadRL(authMW.Wrap(thumbnailHandler)))
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/_matrix/client/v1/media/thumbnail/"+serverName+"/"+mediaID+"?width=96&height=96", nil)
+	req.Header.Set("Authorization", "Bearer valid-test-token")
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("[F-C-2] expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	// AC-9: Content-Security-Policy must be present and contain "sandbox".
+	csp := w.Header().Get("Content-Security-Policy")
+	if csp == "" {
+		t.Error("[F-C-2] Content-Security-Policy header must be present on v1 thumbnail 200 response")
+	}
+	if !strings.Contains(csp, "sandbox") {
+		t.Errorf("[F-C-2] CSP must contain 'sandbox', got: %q", csp)
+	}
+
+	// AC-9: Cross-Origin-Resource-Policy must be "cross-origin".
+	corp := w.Header().Get("Cross-Origin-Resource-Policy")
+	if corp != "cross-origin" {
+		t.Errorf("[F-C-2] Cross-Origin-Resource-Policy: expected 'cross-origin', got %q", corp)
 	}
 }

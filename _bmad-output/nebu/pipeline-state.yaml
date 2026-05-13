@@ -1,6 +1,18 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-13
+# [12-16] 2026-05-13T16:50Z arc42-update → done (05-building-blocks, 08-concepts, matrix-api-scope)
+# [12-16] 2026-05-13T16:35Z security-review → Kassandra CLEAN (0C/0H/4L all non-blocking)
+# [12-16] 2026-05-13T16:20Z code-review → CLEAN (cycle 1) — F-A/F-B/F-C all fixed; M1 sprint-status drift fixed inline
+# [12-16] 2026-05-13T16:05Z ci-gate → ✓ build+unit-go+unit-elixir; e2e+integration skipped (minio/mc image unavailable — pre-existing)
+# [12-16] 2026-05-13T16:00Z dev-story → done (cycle 1) — F-A empty-Bearer guard; F-B disposition-type subtests; F-C main_test.go v1 routing; all tests GREEN
+# [12-16] 2026-05-13T15:45Z code-review → 3 MINOR (F-A empty-Bearer M_MISSING_TOKEN, F-B fileName disposition-type test, F-C v1 CSP/CORP routing test) → cycle 1
+# [12-16] 2026-05-13T15:35Z ci-gate → ✓ build+unit-go+unit-elixir; e2e+integration skipped (minio/mc image unavailable — pre-existing)
+# [12-16] 2026-05-13T15:30Z dev-story → done (cycle 0) — auth+config packages; CSP/CORP headers; 5 new routes; all tests GREEN
+# [12-16] 2026-05-13T15:18Z test-review → CLEAN (0 MAJOR; 2 MINOR: F-1 v1-path CSP/CORP not explicit, F-3 fileName missing inline-assert; 5 INFO)
+# [12-16] 2026-05-13T15:10Z atdd → 16 failing tests (auth×7, config×4, download×3, thumbnail×2)
+# [12-16] 2026-05-13T15:05Z oracle-gate → spec context captured (M_MISSING_TOKEN/M_UNKNOWN_TOKEN; Content-Disposition+Content-Type MUST; CSP+CORP SHOULD; /{fileName} variant; timeout_ms)
+# [12-16] 2026-05-13T15:01Z create-story → 12-16-authenticated-matrix-media-endpoints.md
 # [12-15] 2026-05-13T14:42Z epic-loop → story done (GAP-01 P0 regression test)
 # [12-15] 2026-05-13T10:20Z committed ✓ (ATDD+Code CLEAN 0 cycles+no sec review)
 # [12-15] 2026-05-13T10:17Z arc42-update → no arch changes (pure test-addition story)
@@ -326,9 +338,17 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: null
-current_step: null
-completed: []
-cycle_count: 0
+story: "12-16"
+current_step: "commit"
+completed:
+  - create-story
+  - atdd
+  - test-review
+  - dev-story
+  - ci-gate
+  - code-review
+  - security-review
+  - arc42-update
+cycle_count: 1
 blocked_reason: null
-last_updated: "2026-05-13T12:42Z"
+last_updated: "2026-05-13T14:14Z"

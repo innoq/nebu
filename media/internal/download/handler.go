@@ -146,17 +146,31 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// AC3-5 [HIGH-3]: Always set X-Content-Type-Options: nosniff to prevent MIME sniffing.
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 
+	// AC-9 (Story 12.16): Matrix CS API §Media Repository SHOULD headers (v1.4+).
+	// Content-Security-Policy prevents XSS and plugin execution on downloaded content.
+	// Cross-Origin-Resource-Policy: cross-origin allows cross-origin media loading.
+	w.Header().Set("Content-Security-Policy",
+		"sandbox; default-src 'none'; script-src 'none'; plugin-types application/pdf; style-src 'unsafe-inline'; object-src 'self';")
+	w.Header().Set("Cross-Origin-Resource-Policy", "cross-origin")
+
+	// AC-6 (Story 12.16): Use the URL path {fileName} for Content-Disposition when present;
+	// fall back to mediaID when the route does not include a {fileName} segment.
+	cdName := r.PathValue("fileName")
+	if cdName == "" {
+		cdName = mediaID
+	}
+
 	// AC3-4/3-6 [HIGH-3]: Check stored ContentType against safe-inline allowlist.
 	// Normalize: strip parameters before lookup.
 	storedBase := strings.ToLower(strings.TrimSpace(strings.SplitN(row.ContentType, ";", 2)[0]))
 	if safeInlineContentTypes[storedBase] {
 		// Safe type: serve inline with original Content-Type.
 		w.Header().Set("Content-Type", row.ContentType)
-		w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=%q", mediaID))
+		w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=%q", cdName))
 	} else {
 		// Unsafe type: force octet-stream + attachment to prevent inline rendering.
 		w.Header().Set("Content-Type", "application/octet-stream")
-		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", mediaID))
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", cdName))
 	}
 	w.Header().Set("Content-Length", strconv.Itoa(len(plaintext)))
 	w.WriteHeader(http.StatusOK)

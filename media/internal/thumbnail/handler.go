@@ -226,6 +226,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Step 9: Write response headers.
 	// X-Content-Type-Options: nosniff — prevent MIME sniffing in legacy browsers (HIGH-3, Story 12.7).
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	// AC-9 (Story 12.16): Matrix CS API §Media Repository SHOULD headers (v1.4+).
+	// Content-Security-Policy prevents XSS and plugin execution on thumbnail content.
+	// Cross-Origin-Resource-Policy: cross-origin allows cross-origin thumbnail loading.
+	w.Header().Set("Content-Security-Policy",
+		"sandbox; default-src 'none'; script-src 'none'; plugin-types application/pdf; style-src 'unsafe-inline'; object-src 'self';")
+	w.Header().Set("Cross-Origin-Resource-Policy", "cross-origin")
 	// Content-Type: REQUIRED per spec v1.12.
 	w.Header().Set("Content-Type", contentType)
 	// Content-Disposition: REQUIRED per spec v1.12; MUST be inline; SHOULD contain filename.

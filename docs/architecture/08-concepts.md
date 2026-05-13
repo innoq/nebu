@@ -219,6 +219,60 @@ Story 12.13 completes **graceful shutdown during OIDC retries**: `main()` create
 
 Shutdown helper: `runShutdownSequence(ctx context.Context, srv *http.Server, poolClose func())` encapsulates the ordered shutdown steps and is unit-testable with a spy closure for `poolClose` (no real DB pool required in tests).
 
+**Media Gateway — Authenticated Media Endpoints (Story 12.16):**
+
+Matrix CS API v1.11+ introduced authenticated download/thumbnail paths (`/_matrix/client/v1/media/*`) alongside the deprecated unauthenticated `/_matrix/media/v3/*` paths. The Media Gateway now implements both path families.
+
+**Auth middleware package (`media/internal/auth`):**
+
+The `auth.Middleware` wraps any `http.Handler` with Bearer token verification. It defines a local `TokenVerifier` interface (same signature as `upload.TokenVerifier` — no import cycle):
+
+```go
+type TokenVerifier interface {
+    VerifyToken(ctx context.Context, rawToken string) (string, error)
+}
+```
+
+Error mapping:
+
+| Condition | HTTP | errcode |
+|---|---|---|
+| Missing or non-Bearer Authorization header | 401 | `M_MISSING_TOKEN` |
+| Empty Bearer token (`Bearer ` with nothing after) | 401 | `M_MISSING_TOKEN` |
+| Verifier returns error (invalid/expired token) | 401 | `M_UNKNOWN_TOKEN` |
+| Nil verifier (guard) | 503 | `M_UNAVAILABLE` (fail-closed) |
+| Valid token | — | handler called |
+
+`*upload.OIDCTokenVerifier` satisfies `auth.TokenVerifier` structurally; the same instance (`uploadVerifier` from `initOIDCVerifier`) is reused — no separate OIDC client or audience check.
+
+**Routing pattern in `main.go`:**
+
+```
+// Deprecated unauthenticated (backward compat):
+GET /_matrix/media/v3/config          → configHandler (no auth)
+GET /_matrix/media/v3/download/...    → downloadHandler (no auth)
+GET /_matrix/media/v3/thumbnail/...   → thumbnailHandler (no auth)
+
+// v1.11+ authenticated:
+GET /_matrix/client/v1/media/config                          → authMW.Wrap(configHandler)
+GET /_matrix/client/v1/media/download/{serverName}/{mediaId} → authMW.Wrap(downloadHandler)
+GET /_matrix/client/v1/media/download/{serverName}/{mediaId}/{fileName} → authMW.Wrap(downloadHandler)
+GET /_matrix/client/v1/media/thumbnail/{serverName}/{mediaId} → authMW.Wrap(thumbnailHandler)
+```
+
+The `{fileName}` path segment maps to `r.PathValue("fileName")` inside the download handler for the `Content-Disposition` filename. When the route without `{fileName}` is matched, `PathValue` returns `""` and the handler falls back to `mediaId`.
+
+**Security response headers on download and thumbnail (Matrix spec §Media Repository SHOULD, v1.4+):**
+
+All 200 responses from the download and thumbnail handlers — on both v3 and v1 paths — now include:
+
+```
+Content-Security-Policy: sandbox; default-src 'none'; script-src 'none'; plugin-types application/pdf; style-src 'unsafe-inline'; object-src 'self';
+Cross-Origin-Resource-Policy: cross-origin
+```
+
+These headers prevent script execution from served media objects and allow cross-origin image loading by Element Web (required for inline image display in rooms).
+
 **Canonical Matrix user ID in audit trail (Story 12.9):** After OIDC verification, the upload handler constructs a canonical Matrix user ID before storing `uploader_user_id` in `media_files`:
 
 ```
@@ -630,4 +684,4 @@ native Elixir terms, not ETF-deserialised arbitrary structs).
 `GetRelations` (Story 9-29) and `GetMessages`. No new endpoints, migrations, gRPC handlers, or
 schema changes were introduced.
 
-_Source: `_bmad-output/planning-artifacts/architecture.md`, §Cross-Cutting Concerns, §Auth-Token-Flow, §Enforcement; `_bmad-output/planning-artifacts/prd.md`, §Cryptographic Identity Architecture; Story 9-22 (per-device sync token isolation, logout cleanup); Story 9-26 (Browser-First E2E layer, playwright-bdd, token sidecar pattern); Story 9-27 (gRPC error surface rule — GRPC.RPCError vs MatchError; failure audit trail pattern for multi-step operations); Story 9-28 (Thread aggregations in sync, bundled m.thread via unsigned_relations, GetRelations RPC, migration 000042 expression index); Story 9-29 (Relations API query params: dir, recurse, from; base and three-segment routes; prev_batch response field; fetch_events_by_relation/5 dynamic WHERE builder with rel_type + event_type + dir opts); Story 9-30 (JSONB content normalisation bug fix — %Postgrex.JSONB{decoded} struct guard in event_map_to_proto/1; resolves /relations HTTP 500 on JSONB-typed content columns); Story 11-7 (SSO nonce-based replay prevention; Cache-Control: no-store on SSO 302 redirect; denylist check in PostLogin with 403 M_FORBIDDEN; ssoStateStore capacity cap at 10,000; Safari re-login bugfix); Story 11-9 (build metadata injection — ldflags for Go, ARG→ENV for Elixir; NewInfoHandler static pre-marshalled response; Nebu.BuildInfo.get/0; Admin UI footer via SetBuildInfo/newPageData/ErrorMode; make redeploy GIT_COMMIT/BUILD_TIME exports); Story 11-10 (configurable OIDC claim mapping — FormatUserIDFromClaims refactored signature, TTL-cached claimLoader, oidcClaimNameRe validation, migration 000044 defaults seed, identity-stability warning, audit log with previous values, Bootstrap Wizard Step 3, ClaimMappingHandler admin settings page); Story 11-11 (Room GenServer start-on-demand concept — send_receipt/2 lookup_room → start_room fix; {:error,_} wildcard trade-off; :noproc guard pattern; handler inventory for start_room vs lookup_room); Story 12-6 (blurhash pass-through contract — content.info is opaque JSONB, client extension fields preserved verbatim; animated=false MUST NOT return animated thumbnail regression test; explicit traceability tests for AC1+AC2)_
+_Source: `_bmad-output/planning-artifacts/architecture.md`, §Cross-Cutting Concerns, §Auth-Token-Flow, §Enforcement; `_bmad-output/planning-artifacts/prd.md`, §Cryptographic Identity Architecture; Story 9-22 (per-device sync token isolation, logout cleanup); Story 9-26 (Browser-First E2E layer, playwright-bdd, token sidecar pattern); Story 9-27 (gRPC error surface rule — GRPC.RPCError vs MatchError; failure audit trail pattern for multi-step operations); Story 9-28 (Thread aggregations in sync, bundled m.thread via unsigned_relations, GetRelations RPC, migration 000042 expression index); Story 9-29 (Relations API query params: dir, recurse, from; base and three-segment routes; prev_batch response field; fetch_events_by_relation/5 dynamic WHERE builder with rel_type + event_type + dir opts); Story 9-30 (JSONB content normalisation bug fix — %Postgrex.JSONB{decoded} struct guard in event_map_to_proto/1; resolves /relations HTTP 500 on JSONB-typed content columns); Story 11-7 (SSO nonce-based replay prevention; Cache-Control: no-store on SSO 302 redirect; denylist check in PostLogin with 403 M_FORBIDDEN; ssoStateStore capacity cap at 10,000; Safari re-login bugfix); Story 11-9 (build metadata injection — ldflags for Go, ARG→ENV for Elixir; NewInfoHandler static pre-marshalled response; Nebu.BuildInfo.get/0; Admin UI footer via SetBuildInfo/newPageData/ErrorMode; make redeploy GIT_COMMIT/BUILD_TIME exports); Story 11-10 (configurable OIDC claim mapping — FormatUserIDFromClaims refactored signature, TTL-cached claimLoader, oidcClaimNameRe validation, migration 000044 defaults seed, identity-stability warning, audit log with previous values, Bootstrap Wizard Step 3, ClaimMappingHandler admin settings page); Story 11-11 (Room GenServer start-on-demand concept — send_receipt/2 lookup_room → start_room fix; {:error,_} wildcard trade-off; :noproc guard pattern; handler inventory for start_room vs lookup_room); Story 12-6 (blurhash pass-through contract — content.info is opaque JSONB, client extension fields preserved verbatim; animated=false MUST NOT return animated thumbnail regression test; explicit traceability tests for AC1+AC2); Story 12.16 (Authenticated media endpoints — auth.Middleware TokenVerifier interface, M_MISSING_TOKEN/M_UNKNOWN_TOKEN error codes, fail-closed nil-verifier guard; config.Handler media config endpoint; CSP + Cross-Origin-Resource-Policy headers on all download/thumbnail 200 responses; v3 unauthenticated + v1 authenticated routing pattern in main.go; {fileName} path value for Content-Disposition)_

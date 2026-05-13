@@ -1150,6 +1150,234 @@ func TestDownload_SafeContentType_InlineDisposition(t *testing.T) {
 	}
 }
 
+// ─── Story 12.16 ATDD Tests — CSP/CORP headers + fileName path value ─────────
+//
+// These tests will FAIL until:
+//   1. download/handler.go adds Content-Security-Policy header to 200 responses
+//   2. download/handler.go adds Cross-Origin-Resource-Policy: cross-origin to 200 responses
+//   3. download/handler.go uses r.PathValue("fileName") when non-empty for Content-Disposition
+//
+// Spec compliance (Matrix CS API v1.18 §Media Repository):
+//   - CSP SHOULD be set on all download/thumbnail 200 responses (v1.0+)
+//   - CORP SHOULD be "cross-origin" on all download/thumbnail 200 responses (added v1.4)
+//   - /{fileName} variant: Content-Disposition MUST use URL path filename, not mediaId
+
+// ─── AT-5 (Story 12.16): CSP and CORP headers on download 200 response ───────
+//
+// AC-9 — Every successful download response (v3 path) must include:
+//   Content-Security-Policy: sandbox; default-src 'none'; ...
+//   Cross-Origin-Resource-Policy: cross-origin
+//
+// RED: fails until download handler sets these headers.
+
+func TestDownloadHandler_CSPandCORPHeaders(t *testing.T) {
+	storer := newFakeInMemoryStorer()
+	plaintext := []byte("csp and corp test content")
+	aesKeyHex, nonceHex := storeEncryptedDownload(t, storer, testServerName, "csp-test-id", plaintext)
+
+	db := &mockDownloadStore{
+		row: &MediaFileRow{
+			MediaID:     "csp-test-id",
+			ServerName:  testServerName,
+			ContentType: "image/png",
+			AESKeyHex:   aesKeyHex,
+			NonceHex:    nonceHex,
+		},
+	}
+	mux := buildDownloadHandlerWithFakeStorer(t, db, storer)
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/_matrix/media/v3/download/"+testServerName+"/csp-test-id", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("[AT-5] expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	// AC-9: Content-Security-Policy must be present.
+	csp := w.Header().Get("Content-Security-Policy")
+	if csp == "" {
+		t.Error("[AT-5] Content-Security-Policy header must be present on 200 download response")
+	}
+	// Check key CSP directives (exact value defined in dev notes / handler implementation).
+	if !strings.Contains(csp, "sandbox") {
+		t.Errorf("[AT-5] CSP must contain 'sandbox', got: %q", csp)
+	}
+	if !strings.Contains(csp, "default-src 'none'") {
+		t.Errorf("[AT-5] CSP must contain \"default-src 'none'\", got: %q", csp)
+	}
+
+	// AC-9: Cross-Origin-Resource-Policy must be "cross-origin".
+	corp := w.Header().Get("Cross-Origin-Resource-Policy")
+	if corp != "cross-origin" {
+		t.Errorf("[AT-5] Cross-Origin-Resource-Policy: expected 'cross-origin', got %q", corp)
+	}
+}
+
+// ─── AT-6 (Story 12.16): {fileName} variant uses URL path filename ────────────
+//
+// AC-6 — When the download route includes a {fileName} path value, the
+// Content-Disposition header must use that filename, NOT the mediaId.
+//
+// Route: GET /_matrix/client/v1/media/download/{serverName}/{mediaId}/{fileName}
+// (or any route with a {fileName} path value recognised by r.PathValue("fileName"))
+//
+// RED: fails until handler uses r.PathValue("fileName") for Content-Disposition.
+
+func TestDownloadHandler_FileNameVariant(t *testing.T) {
+	// Sub-case 1: Safe content type (image/jpeg) → Content-Disposition starts with "inline;"
+	t.Run("safe_type_inline_disposition", func(t *testing.T) {
+		storer := newFakeInMemoryStorer()
+		plaintext := []byte("photo file bytes for filename variant test")
+		mediaID := "some-opaque-media-id"
+		aesKeyHex, nonceHex := storeEncryptedDownload(t, storer, testServerName, mediaID, plaintext)
+
+		db := &mockDownloadStore{
+			row: &MediaFileRow{
+				MediaID:     mediaID,
+				ServerName:  testServerName,
+				ContentType: "image/jpeg", // safe inline type
+				AESKeyHex:   aesKeyHex,
+				NonceHex:    nonceHex,
+			},
+		}
+
+		h := NewHandler(HandlerConfig{
+			DB:      db,
+			Storage: storer,
+		})
+		mux := http.NewServeMux()
+		mux.Handle("GET /_matrix/client/v1/media/download/{serverName}/{mediaId}/{fileName}", h)
+
+		req := httptest.NewRequest(http.MethodGet,
+			"/_matrix/client/v1/media/download/"+testServerName+"/"+mediaID+"/photo.jpg", nil)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("[AT-6 safe] expected 200, got %d; body: %s", w.Code, w.Body.String())
+		}
+
+		cd := w.Header().Get("Content-Disposition")
+		if cd == "" {
+			t.Fatal("[AT-6 safe] Content-Disposition header must be present")
+		}
+
+		// image/jpeg is a safe type → disposition-type must be "inline".
+		if !strings.HasPrefix(cd, "inline;") {
+			t.Errorf("[AT-6 safe] image/jpeg: expected Content-Disposition to start with 'inline;', got: %q", cd)
+		}
+
+		// AC-6: filename must be "photo.jpg" (from URL path), NOT the mediaId.
+		if !strings.Contains(cd, `photo.jpg`) {
+			t.Errorf("[AT-6 safe] Content-Disposition must contain URL-path filename 'photo.jpg', got: %q", cd)
+		}
+		if strings.Contains(cd, mediaID) {
+			t.Errorf("[AT-6 safe] Content-Disposition must NOT use mediaId %q when fileName path value is set, got: %q",
+				mediaID, cd)
+		}
+	})
+
+	// Sub-case 2: Unsafe content type (application/octet-stream) → Content-Disposition starts with "attachment;"
+	// and filename still comes from the URL path (photo.jpg), not the mediaId.
+	t.Run("unsafe_type_attachment_disposition", func(t *testing.T) {
+		storer := newFakeInMemoryStorer()
+		plaintext := []byte("binary file bytes for attachment variant test")
+		mediaID := "another-opaque-media-id"
+		aesKeyHex, nonceHex := storeEncryptedDownload(t, storer, testServerName, mediaID, plaintext)
+
+		db := &mockDownloadStore{
+			row: &MediaFileRow{
+				MediaID:     mediaID,
+				ServerName:  testServerName,
+				ContentType: "application/octet-stream", // NOT in safe-inline list
+				AESKeyHex:   aesKeyHex,
+				NonceHex:    nonceHex,
+			},
+		}
+
+		h := NewHandler(HandlerConfig{
+			DB:      db,
+			Storage: storer,
+		})
+		mux := http.NewServeMux()
+		mux.Handle("GET /_matrix/client/v1/media/download/{serverName}/{mediaId}/{fileName}", h)
+
+		req := httptest.NewRequest(http.MethodGet,
+			"/_matrix/client/v1/media/download/"+testServerName+"/"+mediaID+"/photo.jpg", nil)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("[AT-6 unsafe] expected 200, got %d; body: %s", w.Code, w.Body.String())
+		}
+
+		cd := w.Header().Get("Content-Disposition")
+		if cd == "" {
+			t.Fatal("[AT-6 unsafe] Content-Disposition header must be present")
+		}
+
+		// application/octet-stream is NOT safe-inline → disposition-type must be "attachment".
+		if !strings.HasPrefix(cd, "attachment;") {
+			t.Errorf("[AT-6 unsafe] application/octet-stream: expected Content-Disposition to start with 'attachment;', got: %q", cd)
+		}
+
+		// AC-6: filename must still be "photo.jpg" (from URL path), NOT the mediaId.
+		if !strings.Contains(cd, `photo.jpg`) {
+			t.Errorf("[AT-6 unsafe] Content-Disposition must contain URL-path filename 'photo.jpg', got: %q", cd)
+		}
+		if strings.Contains(cd, mediaID) {
+			t.Errorf("[AT-6 unsafe] Content-Disposition must NOT use mediaId %q when fileName path value is set, got: %q",
+				mediaID, cd)
+		}
+	})
+}
+
+// ─── AT-5b: CSP and CORP headers present on existing happy-path test ──────────
+//
+// Regression guard: extend the existing TestDownload_HappyPath coverage to also
+// assert CSP and CORP headers, so any future removal of these headers is caught
+// by the EXISTING tests (not just the new ones).
+//
+// This test re-exercises the happy path via the fakeInMemoryStorer (fast, no disk).
+//
+// RED: fails until download handler sets CSP/CORP headers.
+
+func TestDownloadHandler_HappyPath_CSPandCORPPresent(t *testing.T) {
+	storer := newFakeInMemoryStorer()
+	plaintext := []byte("regression guard: csp+corp must be set on every 200")
+	aesKeyHex, nonceHex := storeEncryptedDownload(t, storer, testServerName, "regression-csp-id", plaintext)
+
+	db := &mockDownloadStore{
+		row: &MediaFileRow{
+			MediaID:     "regression-csp-id",
+			ServerName:  testServerName,
+			ContentType: "image/png",
+			AESKeyHex:   aesKeyHex,
+			NonceHex:    nonceHex,
+		},
+	}
+	mux := buildDownloadHandlerWithFakeStorer(t, db, storer)
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/_matrix/media/v3/download/"+testServerName+"/regression-csp-id", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("[AT-5b] expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	// Both security headers must be present on every 200 response (regression guard).
+	if csp := w.Header().Get("Content-Security-Policy"); csp == "" {
+		t.Error("[AT-5b] regression: Content-Security-Policy must be present on every 200 download response")
+	}
+	if corp := w.Header().Get("Cross-Origin-Resource-Policy"); corp != "cross-origin" {
+		t.Errorf("[AT-5b] regression: Cross-Origin-Resource-Policy: expected 'cross-origin', got %q", corp)
+	}
+}
+
 // ─── AT-9b: image/svg+xml stored before allowlist → forced attachment ─────────
 //
 // AC3-6: image/svg+xml is not in the safe-inline list → must serve as attachment.

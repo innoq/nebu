@@ -18,6 +18,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/nebu/nebu/media/internal/auth"
+	mediaconfig "github.com/nebu/nebu/media/internal/config"
 	"github.com/nebu/nebu/media/internal/download"
 	"github.com/nebu/nebu/media/internal/ratelimit"
 	"github.com/nebu/nebu/media/internal/storage"
@@ -267,10 +269,27 @@ func main() {
 		Burst: 20,
 	}, trustedProxy)
 
+	// Story 12.16 — config handler (no auth) and auth middleware for v1 routes.
+	configHandler := mediaconfig.NewHandler(mediaconfig.HandlerConfig{MaxBytes: maxBytes})
+	authMW := auth.New(uploadVerifier)
+
 	mux := http.NewServeMux()
 	mux.Handle("POST /_matrix/media/v3/upload", uploadRL(uploadHandler))
 	mux.Handle("GET /_matrix/media/v3/download/{serverName}/{mediaId}", downloadRL(downloadHandler))
 	mux.Handle("GET /_matrix/media/v3/thumbnail/{serverName}/{mediaId}", downloadRL(thumbnailHandler))
+
+	// AC-1 (Story 12.16): deprecated unauthenticated config (v3, backward compat).
+	mux.Handle("GET /_matrix/media/v3/config", downloadRL(configHandler))
+	// AC-2 through AC-8 (Story 12.16): authenticated media endpoints (Matrix CS API v1.11+).
+	mux.Handle("GET /_matrix/client/v1/media/config",
+		downloadRL(authMW.Wrap(configHandler)))
+	mux.Handle("GET /_matrix/client/v1/media/download/{serverName}/{mediaId}",
+		downloadRL(authMW.Wrap(downloadHandler)))
+	mux.Handle("GET /_matrix/client/v1/media/download/{serverName}/{mediaId}/{fileName}",
+		downloadRL(authMW.Wrap(downloadHandler)))
+	mux.Handle("GET /_matrix/client/v1/media/thumbnail/{serverName}/{mediaId}",
+		downloadRL(authMW.Wrap(thumbnailHandler)))
+
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"ok"}`))

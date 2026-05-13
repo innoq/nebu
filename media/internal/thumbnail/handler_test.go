@@ -716,3 +716,87 @@ func TestThumbnailHandler_WidthAtCap_IsAccepted(t *testing.T) {
 		t.Errorf("[AT-1b] width=height=2048: expected 200, got %d; body: %s", w.Code, w.Body.String())
 	}
 }
+
+// ─── Story 12.16 ATDD Tests — CSP/CORP headers on thumbnail 200 responses ────
+//
+// These tests will FAIL until:
+//   1. thumbnail/handler.go adds Content-Security-Policy header to 200 responses
+//   2. thumbnail/handler.go adds Cross-Origin-Resource-Policy: cross-origin to 200 responses
+//
+// Spec compliance (Matrix CS API v1.18 §Media Repository):
+//   - CSP SHOULD be set on all download/thumbnail 200 responses (v1.0+)
+//   - CORP SHOULD be "cross-origin" on all download/thumbnail 200 responses (added v1.4)
+//
+// Note: "SHOULD" per spec; treated as MUST in Nebu per the Oracle's findings and
+// story 12.16 AC-9.
+
+// ─── AT-7 (Story 12.16): CSP and CORP headers on thumbnail 200 response ───────
+//
+// AC-9 — Every successful thumbnail response (v3 path) must include:
+//   Content-Security-Policy: sandbox; default-src 'none'; ...
+//   Cross-Origin-Resource-Policy: cross-origin
+//
+// RED: fails until thumbnail handler sets these headers.
+
+func TestThumbnailHandler_CSPandCORPHeaders(t *testing.T) {
+	storer := newFakeThumbStorer()
+	row := storeEncryptedJPEG(t, storer, "test.local", "csp-thumb-001")
+	store := &fakeThumbStore{row: row}
+	mux := buildThumbHandler(t, store, storer)
+
+	req := httptest.NewRequest("GET",
+		"/_matrix/media/v3/thumbnail/test.local/csp-thumb-001?width=100&height=100", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("[AT-7] expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	// AC-9: Content-Security-Policy must be present.
+	csp := w.Header().Get("Content-Security-Policy")
+	if csp == "" {
+		t.Error("[AT-7] Content-Security-Policy header must be present on 200 thumbnail response")
+	}
+	if !strings.Contains(csp, "sandbox") {
+		t.Errorf("[AT-7] CSP must contain 'sandbox', got: %q", csp)
+	}
+	if !strings.Contains(csp, "default-src 'none'") {
+		t.Errorf("[AT-7] CSP must contain \"default-src 'none'\", got: %q", csp)
+	}
+
+	// AC-9: Cross-Origin-Resource-Policy must be "cross-origin".
+	corp := w.Header().Get("Cross-Origin-Resource-Policy")
+	if corp != "cross-origin" {
+		t.Errorf("[AT-7] Cross-Origin-Resource-Policy: expected 'cross-origin', got %q", corp)
+	}
+}
+
+// ─── AT-7b: CSP/CORP on scale method thumbnail (non-regression) ──────────────
+//
+// Regression guard: CSP and CORP must be present regardless of thumbnail method.
+//
+// RED: fails until thumbnail handler sets these headers.
+
+func TestThumbnailHandler_CSPandCORPHeaders_ScaleMethod(t *testing.T) {
+	storer := newFakeThumbStorer()
+	row := storeEncryptedJPEG(t, storer, "test.local", "csp-scale-001")
+	store := &fakeThumbStore{row: row}
+	mux := buildThumbHandler(t, store, storer)
+
+	req := httptest.NewRequest("GET",
+		"/_matrix/media/v3/thumbnail/test.local/csp-scale-001?width=200&height=200&method=scale", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("[AT-7b] expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	if csp := w.Header().Get("Content-Security-Policy"); csp == "" {
+		t.Error("[AT-7b] CSP must be present on scale thumbnail response")
+	}
+	if corp := w.Header().Get("Cross-Origin-Resource-Policy"); corp != "cross-origin" {
+		t.Errorf("[AT-7b] CORP must be 'cross-origin', got %q", corp)
+	}
+}
