@@ -17,9 +17,11 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/nebu/nebu/media/internal/download"
+	"github.com/nebu/nebu/media/internal/ratelimit"
 	"github.com/nebu/nebu/media/internal/storage"
 	"github.com/nebu/nebu/media/internal/thumbnail"
 	"github.com/nebu/nebu/media/internal/upload"
+	"golang.org/x/time/rate"
 )
 
 // mediaConfig holds all configuration values for the media gateway.
@@ -227,10 +229,23 @@ func main() {
 		Storage: storer,
 	})
 
+	// Story 12.10 — Per-IP Rate Limiting.
+	// Upload tier: 10 req/s per IP (burst 5).
+	// Download/thumbnail tier: 100 req/s per IP (burst 20).
+	// NEBU_RATE_LIMIT_DISABLED=true disables both tiers (dev/test escape hatch).
+	uploadRL := ratelimit.NewIPRateLimiter(ratelimit.Config{
+		Rate:  rate.Limit(10),
+		Burst: 5,
+	})
+	downloadRL := ratelimit.NewIPRateLimiter(ratelimit.Config{
+		Rate:  rate.Limit(100),
+		Burst: 20,
+	})
+
 	mux := http.NewServeMux()
-	mux.Handle("POST /_matrix/media/v3/upload", uploadHandler)
-	mux.Handle("GET /_matrix/media/v3/download/{serverName}/{mediaId}", downloadHandler)
-	mux.Handle("GET /_matrix/media/v3/thumbnail/{serverName}/{mediaId}", thumbnailHandler)
+	mux.Handle("POST /_matrix/media/v3/upload", uploadRL(uploadHandler))
+	mux.Handle("GET /_matrix/media/v3/download/{serverName}/{mediaId}", downloadRL(downloadHandler))
+	mux.Handle("GET /_matrix/media/v3/thumbnail/{serverName}/{mediaId}", downloadRL(thumbnailHandler))
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"ok"}`))

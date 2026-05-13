@@ -50,7 +50,7 @@ prevents Safari (and any intermediate cache) from storing the 302 redirect respo
 this header, Safari can replay a cached redirect on re-login, causing the already-consumed
 state parameter to be rejected (`400 M_UNKNOWN "Invalid or expired SSO state"`).
 
-**Rate limiting (per IP):**
+**Rate limiting (per IP) — API Gateway:**
 
 | Tier | Rate | Endpoints |
 |---|---|---|
@@ -59,6 +59,17 @@ state parameter to be rejected (`400 M_UNKNOWN "Invalid or expired SSO state"`).
 | admin | 60/min, burst 20 | Login UI, bootstrap wizard |
 | medium | 30/min, burst 10 | SSO redirect/callback, public profile |
 | loose | 300/min, burst 100 | Discovery, capabilities, unauthenticated stubs |
+
+Implementation: `gateway/internal/middleware/ratelimit.go` — `NewIPRateLimiter` with LRU cache (10 000 entries, `github.com/hashicorp/golang-lru`). IP extracted via rightmost-minus-1 XFF strategy (spoofing-resistant). Prometheus `nebu_rate_limit_total` counter per tier.
+
+**Rate limiting (per IP) — Media Gateway (Story 12.10):**
+
+| Tier | Rate | Burst | Endpoints |
+|---|---|---|---|
+| upload | 10 req/s | 5 | `POST /_matrix/media/v3/upload` |
+| download | 100 req/s | 20 | `GET /_matrix/media/v3/download/…`, `GET /_matrix/media/v3/thumbnail/…` |
+
+Implementation: `media/internal/ratelimit/ratelimit.go` — `NewIPRateLimiter` with `sync.Map` keyed by IP and a background cleanup goroutine (evicts entries not seen for >5 minutes, runs every 1 minute). IP extracted via rightmost-minus-1 XFF strategy (same semantics as gateway). No LRU dependency — simpler sync.Map + time-based eviction. `NEBU_RATE_LIMIT_DISABLED=true` disables both tiers (dev/test escape hatch). 429 response format: `{"errcode":"M_LIMIT_EXCEEDED","error":"Too many requests"}` + `Retry-After: N` header (Matrix CS API §rate-limiting compliant).
 
 ## Cryptography
 

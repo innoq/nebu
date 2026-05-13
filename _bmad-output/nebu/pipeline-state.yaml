@@ -1,6 +1,17 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-13
+# [12-10] 2026-05-13T12:30Z arc42-update → done (08-concepts: gateway rate-limit section renamed; media gateway rate-limit table + implementation note added; sync.Map+cleanup goroutine approach documented)
+# [12-10] 2026-05-13T12:28Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW advisory — goroutine-per-instance + XFF single-entry; both accepted per 5.21+12.7 pattern)
+# [12-10] 2026-05-13T12:25Z code-review → CLEAN (cycle 0) — 0 MAJOR, 0 MINOR (go.mod direct dep fixed inline; 3 INFO cosmetic)
+# [12-10] 2026-05-13T12:20Z ci-gate → ✓ build+unit-go (all media+gateway+matrix packages green)+unit-elixir (227); e2e+integration skipped (minio/mc image unavailable — pre-existing)
+# [12-10] 2026-05-13T12:15Z dev-story → done (cycle 0) — ratelimit.go+ratelimit_test.go in media/internal/ratelimit; main.go wired upload(10/s burst 5)+download(100/s burst 20); go.mod+go.sum updated
+# [12-10] 2026-05-13T12:08Z test-review → CLEAN (0 MAJOR; AC-4 refill via burst math; AT-12-10-4b XFF added)
+# [12-10] 2026-05-13T12:06Z atdd → 5 failing tests (AT-12-10-1: upload blocks, AT-12-10-2: download blocks, AT-12-10-3: per-IP isolation, AT-12-10-4: 429 format, AT-12-10-5: disabled no-op)
+# [12-10] 2026-05-13T12:04Z oracle-gate → spec context captured (M_LIMIT_EXCEEDED + Retry-After SHOULD; retry_after_ms deprecated)
+# [12-10] 2026-05-13T12:02Z create-story → 12-10-per-ip-rate-limiting-media-gateway.md
+# [12-10] 2026-05-13T12:00Z pipeline started
+# [12-9] 2026-05-13T09:33Z epic-loop → story done
 # [12-9] 2026-05-13T11:45Z committed ✓ (ATDD+Code CLEAN 0 cycles+Kassandra CLEAN 1 LOW advisory)
 # [12-9] 2026-05-13T11:42Z arc42-update → done (08-concepts: media gateway upload JWT → canonical Matrix user ID section added; formatMatrixUserID contract + NEBU_SERVER_NAME mandatory; pre-12.9 rows grandfathered)
 # [12-9] 2026-05-13T11:38Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW advisory — serverName not validated for Matrix format; operator-controlled, deferred)
@@ -255,9 +266,17 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: null
-current_step: null
-completed: []
+story: "12-10"
+current_step: "commit"
+completed:
+  - create-story
+  - atdd
+  - test-review
+  - dev-story
+  - ci-gate
+  - code-review
+  - security-review
+  - arc42-update
 cycle_count: 0
 blocked_reason: null
-last_updated: "2026-05-13T07:33Z"
+last_updated: "2026-05-13T07:46Z"
