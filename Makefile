@@ -59,7 +59,7 @@ build-gateway: gen-api build-admin-css download-vendor
 build-core:
 	$(DOCKER_ELIXIR) sh -c "cd core && mix local.hex --force && mix deps.get && mix compile"
 
-## redeploy: Rebuild gateway + core Docker images (via docker compose) and restart containers.
+## redeploy: Rebuild gateway + core + media Docker images (via docker compose) and restart containers.
 ## Use this after committing code changes — make build-gateway / make build-core do NOT update
 ## the images used by docker compose. Always use --no-cache to avoid stale layer reuse.
 ## Build args are computed here so deployed images always carry real version metadata.
@@ -67,14 +67,14 @@ redeploy:
 	GIT_COMMIT=$$(git rev-parse --short HEAD) \
 	BUILD_TIME=$$(date -u +%Y-%m-%dT%H:%M:%SZ) \
 	RELEASE_VERSION=$$(git describe --tags --always 2>/dev/null || echo dev) \
-	docker compose build --no-cache gateway core
-	docker compose up -d --force-recreate gateway core
+	docker compose build --no-cache gateway core media
+	docker compose up -d --force-recreate gateway core media
 
 ## release: Build versioned release images locally (TAG=vN.N.N required).
-## Images are tagged as $(CI_REGISTRY_IMAGE)/nebu-gateway:<version> and nebu-core:<version>.
+## Images are tagged as $(CI_REGISTRY_IMAGE)/nebu-gateway:<version>, nebu-core:<version>, and nebu-media:<version>.
 ## Use docker login registry.gitlab.com before pushing. Chain with release-push:
 ##   TAG=v1.0.0 make release release-push
-## NOTE: Builds are sequential — if the gateway build fails, core is not built. Rerun make release to retry.
+## NOTE: Builds are sequential — if the gateway build fails, core/media are not built. Rerun make release to retry.
 ## NOTE: This target uses committed api_gen.go and admin.css as-is.
 ##   Run 'make gen-api build-admin-css' first if openapi.yaml or Tailwind sources were changed.
 release:
@@ -98,9 +98,16 @@ endif
 		--build-arg RELEASE_VERSION=$(IMAGE_VERSION) \
 		-t $(CI_REGISTRY_IMAGE)/nebu-core:$(IMAGE_VERSION) \
 		./core
+	docker build \
+			--build-arg GIT_COMMIT=$$(git rev-parse --short HEAD) \
+			--build-arg BUILD_TIME=$$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+			--build-arg RELEASE_VERSION=$(IMAGE_VERSION) \
+			-t $(CI_REGISTRY_IMAGE)/nebu-media:$(IMAGE_VERSION) \
+			./media
 
 ## release-push: Push versioned release images to the registry (TAG=vN.N.N required).
 ## Run after `make release TAG=vN.N.N`. Requires docker login registry.gitlab.com.
+## Pushes nebu-gateway, nebu-core, and nebu-media images.
 release-push:
 ifndef TAG
 	$(error TAG is required. Usage: TAG=v1.0.0 make release-push)
@@ -110,6 +117,7 @@ ifeq ($(strip $(TAG)),)
 endif
 	docker push $(CI_REGISTRY_IMAGE)/nebu-gateway:$(IMAGE_VERSION)
 	docker push $(CI_REGISTRY_IMAGE)/nebu-core:$(IMAGE_VERSION)
+	docker push $(CI_REGISTRY_IMAGE)/nebu-media:$(IMAGE_VERSION)
 
 ## dev: Start the full local development stack (gateway, core, postgres, dex)
 dev:

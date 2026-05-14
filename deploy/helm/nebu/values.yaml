@@ -4,8 +4,9 @@
 image:
   # registry: GitLab Container Registry path where release images are pushed.
   # The release pipeline (git tag vN.N.N) pushes:
-  #   <registry>/nebu-gateway:<version>
-  #   <registry>/nebu-core:<version>
+  #    <registry>/nebu-gateway:<version>
+   #   <registry>/nebu-core:<version>
+   #   <registry>/nebu-media:<version>
   # Set this to your fork's registry path when deploying from a custom fork.
   registry: registry.gitlab.com/philippb/open-chat
   pullPolicy: IfNotPresent
@@ -39,6 +40,23 @@ core:
     limits:
       cpu: "2000m"
       memory: "1Gi"
+
+
+# Media Gateway - serves Matrix Media API (POST /_matrix/media/v3/upload, GET /_matrix/media/v3/download).
+# Image: <registry>/nebu-media:<version> produced by the release pipeline (git tag vN.N.N).
+media:
+   # image.tag: versioned tag produced by the release pipeline (e.g. "1.0.0" for Git tag v1.0.0).
+   # Must be overridden via --set media.image.tag=<version> or a values file.
+  image:
+    tag: ""
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "256Mi"
+    limits:
+      cpu: "1000m"
+      memory: "512Mi"
 
 # Non-secret application configuration (rendered into ConfigMap)
 config:

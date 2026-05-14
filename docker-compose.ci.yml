@@ -11,3 +11,5 @@ services:
     image: ${CI_REGISTRY_IMAGE}/gateway:${CI_COMMIT_SHA}
   core:
     image: ${CI_REGISTRY_IMAGE}/core:${CI_COMMIT_SHA}
+  media:
+    image: ${CI_REGISTRY_IMAGE}/media:${CI_COMMIT_SHA}
