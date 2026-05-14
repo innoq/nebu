@@ -29,28 +29,33 @@ description:
     localisedName: Nebu
     shortDescription: >-
       Enterprise-fähiger, Matrix-kompatibler Chat-Server — Apache 2.0, kein Föderations-Overhead, horizontal skalierbar.
-    longDescription: |-
+    longDescription: >
       Nebu (benannt nach dem Schiff „Nebukadnezar" aus dem Matrix-Film) ist ein Enterprise-Chat-Server,
       der die Matrix Client-Server API implementiert. Damit funktionieren Standard-Matrix-Clients
       (Element, Cinny, FluffyChat u.a.) ohne Anpassungen.
 
+
       Nebu ist für Organisationen entwickelt, die volle Datensouveränität benötigen: On-Premise-Betrieb,
       kein Vendor-Lock-in, kein Telemetrie-Overhead und kein Föderationsprotokoll.
+
 
       **Architektur:**
       Drei Laufzeitkomponenten — ein stateless Go-Gateway (Matrix-API + Media), ein Elixir/OTP-Core
       (Room GenServer via Horde, Session-Manager via ETS, Presence, Event-Dispatcher) und PostgreSQL
       als Append-only-Eventlog. Kein Redis, kein NATS, kein Kafka.
 
+
       **Sicherheit und Compliance:**
       OIDC-only-Authentifizierung (Keycloak, Azure AD, Google Workspace, Dex),
       Ed25519-Nachrichtensignaturen für Authentizität und Nicht-Abstreitbarkeit,
       Audit-Logging, Legal-Export und Vier-Augen-Prinzip für privilegierten Zugriff.
 
+
       **Implementierter Matrix-Scope:**
       Login, Logout, Sync, Send, Messages, CreateRoom, Join, Typing, Receipts,
       Profile, Presence, Media-Upload/-Download/-Thumbnail, Key-Stubs (E2EE-Unterdrückung).
       Bewusst ausgeschlossen: Federation, Identity Server, E2EE (by design).
+
 
       **Technologie-Stack:**
       Go 1.26+, Elixir/OTP 1.19+, PostgreSQL 16+, gRPC (protobuf), Docker.
@@ -69,28 +74,33 @@ description:
     genericName: Chat
     shortDescription: >-
       Enterprise-grade, Matrix-compatible chat server — Apache 2.0, no federation overhead, horizontally scalable.
-    longDescription: |-
+    longDescription: >
       Nebu (named after the Nebuchadnezzar, the ship of the free from The Matrix) is an enterprise chat
       server that implements the Matrix Client-Server API. Standard Matrix clients (Element, Cinny,
       FluffyChat and others) work out of the box without any modifications.
 
+
       Nebu is built for organizations that require full data sovereignty: on-premise deployment,
       no vendor lock-in, no telemetry, and no federation overhead.
+
 
       **Architecture:**
       Three runtime components — a stateless Go gateway (Matrix API + Media), an Elixir/OTP core
       (Room GenServers via Horde, Session Manager via ETS, Presence, Event Dispatcher) and PostgreSQL
       as an append-only event log. No Redis, no NATS, no Kafka.
 
+
       **Security and Compliance:**
       OIDC-only authentication (Keycloak, Azure AD, Google Workspace, Dex),
       Ed25519 message signatures for authenticity and non-repudiation,
       audit logging, legal export, and four-eyes principle for privileged access.
 
+
       **Implemented Matrix Scope:**
       Login, logout, sync, send, messages, createRoom, join, typing, receipts,
       profile, presence, media upload/download/thumbnail, key stubs (E2EE suppression).
       Intentionally excluded: federation, identity server, E2EE (by design).
+
 
       **Tech Stack:**
       Go 1.26+, Elixir/OTP 1.19+, PostgreSQL 16+, gRPC (protobuf), Docker.
