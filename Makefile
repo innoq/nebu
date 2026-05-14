@@ -9,7 +9,13 @@ DOCKER_NODE   = docker run --rm -v $(PWD):/workspace -w /workspace node:22-alpin
 DOCKER_TOFU   = docker run --rm --entrypoint sh -v $(PWD):/workspace -w /workspace ghcr.io/opentofu/opentofu:1.9
 DOCKER_HELM   = docker run --rm --entrypoint sh -v $(PWD):/workspace -w /workspace alpine/helm:3.17
 
-.PHONY: build-gateway build-core redeploy build-admin-css download-fonts download-vendor dev setup test-unit-go test-unit-elixir test-integration test-integration-elixir test-integration-ci test-e2e test-matrix-compat test-load-silber build-element-e2e test-e2e-element build-fluffychat-e2e test-e2e-fluffychat proto gen-api test-compose-ports test-compose-minio test-iac-validate test-load-syntax
+# Registry used for release images — override by setting CI_REGISTRY_IMAGE in the environment.
+CI_REGISTRY_IMAGE ?= registry.gitlab.com/philippb/open-chat
+
+# Strip the leading 'v' from TAG (e.g. v1.0.0 → 1.0.0) for image tagging.
+IMAGE_VERSION = $(patsubst v%,%,$(TAG))
+
+.PHONY: build-gateway build-core redeploy build-admin-css download-fonts download-vendor dev setup test-unit-go test-unit-elixir test-integration test-integration-elixir test-integration-ci test-e2e test-matrix-compat test-load-silber build-element-e2e test-e2e-element build-fluffychat-e2e test-e2e-fluffychat proto gen-api test-compose-ports test-compose-minio test-iac-validate test-load-syntax release release-push
 
 ## download-fonts: Download Inter + JetBrains Mono WOFF2 fonts (run once; commit results)
 download-fonts:
@@ -63,6 +69,47 @@ redeploy:
 	RELEASE_VERSION=$$(git describe --tags --always 2>/dev/null || echo dev) \
 	docker compose build --no-cache gateway core
 	docker compose up -d --force-recreate gateway core
+
+## release: Build versioned release images locally (TAG=vN.N.N required).
+## Images are tagged as $(CI_REGISTRY_IMAGE)/nebu-gateway:<version> and nebu-core:<version>.
+## Use docker login registry.gitlab.com before pushing. Chain with release-push:
+##   TAG=v1.0.0 make release release-push
+## NOTE: Builds are sequential — if the gateway build fails, core is not built. Rerun make release to retry.
+## NOTE: This target uses committed api_gen.go and admin.css as-is.
+##   Run 'make gen-api build-admin-css' first if openapi.yaml or Tailwind sources were changed.
+release:
+ifndef TAG
+	$(error TAG is required. Usage: TAG=v1.0.0 make release)
+endif
+ifeq ($(strip $(TAG)),)
+	$(error TAG is required. Usage: TAG=v1.0.0 make release)
+endif
+	@echo "$(TAG)" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$$' || \
+		(echo "ERROR: TAG must match vN.N.N (e.g. v1.0.0). Got: $(TAG)" && exit 1)
+	docker build \
+		--build-arg GIT_COMMIT=$$(git rev-parse --short HEAD) \
+		--build-arg BUILD_TIME=$$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+		--build-arg RELEASE_VERSION=$(IMAGE_VERSION) \
+		-t $(CI_REGISTRY_IMAGE)/nebu-gateway:$(IMAGE_VERSION) \
+		./gateway
+	docker build \
+		--build-arg GIT_COMMIT=$$(git rev-parse --short HEAD) \
+		--build-arg BUILD_TIME=$$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+		--build-arg RELEASE_VERSION=$(IMAGE_VERSION) \
+		-t $(CI_REGISTRY_IMAGE)/nebu-core:$(IMAGE_VERSION) \
+		./core
+
+## release-push: Push versioned release images to the registry (TAG=vN.N.N required).
+## Run after `make release TAG=vN.N.N`. Requires docker login registry.gitlab.com.
+release-push:
+ifndef TAG
+	$(error TAG is required. Usage: TAG=v1.0.0 make release-push)
+endif
+ifeq ($(strip $(TAG)),)
+	$(error TAG is required. Usage: TAG=v1.0.0 make release-push)
+endif
+	docker push $(CI_REGISTRY_IMAGE)/nebu-gateway:$(IMAGE_VERSION)
+	docker push $(CI_REGISTRY_IMAGE)/nebu-core:$(IMAGE_VERSION)
 
 ## dev: Start the full local development stack (gateway, core, postgres, dex)
 dev:

@@ -90,11 +90,15 @@ dex_static_password_hash = "<REPLACE_WITH_BCRYPT_HASH>"
 # Required: public domain name of the Nebu instance (used as NEBU_SERVER_NAME)
 server_name = "chat.example.com"
 
-# Required: container image registry prefix
-# Images pulled as: <image_registry>/nebu-gateway:<nebu_version>
+# Required: container image registry prefix.
+# The release pipeline pushes images as:
+#   <image_registry>/nebu-gateway:<nebu_version>
+#   <image_registry>/nebu-core:<nebu_version>
+# Set this to your fork's registry path (e.g. registry.gitlab.com/myorg/open-chat).
 image_registry = "registry.gitlab.com/myorg/open-chat"
 
-# Required: container image tag — use a specific semver tag (e.g. "1.0.0"). Never use "latest".
+# Required: SemVer tag without the 'v' prefix (e.g. "1.0.0" for Git tag v1.0.0).
+# Never use "latest" — the module validates this and will reject it.
 nebu_version = "1.0.0"
 
 # ── DNS ──────────────────────────────────────────────────────────────────────

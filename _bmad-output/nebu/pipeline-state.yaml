@@ -1,6 +1,24 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
-# last_updated: 2026-05-13
+# last_updated: 2026-05-14
+# [13-11] 2026-05-14T10:58Z arc42-update → done (07-deployment: release pipeline two-track strategy, make release targets, operator integration)
+# [13-11] 2026-05-14T10:53Z security-review → skipped (not-needed)
+# [13-11] 2026-05-14T10:52Z code-review → CLEAN (cycle 2) — MINOR-10 release-push empty-TAG guard fixed inline; 3 INFO deferred
+# [13-11] 2026-05-14T10:46Z ci-gate → ✓ iac-validate (cycle 2 fixes verified)
+# [13-11] 2026-05-14T10:45Z dev-story → done (cycle 2) — MINOR-7 K8s revert, MINOR-6 needs:[], MINOR-1 ifeq guard, MINOR-2 RC comment, MINOR-8 story doc
+# [13-11] 2026-05-14T10:38Z code-review → 9 MINOR → cycle 2
+# [13-11] 2026-05-14T10:32Z ci-gate → ✓ iac-validate (cycle 1 fixes verified)
+# [13-11] 2026-05-14T10:30Z dev-story → done (cycle 1) — 6 MINOR fixed: Makefile docstring notes, CI before_script dedup, --cache comment, story Background updated
+# [13-11] 2026-05-14T10:25Z code-review → 6 MINOR → cycle 1
+# [13-11] 2026-05-14T10:20Z ci-gate → ✓ iac-validate (tofu fmt+validate: aws+stackit+k8s CLEAN; helm lint CLEAN; k6 inspect CLEAN; make release guards verified)
+# [13-11] 2026-05-14T10:15Z dev-story → done (cycle 0) — Makefile release+release-push, CI release stage, deploy docs updated
+# [13-11] 2026-05-14T10:05Z test-review → skipped (atdd skipped)
+# [13-11] 2026-05-14T10:05Z create-story → 13-11-versioning-and-release-pipeline.md
+# [13-11] 2026-05-14T10:00Z pipeline started
+# [13-10] 2026-05-14T09:40Z committed ✓ (2 MINOR cycles+arc42 CLEAN)
+# [13-10] 2026-05-14T09:35Z arc42-update → dns-mode section in 07-deployment.md
+# [13-10] 2026-05-14T09:31Z security-review → skipped (not-needed)
+# [13-10] 2026-05-14T09:30Z code-review → CLEAN (cycle 2)
 # [13-10] 2026-05-14T09:20Z code-review → 3 MINOR → cycle 2
 # [13-10] 2026-05-14T09:10Z code-review → 7 MINOR → cycle 1
 # [13-10] 2026-05-14T09:05Z ci-gate → ✓ iac-validate
@@ -461,12 +479,15 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: "13-10"
-current_step: "dev-story"
+story: "13-11"
+current_step: "commit"
 completed:
   - create-story
   - dev-story
   - ci-gate
+  - code-review
+  - security-review
+  - arc42-update
 cycle_count: 2
 blocked_reason: null
-last_updated: "2026-05-13T22:47Z"
+last_updated: "2026-05-14T08:55Z"

@@ -2,11 +2,17 @@
 # Override these in your values.yaml or via --set flags.
 
 image:
+  # registry: GitLab Container Registry path where release images are pushed.
+  # The release pipeline (git tag vN.N.N) pushes:
+  #   <registry>/nebu-gateway:<version>
+  #   <registry>/nebu-core:<version>
+  # Set this to your fork's registry path when deploying from a custom fork.
   registry: registry.gitlab.com/philippb/open-chat
   pullPolicy: IfNotPresent
 
 gateway:
-  # image.tag must be overridden via --set gateway.image.tag=<version> or a values file.
+  # image.tag: versioned tag produced by the release pipeline (e.g. "1.0.0" for Git tag v1.0.0).
+  # Must be overridden via --set gateway.image.tag=<version> or a values file.
   # Leaving this empty prevents accidental deployment of an unversioned image.
   image:
     tag: ""
@@ -20,7 +26,8 @@ gateway:
       memory: "512Mi"
 
 core:
-  # image.tag must be overridden via --set core.image.tag=<version> or a values file.
+  # image.tag: versioned tag produced by the release pipeline (e.g. "1.0.0" for Git tag v1.0.0).
+  # Must be overridden via --set core.image.tag=<version> or a values file.
   # Leaving this empty prevents accidental deployment of an unversioned image.
   image:
     tag: ""

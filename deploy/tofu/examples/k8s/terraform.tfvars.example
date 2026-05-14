@@ -4,6 +4,10 @@
 # kubeconfig_path = "~/.kube/config"   # default: ~/.kube/config
 # kube_context    = "kind-nebu-dev"     # leave empty to use the active context
 
+# Image tags for gateway and core.
+# For local kind dev workflows: keep "dev" (matches what `make build-gateway` / `make build-core` produce).
+# For release builds: use the SemVer tag without the 'v' prefix (e.g. "1.0.0" for Git tag v1.0.0),
+# produced by the CI release pipeline (release-gateway-image / release-core-image jobs).
 gateway_image_tag = "dev"
 core_image_tag    = "dev"
 

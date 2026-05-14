@@ -1,5 +1,7 @@
 # generated: 2026-03-20
 # last_updated: 2026-05-14
+# story 13-11 done (pipeline: Makefile release+release-push, CI release stage (Kaniko SemVer tags), deploy docs — 2 MINOR cycles CLEAN): 2026-05-14
+# story 13-11 created (ready-for-dev): Versioning and Release Pipeline (make release + GitLab CI release stage): 2026-05-14
 # story 13-10 done (pipeline: 2 MINOR cycles fixed — dns_mode var, Route53+Stackit DNS, dex_subdomain_enabled): 2026-05-14
 # story 13-10 created (ready-for-dev): DNS Mode — dns_mode variable for OpenTofu deployments (AWS + Stackit)
 # story 13-9 done (pipeline: Keycloak removed; oidc_mode=dex (Dex sidecar port 5556) + external profile; 3 cycles+Kassandra HIGH fixed): 2026-05-14
@@ -137,6 +139,7 @@ development_status:
   13-8-managed-database-services-aurora-serverless-stackit-managed-postgres: done
   13-9-oidc-deployment-profile-dex-sidecar-vs-external: done
   13-10-dns-mode-variable-opentofu-aws-stackit: done
+  13-11-versioning-and-release-pipeline: done
   epic-13-retrospective: optional
 
   # ─────────────────────────────────────────────────────────────────────────

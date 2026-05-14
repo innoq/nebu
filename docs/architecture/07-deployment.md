@@ -662,3 +662,81 @@ make test-load-syntax   # k6 inspect (both scenarios) + docker compose config --
 ```
 
 This gate runs as part of `make test-iac-validate` (no running stack required).
+
+---
+
+## Release Pipeline (Story 13-11)
+
+Story 13-11 introduces a versioned release track that runs alongside the existing SHA-tagged build track. The two tracks are intentionally separate and do not interfere with each other.
+
+### Two-Track Image Strategy
+
+| Track | Trigger | Image tag pattern | Purpose |
+|---|---|---|---|
+| Build (existing) | Every push / MR | `gateway:<SHA>`, `core:<SHA>` | Feeds integration tests; ephemeral |
+| Release (new) | SemVer Git tag (`v*.*.* `) | `nebu-gateway:<semver>`, `nebu-core:<semver>` | Production images; referenced by operators |
+
+**Image naming:** Release images use the `nebu-gateway` / `nebu-core` prefix (not `gateway` / `core` as in build images). This distinguishes them at the registry level and prevents accidental cross-track references.
+
+**Version stripping convention:** Git tag `v1.0.0` → image tag `1.0.0` (the `v` prefix is stripped in both the CI pipeline and the `make release` target).
+
+### CI Release Stage
+
+Two Kaniko jobs in the new `release` stage of `.gitlab-ci.yml`:
+
+```yaml
+release-gateway-image:   # → <CI_REGISTRY_IMAGE>/nebu-gateway:<semver>
+release-core-image:      # → <CI_REGISTRY_IMAGE>/nebu-core:<semver>
+```
+
+Both jobs:
+- Are gated by `if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/'` — stable SemVer only; RC/beta tags (`v1.0.0-rc1`) are excluded
+- Set `interruptible: false` and `needs: []` — run independently of branch-only build/integration jobs
+- Use `--cache=false` — no reuse of branch-build Kaniko cache layers, ensuring deterministic and reproducible production images
+- Pass `GIT_COMMIT`, `BUILD_TIME`, and `RELEASE_VERSION` as `--build-arg` to the Dockerfile
+
+The `workflow:` block in `.gitlab-ci.yml` has been extended to allow tag pipelines:
+
+```yaml
+workflow:
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/'   # NEW: SemVer tag pipelines
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    ...
+```
+
+### Makefile Release Targets
+
+```makefile
+make release TAG=v1.0.0       # Build gateway + core release images locally
+make release-push TAG=v1.0.0  # Push to registry (requires docker login)
+
+# Full release workflow:
+TAG=v1.0.0 make release release-push
+```
+
+`make release` validates that `TAG` matches `vN.N.N` before building. `CI_REGISTRY_IMAGE` defaults to `registry.gitlab.com/philippb/open-chat` and can be overridden for forks.
+
+### Operator Integration
+
+Operators reference release images via the `nebu_version` variable in OpenTofu or image tags in Helm:
+
+**OpenTofu (all three platforms):**
+```hcl
+nebu_version   = "1.0.0"   # strips 'v' prefix; matches image tag
+image_registry = "registry.gitlab.com/myorg/open-chat"
+# → pulls: <image_registry>/nebu-gateway:1.0.0 and nebu-core:1.0.0
+```
+
+**Helm:**
+```bash
+helm install nebu deploy/helm/nebu/ \
+  --set gateway.image.tag=1.0.0 \
+  --set core.image.tag=1.0.0 \
+  --set image.registry=registry.gitlab.com/myorg/open-chat \
+  --set existingSecret.name=nebu-sensitive
+```
+
+The `nebu_version` variable in the `nebu-core` shared module already enforces a semver regex and rejects `"latest"` — this constraint remains in force for all release images.
+
+_Source: Story 13-11 staged changes — `.gitlab-ci.yml`, `Makefile`, `deploy/helm/nebu/values.yaml`, `deploy/tofu/examples/*/terraform.tfvars.example`_

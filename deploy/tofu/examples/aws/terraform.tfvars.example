@@ -2,10 +2,17 @@
 # Do NOT commit terraform.tfvars — it contains secrets.
 
 aws_region       = "eu-central-1"
-nebu_version     = "0.3.0"
+# nebu_version: SemVer tag without the 'v' prefix (e.g. "1.0.0" for Git tag v1.0.0).
+# The release pipeline pushes images as:
+#   <image_registry>/nebu-gateway:<nebu_version>
+#   <image_registry>/nebu-core:<nebu_version>
+# Never use "latest" — the module validates this and will reject it.
+nebu_version     = "1.0.0"
 domain_name      = "chat.example.com"
 admin_email      = "admin@example.com"
 postgres_db_name = "nebu"
+# image_registry: container registry prefix where release images are pushed.
+# Set this to your fork's registry path (e.g. registry.gitlab.com/myorg/open-chat).
 image_registry   = "registry.gitlab.com/myorg/open-chat"
 vpc_cidr         = "10.0.0.0/16"
 environment      = "prod"
