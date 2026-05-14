@@ -450,9 +450,9 @@ validate-helm:
     - echo "==> Helm version"
     - helm version
     - echo "==> Linting deploy/helm/nebu/"
-    - helm lint deploy/helm/nebu/
+    - helm lint deploy/helm/nebu/ --set gateway.image.tag=validate --set core.image.tag=validate
     - echo "==> Template render check deploy/helm/nebu/"
-    - helm template nebu deploy/helm/nebu/ > /dev/null
+    - helm template nebu deploy/helm/nebu/ --set gateway.image.tag=validate --set core.image.tag=validate > /dev/null
     - echo "==> Helm validation passed."
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
