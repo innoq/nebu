@@ -1,6 +1,7 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-14
+# [13-11] 2026-05-14T11:00Z committed ✓ (Makefile release+release-push, CI release stage, deploy docs — 2 MINOR cycles CLEAN)
 # [13-11] 2026-05-14T10:58Z arc42-update → done (07-deployment: release pipeline two-track strategy, make release targets, operator integration)
 # [13-11] 2026-05-14T10:53Z security-review → skipped (not-needed)
 # [13-11] 2026-05-14T10:52Z code-review → CLEAN (cycle 2) — MINOR-10 release-push empty-TAG guard fixed inline; 3 INFO deferred
@@ -479,15 +480,9 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: "13-11"
-current_step: "commit"
-completed:
-  - create-story
-  - dev-story
-  - ci-gate
-  - code-review
-  - security-review
-  - arc42-update
-cycle_count: 2
+story: null
+current_step: null
+completed: []
+cycle_count: 0
 blocked_reason: null
-last_updated: "2026-05-14T08:55Z"
+last_updated: "2026-05-14T08:56Z"
