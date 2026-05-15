@@ -1,0 +1,212 @@
+#cloud-config
+# Nebu bootstrap — cloud-init template rendered by OpenTofu templatefile().
+# Variables injected at apply time; no hardcoded secrets.
+# cloud-init reference: https://cloudinit.readthedocs.io/
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - ca-certificates
+  - curl
+  - gnupg
+  - lsb-release
+
+write_files:
+  # ── /opt/nebu/.secrets/internal_secret ────────────────────────────────────
+  # Quoted scalar — no trailing newline added by YAML block scalar.
+  - path: /opt/nebu/.secrets/internal_secret
+    owner: root:root
+    permissions: "0600"
+    content: "${internal_secret}"
+
+  # ── /opt/nebu/.env ─────────────────────────────────────────────────────────
+  # Mode 0600 — contains secrets; readable only by root / docker compose.
+  # Database credentials provided by Stackit PostgresFlex managed instance.
+  # NOTE: pg_password must not contain URL-reserved characters (@, :, /, ?, #).
+  # The Stackit PostgresFlex user is provisioned by OpenTofu and its password is
+  # auto-generated. If it ever contains reserved characters, use percent-encoding
+  # or rotate the credential. See MINOR-5 constraint documented in code review.
+  - path: /opt/nebu/.env
+    owner: root:root
+    permissions: "0600"
+    content: |
+      NEBU_DB_URL=postgresql://${pg_user}:${pg_password}@${pg_host}:${pg_port}/nebu
+      NEBU_DB_URL_MIGRATE=postgresql://${pg_user}:${pg_password}@${pg_host}:${pg_port}/nebu
+      NEBU_OIDC_ISSUER=${oidc_issuer}
+      NEBU_OIDC_CLIENT_SECRET=${oidc_client_secret}
+      NEBU_SERVER_NAME=${server_name}
+      NEBU_IMAGE_REGISTRY=${image_registry}
+      NEBU_VERSION=${nebu_version}
+
+%{ if oidc_mode == "dex" ~}
+  # ── /opt/nebu/dex/config.yaml ──────────────────────────────────────────────
+  # Dex static configuration — no database required.
+  # Static client: nebu-gateway with the oidc_client_secret from tfvars.
+  # Static user: operator@example.com — see RUNBOOK.md 'OIDC Profiles' to rotate the password hash.
+  - path: /opt/nebu/dex/config.yaml
+    owner: root:root
+    permissions: "0600"
+    content: |
+      issuer: "http://${server_name}:5556/dex"
+
+      storage:
+        type: memory
+
+      web:
+        http: 0.0.0.0:5556
+
+      oauth2:
+        responseTypes: [code]
+        skipApprovalScreen: true
+        grantTypes:
+          - authorization_code
+          - refresh_token
+
+      enablePasswordDB: true
+
+      staticClients:
+        - id: nebu-gateway
+          secret: "${oidc_client_secret}"
+          redirectURIs:
+            - "http://${server_name}:8008/_matrix/client/v3/login/sso/redirect/oidc"
+            - "http://${server_name}:8008/admin/callback"
+          name: Nebu Gateway
+
+      staticPasswords:
+        - email: "operator@example.com"
+          hash: "${dex_static_password_hash}"
+          username: "operator"
+          userID: "operator-00000000-0000-0000-0000-000000000001"
+          groups:
+            - instance_admin
+
+%{ endif ~}
+  # ── /opt/nebu/docker-compose.yml ───────────────────────────────────────────
+  # Mode 0600 — tightened for security.
+  - path: /opt/nebu/docker-compose.yml
+    owner: root:root
+    permissions: "0600"
+    content: |
+      name: nebu
+
+      secrets:
+        internal_secret:
+          file: .secrets/internal_secret
+
+      services:
+%{ if oidc_mode == "dex" ~}
+        dex:
+          image: dexidp/dex:v2.45.1
+          restart: unless-stopped
+          command: ["dex", "serve", "/etc/dex/config.yaml"]
+          volumes:
+            - /opt/nebu/dex/config.yaml:/etc/dex/config.yaml:ro
+          ports:
+            - "5556:5556"
+          healthcheck:
+            # dexidp/dex:v2.45.1 is Alpine-based and includes busybox wget
+            test: ["CMD", "wget", "-qO-", "http://localhost:5556/dex/.well-known/openid-configuration"]
+            interval: 10s
+            timeout: 5s
+            retries: 3
+            start_period: 10s
+%{ endif ~}
+        core:
+          image: $${NEBU_IMAGE_REGISTRY}/nebu-core:$${NEBU_VERSION}
+          restart: unless-stopped
+          # No depends_on: postgres — managed PostgresFlex is always available
+          secrets: [internal_secret]
+          environment:
+            NEBU_DB_URL: $${NEBU_DB_URL}
+            NEBU_INTERNAL_SECRET_FILE: "/run/secrets/internal_secret"
+            NEBU_SERVER_NAME: $${NEBU_SERVER_NAME}
+          env_file:
+            - .env
+          healthcheck:
+            test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+            interval: 10s
+            timeout: 5s
+            retries: 3
+            start_period: 30s
+
+        gateway:
+          image: $${NEBU_IMAGE_REGISTRY}/nebu-gateway:$${NEBU_VERSION}
+          restart: unless-stopped
+          depends_on:
+            core:
+              condition: service_healthy
+          # No depends_on: postgres — managed PostgresFlex is always available
+          secrets: [internal_secret]
+          environment:
+            NEBU_DB_URL: $${NEBU_DB_URL}
+            NEBU_DB_URL_MIGRATE: $${NEBU_DB_URL_MIGRATE}
+            NEBU_CORE_GRPC_ADDR: "core:9000"
+            NEBU_INTERNAL_SECRET_FILE: "/run/secrets/internal_secret"
+            NEBU_SERVER_NAME: $${NEBU_SERVER_NAME}
+            NEBU_OIDC_ISSUER: $${NEBU_OIDC_ISSUER}
+            NEBU_OIDC_CLIENT_SECRET: $${NEBU_OIDC_CLIENT_SECRET}
+            NEBU_OIDC_CLIENT_ID: "nebu-gateway"
+          env_file:
+            - .env
+          ports:
+            - "8008:8008"
+          healthcheck:
+            test: ["CMD", "/healthcheck"]
+            interval: 10s
+            timeout: 5s
+            retries: 3
+            start_period: 10s
+
+  # ── /etc/systemd/system/nebu.service ───────────────────────────────────────
+  # Type=simple: systemd manages the docker compose process directly (no -d flag).
+  # This allows systemd to track health and restart on failure correctly.
+  - path: /etc/systemd/system/nebu.service
+    owner: root:root
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Nebu Chat Server (Docker Compose)
+      Requires=docker.service
+      After=docker.service network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=simple
+      WorkingDirectory=/opt/nebu
+      ExecStart=/usr/bin/docker compose -f /opt/nebu/docker-compose.yml up
+      ExecStop=/usr/bin/docker compose -f /opt/nebu/docker-compose.yml down
+      Restart=on-failure
+      RestartSec=10
+
+      [Install]
+      WantedBy=multi-user.target
+
+runcmd:
+  # ── Docker CE install ───────────────────────────────────────────────────────
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  - chmod a+r /etc/apt/keyrings/docker.asc
+  - |
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
+      https://download.docker.com/linux/ubuntu \
+      $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+      > /etc/apt/sources.list.d/docker.list
+  - apt-get update -y
+  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+  # ── Nebu directory + secrets ────────────────────────────────────────────────
+  - mkdir -p /opt/nebu/.secrets
+%{ if oidc_mode == "dex" ~}
+  - mkdir -p /opt/nebu/dex
+%{ endif ~}
+  - chmod 0700 /opt/nebu/.secrets
+  - chmod 0700 /opt/nebu
+  - chmod 0600 /opt/nebu/docker-compose.yml
+
+  # ── Enable + start nebu.service ─────────────────────────────────────────────
+  - systemctl daemon-reload
+  - systemctl enable nebu.service
+  - systemctl start docker.service
+  - sleep 2
+  - systemctl start nebu.service

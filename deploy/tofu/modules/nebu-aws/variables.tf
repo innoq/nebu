@@ -1,0 +1,123 @@
+# nebu-aws: Input variables for the AWS-specific infrastructure module.
+
+variable "vpc_cidr" {
+  description = "CIDR block for the VPC. Must be /22 or larger (prefix <= 22) to accommodate the fixed subnet offsets (0,1,10,11) used by this module."
+  type        = string
+  default     = "10.0.0.0/16"
+
+  validation {
+    condition     = can(cidrnetmask(var.vpc_cidr))
+    error_message = "vpc_cidr must be a valid CIDR block (e.g. '10.0.0.0/16')."
+  }
+
+  validation {
+    condition     = tonumber(split("/", var.vpc_cidr)[1]) <= 22
+    error_message = "vpc_cidr prefix length must be /22 or larger (e.g. /16, /20, /22) to fit the four fixed /24 subnets used by this module."
+  }
+}
+
+variable "environment" {
+  description = "Deployment environment name (e.g. 'dev', 'staging', 'prod'). Incorporated into resource names."
+  type        = string
+  default     = "dev"
+}
+
+variable "availability_zones" {
+  description = "List of availability zones to use. If empty, the first two AZs of the region are used automatically."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = length(var.availability_zones) == 0 || length(var.availability_zones) >= 2
+    error_message = "availability_zones must be empty (use data source) or contain at least 2 AZs."
+  }
+}
+
+variable "common_tags" {
+  description = "Tags applied to every AWS resource created by this module."
+  type        = map(string)
+  default     = {}
+}
+
+# ── Database variables ────────────────────────────────────────────────────────
+
+variable "db_password" {
+  description = "Initial master password for the Aurora PostgreSQL cluster. Must be replaced before apply in any non-dev environment. Sensitive — do not commit."
+  type        = string
+  sensitive   = true
+  # WARNING: 'changeme' is only a placeholder for tofu validate/plan in dev.
+  # Always supply a strong password via a tfvars file or environment variable at apply time.
+  default = "changeme"
+
+  validation {
+    condition     = length(var.db_password) >= 8
+    error_message = "db_password must be at least 8 characters."
+  }
+}
+
+variable "skip_final_snapshot" {
+  description = "When true, no final DB snapshot is created before the cluster is deleted. Set to false for production."
+  type        = bool
+  default     = true
+}
+
+variable "aurora_min_capacity" {
+  description = "Minimum Aurora Serverless v2 capacity in ACUs (0.5 ACU = ~1 vCPU/2 GB RAM). Set to 0 for dev (scale-to-zero). Set to 0.5 for production to avoid cold-start latency."
+  type        = number
+  default     = 0
+
+  validation {
+    condition     = var.aurora_min_capacity >= 0 && var.aurora_min_capacity <= 256
+    error_message = "aurora_min_capacity must be between 0 and 256 ACUs."
+  }
+}
+
+variable "aurora_max_capacity" {
+  description = "Maximum Aurora Serverless v2 capacity in ACUs. 1 ACU = approximately 2 GB RAM. Default 4 is sufficient for expected Nebu MVP load. Increase for high-traffic production."
+  type        = number
+  default     = 4
+
+  validation {
+    condition     = var.aurora_max_capacity >= 0.5 && var.aurora_max_capacity <= 256
+    error_message = "aurora_max_capacity must be between 0.5 and 256 ACUs."
+  }
+}
+
+# ── Compute variables ─────────────────────────────────────────────────────────
+
+variable "image_registry" {
+  description = "Container image registry prefix (e.g. 'registry.gitlab.com/myorg/open-chat'). Used in ECS task definitions."
+  type        = string
+  default     = ""
+}
+
+variable "nebu_version" {
+  description = "Nebu container image tag to deploy (e.g. '0.3.0' or 'latest'). Used in ECS task definitions."
+  type        = string
+  default     = "latest"
+}
+
+variable "aws_region" {
+  description = "AWS region for CloudWatch Logs configuration in ECS task definitions."
+  type        = string
+  default     = "eu-central-1"
+}
+
+variable "acm_certificate_arn" {
+  description = "ARN of the ACM certificate used by the ALB HTTPS listener. Must be in the same region as the ALB. Required for apply — empty string ('') is accepted only for tofu validate and plan runs."
+  type        = string
+  default     = ""
+  # NOTE: An empty string will pass tofu validate but will cause an AWS API error at apply time.
+  # Always supply a valid ACM certificate ARN before running tofu apply in any environment.
+}
+
+variable "ecs_desired_count" {
+  description = "Desired number of running ECS tasks for gateway and core services."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.ecs_desired_count >= 1
+    error_message = "ecs_desired_count must be at least 1."
+  }
+}

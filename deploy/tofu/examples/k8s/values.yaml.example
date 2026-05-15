@@ -1,0 +1,45 @@
+# Nebu Helm Chart values example for Kubernetes deployment.
+# Copy to values.yaml and customise before running tofu apply.
+
+image:
+  registry: registry.gitlab.com/myorg/open-chat
+  tag: "0.3.0"
+
+gateway:
+  replicas: 2
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "256Mi"
+    limits:
+      cpu: "1000m"
+      memory: "512Mi"
+
+core:
+  replicas: 2
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "512Mi"
+    limits:
+      cpu: "2000m"
+      memory: "1Gi"
+
+ingress:
+  enabled: true
+  className: nginx
+  host: chat.example.com
+  tls:
+    enabled: true
+    certManagerIssuer: letsencrypt-prod
+
+postgresql:
+  external: true
+  host: postgres.example.com
+  port: 5432
+  database: nebu
+  secretName: nebu-db-credentials
+
+oidc:
+  issuer: https://auth.example.com
+  secretName: nebu-oidc-credentials

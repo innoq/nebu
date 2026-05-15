@@ -1,0 +1,36 @@
+# Nebu Helm Chart — development / local kind overrides.
+# Use with: helm install nebu deploy/helm/nebu/ -f deploy/helm/nebu/values-dev.yaml
+# Reduces resource limits suitable for a local kind cluster.
+
+image:
+  pullPolicy: IfNotPresent
+
+gateway:
+  image:
+    # Override with the actual dev build tag, e.g. --set gateway.image.tag=dev-abc123
+    tag: "dev"
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "100m"
+      memory: "128Mi"
+
+core:
+  image:
+    # Override with the actual dev build tag, e.g. --set core.image.tag=dev-abc123
+    tag: "dev"
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "100m"
+      memory: "128Mi"
+
+postgres:
+  # Use a bundled PostgreSQL in local dev environments.
+  external: false

@@ -29,7 +29,9 @@ defmodule Nebu.Event.MixProject do
       {:session_manager, in_umbrella: true},
       {:room_manager, in_umbrella: true},
       {:presence, in_umbrella: true},
-      {:compliance, in_umbrella: true}
+      {:compliance, in_umbrella: true},
+      # Story 13-6: libcluster for multi-node Core clustering
+      {:libcluster, "~> 3.3"}
     ]
   end
 end

@@ -1,0 +1,129 @@
+# Nebu Helm Chart — default values.
+# Override these in your values.yaml or via --set flags.
+
+image:
+  # registry: GitLab Container Registry path where release images are pushed.
+  # The release pipeline (git tag vN.N.N) pushes:
+  #    <registry>/nebu-gateway:<version>
+   #   <registry>/nebu-core:<version>
+   #   <registry>/nebu-media:<version>
+  # Set this to your fork's registry path when deploying from a custom fork.
+  registry: registry.gitlab.com/philippb/open-chat
+  pullPolicy: IfNotPresent
+
+gateway:
+  # image.tag: versioned tag produced by the release pipeline (e.g. "1.0.0" for Git tag v1.0.0).
+  # Must be overridden via --set gateway.image.tag=<version> or a values file.
+  # Leaving this empty prevents accidental deployment of an unversioned image.
+  image:
+    tag: ""
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "256Mi"
+    limits:
+      cpu: "1000m"
+      memory: "512Mi"
+
+core:
+  # image.tag: versioned tag produced by the release pipeline (e.g. "1.0.0" for Git tag v1.0.0).
+  # Must be overridden via --set core.image.tag=<version> or a values file.
+  # Leaving this empty prevents accidental deployment of an unversioned image.
+  image:
+    tag: ""
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "512Mi"
+    limits:
+      cpu: "2000m"
+      memory: "1Gi"
+
+
+# Media Gateway - serves Matrix Media API (POST /_matrix/media/v3/upload, GET /_matrix/media/v3/download).
+# Image: <registry>/nebu-media:<version> produced by the release pipeline (git tag vN.N.N).
+media:
+   # image.tag: versioned tag produced by the release pipeline (e.g. "1.0.0" for Git tag v1.0.0).
+   # Must be overridden via --set media.image.tag=<version> or a values file.
+  image:
+    tag: ""
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "256Mi"
+    limits:
+      cpu: "1000m"
+      memory: "512Mi"
+
+# Non-secret application configuration (rendered into ConfigMap)
+config:
+  oidcIssuer: ""
+  serverName: ""
+  # coreGrpcAddr is intentionally left empty: the ConfigMap derives the address from the
+  # release name as "{{ fullname }}-core:9000" — a template expression that cannot be a
+  # values default. Override only if you deploy core outside this chart.
+  coreGrpcAddr: ""
+
+# Gateway Service configuration
+service:
+  type: ClusterIP
+  port: 8008
+
+ingress:
+  # Set enabled: true and provide a hostname to expose Nebu via an Ingress resource.
+  enabled: false
+  className: "nginx"
+  annotations: {}
+  # hostname is the FQDN used for the Ingress rule and TLS certificate.
+  hostname: ""
+  tls:
+    # secretName: name of the TLS Secret created out-of-band (e.g. cert-manager).
+    # Leave empty to disable TLS on the Ingress.
+    secretName: ""
+
+# existingSecret references a pre-created Kubernetes Secret that holds sensitive
+# NEBU_* environment variables (e.g. NEBU_DB_URL, NEBU_INTERNAL_SECRET).
+# Operators must create this Secret before deploying — see NOTES.txt.
+# If name is empty, no secretRef is mounted and the gateway will fail to start.
+existingSecret:
+  name: ""
+
+# autoscaling configures HorizontalPodAutoscaler resources.
+autoscaling:
+  gateway:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+
+postgres:
+  # Set external: true to use an external database (default: true).
+  # Set to false in local/dev environments to include a bundled PostgreSQL.
+  external: true
+  host: ""
+  port: 5432
+  database: nebu
+  # Name of a Kubernetes Secret with keys: username, password
+  secretName: nebu-db-credentials
+  # storage and storageClass configure the PVC when postgres.external is false.
+  storage: "10Gi"
+  storageClass: ""
+
+oidc:
+  # Name of a Kubernetes Secret with keys: client_id, client_secret
+  secretName: nebu-oidc-credentials
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podSecurityContext: {}
+securityContext: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

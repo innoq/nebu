@@ -64,3 +64,11 @@ erl_crash.dump
 /e2e/node_modules/
 /e2e/test-results/
 .playwright-mcp/
+
+# OpenTofu / Terraform
+.terraform/
+terraform.tfstate
+terraform.tfstate.backup
+*.tfvars
+!*.tfvars.example
+.terraform.tfstate.lock.info

@@ -1,5 +1,146 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
+# last_updated: 2026-05-14
+# [13-11] 2026-05-14T11:00Z committed ✓ (Makefile release+release-push, CI release stage, deploy docs — 2 MINOR cycles CLEAN)
+# [13-11] 2026-05-14T10:58Z arc42-update → done (07-deployment: release pipeline two-track strategy, make release targets, operator integration)
+# [13-11] 2026-05-14T10:53Z security-review → skipped (not-needed)
+# [13-11] 2026-05-14T10:52Z code-review → CLEAN (cycle 2) — MINOR-10 release-push empty-TAG guard fixed inline; 3 INFO deferred
+# [13-11] 2026-05-14T10:46Z ci-gate → ✓ iac-validate (cycle 2 fixes verified)
+# [13-11] 2026-05-14T10:45Z dev-story → done (cycle 2) — MINOR-7 K8s revert, MINOR-6 needs:[], MINOR-1 ifeq guard, MINOR-2 RC comment, MINOR-8 story doc
+# [13-11] 2026-05-14T10:38Z code-review → 9 MINOR → cycle 2
+# [13-11] 2026-05-14T10:32Z ci-gate → ✓ iac-validate (cycle 1 fixes verified)
+# [13-11] 2026-05-14T10:30Z dev-story → done (cycle 1) — 6 MINOR fixed: Makefile docstring notes, CI before_script dedup, --cache comment, story Background updated
+# [13-11] 2026-05-14T10:25Z code-review → 6 MINOR → cycle 1
+# [13-11] 2026-05-14T10:20Z ci-gate → ✓ iac-validate (tofu fmt+validate: aws+stackit+k8s CLEAN; helm lint CLEAN; k6 inspect CLEAN; make release guards verified)
+# [13-11] 2026-05-14T10:15Z dev-story → done (cycle 0) — Makefile release+release-push, CI release stage, deploy docs updated
+# [13-11] 2026-05-14T10:05Z test-review → skipped (atdd skipped)
+# [13-11] 2026-05-14T10:05Z create-story → 13-11-versioning-and-release-pipeline.md
+# [13-11] 2026-05-14T10:00Z pipeline started
+# [13-10] 2026-05-14T09:40Z committed ✓ (2 MINOR cycles+arc42 CLEAN)
+# [13-10] 2026-05-14T09:35Z arc42-update → dns-mode section in 07-deployment.md
+# [13-10] 2026-05-14T09:31Z security-review → skipped (not-needed)
+# [13-10] 2026-05-14T09:30Z code-review → CLEAN (cycle 2)
+# [13-10] 2026-05-14T09:20Z code-review → 3 MINOR → cycle 2
+# [13-10] 2026-05-14T09:10Z code-review → 7 MINOR → cycle 1
+# [13-10] 2026-05-14T09:05Z ci-gate → ✓ iac-validate
+# [13-10] 2026-05-14T09:00Z dev-story → done (cycle 0) — dns_mode var, Route53+Stackit DNS resources, dex_subdomain_enabled
+# [13-10] 2026-05-14T08:50Z oracle-gate → skipped (no Matrix feature)
+# [13-10] 2026-05-14T08:45Z pipeline started
+# [13-10] 2026-05-14T08:50Z create-story → 13-10-dns-mode-variable-opentofu-aws-stackit.md
+# [13-9] 2026-05-14T08:42Z committed ✓ (Keycloak removed+oidc_mode dex/external+3 cycles+Kassandra HIGH fixed)
+# [13-9] 2026-05-14T08:40Z arc42-update → done (07-deployment: Stackit OIDC profiles section added, Keycloak removed)
+# [13-9] 2026-05-14T08:35Z security-review → HIGH fixed inline (dex_allowed_cidr SG restriction) + 2 MEDIUM fixed (HTTP warning, bcrypt $2y$ validation) + 3 LOW advisory accepted
+# [13-9] 2026-05-14T08:25Z security-review → HIGH (port 5556 open 0.0.0.0/0) + 2 MEDIUM + 3 LOW — fixing inline before commit
+# [13-9] 2026-05-14T08:20Z code-review → CLEAN (cycle 3) — 0 MAJOR, 4 MINOR fixed inline (MINOR-1/2/5/7), 3 MINOR accepted papercuts
+# [13-9] 2026-05-14T08:00Z ci-gate → ✓ test-iac-validate (tofu fmt+validate: aws+stackit+k8s CLEAN; helm lint CLEAN; k6 inspect CLEAN)
+# [13-9] 2026-05-13T15:10Z code-review → 3 MAJOR (issuer mismatch, redirect_uri scheme, nginx/TLS) → cycle 3 (user: host-header routing dex.<server_name> via ALB)
+# [13-9] 2026-05-13T14:58Z ci-gate → ✓ test-iac-validate (tofu fmt+validate: aws+stackit+k8s CLEAN; helm lint CLEAN; k6 inspect CLEAN)
+# [13-9] 2026-05-13T14:45Z code-review → 3 MAJOR (hairpin TLS, nginx healthcheck, admin/callback missing) + 7 MINOR → cycle 2
+# [13-9] 2026-05-13T14:35Z ci-gate → ✓ test-iac-validate (tofu fmt+validate: aws+stackit+k8s CLEAN; helm lint CLEAN; k6 inspect CLEAN)
+# [13-9] 2026-05-13T14:32Z dev-story → done (cycle 1) — nginx sidecar, dex_static_password_hash var, cross-validation, MAJOR-3 docstring, MINOR-2/3/5 fixed
+# [13-9] 2026-05-13T14:20Z code-review → CRITICAL-1 (no /dex routing) + 3 MAJOR + 7 MINOR → cycle 1 (user: fix all, nginx sidecar)
+# [13-9] 2026-05-13T14:13Z ci-gate → ✓ test-iac-validate (tofu fmt+validate: aws+stackit+k8s CLEAN; helm lint CLEAN; k6 inspect CLEAN)
+# [13-9] 2026-05-13T14:10Z dev-story → done (cycle 0) — oidc_mode var, Dex sidecar block, Keycloak resources removed, RUNBOOK updated
+# [13-9] 2026-05-13T14:04Z oracle-gate → skipped (no Matrix feature)
+# [13-9] 2026-05-13T14:03Z create-story → 13-9-oidc-deployment-profile-dex-sidecar-vs-external.md
+# [13-9] 2026-05-13T14:00Z pipeline started
+# [13-8] 2026-05-13T13:50Z committed ✓ (Aurora Serverless v2+PostgresFlex — 2 MINOR cycles+Kassandra CLEAN)
+# [13-8] 2026-05-13T13:48Z arc42-update → done (07-deployment: Aurora Serverless v2 + PostgresFlex dual-user documented)
+# [13-8] 2026-05-13T13:45Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 2 MEDIUM advisory, 4 LOW)
+# [13-8] 2026-05-13T13:42Z code-review → CLEAN (cycle 2) — MINOR-A tfvars.example fixed, MINOR-B lifecycle ignore added
+# [13-8] 2026-05-13T13:38Z dev-story → done (cycle 2) — MINOR-A: tfvars.example stale var removed+aurora ACU examples; MINOR-B: lifecycle ignore final_snapshot_identifier
+# [13-8] 2026-05-13T13:35Z code-review → CLEAN cycle 1 (6 MINOR fixes verified) + 2 new MINOR → cycle 2
+# [13-8] 2026-05-13T13:30Z dev-story → done (cycle 1) — 6 MINOR fixed: snapshot ID timestamp, PI enabled, KC user isolated, 0600 perms, KC_DB_PASSWORD→.env, MINOR-5 comment
+# [13-8] 2026-05-13T13:25Z code-review → 1 MAJOR (13-2b stub removed inline) + 6 MINOR → cycle 1
+# [13-8] 2026-05-13T13:22Z ci-gate → ✓ test-iac-validate (tofu fmt+validate: aws+stackit+k8s CLEAN; helm lint CLEAN; k6 inspect CLEAN)
+# [13-8] 2026-05-13T13:20Z dev-story → done (cycle 0) — Aurora Serverless v2 cluster+instance, PostgresFlex instance+user+2 DBs, cloud-init postgres container removed
+# [13-8] 2026-05-13T13:13Z test-review → skipped (atdd skipped)
+# [13-8] 2026-05-13T13:13Z atdd → skipped (infra)
+# [13-8] 2026-05-13T13:12Z create-story → 13-8-managed-database-services-aurora-serverless-stackit-managed-postgres.md
+# [13-8] 2026-05-13T13:10Z pipeline started
+# epic-13 2026-05-13T12:58Z SEC Gate 2 → Kassandra CLEAN (0 CRIT, 0 HIGH, 4 MEDIUM, 5 LOW — non-blocking)
+# 13-7 2026-05-13T12:52Z epic-loop → story done (MSC2965 auth_issuer+auth_metadata, unstable+v1 paths, 5min TTL cache, context-aware HTTP, 7 unit tests green)
+# [13-7] 2026-05-13T17:05Z oracle-gate → spec context captured (v1 stable paths required, auth_issuer={issuer}, auth_metadata=proxy oidc-config, 503 M_UNAVAILABLE)
+# [13-7] 2026-05-13T17:00Z pipeline started (from Step 1c)
+# 13-6 2026-05-13T12:38Z epic-loop → story done (libcluster Gossip+K8s.DNS, Horde crash/restart AT passing, docker-compose.scale.yml core2, Helm headless Service)
+# [13-6] 2026-05-13T16:05Z atdd → 3 failing tests (ExUnit crash/restart x2, Godog feature x1)
+# [13-6] 2026-05-13T16:00Z pipeline started
+# 13-5 2026-05-13T11:56Z epic-loop → story done (k6 Gold+Silver tier scenarios, docker-compose.scale.yml, make test-load-syntax, 3 MINOR fixed)
+# [13-5] 2026-05-13T15:25Z committed ✓ (ATDD+Code CLEAN 0-cycle+3 MINOR fixed inline+arc42 07-deployment load test topology)
+# [13-5] 2026-05-13T15:22Z arc42-update → done (07-deployment: Load Test Topology section added; multi-gateway scale-up topology, k6 scenario table, CI syntax gate)
+# [13-5] 2026-05-13T15:19Z security-review → skipped (not-needed)
+# [13-5] 2026-05-13T15:18Z code-review → CLEAN (cycle 0) — 3 MINOR fixed inline: login type m.login.password, k6 pinned 0.55.0, nginx cross-ref removed
+# [13-5] 2026-05-13T15:12Z ci-gate → ✓ test-load-syntax (k6 inspect gold+silver CLEAN; compose scale config valid)
+# [13-5] 2026-05-13T15:10Z dev-story → done (cycle 0) — gold-tier.js, silver-tier.js, docker-compose.scale.yml, k6/README.md, make test-load-syntax target
+# [13-5] 2026-05-13T15:04Z test-review → CLEAN (0 MAJOR) — syntax gate covers AC1+AC3+AC4; AC2+AC5 are content-verified at runtime
+# [13-5] 2026-05-13T15:02Z atdd → 1 failing test (make test-load-syntax — k6 scenarios + compose scale)
+# [13-5] 2026-05-13T15:00Z pipeline started
+# 13-4c 2026-05-13T11:49Z epic-loop → story done (K8s OpenTofu wrapper, nebu-k8s module, kind runbook, 5 MINOR fixed)
+# [13-4c] 2026-05-13T14:15Z ci-gate → ✓ test-iac-validate (tofu fmt+validate: aws+stackit+k8s CLEAN; helm lint 0 warnings 0 failures; helm template default+ingress+HPA CLEAN; kubectl dry-run skipped: no live cluster)
+# [13-4c] 2026-05-13T14:10Z dev-story → done (cycle 0) — k8s main.tf, nebu-k8s module, variables.tf, outputs.tf, RUNBOOK.md, terraform.tfvars.example, Makefile helm dry-run gate
+# [13-4c] 2026-05-13T14:01Z test-review → skipped (atdd skipped)
+# [13-4c] 2026-05-13T14:01Z atdd → skipped (infra)
+# [13-4c] 2026-05-13T14:00Z pipeline started
+# 13-4b 2026-05-13T11:37Z epic-loop → story done (Helm Ingress+PVC+HPA+ExistingSecret, Kassandra CLEAN)
+# [13-4b] 2026-05-13T13:35Z committed ✓ (Code CLEAN 0-cycle+2 MINOR fixed inline+Kassandra CLEAN+arc42 07-deployment)
+# [13-4b] 2026-05-13T13:30Z arc42-update → done (07-deployment: Helm chart resource topology table updated; ExistingSecret pattern documented; Ingress+HPA install examples added)
+# [13-4b] 2026-05-13T13:25Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM; 1 LOW advisory: empty existingSecret.name fails at runtime not deploy-time — documented in NOTES.txt)
+# [13-4b] 2026-05-13T13:20Z code-review → CLEAN (cycle 0) — 2 MINOR fixed inline: gateway.autoscaling+core.autoscaling dead config removed, secrets.yaml pure-comment pattern
+# [13-4b] 2026-05-13T13:15Z ci-gate → ✓ test-iac-validate (tofu fmt+validate: aws+stackit+k8s CLEAN; helm lint 0 warnings 0 failures; helm template default+ingress+HPA CLEAN)
+# [13-4b] 2026-05-13T13:10Z dev-story → done (cycle 0) — ingress.yaml, secrets.yaml, hpa.yaml, pvc.yaml, NOTES.txt created; values.yaml extended; gateway-deployment.yaml secretRef added; Makefile helm template +ingress+HPA check added
+# [13-4b] 2026-05-13T13:00Z test-review → skipped (atdd skipped)
+# 13-4a 2026-05-13T11:30Z epic-loop → story done (Helm chart core templates: 2 MAJOR+2 MINOR fixed, core-service.yaml added, independent image tags)
+# [13-4a] 2026-05-13T12:10Z ci-gate → ✓ test-iac-validate (tofu fmt+validate: aws+stackit+k8s CLEAN; helm lint 0 warnings 0 failures; helm template CLEAN)
+# [13-4a] 2026-05-13T12:05Z dev-story → done (cycle 0) — Chart.yaml updated, values.yaml restructured, values-dev.yaml created; gateway+core Deployment+Service+ConfigMap templates; make test-iac-validate extended with helm; validate-helm CI job added
+# [13-4a] 2026-05-13T12:00Z test-review → skipped (atdd skipped)
+# 13-3b 2026-05-13T11:17Z epic-loop → story done (cloud-init bootstrap: 11 bugs fixed, Kassandra CLEAN, init-db.sql+keycloak+systemd)
+# [13-3b] 2026-05-13T17:06Z ci-gate → ✓ test-iac-validate (tofu fmt+validate: aws+stackit+k8s CLEAN)
+# [13-3b] 2026-05-13T17:05Z dev-story → done (cycle 0) — cloud-init.tftpl, main.tf user_data, variables.tf secrets, tfvars.example, RUNBOOK.md created; tofu fmt+validate pass
+# [13-3b] 2026-05-13T17:00Z test-review → skipped (atdd skipped)
+# [13-3b] 2026-05-13T17:00Z atdd → skipped (infra)
+# [13-3b] 2026-05-13T17:00Z oracle-gate → skipped (no Matrix feature)
+# [13-3b] 2026-05-13T17:00Z pipeline started
+# 13-3a 2026-05-13T11:06Z epic-loop → story done (Stackit VM+networking+ALB, MAJOR-1 provider schema resolved, MAJOR-2 PROTOCOL_TCP+beta note, 5 MINOR fixed)
+# [13-3a] 2026-05-13T16:00Z committed ✓ (code-review CLEAN cycle 1 — 2 MAJOR + 6 MINOR fixed; arc42 07-deployment Stackit section added; story done)
+# [13-3a] 2026-05-13T15:55Z arc42-update → done (07-deployment: Stackit VM+Networking module documented; HTTPS upgrade path noted)
+# [13-3a] 2026-05-13T15:50Z security-review → skipped (not-needed)
+# [13-3a] 2026-05-13T15:45Z code-review → CLEAN (cycle 1) — MAJOR-1: project_id on key_pair (global resource, not supported); MAJOR-2: PROTOCOL_HTTPS beta not in schema, uses TCP+upgrade-path comment; MIN-1: service_account_key_path; MIN-2: network_cidr var; MIN-3: availability_zone var; MIN-4: lifecycle.ignore_changes removed; MIN-5: vm_plan_id var; MIN-6: health check comment updated; tofu fmt+validate CLEAN
+# [13-3a] 2026-05-13T15:06Z ci-gate → ✓ test-iac-validate (tofu fmt+validate: aws+stackit+k8s CLEAN)
+# [13-3a] 2026-05-13T15:05Z dev-story → done (cycle 0) — main.tf, variables.tf, outputs.tf, terraform.tfvars.example created; provider fixed (service_account_token); tofu fmt+validate pass
+# [13-3a] 2026-05-13T15:00Z test-review → skipped (atdd skipped)
+# [13-3a] 2026-05-13T15:00Z pipeline started
+# 13-2c 2026-05-13T10:49Z epic-loop → story done (ALB+Secrets Manager+ECS services+RUNBOOK, Kassandra CLEAN)
+# [13-2c] 2026-05-13T14:55Z committed ✓ (Code CLEAN 0-cycle+Kassandra CLEAN+arc42 07-deployment)
+# [13-2c] 2026-05-13T14:50Z arc42-update → done (07-deployment: AWS ALB+Secrets Manager+ECS services complete topology documented)
+# [13-2c] 2026-05-13T14:45Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 0 MEDIUM, 3 LOW — 3 LOW fixed inline)
+# [13-2c] 2026-05-13T14:35Z code-review → CLEAN (cycle 0) — 5 MINOR fixed inline: db_url secret added, oidc_issuer+release_cookie secrets added, kms:Decrypt note, acm_cert empty-str comment
+# [13-2c] 2026-05-13T14:22Z ci-gate → ✓ test-iac-validate (tofu fmt+validate: aws+stackit+k8s CLEAN)
+# [13-2c] 2026-05-13T14:20Z dev-story → done (cycle 0) — alb.tf, secrets.tf created; compute.tf updated (ECS services+secrets refs); variables.tf/outputs.tf updated; RUNBOOK.md written; tofu fmt+validate pass
+# [13-2c] 2026-05-13T14:01Z test-review → skipped (atdd skipped)
+# [13-2c] 2026-05-13T14:01Z atdd → skipped (infra)
+# [13-2c] 2026-05-13T13:58Z pipeline started
+# 13-2b 2026-05-13T10:36Z epic-loop → story done (RDS PostgreSQL 16 Multi-AZ + ECS Fargate cluster, 6 MINOR fixed)
+# [13-2b] 2026-05-13T12:30Z committed ✓ (6 MINOR fixed 1 cycle — RDS PostgreSQL 16 Multi-AZ+ECS Fargate+IAM+CW logs+arc42 07-deployment)
+# [13-2b] 2026-05-13T12:25Z arc42-update → done (07-deployment: AWS database + compute modules documented)
+# [13-2b] 2026-05-13T12:20Z security-review → skipped (not-needed)
+# [13-2b] 2026-05-13T12:20Z code-review → CLEAN (cycle 1) — 6 MINOR fixed: region param, IAM wildcard, db_password validation, log groups added, perf-insights var, snapshot comment
+# [13-2b] 2026-05-13T12:10Z ci-gate → ✓ test-iac-validate (tofu fmt+validate: aws+stackit+k8s CLEAN)
+# [13-2b] 2026-05-13T12:05Z dev-story → done (cycle 0) — database.tf, compute.tf created; variables.tf, outputs.tf, main.tf, variables.tf updated; tofu fmt+validate pass
+# [13-2b] 2026-05-13T12:00Z pipeline started
+# 13-2a 2026-05-13T10:26Z epic-loop → story done (AWS networking module: VPC, subnets, SGs, NAT GW, 9 MINOR fixed)
+# [13-2a] 2026-05-13T11:30Z epic-loop → story done (code-review CLEAN cycle 1 — 9 MINOR fixed: env naming, aws_region removed, CIDR validation, NAT GW comment, RDS egress scoped, ECS ports 8008+9000, route table length(), AZ postcondition, eip depends_on removed; arc42 07-deployment updated)
+# [13-2a] 2026-05-13T11:20Z code-review → CLEAN (cycle 1) — 9 MINOR fixed, security-review skipped (not-needed)
+# [13-2a] 2026-05-13T11:06Z ci-gate → ✓ test-iac-validate (tofu fmt+validate: aws+stackit+k8s CLEAN)
+# [13-2a] 2026-05-13T11:05Z dev-story → done (cycle 0) — network.tf, outputs.tf, variables.tf created; main.tf updated; tofu fmt+validate pass
+# [13-2a] 2026-05-13T11:00Z test-review → skipped (atdd skipped)
+# 13-1 2026-05-13T10:19Z epic-loop → story done (OpenTofu project structure + shared modules, 9 MINOR fixed, Arc42 updated)
+# [13-1] 2026-05-13T10:20Z ux-gate → skipped (no UI)
+# [13-1] 2026-05-13T10:20Z ci-gate → ✓ test-iac-validate (tofu fmt+validate: aws+stackit+k8s CLEAN)
+# [13-1] 2026-05-13T10:15Z dev-story → done (cycle 0) — deploy/ structure, nebu-core vars, AWS/Stackit/K8s examples, Helm chart scaffold, make test-iac-validate, validate-iac CI job
+# [13-1] 2026-05-13T10:01Z test-review → skipped (atdd skipped)
+# [13-1] 2026-05-13T10:01Z atdd → skipped (infra)
+# [13-1] 2026-05-13T10:01Z oracle-gate → skipped (no Matrix feature)
+# [13-1] 2026-05-13T10:00Z pipeline started
 # last_updated: 2026-05-13
 # [12-16] 2026-05-13T17:00Z committed ✓ (ATDD+Code CLEAN 1 cycle+Kassandra CLEAN 4L)
 # [12-16] 2026-05-13T16:50Z arc42-update → done (05-building-blocks, 08-concepts, matrix-api-scope)
@@ -344,4 +485,4 @@ current_step: null
 completed: []
 cycle_count: 0
 blocked_reason: null
-last_updated: "2026-05-13T14:14Z"
+last_updated: "2026-05-14T08:56Z"

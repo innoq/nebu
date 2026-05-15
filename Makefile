@@ -6,8 +6,16 @@ DOCKER_GO     = docker run --rm -v $(PWD):/workspace -w /workspace golang:1.26-a
 DOCKER_ELIXIR = docker run --rm -v $(PWD):/workspace -w /workspace elixir:1.19-alpine
 DOCKER_BUF    = docker run --rm -v $(PWD):/workspace -w /workspace bufbuild/buf
 DOCKER_NODE   = docker run --rm -v $(PWD):/workspace -w /workspace node:22-alpine
+DOCKER_TOFU   = docker run --rm --entrypoint sh -v $(PWD):/workspace -w /workspace ghcr.io/opentofu/opentofu:1.9
+DOCKER_HELM   = docker run --rm --entrypoint sh -v $(PWD):/workspace -w /workspace alpine/helm:3.17
 
-.PHONY: build-gateway build-core redeploy build-admin-css download-fonts download-vendor dev setup test-unit-go test-unit-elixir test-integration test-integration-elixir test-integration-ci test-e2e test-matrix-compat test-load-silber build-element-e2e test-e2e-element build-fluffychat-e2e test-e2e-fluffychat proto gen-api test-compose-ports test-compose-minio
+# Registry used for release images — override by setting CI_REGISTRY_IMAGE in the environment.
+CI_REGISTRY_IMAGE ?= registry.gitlab.com/philippb/open-chat
+
+# Strip the leading 'v' from TAG (e.g. v1.0.0 → 1.0.0) for image tagging.
+IMAGE_VERSION = $(patsubst v%,%,$(TAG))
+
+.PHONY: build-gateway build-core redeploy build-admin-css download-fonts download-vendor dev setup test-unit-go test-unit-elixir test-integration test-integration-elixir test-integration-ci test-e2e test-matrix-compat test-load-silber build-element-e2e test-e2e-element build-fluffychat-e2e test-e2e-fluffychat proto gen-api test-compose-ports test-compose-minio test-iac-validate test-load-syntax release release-push
 
 ## download-fonts: Download Inter + JetBrains Mono WOFF2 fonts (run once; commit results)
 download-fonts:
@@ -51,7 +59,7 @@ build-gateway: gen-api build-admin-css download-vendor
 build-core:
 	$(DOCKER_ELIXIR) sh -c "cd core && mix local.hex --force && mix deps.get && mix compile"
 
-## redeploy: Rebuild gateway + core Docker images (via docker compose) and restart containers.
+## redeploy: Rebuild gateway + core + media Docker images (via docker compose) and restart containers.
 ## Use this after committing code changes — make build-gateway / make build-core do NOT update
 ## the images used by docker compose. Always use --no-cache to avoid stale layer reuse.
 ## Build args are computed here so deployed images always carry real version metadata.
@@ -59,8 +67,57 @@ redeploy:
 	GIT_COMMIT=$$(git rev-parse --short HEAD) \
 	BUILD_TIME=$$(date -u +%Y-%m-%dT%H:%M:%SZ) \
 	RELEASE_VERSION=$$(git describe --tags --always 2>/dev/null || echo dev) \
-	docker compose build --no-cache gateway core
-	docker compose up -d --force-recreate gateway core
+	docker compose build --no-cache gateway core media
+	docker compose up -d --force-recreate gateway core media
+
+## release: Build versioned release images locally (TAG=vN.N.N required).
+## Images are tagged as $(CI_REGISTRY_IMAGE)/nebu-gateway:<version>, nebu-core:<version>, and nebu-media:<version>.
+## Use docker login registry.gitlab.com before pushing. Chain with release-push:
+##   TAG=v1.0.0 make release release-push
+## NOTE: Builds are sequential — if the gateway build fails, core/media are not built. Rerun make release to retry.
+## NOTE: This target uses committed api_gen.go and admin.css as-is.
+##   Run 'make gen-api build-admin-css' first if openapi.yaml or Tailwind sources were changed.
+release:
+ifndef TAG
+	$(error TAG is required. Usage: TAG=v1.0.0 make release)
+endif
+ifeq ($(strip $(TAG)),)
+	$(error TAG is required. Usage: TAG=v1.0.0 make release)
+endif
+	@echo "$(TAG)" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$$' || \
+		(echo "ERROR: TAG must match vN.N.N (e.g. v1.0.0). Got: $(TAG)" && exit 1)
+	docker build \
+		--build-arg GIT_COMMIT=$$(git rev-parse --short HEAD) \
+		--build-arg BUILD_TIME=$$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+		--build-arg RELEASE_VERSION=$(IMAGE_VERSION) \
+		-t $(CI_REGISTRY_IMAGE)/nebu-gateway:$(IMAGE_VERSION) \
+		./gateway
+	docker build \
+		--build-arg GIT_COMMIT=$$(git rev-parse --short HEAD) \
+		--build-arg BUILD_TIME=$$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+		--build-arg RELEASE_VERSION=$(IMAGE_VERSION) \
+		-t $(CI_REGISTRY_IMAGE)/nebu-core:$(IMAGE_VERSION) \
+		./core
+	docker build \
+			--build-arg GIT_COMMIT=$$(git rev-parse --short HEAD) \
+			--build-arg BUILD_TIME=$$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+			--build-arg RELEASE_VERSION=$(IMAGE_VERSION) \
+			-t $(CI_REGISTRY_IMAGE)/nebu-media:$(IMAGE_VERSION) \
+			./media
+
+## release-push: Push versioned release images to the registry (TAG=vN.N.N required).
+## Run after `make release TAG=vN.N.N`. Requires docker login registry.gitlab.com.
+## Pushes nebu-gateway, nebu-core, and nebu-media images.
+release-push:
+ifndef TAG
+	$(error TAG is required. Usage: TAG=v1.0.0 make release-push)
+endif
+ifeq ($(strip $(TAG)),)
+	$(error TAG is required. Usage: TAG=v1.0.0 make release-push)
+endif
+	docker push $(CI_REGISTRY_IMAGE)/nebu-gateway:$(IMAGE_VERSION)
+	docker push $(CI_REGISTRY_IMAGE)/nebu-core:$(IMAGE_VERSION)
+	docker push $(CI_REGISTRY_IMAGE)/nebu-media:$(IMAGE_VERSION)
 
 ## dev: Start the full local development stack (gateway, core, postgres, dex)
 dev:
@@ -325,3 +382,50 @@ gen-api:
 	$(DOCKER_GO) sh -c "go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest \
 		--config gateway/api/oapi-codegen.yaml \
 		gateway/api/openapi.yaml"
+
+## test-iac-validate: Validate OpenTofu IaC files + Helm chart + k6 load test syntax.
+## Runs tofu fmt -check (formatting) and tofu validate (syntax/types) for all example directories.
+## Also runs helm lint and helm template on deploy/helm/nebu/ (Story 13-4a AC1+AC2, Story 13-4b AC3+AC5).
+## If kubectl is available, runs helm template | kubectl apply --dry-run=client (Story 13-4c AC2).
+## Also runs k6 inspect on load test scenarios and validates docker-compose.scale.yml (Story 13-5 AC1+AC3+AC4).
+## No cloud credentials required — tofu validate checks syntax only, not provider resources.
+## Story 13-1 AC3 + AC7, Story 13-4a AC1 + AC2, Story 13-4b AC3 + AC5, Story 13-4c AC3, Story 13-5 AC1+AC3+AC4: equivalent to the validate-iac CI job.
+test-iac-validate: test-load-syntax
+	@echo "==> OpenTofu: fmt check (recursive)"
+	$(DOCKER_TOFU) -c "tofu fmt -check -recursive deploy/tofu/"
+	@echo "==> OpenTofu: validate deploy/tofu/examples/aws"
+	$(DOCKER_TOFU) -c "cd deploy/tofu/examples/aws && tofu init -backend=false && tofu validate"
+	@echo "==> OpenTofu: validate deploy/tofu/examples/stackit"
+	$(DOCKER_TOFU) -c "cd deploy/tofu/examples/stackit && tofu init -backend=false && tofu validate"
+	@echo "==> OpenTofu: validate deploy/tofu/examples/k8s"
+	$(DOCKER_TOFU) -c "cd deploy/tofu/examples/k8s && tofu init -backend=false && tofu validate"
+	@echo "==> Helm: lint deploy/helm/nebu/"
+	$(DOCKER_HELM) -c "helm lint deploy/helm/nebu/"
+	@echo "==> Helm: template render check deploy/helm/nebu/ (default values)"
+	$(DOCKER_HELM) -c "helm template nebu deploy/helm/nebu/ --set gateway.image.tag=validate --set core.image.tag=validate > /dev/null"
+	@echo "==> Helm: template render check deploy/helm/nebu/ (ingress + HPA enabled)"
+	$(DOCKER_HELM) -c "helm template nebu deploy/helm/nebu/ --set gateway.image.tag=validate --set core.image.tag=validate --set ingress.enabled=true --set ingress.hostname=nebu.example.com --set autoscaling.gateway.enabled=true > /dev/null"
+	@if command -v kubectl >/dev/null 2>&1 && kubectl get nodes -o name >/dev/null 2>&1; then \
+		echo "==> Helm: template dry-run: renders chart and validates against k8s API schema (requires kubectl in PATH)"; \
+		$(DOCKER_HELM) -c "helm template nebu deploy/helm/nebu/ \
+			-f deploy/helm/nebu/values-dev.yaml \
+			--set gateway.image.tag=validate \
+			--set core.image.tag=validate" \
+			| kubectl apply --dry-run=client -f -; \
+	else \
+		echo "==> Helm: no reachable cluster — skipping kubectl dry-run (run against a live kind cluster to enable)"; \
+	fi
+	@echo "==> IaC validation passed."
+
+## test-load-syntax: Validate k6 load test scenario syntax and docker-compose.scale.yml config.
+## Uses Docker-based k6 (no local k6 installation required).
+## Story 13-5 AC1+AC3+AC4: syntax gate for gold-tier.js, silver-tier.js, and compose scale override.
+## Runs: k6 inspect (syntax-only, no network, no VUs started) + docker compose config --quiet.
+test-load-syntax:
+	@echo "==> k6: inspect k6/scenarios/gold-tier.js"
+	docker run --rm -v $(PWD)/k6:/scripts grafana/k6:0.55.0 inspect /scripts/scenarios/gold-tier.js
+	@echo "==> k6: inspect k6/scenarios/silver-tier.js"
+	docker run --rm -v $(PWD)/k6:/scripts grafana/k6:0.55.0 inspect /scripts/scenarios/silver-tier.js
+	@echo "==> Docker Compose: validate scale override config"
+	docker compose -f docker-compose.yml -f docker-compose.scale.yml config --quiet
+	@echo "==> Load test syntax validation passed."

@@ -1,21 +1,16 @@
 # generated: 2026-03-20
-# last_updated: 2026-05-13
-# story 12-16 done (pipeline: ATDD+Dev+Code CLEAN (1 cycle)+Kassandra CLEAN (4L)): 2026-05-13
-# story 12-15 done (pipeline: ATDD+Code CLEAN 0 cycles+no sec review (pure test-addition)): 2026-05-13
-# story 12-14 done (pipeline: ATDD+Code CLEAN 0 cycles+Kassandra CLEAN (1 LOW drain-window advisory)): 2026-05-13
-# story 12-13 done (pipeline: 1 MINOR fixed (slog.Info on signal abort) — 1 cycle+no sec review): 2026-05-13
-# story 12-12 done (pipeline: ATDD+Code CLEAN 0 cycles+Kassandra CLEAN): 2026-05-13
-# story 12-11 done (pipeline: ATDD+Code CLEAN 0 cycles+Kassandra CLEAN): 2026-05-13
-# story 12-10 done (pipeline: ATDD+Code CLEAN 0 cycles+Kassandra CLEAN 2 LOW advisory): 2026-05-13
-# story 12-9 done (pipeline: ATDD+Code CLEAN 0 cycles+Kassandra CLEAN 1 LOW advisory): 2026-05-13
-# story 12-8 done (pipeline: ATDD+Code CLEAN 1 cycle+Kassandra CLEAN): 2026-05-13
-# story 12-7 done (pipeline: ATDD+Dev+Code CLEAN+Kassandra CLEAN (1 LOW advisory)): 2026-05-12
-# story 12-6 done (pipeline: ATDD+Code CLEAN 0 cycles+Kassandra CLEAN — blurhash pass-through tests (AT-2+AT-5+AT-6) + animated=false regression guards (AT-3+AT-4)): 2026-05-12
-# story 12-5 done (pipeline: ATDD+Code CLEAN 0 cycles+Kassandra CLEAN 2 LOW advisory): 2026-05-12
-# story 12-4 done (pipeline: ATDD+Code CLEAN 0 cycles+Kassandra CLEAN 2 LOW advisory): 2026-05-12
-# story 12-3 done (pipeline: ATDD+Code 1 cycle+Kassandra CLEAN (5 LOW advisory)): 2026-05-12
-# story 12-2 done (pipeline: ATDD+Dev+Code CLEAN — Storer interface, LocalStorer, MinIOStorer, handler injection, minio-go/v7): 2026-05-12
-# story 12-1 done (pipeline: ready-for-dev): 2026-05-13
+# last_updated: 2026-05-14
+# story 13-11 done (pipeline: Makefile release+release-push, CI release stage (Kaniko SemVer tags), deploy docs — 2 MINOR cycles CLEAN): 2026-05-14
+# story 13-11 created (ready-for-dev): Versioning and Release Pipeline (make release + GitLab CI release stage): 2026-05-14
+# story 13-10 done (pipeline: 2 MINOR cycles fixed — dns_mode var, Route53+Stackit DNS, dex_subdomain_enabled): 2026-05-14
+# story 13-10 created (ready-for-dev): DNS Mode — dns_mode variable for OpenTofu deployments (AWS + Stackit)
+# story 13-9 done (pipeline: Keycloak removed; oidc_mode=dex (Dex sidecar port 5556) + external profile; 3 cycles+Kassandra HIGH fixed): 2026-05-14
+# story 13-8 done (pipeline: Aurora Serverless v2 + PostgresFlex — 2 MINOR cycles + Kassandra CLEAN): 2026-05-13
+# story 13-8 created (ready-for-dev): Aurora Serverless v2 + Stackit PostgresFlex managed DB
+# story 13-5 done (pipeline: ATDD+Code CLEAN 0-cycle+3 MINOR fixed inline+arc42 07-deployment load test topology): 2026-05-13
+# story 13-4b done (pipeline: Code CLEAN 0-cycle+Kassandra CLEAN+arc42 07-deployment): 2026-05-13
+# story 13-2c done (pipeline: Code CLEAN 0-cycle + Kassandra CLEAN — ALB+Secrets Manager+ECS services+RUNBOOK): 2026-05-13
+# story 13-2b done (pipeline: 6 MINOR fixed 1 cycle — RDS PostgreSQL 16 Multi-AZ + ECS Fargate cluster + task def skeletons + CloudWatch logs + IAM execution role): 2026-05-13
 # history: archived to _bmad-output/archived-artifacts/sprint-history.md
 project: open-chat
 project_key: NOKEY
@@ -115,23 +110,13 @@ development_status:
   # Pre-Epic-TODO: ADR-013 finalisieren (MinIO, Thumbnail-Library, Pre-Signed-URL-Policy)
   #   — vor Sprint-Start
   # ─────────────────────────────────────────────────────────────────────────
-  epic-12: in-progress
-  12-1-minio-docker-compose-credentials-via-secrets: ready-for-dev
-  12-2-storage-interface-refactor: done
-  12-3-media-upload-minio-backend-iam-hardening: done
-  12-4-media-download-minio-backend-pre-signed-url-security: done
-  12-5-thumbnail-generation-on-demand-sandboxed: done
-  12-6-blurhash-pass-through-animated-thumbnail-correctness: done
-  12-7-media-gateway-security-hardening-sec-gate-2-fixes: done
-  12-8-oidc-fail-open-hardening-media-gateway: done
-  12-9-canonical-matrix-user-id-in-media-audit-trail: done
-  12-10-per-ip-rate-limiting-media-gateway: done
-  12-11-media-gateway-rate-limit-audit-trail-sec-fixes: done
-  12-12-media-gateway-startup-rate-limiter-hardening: done
-  12-13-media-gateway-graceful-shutdown-signal-aware-oidc-retry: done
-  12-14-media-gateway-full-graceful-shutdown: done
-  12-15-regression-test-expired-jwt-upload-returns-401: done
-  12-16-authenticated-matrix-media-endpoints: done
+  epic-12: backlog
+  12-1-minio-docker-compose-credentials-via-secrets: backlog
+  12-2-storage-interface-refactor: backlog
+  12-3-media-upload-minio-backend-iam-hardening: backlog
+  12-4-media-download-minio-backend-pre-signed-url-security: backlog
+  12-5-thumbnail-generation-on-demand-sandboxed: backlog
+  12-6-blurhash-pass-through-animated-thumbnail-correctness: backlog
   epic-12-retrospective: optional
 
   # ─────────────────────────────────────────────────────────────────────────
@@ -141,16 +126,20 @@ development_status:
   epic-13: backlog
   13-1-opentofu-project-structure-shared-modules: backlog
   13-2a-aws-networking-module-vpc-subnets-security-groups: backlog
-  13-2b-aws-rds-postgresql-ecs-cluster: backlog
-  13-2c-aws-ecs-task-definitions-gateway-core-alb-secrets-runbook: backlog
+  13-2b-aws-rds-postgresql-ecs-cluster: done
+  13-2c-aws-ecs-task-definitions-gateway-core-alb-secrets-runbook: done
   13-3a-stackit-vm-provisioning-networking: backlog
   13-3b-stackit-cloud-init-docker-compose-runbook: backlog
   13-4a-helm-chart-core-templates-deployment-service-configmap: backlog
-  13-4b-helm-chart-ingress-pvc-secrets-hpa: backlog
+  13-4b-helm-chart-ingress-pvc-secrets-hpa: done
   13-4c-opentofu-k8s-provider-kind-smoke-test-runbook: backlog
-  13-5-load-test-gold-tier-1000-concurrent-users-multi-gateway: backlog
+  13-5-load-test-gold-tier-1000-concurrent-users-multi-gateway: done
   13-6-horizontal-scaling-validation-core-clustering-libcluster-horde: backlog
   13-7-msc2965-oidc-discovery-endpoints-auth-issuer-auth-metadata: backlog
+  13-8-managed-database-services-aurora-serverless-stackit-managed-postgres: done
+  13-9-oidc-deployment-profile-dex-sidecar-vs-external: done
+  13-10-dns-mode-variable-opentofu-aws-stackit: done
+  13-11-versioning-and-release-pipeline: done
   epic-13-retrospective: optional
 
   # ─────────────────────────────────────────────────────────────────────────

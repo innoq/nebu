@@ -1,0 +1,19 @@
+apiVersion: v2
+name: nebu
+description: Nebu — Enterprise-grade, sovereign Matrix-compatible chat server.
+type: application
+version: 0.1.0
+appVersion: "latest"
+keywords:
+  - matrix
+  - chat
+  - messaging
+  - enterprise
+home: https://gitlab.com/philippb/open-chat
+sources:
+  - https://gitlab.com/philippb/open-chat
+maintainers:
+  - name: Nebu Contributors
+    email: hello@nebu.chat
+annotations:
+  license: Apache-2.0
