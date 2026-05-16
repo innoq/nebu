@@ -1,6 +1,7 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-16
+# [14-4] 2026-05-17T01:30Z committed ✓ (1 MAJOR+2 MINOR fixed cycle 1+Kassandra CLEAN 2 LOW applied)
 # [14-4] 2026-05-17T01:15Z arc42-update → 05-building-blocks (GdprDeleteHandler) + 08-concepts (GDPR erasure orchestration, M_USER_DEACTIVATED, Three PII Tiers)
 # [14-4] 2026-05-17T01:00Z security-review → Kassandra APPROVED (0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW applied)
 # [14-4] 2026-05-17T00:30Z code-review → 1 MAJOR (missing return after NotFound) + 2 MINOR fixed; 1 MINOR deferred (AT-3 Dex fixture limitation); cycle 1
@@ -581,16 +582,9 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: "14-4"
-current_step: "commit"
-completed:
-  - create-story
-  - atdd
-  - test-review
-  - ci-gate
-  - code-review
-  - security-review
-  - arc42-update
-cycle_count: 1
+story: null
+current_step: null
+completed: []
+cycle_count: 0
 blocked_reason: null
-last_updated: "2026-05-16T23:36Z"
+last_updated: "2026-05-16T23:37Z"
