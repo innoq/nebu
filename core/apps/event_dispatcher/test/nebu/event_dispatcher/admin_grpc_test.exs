@@ -1305,4 +1305,147 @@ defmodule Nebu.EventDispatcher.AdminGrpcTest do
              "expected empty members list for a room with no members, got #{inspect(response.members)}"
     end
   end
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Story 14.1a — UpdateServerConfig claim-lock tests
+  # ─────────────────────────────────────────────────────────────────────────────
+  #
+  # These tests verify that the Core UpdateServerConfig gRPC RPC enforces the
+  # matrix_user_id_claim lock: once bootstrap_completed is set in server_config,
+  # any attempt to change oidc_user_id_claim (via the matrix_user_id_claim proto
+  # field) must raise GRPC.RPCError with status FAILED_PRECONDITION (code 9).
+  #
+  # RED reasons (all three tests fail before Story 14.1a is implemented):
+  #   1. Core.UpdateServerConfigRequest does not have a :matrix_user_id_claim
+  #      field yet — the struct construction raises %KeyError{} immediately.
+  #   2. update_server_config/2 does not read get_server_config/0 or check
+  #      bootstrap_completed — so the AC1 guard never fires (returns ok: true).
+  #   3. update_server_config/2 does not map matrix_user_id_claim → oidc_user_id_claim
+  #      — so the AC2 write never happens.
+
+  describe "UpdateServerConfig — Story 14.1a claim-lock" do
+    # ───────────────────────────────────────────────────────────────────────────
+    # AT-14-1a-1 — AC1: claim change is blocked post-bootstrap
+    # ───────────────────────────────────────────────────────────────────────────
+    #
+    # Given: bootstrap_completed = 'true' AND oidc_user_id_claim = 'sub' in config
+    # When:  UpdateServerConfig is called with matrix_user_id_claim = "email"
+    # Then:  raises GRPC.RPCError with status == GRPC.Status.failed_precondition()
+    # And:   oidc_user_id_claim is still 'sub' in the DB (not modified)
+    #
+    # RED: Core.UpdateServerConfigRequest has no :matrix_user_id_claim field yet
+    #      → struct construction raises KeyError before the guard can fire.
+    test "AT-14-1a-1: claim change blocked post-bootstrap — raises FAILED_PRECONDITION" do
+      insert_config("bootstrap_completed", "true")
+      insert_config("oidc_user_id_claim", "sub")
+
+      # RED: :matrix_user_id_claim is not a field in Core.UpdateServerConfigRequest yet
+      request = %Core.UpdateServerConfigRequest{
+        matrix_user_id_claim: "email"
+      }
+
+      assert_raise GRPC.RPCError, fn ->
+        Server.update_server_config(request, build_stream())
+      end
+
+      # Verify the RPCError carries FAILED_PRECONDITION (status code 9).
+      error =
+        try do
+          Server.update_server_config(request, build_stream())
+          nil
+        rescue
+          e in GRPC.RPCError -> e
+        end
+
+      assert error != nil,
+             "expected GRPC.RPCError to be raised, but no exception was raised"
+
+      assert error.status == GRPC.Status.failed_precondition(),
+             "expected status FAILED_PRECONDITION (#{GRPC.Status.failed_precondition()}), got #{inspect(error.status)}"
+
+      # Verify oidc_user_id_claim was NOT modified.
+      case :ets.lookup(:admin_grpc_test_db, {:config, "oidc_user_id_claim"}) do
+        [{_, value}] ->
+          assert value == "sub",
+                 "expected oidc_user_id_claim to remain 'sub' (unchanged), got #{inspect(value)}"
+
+        [] ->
+          flunk("expected oidc_user_id_claim config row to still exist in DB after blocked update")
+      end
+    end
+
+    # ───────────────────────────────────────────────────────────────────────────
+    # AT-14-1a-2 — AC2: claim change is allowed pre-bootstrap
+    # ───────────────────────────────────────────────────────────────────────────
+    #
+    # Given: no bootstrap_completed key in config
+    # When:  UpdateServerConfig is called with matrix_user_id_claim = "email"
+    # Then:  returns UpdateServerConfigResponse{ok: true}
+    # And:   oidc_user_id_claim is now 'email' in the DB
+    #
+    # RED: Core.UpdateServerConfigRequest has no :matrix_user_id_claim field yet
+    #      → struct construction raises KeyError.
+    test "AT-14-1a-2: claim change allowed pre-bootstrap — persisted as oidc_user_id_claim" do
+      # No bootstrap_completed in config — pre-bootstrap state.
+
+      # RED: :matrix_user_id_claim is not a field in Core.UpdateServerConfigRequest yet
+      request = %Core.UpdateServerConfigRequest{
+        matrix_user_id_claim: "email"
+      }
+
+      response = Server.update_server_config(request, build_stream())
+
+      assert %Core.UpdateServerConfigResponse{ok: true} = response,
+             "expected UpdateServerConfigResponse{ok: true}, got #{inspect(response)}"
+
+      # Verify oidc_user_id_claim was written to 'email'.
+      case :ets.lookup(:admin_grpc_test_db, {:config, "oidc_user_id_claim"}) do
+        [{_, value}] ->
+          assert value == "email",
+                 "expected oidc_user_id_claim='email' in DB, got #{inspect(value)}"
+
+        [] ->
+          flunk("expected oidc_user_id_claim config row in DB after pre-bootstrap update, got nothing")
+      end
+    end
+
+    # ───────────────────────────────────────────────────────────────────────────
+    # AT-14-1a-3 — AC3: non-claim field update succeeds post-bootstrap
+    # ───────────────────────────────────────────────────────────────────────────
+    #
+    # Given: bootstrap_completed = 'true' in config (post-bootstrap state)
+    # When:  UpdateServerConfig is called with oidc_issuer = "https://sso.example.com"
+    #        (no matrix_user_id_claim field)
+    # Then:  returns UpdateServerConfigResponse{ok: true}
+    # And:   oidc_issuer is now 'https://sso.example.com' in DB
+    #
+    # RED: The current update_server_config/2 does not read get_server_config/0
+    #      and does not handle bootstrap_completed gating at all.
+    #      Once Story 14.1a adds the guard, this test validates that only the
+    #      matrix_user_id_claim field is locked; other fields remain mutable.
+    #      This test is RED only in a compilation sense if the guard mis-fires —
+    #      primary RED is via AC1 test proving the guard exists.
+    test "AT-14-1a-3: non-claim field update succeeds post-bootstrap — oidc_issuer mutable" do
+      insert_config("bootstrap_completed", "true")
+
+      request = %Core.UpdateServerConfigRequest{
+        oidc_issuer: "https://sso.example.com"
+      }
+
+      response = Server.update_server_config(request, build_stream())
+
+      assert %Core.UpdateServerConfigResponse{ok: true} = response,
+             "expected UpdateServerConfigResponse{ok: true} for non-claim field update post-bootstrap, got #{inspect(response)}"
+
+      # Verify oidc_issuer was written.
+      case :ets.lookup(:admin_grpc_test_db, {:config, "oidc_issuer"}) do
+        [{_, value}] ->
+          assert value == "https://sso.example.com",
+                 "expected oidc_issuer='https://sso.example.com' in DB, got #{inspect(value)}"
+
+        [] ->
+          flunk("expected oidc_issuer config row in DB after post-bootstrap non-claim update, got nothing")
+      end
+    end
+  end
 end

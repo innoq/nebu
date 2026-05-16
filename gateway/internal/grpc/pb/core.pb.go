@@ -4952,8 +4952,11 @@ type UpdateServerConfigRequest struct {
 	RoomDefaultMaxMembers int32                  `protobuf:"varint,4,opt,name=room_default_max_members,json=roomDefaultMaxMembers,proto3" json:"room_default_max_members,omitempty"`
 	RoomDefaultVisibility string                 `protobuf:"bytes,5,opt,name=room_default_visibility,json=roomDefaultVisibility,proto3" json:"room_default_visibility,omitempty"`
 	AuditLogRetentionDays int32                  `protobuf:"varint,6,opt,name=audit_log_retention_days,json=auditLogRetentionDays,proto3" json:"audit_log_retention_days,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	// Story 14.1a: locked post-bootstrap (maps to DB key oidc_user_id_claim).
+	// Once bootstrap_completed is set, any non-empty value raises FAILED_PRECONDITION.
+	MatrixUserIdClaim string `protobuf:"bytes,7,opt,name=matrix_user_id_claim,json=matrixUserIdClaim,proto3" json:"matrix_user_id_claim,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *UpdateServerConfigRequest) Reset() {
@@ -5026,6 +5029,13 @@ func (x *UpdateServerConfigRequest) GetAuditLogRetentionDays() int32 {
 		return x.AuditLogRetentionDays
 	}
 	return 0
+}
+
+func (x *UpdateServerConfigRequest) GetMatrixUserIdClaim() string {
+	if x != nil {
+		return x.MatrixUserIdClaim
+	}
+	return ""
 }
 
 type UpdateServerConfigResponse struct {
@@ -5504,12 +5514,14 @@ func (x *GetRelationsResponse) GetPrevBatch() string {
 }
 
 // GetEventRequest — Story 11-8: fetch a single event by ID, scoped to a room.
-// user_id is required for membership enforcement.
+// Caller identity is sourced from gRPC metadata (x-user-id), not from user_id field.
 type GetEventRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	RoomId        string                 `protobuf:"bytes,1,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
-	EventId       string                 `protobuf:"bytes,2,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
-	UserId        string                 `protobuf:"bytes,3,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	RoomId  string                 `protobuf:"bytes,1,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
+	EventId string                 `protobuf:"bytes,2,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
+	// user_id is documentation/auditing only — the handler MUST use x-user-id
+	// from gRPC metadata (Nebu.Grpc.Metadata.trusted_identity), never from this field.
+	UserId        string `protobuf:"bytes,3,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -6239,7 +6251,7 @@ const file_core_proto_rawDesc = "" +
 	"\x18audit_log_retention_days\x18\x06 \x01(\x05R\x15auditLogRetentionDays\"\x18\n" +
 	"\x16GetServerConfigRequest\"J\n" +
 	"\x17GetServerConfigResponse\x12/\n" +
-	"\x06config\x18\x01 \x01(\v2\x17.core.ServerConfigProtoR\x06config\"\xb1\x02\n" +
+	"\x06config\x18\x01 \x01(\v2\x17.core.ServerConfigProtoR\x06config\"\xe2\x02\n" +
 	"\x19UpdateServerConfigRequest\x12#\n" +
 	"\rinstance_name\x18\x01 \x01(\tR\finstanceName\x12\x1f\n" +
 	"\voidc_issuer\x18\x02 \x01(\tR\n" +
@@ -6247,7 +6259,8 @@ const file_core_proto_rawDesc = "" +
 	"\x0eoidc_client_id\x18\x03 \x01(\tR\foidcClientId\x127\n" +
 	"\x18room_default_max_members\x18\x04 \x01(\x05R\x15roomDefaultMaxMembers\x126\n" +
 	"\x17room_default_visibility\x18\x05 \x01(\tR\x15roomDefaultVisibility\x127\n" +
-	"\x18audit_log_retention_days\x18\x06 \x01(\x05R\x15auditLogRetentionDays\",\n" +
+	"\x18audit_log_retention_days\x18\x06 \x01(\x05R\x15auditLogRetentionDays\x12/\n" +
+	"\x14matrix_user_id_claim\x18\a \x01(\tR\x11matrixUserIdClaim\",\n" +
 	"\x1aUpdateServerConfigResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\"x\n" +
 	"\x12UpgradeRoomRequest\x12\x1e\n" +

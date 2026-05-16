@@ -2280,6 +2280,18 @@ defmodule Nebu.EventDispatcher.Server do
   def update_server_config(%Core.UpdateServerConfigRequest{} = req, stream) do
     {actor_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
 
+    # Story 14.1a: enforce claim lock — matrix_user_id_claim cannot be changed
+    # after bootstrap_completed is set in server_config.
+    if req.matrix_user_id_claim != "" do
+      {:ok, config} = admin_db_module().get_server_config()
+
+      if Map.get(config, "bootstrap_completed") != nil do
+        raise GRPC.RPCError,
+          status: GRPC.Status.failed_precondition(),
+          message: "matrix_user_id_claim cannot be changed after bootstrap"
+      end
+    end
+
     changes =
       []
       |> maybe_add_change("instance_name", req.instance_name)
@@ -2288,6 +2300,7 @@ defmodule Nebu.EventDispatcher.Server do
       |> maybe_add_int_change("room_default_max_members", req.room_default_max_members)
       |> maybe_add_change("room_default_visibility", req.room_default_visibility)
       |> maybe_add_int_change("audit_log_retention_days", req.audit_log_retention_days)
+      |> maybe_add_change("oidc_user_id_claim", req.matrix_user_id_claim)
 
     if changes == [] do
       %Core.UpdateServerConfigResponse{ok: true}

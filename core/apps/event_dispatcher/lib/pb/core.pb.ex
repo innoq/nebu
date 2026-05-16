@@ -1084,6 +1084,7 @@ defmodule Core.UpdateServerConfigRequest do
   field :room_default_max_members, 4, type: :int32, json_name: "roomDefaultMaxMembers"
   field :room_default_visibility, 5, type: :string, json_name: "roomDefaultVisibility"
   field :audit_log_retention_days, 6, type: :int32, json_name: "auditLogRetentionDays"
+  field :matrix_user_id_claim, 7, type: :string, json_name: "matrixUserIdClaim"
 end
 
 defmodule Core.UpdateServerConfigResponse do
