@@ -43,6 +43,14 @@ invalidated JWT (bypassing the SSO nonce check). Status `403 M_FORBIDDEN` (not `
 intentional: `POST /login` is an authentication *attempt*, not a session validation request.
 `LoginHandler.store` is nil-safe — deployments without a denylist skip the check.
 
+**Deactivated User Login Rejection (Story 14.4):**
+
+`PostLogin` calls `ValidateToken` gRPC which checks `is_active` in the DB. When the Elixir
+core returns `PERMISSION_DENIED` with message `"user account is deactivated"`, `PostLogin`
+responds `403 M_USER_DEACTIVATED` (Matrix CS API v1.18 required errcode). This covers the
+case where a user was deleted via GDPR erasure but attempts to re-authenticate via OIDC.
+All other `ValidateToken` errors remain `500 M_UNKNOWN` (defensive — no internals leaked).
+
 **Cache-Control: no-store on SSO Redirect (Story 11-7):**
 
 `GetSSORedirect` sets `Cache-Control: no-store` before the `http.Redirect` call. This
@@ -118,12 +126,30 @@ original exception. A nested `try/rescue` around the audit write itself ensures 
 audit writer never masks the original error. This guarantees that any partially-applied operation
 leaves a forensic record even when the gRPC call ultimately returns an error to the client.
 
+## GDPR Article 17 Right to Erasure — Deletion Orchestration (Story 14.4)
+
+`DELETE /api/v1/admin/users/{userId}` — instance_admin only (four-eyes: caller ≠ target).
+
+The `GdprDeleteHandler` (`gateway/internal/compliance/gdpr_delete.go`) chains the existing building blocks into a single atomic-from-the-caller's-perspective pipeline:
+
+1. **DeactivateUser gRPC** — `is_active=false` + all sessions destroyed (NOT_FOUND → 404 stops pipeline; AlreadyExists → idempotent continue)
+2. **DeleteUserKeys gRPC** — `private_key = NULL` for signing + encryption keys (best-effort: failure logged, pipeline continues)
+3. **DB anonymization TX** — `profiles.displayname = 'Deleted User'`, `profiles.avatar_url = NULL`, `users.anonymized_at = <unix_ms>` (failure → 500, PII erasure MUST NOT be silently skipped)
+4. **Audit emit** — `gdpr_deletion` event with `keys_deleted: "confirmed"|"failed_best_effort"` metadata (never-raise: audit failure does not block 200)
+5. **200** `{"user_id": "...", "status": "gdpr_deleted"}`
+
+**Login behavior after deletion:** `POST /_matrix/client/v3/login` — when `ValidateToken` gRPC returns `PERMISSION_DENIED` with message containing `"deactivated"`, the gateway responds `403 M_USER_DEACTIVATED` (Matrix CS API v1.18 compliant).
+
+**Room history preservation:** Messages in room event timelines are NOT deleted — per Matrix spec and GDPR recital 65 (legitimate archive interest). The sender's profile is anonymized; message content remains.
+
+Runbook: `docs/compliance/gdpr-deletion-runbook.md`
+
 ## Three PII Tiers
 
 | Tier | Data | At Rest | GDPR Deletion |
 |---|---|---|---|
-| Operational PII | Display name, avatar | Encrypted at rest | Overwrite with "Deleted User [id]" |
-| Sensitive PII | Email, IdP subject | Encrypted with user's X25519 key | Delete private key → irrecoverable |
+| Operational PII | Display name, avatar | Encrypted at rest | Overwrite with "Deleted User" (via `GdprDeleteHandler`, Story 14.4) |
+| Sensitive PII | Email, IdP subject | Encrypted with user's X25519 key | Delete private key → irrecoverable (via `DeleteUserKeys`, Story 5.7) |
 | Message Content | Chat messages | Plain in DB (audit requirement) | Not deleted; sender anonymized |
 
 ## Per-Device Sync Token Isolation (Story 9-22)

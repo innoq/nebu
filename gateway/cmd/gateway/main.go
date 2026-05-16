@@ -1300,6 +1300,17 @@ func main() {
 	mux.Handle("POST /api/v1/admin/users/{userId}/anonymize",
 		complianceRL(jwtWithStatusCheck(http.HandlerFunc(anonymizationHandler.AnonymizeUser))))
 
+	// Story 14.4 — GDPR Right to Erasure
+	// Route namespace: /api/v1/admin/* — instance_admin only, role gate inside handler.
+	// Orchestrates: DeactivateUser + DeleteUserKeys + anonymize + audit "gdpr_deletion".
+	gdprDeleteHandler := &compliance.GdprDeleteHandler{
+		DB:          complianceDB,
+		CoreClient:  coreClient.CoreServiceClient(),
+		StoragePath: os.Getenv("NEBU_MEDIA_STORAGE_PATH"),
+	}
+	mux.Handle("DELETE /api/v1/admin/users/{userId}",
+		complianceRL(bodyLimit64KiB(jwtWithStatusCheck(http.HandlerFunc(gdprDeleteHandler.DeleteUser)))))
+
 	// POST /rooms/{roomId}/leave — leave a room (calls Elixir LeaveRoom gRPC)
 	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/leave",
 		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

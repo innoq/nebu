@@ -198,7 +198,10 @@ gateway/
     │                              string (Story 11-10): per-request DB lookup for oidc_user_id_claim;
     │                              nil loader falls back to "name" claim (backward-compat)
     ├── registry/               ← Elixir node registry (/internal/nodes/*)
-    ├── compliance/             ← Compliance API handlers (four-eyes, export, anonymize)
+    ├── compliance/             ← Compliance API handlers (four-eyes, export, anonymize, GDPR deletion)
+    │   │                          GdprDeleteHandler (Story 14.4): DELETE /api/v1/admin/users/{userId}
+    │   │                          Orchestrates: DeactivateUser gRPC → DeleteUserKeys gRPC (best-effort) →
+    │   │                          anonymizeUser TX → gdpr_deletion audit (never-raise) → 200
     ├── health/                 ← /health + /ready handlers; info.go adds GET /info
     │   │                          (NewInfoHandler — static JSON, no DB/gRPC, zero allocs per request;
     │   │                          component/version/gitCommit/buildTime set via ldflags at Docker build
