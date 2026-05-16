@@ -25,6 +25,8 @@ import (
 	"github.com/nebu/nebu/internal/audit"
 	pb "github.com/nebu/nebu/internal/grpc/pb"
 	"github.com/nebu/nebu/internal/middleware"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // AdminServer implements StrictServerInterface.
@@ -158,6 +160,27 @@ func (s *AdminServer) PatchAdminConfig(ctx context.Context, req PatchAdminConfig
 			return nil, err
 		}
 		changedKeys = append(changedKeys, "audit_log_retention_days")
+	}
+
+	// matrix_user_id_claim goes through Core gRPC — Core owns the bootstrap-lock logic.
+	// FAILED_PRECONDITION (code 9) means post-bootstrap lock is active → 400 M_FORBIDDEN.
+	if body.MatrixUserIdClaim != nil && *body.MatrixUserIdClaim != "" {
+		if s.CoreClient == nil {
+			return PatchAdminConfig501Response{}, nil
+		}
+		_, grpcErr := s.CoreClient.UpdateServerConfig(ctx, &pb.UpdateServerConfigRequest{
+			MatrixUserIdClaim: *body.MatrixUserIdClaim,
+		})
+		if grpcErr != nil {
+			if st, ok := status.FromError(grpcErr); ok && st.Code() == codes.FailedPrecondition {
+				return &patchAdminConfig400ForbiddenResp{
+					msg: "matrix_user_id_claim cannot be changed after bootstrap",
+				}, nil
+			}
+			slog.Error("PatchAdminConfig: UpdateServerConfig gRPC error", "err", grpcErr)
+			return nil, grpcErr
+		}
+		changedKeys = append(changedKeys, "matrix_user_id_claim")
 	}
 
 	// Invalidate all admin sessions if any OIDC field changed (best-effort — log on error, do not fail).
@@ -328,6 +351,21 @@ func (r *patchAdminConfig400Resp) VisitPatchAdminConfigResponse(w http.ResponseW
 	w.WriteHeader(http.StatusBadRequest)
 	return json.NewEncoder(w).Encode(map[string]any{
 		"error": map[string]string{"code": "M_BAD_JSON", "message": r.msg},
+	})
+}
+
+// patchAdminConfig400ForbiddenResp — 400 M_FORBIDDEN for post-bootstrap claim lock.
+// Used when Core returns FAILED_PRECONDITION for UpdateServerConfig (matrix_user_id_claim).
+// Uses the flat Matrix Client-Server API error format: {"errcode": "...", "error": "..."}.
+// Implements PatchAdminConfigResponseObject.
+type patchAdminConfig400ForbiddenResp struct{ msg string }
+
+func (r *patchAdminConfig400ForbiddenResp) VisitPatchAdminConfigResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusBadRequest)
+	return json.NewEncoder(w).Encode(map[string]any{
+		"errcode": "M_FORBIDDEN",
+		"error":   r.msg,
 	})
 }
 

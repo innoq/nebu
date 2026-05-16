@@ -7,6 +7,15 @@
 
   {{ if .Flash.Message }}{{ template "alert_banner" .Flash }}{{ end }}
 
+  {{ if .BootstrapCompleted }}
+  <div role="alert" aria-live="polite" class="alert alert-info">
+    <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+        d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+    <span class="text-sm">This claim cannot be changed after bootstrap.</span>
+  </div>
+  {{ else }}
   <div role="alert" aria-live="assertive" class="alert alert-warning">
     <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -19,14 +28,23 @@
       Only change this setting on a fresh instance or after a planned migration.
     </span>
   </div>
+  {{ end }}
 
   <form method="POST" action="/admin/config/claim-mapping" class="flex flex-col gap-4">
     <input type="hidden" name="_csrf" value="{{ .CSRFToken }}">
 
     <div class="form-control">
-      <label class="label" for="oidc_user_id_claim">
+      <label class="label">
         <span class="label-text">Matrix User ID Source Claim</span>
       </label>
+      {{ if .BootstrapCompleted }}
+      <div class="input input-bordered w-full bg-base-200 flex items-center px-3">
+        <span class="text-base-content/80">{{ .UserIDClaim }}</span>
+      </div>
+      <p class="text-xs text-base-content/60 mt-1">
+        The OIDC claim used to derive the Matrix local part. Locked after bootstrap.
+      </p>
+      {{ else }}
       <input type="text" id="oidc_user_id_claim" name="oidc_user_id_claim"
              value="{{ .UserIDClaim }}"
              class="input input-bordered w-full"
@@ -46,6 +64,7 @@
       </p>
       {{ if index .Errors "oidc_user_id_claim" }}
       <p class="text-error text-sm mt-1" id="err-oidc_user_id_claim" role="alert" data-field="oidc_user_id_claim">{{ index .Errors "oidc_user_id_claim" }}</p>
+      {{ end }}
       {{ end }}
     </div>
 

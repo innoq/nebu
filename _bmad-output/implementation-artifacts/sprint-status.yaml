@@ -147,8 +147,8 @@ development_status:
   # Pre-Epic-TODO: ADR-015 (OIDC User Directory Integration Strategy: SCIM vs. OIDC-API-Direkt)
   # ─────────────────────────────────────────────────────────────────────────
   epic-14: backlog
-  14-1a-core-matrix-user-id-claim-lock-failed-precondition: backlog
-  14-1b-gateway-api-validation-admin-ui-readonly-display: backlog
+  14-1a-core-matrix-user-id-claim-lock-failed-precondition: done
+  14-1b-gateway-api-validation-admin-ui-readonly-display: done
   14-2a-server-config-schema-oidc-directory-enabled-endpoint: backlog
   14-2b-gateway-oidc-directory-service-cache-rate-limit: backlog
   14-2c-admin-ui-user-search-oidc-integration-not-yet-logged-in: backlog

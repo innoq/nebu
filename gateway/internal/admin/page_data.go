@@ -302,11 +302,15 @@ type RoleMappingPageData struct {
 // Flash is populated when ?flash= query param is present (PRG pattern).
 type ClaimMappingPageData struct {
 	PageData
-	UserIDClaim      string
-	DisplaynameClaim string
-	EmailClaim       string
-	Errors           map[string]string
-	Flash            AlertBannerData
+	UserIDClaim        string
+	DisplaynameClaim   string
+	EmailClaim         string
+	Errors             map[string]string
+	Flash              AlertBannerData
+	// BootstrapCompleted is true when the bootstrap_completed key is set in server_config.
+	// When true, the claim-mapping template renders oidc_user_id_claim as read-only text
+	// and shows an info banner — the field cannot be changed post-bootstrap (Story 14-1b).
+	BootstrapCompleted bool
 }
 
 // CompliancePageData holds data for the Compliance Access Requests page (Story 7.11).

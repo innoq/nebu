@@ -45,6 +45,8 @@ import (
 	"github.com/nebu/nebu/internal/middleware"
 	pb "github.com/nebu/nebu/internal/grpc/pb"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // ── Test doubles: ServerConfigRepository ──────────────────────────────────────
@@ -110,9 +112,9 @@ func (m *mockRoomDefaultsForConfig) GetRoomDefaults(
 
 // ── Test doubles: CoreServiceClient for config tests ─────────────────────────
 
-// mockCoreClientForConfig captures calls to InvalidateAllAdminSessions and WriteAuditLog.
-// It satisfies pb.CoreServiceClient via embedding; only the methods used by the
-// config handlers are overridden.
+// mockCoreClientForConfig captures calls to InvalidateAllAdminSessions, WriteAuditLog,
+// and UpdateServerConfig. It satisfies pb.CoreServiceClient via embedding; only the
+// methods used by the config handlers are overridden.
 type mockCoreClientForConfig struct {
 	pb.CoreServiceClient // embed to satisfy interface
 
@@ -122,6 +124,12 @@ type mockCoreClientForConfig struct {
 
 	// WriteAuditLog tracking
 	auditCalled bool
+
+	// UpdateServerConfig tracking (Story 14-1b: matrix_user_id_claim via gRPC)
+	updateServerConfigCalled             bool
+	updateServerConfigFailPrecondition   bool
+	updateServerConfigErr                error
+	capturedMatrixUserIDClaim            string
 }
 
 func (m *mockCoreClientForConfig) InvalidateAllAdminSessions(
@@ -140,6 +148,21 @@ func (m *mockCoreClientForConfig) WriteAuditLog(
 ) (*pb.WriteAuditLogResponse, error) {
 	m.auditCalled = true
 	return &pb.WriteAuditLogResponse{}, nil
+}
+
+func (m *mockCoreClientForConfig) UpdateServerConfig(
+	_ context.Context,
+	req *pb.UpdateServerConfigRequest,
+	_ ...grpc.CallOption,
+) (*pb.UpdateServerConfigResponse, error) {
+	m.updateServerConfigCalled = true
+	if req != nil {
+		m.capturedMatrixUserIDClaim = req.GetMatrixUserIdClaim()
+	}
+	if m.updateServerConfigFailPrecondition {
+		return nil, status.Error(codes.FailedPrecondition, "matrix_user_id_claim cannot be changed after bootstrap")
+	}
+	return &pb.UpdateServerConfigResponse{Ok: true}, m.updateServerConfigErr
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -901,5 +924,91 @@ func TestPatchAdminConfig_DBError_DoesNotLeakDBMessage(t *testing.T) {
 		if strings.Contains(msg, "pq:") || strings.Contains(msg, "duplicate") {
 			t.Errorf("[HIGH/CWE-209] SECURITY VIOLATION: sanitized message still contains DB details: %q", msg)
 		}
+	}
+}
+
+// ── Story 14-1b: AT#1 — POST-bootstrap PATCH with matrix_user_id_claim → 400 ──
+
+// TestPatchAdminConfig_MatrixUserIDClaim_PostBootstrap_Returns400 covers AT#1 (AC1) [P0]:
+// When Core returns FAILED_PRECONDITION for UpdateServerConfig (post-bootstrap),
+// PATCH /api/v1/admin/config with matrix_user_id_claim must return 400 M_FORBIDDEN.
+// UpsertServerConfigKey must NOT be called.
+//
+// RED PHASE — fails until PatchAdminConfig handles matrix_user_id_claim via gRPC.
+func TestPatchAdminConfig_MatrixUserIDClaim_PostBootstrap_Returns400(t *testing.T) {
+	configRepo := &mockServerConfigRepository{
+		configData: &api.ServerConfigData{
+			InstanceName:          "Test",
+			OIDCIssuer:            "https://dex.example",
+			OIDCClientID:          "test-client",
+			AuditLogRetentionDays: 2555,
+		},
+	}
+	roomDefaultsRepo := &mockRoomDefaultsForConfig{getVisibility: "private"}
+	coreClient := &mockCoreClientForConfig{
+		updateServerConfigFailPrecondition: true, // simulates post-bootstrap lock
+	}
+
+	w := doPatchAdminConfig(t, configRepo, roomDefaultsRepo, coreClient,
+		`{"matrix_user_id_claim": "email"}`)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("[AT#1/AC1] expected status 400, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("[AT#1/AC1] response is not valid JSON: %v", err)
+	}
+	if resp["errcode"] != "M_FORBIDDEN" {
+		t.Errorf("[AT#1/AC1] expected errcode='M_FORBIDDEN', got %v", resp["errcode"])
+	}
+	errMsg, _ := resp["error"].(string)
+	if !strings.Contains(errMsg, "matrix_user_id_claim cannot be changed after bootstrap") {
+		t.Errorf("[AT#1/AC1] expected error message to contain claim-lock text, got: %q", errMsg)
+	}
+
+	// UpsertServerConfigKey must NOT be called (only gRPC path is used for this field)
+	if configRepo.upsertCalled {
+		t.Error("[AT#1/AC1] UpsertServerConfigKey must NOT be called for matrix_user_id_claim")
+	}
+}
+
+// ── Story 14-1b: AT#2 — PRE-bootstrap PATCH with matrix_user_id_claim → 200 ───
+
+// TestPatchAdminConfig_MatrixUserIDClaim_PreBootstrap_Returns200 covers AT#2 (AC1/AC4) [P0]:
+// When Core returns success for UpdateServerConfig (pre-bootstrap),
+// PATCH /api/v1/admin/config with matrix_user_id_claim must return 200.
+// UpdateServerConfig must be called with the correct claim value.
+//
+// RED PHASE — fails until PatchAdminConfig handles matrix_user_id_claim via gRPC.
+func TestPatchAdminConfig_MatrixUserIDClaim_PreBootstrap_Returns200(t *testing.T) {
+	configRepo := &mockServerConfigRepository{
+		configData: &api.ServerConfigData{
+			InstanceName:          "Test",
+			OIDCIssuer:            "https://dex.example",
+			OIDCClientID:          "test-client",
+			AuditLogRetentionDays: 2555,
+		},
+	}
+	roomDefaultsRepo := &mockRoomDefaultsForConfig{getVisibility: "private"}
+	coreClient := &mockCoreClientForConfig{
+		updateServerConfigFailPrecondition: false, // simulates pre-bootstrap (success)
+	}
+
+	w := doPatchAdminConfig(t, configRepo, roomDefaultsRepo, coreClient,
+		`{"matrix_user_id_claim": "preferred_username"}`)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("[AT#2/AC1] expected status 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	// UpdateServerConfig must have been called with the correct claim value.
+	if !coreClient.updateServerConfigCalled {
+		t.Error("[AT#2/AC1] expected UpdateServerConfig to be called for matrix_user_id_claim")
+	}
+	if coreClient.capturedMatrixUserIDClaim != "preferred_username" {
+		t.Errorf("[AT#2/AC1] expected capturedMatrixUserIDClaim='preferred_username', got %q",
+			coreClient.capturedMatrixUserIDClaim)
 	}
 }

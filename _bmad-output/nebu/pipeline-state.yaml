@@ -1,6 +1,30 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
-# last_updated: 2026-05-14
+# last_updated: 2026-05-16
+# [14-1b] 2026-05-16T21:45Z committed ✓ (ATDD+Code CLEAN 1 cycle+Kassandra CLEAN 1 LOW advisory — gRPC claim lock, read-only UI, bootstrap wizard info text)
+# [14-1b] 2026-05-16T21:44Z arc42-update → no structural changes (claim-lock pattern established in 14-1a, UI refinement only)
+# [14-1b] 2026-05-16T21:43Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 1 LOW advisory — no API-level format validation on claim value, admin-only endpoint acceptable)
+# [14-1b] 2026-05-16T21:42Z code-review → CLEAN (cycle 1) — MINOR-2 fixed inline (UpdateHandler abort on LoadClaimMapping error post-bootstrap)
+# [14-1b] 2026-05-16T21:38Z ci-gate → ✓ build+unit-go+unit-elixir (all green)
+# [14-1b] 2026-05-16T21:35Z dev-story → done (cycle 1) — MINOR-2 fixed: abort on LoadClaimMapping error post-bootstrap
+# [14-1b] 2026-05-16T21:25Z dev-story → done (cycle 0) — openapi+gen-api, server.go gRPC path+patchAdminConfig400ForbiddenResp, ClaimMappingPageData.BootstrapCompleted, Handler+UpdateHandler, claim-mapping.html conditional, bootstrap.html Step3 info, 5 unit tests + Godog feature + step defs
+# [14-1b] 2026-05-16T21:20Z test-review → CLEAN (0 MAJOR; all 6 ACs covered; AT plan complete)
+# [14-1b] 2026-05-16T12:05Z oracle-gate → skipped (no Matrix CS API endpoints — admin-only story)
+# [14-1b] 2026-05-16T12:02Z create-story → 14-1b-gateway-api-validation-admin-ui-readonly-matrix-user-id-claim.md
+# [14-1b] 2026-05-16T12:00Z pipeline started
+# [14-1a] 2026-05-16T epic-loop → story done (proto field + FAILED_PRECONDITION guard + 3 ExUnit tests + security clean)
+# [14-1a] 2026-05-16T10:03Z oracle-gate → skipped (no Matrix feature)
+# [14-1a] 2026-05-16T10:02Z create-story → 14-1a-core-failed-precondition-matrix-user-id-claim-post-bootstrap.md
+# [14-1a] 2026-05-16T10:00Z pipeline started
+# [13-13] 2026-05-14T19:41Z committed ✓ (infra only, no Matrix changes)
+# [13-13] 2026-05-14T19:40Z arc42-update → no arch changes
+# [13-13] 2026-05-14T19:40Z security-review → skipped (not-needed)
+# [13-13] 2026-05-14T19:39Z code-review → CLEAN (cycle 0)
+# [13-13] 2026-05-14T19:38Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
+# [13-13] 2026-05-14T19:38Z dev-story → done (cycle 0)
+# [13-13] 2026-05-14T18:56Z test-review → skipped (infra)
+# [13-13] 2026-05-14T18:56Z atdd → skipped (infra)
+# [13-13] 2026-05-14T18:53Z pipeline started
 # [13-11] 2026-05-14T11:00Z committed ✓ (Makefile release+release-push, CI release stage, deploy docs — 2 MINOR cycles CLEAN)
 # [13-11] 2026-05-14T10:58Z arc42-update → done (07-deployment: release pipeline two-track strategy, make release targets, operator integration)
 # [13-11] 2026-05-14T10:53Z security-review → skipped (not-needed)
@@ -480,9 +504,18 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: null
-current_step: null
-completed: []
-cycle_count: 0
+story: "14-1b"
+current_step: "done"
+completed:
+  - create-story
+  - atdd
+  - test-review
+  - dev-story
+  - ci-gate
+  - code-review
+  - security-review
+  - arc42-update
+  - commit
+cycle_count: 1
 blocked_reason: null
-last_updated: "2026-05-14T08:56Z"
+last_updated: "2026-05-16T21:45Z"

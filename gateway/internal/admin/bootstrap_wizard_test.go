@@ -194,3 +194,37 @@ func TestBootstrapWizard_StepHandler_BackNavigation(t *testing.T) {
 		t.Error("back navigation to step 1 should not show step 2 content")
 	}
 }
+
+// ── Story 14-1b: AT#5 — Bootstrap Wizard Step 3 info text ────────────────────
+
+// TestBootstrapHandler_Step3_ShowsInfoText covers AT#5 (AC3) [P0]:
+// Bootstrap Wizard Step 3 must always show the info text
+// "The Matrix User ID claim cannot be changed after completing setup."
+// This is informational and displayed pre-bootstrap (wizard runs before bootstrap is complete).
+//
+// RED PHASE — fails until bootstrap.html Step 3 includes the info text.
+func TestBootstrapHandler_Step3_ShowsInfoText(t *testing.T) {
+	tmpl, err := NewTemplateHandler()
+	if err != nil {
+		t.Fatalf("[AT#5/AC3] NewTemplateHandler: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	// Render Step 3 — bootstrap is always pre-bootstrap when the wizard renders.
+	data := BootstrapPageData{
+		PageData:         PageData{BootstrapMode: true, ActiveNav: "bootstrap"},
+		Step:             3,
+		InstanceName:     "my-instance",
+		OIDCIssuer:       "https://dex.example.com",
+		OIDCClientID:     "nebu-client",
+		OIDCUserIDClaim:  "email",
+		OIDCDisplaynameClaim: "name",
+		OIDCEmailClaim:   "email",
+	}
+	tmpl.render(w, "bootstrap", data)
+
+	body := w.Body.String()
+	if !strings.Contains(body, "The Matrix User ID claim cannot be changed after completing setup") {
+		t.Error("[AT#5/AC3] expected info text 'The Matrix User ID claim cannot be changed after completing setup' in bootstrap step 3")
+	}
+}

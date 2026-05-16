@@ -237,6 +237,9 @@ components:
           type: integer
           minimum: 1
           maximum: 36500
+        matrix_user_id_claim:
+          type: string
+          description: "OIDC claim used for Matrix User ID derivation. Cannot be changed after bootstrap."
       # All fields optional — partial update semantics
     AdminMetricsResponse:
       type: object
