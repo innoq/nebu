@@ -33,11 +33,13 @@ type ConfigKeyWriter interface {
 // ConfigHandler serves the Server Configuration page (Story 7.10).
 // Story 9.4: backed by real gRPC calls to the Elixir core when core is non-nil.
 // Story 14-2a: configDB is used for direct DB upsert of proto3 bool fields.
+// Story 14-3c: secret is used to encrypt scim_bearer_token before persistence (CR-1).
 // Falls back to stub data when core is nil (unit-test path).
 type ConfigHandler struct {
 	tmpl     *TemplateHandler
 	core     AdminConfigClient
 	configDB ConfigKeyWriter // Story 14-2a: direct DB write for bool config keys
+	secret   []byte          // Story 14-3c: AES-256-GCM key for scim_bearer_token encryption (CR-1)
 }
 
 // NewConfigHandler creates a ConfigHandler with the given template handler and optional gRPC client.
@@ -60,11 +62,25 @@ func (h *ConfigHandler) WithConfigDB(db ConfigKeyWriter) *ConfigHandler {
 	return h
 }
 
+// WithSecret sets the AES-256-GCM encryption key used to encrypt scim_bearer_token before DB storage.
+// Story 14-3c: CR-1 requires the raw bearer token to never appear in plaintext in the database.
+// Call after NewConfigHandler with the same secret used by BootstrapHandler (from NEBU_INTERNAL_SECRET_FILE).
+func (h *ConfigHandler) WithSecret(secret []byte) *ConfigHandler {
+	h.secret = secret
+	return h
+}
+
 // protoToStubConfig maps a ServerConfigProto to StubConfig for template rendering.
 // Template compatibility: retaining StubConfig avoids a cross-file refactor.
 // AllowRegistration: not in proto (no corresponding server config field in the current data model).
 // It is preserved in StubConfig for backward compatibility; the checkbox remains UI-only.
 // NOTE: when core is nil, the stub default (AllowRegistration: true) is used.
+//
+// Story 14-3c: SCIM fields (scim_enabled, scim_base_url, scim_bearer_token_set) are NOT in the
+// proto (ServerConfigProto) — they are persisted via direct DB upsert like oidc_directory_enabled.
+// The caller (Handler) must supplement the protoToStubConfig result with SCIM fields from
+// stubConfig (unit-test path) or from a direct DB read (real path).
+// ScimBearerTokenSet is derived from whether the encrypted token is non-empty — CR-1.
 func protoToStubConfig(p *pb.ServerConfigProto) StubConfig {
 	return StubConfig{
 		InstanceName:    p.GetInstanceName(),
@@ -74,6 +90,11 @@ func protoToStubConfig(p *pb.ServerConfigProto) StubConfig {
 		AllowRegistration:     stubConfig.AllowRegistration,
 		OidcDirectoryEnabled:  p.GetOidcDirectoryEnabled(),  // Story 14-2a
 		OidcDirectoryEndpoint: p.GetOidcDirectoryEndpoint(), // Story 14-2a
+		// SCIM fields are not in proto — carry over from in-memory stub.
+		// In the real path these are loaded by ConfigHandler.Handler from configDB.
+		ScimEnabled:        stubConfig.ScimEnabled,
+		ScimBaseURL:        stubConfig.ScimBaseURL,
+		ScimBearerTokenSet: stubConfig.ScimBearerTokenSet,
 	}
 }
 
@@ -143,6 +164,21 @@ func (h *ConfigHandler) UpdateConfigHandler(w http.ResponseWriter, r *http.Reque
 	oidcDirectoryEnabled := r.FormValue("oidc_directory_enabled") == "on"
 	oidcDirectoryEndpoint := strings.TrimSpace(r.FormValue("oidc_directory_endpoint"))
 
+	// Parse SCIM fields from the form (Story 14-3c).
+	// CR-2: scim_base_url must be HTTPS — validated below.
+	// CR-1: scim_bearer_token is encrypted before persistence; never stored in plain text.
+	scimEnabled := r.FormValue("scim_enabled") == "on"
+	scimBaseURL := strings.TrimSpace(r.FormValue("scim_base_url"))
+	scimBearerToken := r.FormValue("scim_bearer_token") // raw token — encrypted before storage
+
+	// CR-2: validate HTTPS for scim_base_url when non-empty.
+	if scimBaseURL != "" {
+		if err := validateEndpoint(scimBaseURL); err != nil {
+			http.Error(w, "scim_base_url must use HTTPS", http.StatusBadRequest)
+			return
+		}
+	}
+
 	if h.core != nil {
 		// gRPC path — enrich context with admin identity so Core audit log records actor_user_id.
 		grpcCtx := contextWithAdminIdentity(r.Context(), AdminSubFromContext(r.Context()))
@@ -168,7 +204,7 @@ func (h *ConfigHandler) UpdateConfigHandler(w http.ResponseWriter, r *http.Reque
 			http.Redirect(w, r, "/admin/config?flash=Error+updating+config", http.StatusFound)
 			return
 		}
-		// Persist oidc_directory_enabled directly to DB (Story 14-2a):
+		// Persist bool and SCIM fields directly to DB (Story 14-2a / Story 14-3c):
 		// proto3 bool cannot safely round-trip via gRPC (false == unset), so we use a
 		// direct DB upsert. configDB is nil in unit tests (stub path handled below).
 		if h.configDB != nil {
@@ -181,6 +217,36 @@ func (h *ConfigHandler) UpdateConfigHandler(w http.ResponseWriter, r *http.Reque
 				http.Redirect(w, r, "/admin/config?flash=Error+updating+config", http.StatusFound)
 				return
 			}
+			// Story 14-3c: persist SCIM config via direct DB upsert (same pattern as OIDC bool).
+			scimEnabledStr := "false"
+			if scimEnabled {
+				scimEnabledStr = "true"
+			}
+			if dbErr := h.configDB.UpsertServerConfigKey(r.Context(), "scim_enabled", scimEnabledStr); dbErr != nil {
+				slog.Error("admin: failed to persist scim_enabled", "err", dbErr)
+				http.Redirect(w, r, "/admin/config?flash=Error+updating+config", http.StatusFound)
+				return
+			}
+			if dbErr := h.configDB.UpsertServerConfigKey(r.Context(), "scim_base_url", scimBaseURL); dbErr != nil {
+				slog.Error("admin: failed to persist scim_base_url", "err", dbErr)
+				http.Redirect(w, r, "/admin/config?flash=Error+updating+config", http.StatusFound)
+				return
+			}
+			// CR-1: only persist scim_bearer_token when the form submitted a non-empty value.
+			// If the field is empty, the existing token is left unchanged (user submitted no change).
+			if scimBearerToken != "" && h.secret != nil {
+				encToken, encErr := encryptAES256GCM(h.secret, scimBearerToken)
+				if encErr != nil {
+					slog.Error("admin: failed to encrypt scim_bearer_token", "err", encErr)
+					http.Redirect(w, r, "/admin/config?flash=Error+updating+config", http.StatusFound)
+					return
+				}
+				if dbErr := h.configDB.UpsertServerConfigKey(r.Context(), "scim_bearer_token", encToken); dbErr != nil {
+					slog.Error("admin: failed to persist scim_bearer_token", "err", dbErr)
+					http.Redirect(w, r, "/admin/config?flash=Error+updating+config", http.StatusFound)
+					return
+				}
+			}
 		}
 	} else {
 		// stub fallback (nil client, unit-test path)
@@ -190,6 +256,13 @@ func (h *ConfigHandler) UpdateConfigHandler(w http.ResponseWriter, r *http.Reque
 		stubConfig.RetentionDays = retentionDays
 		stubConfig.OidcDirectoryEnabled = oidcDirectoryEnabled
 		stubConfig.OidcDirectoryEndpoint = oidcDirectoryEndpoint
+		// Story 14-3c: update SCIM fields in stub (unit-test path).
+		// CR-1: never store raw token — use ScimBearerTokenSet bool instead.
+		stubConfig.ScimEnabled = scimEnabled
+		stubConfig.ScimBaseURL = scimBaseURL
+		if scimBearerToken != "" {
+			stubConfig.ScimBearerTokenSet = true
+		}
 	}
 
 	http.Redirect(w, r, "/admin/config?flash=Config+updated", http.StatusFound)

@@ -24,7 +24,22 @@ gateway/
 │                              core BulkImportClient, serverName; WithImportServices fluent setter;
 │                              GET ?step=4 renders import step; StepHandler case 4 handles
 │                              action=preview + action=import; OIDCDirectoryFetcher and
-│                              BulkImportClient interfaces defined here for testability)
+│                              BulkImportClient interfaces defined here for testability;
+│                              Story 14-3c: scimFetcher SCIMFetcher field added; SCIM takes
+│                              priority over OIDC when both enabled (AC1); singleton importInProgress
+│                              atomic.Bool guard → HTTP 409 on concurrent import (HR-3);
+│                              importProgress *importProgressState updated atomically during import;
+│                              OIDCDirectoryEnabled = oidcEnabled || scimEnabled in Handler and
+│                              StepHandler step 4; preview action uses SCIM-preferred fetcher
+│                              selection (MINOR-2 fix))
+│   └── bootstrap_scim.go      ← Story 14-3c: SCIM 2.0 extensions to BootstrapHandler;
+│                              SCIMFetcher interface (mirrors OIDCDirectoryFetcher);
+│                              importProgressState struct (imported/total/failed atomic.Int32
+│                              + done atomic.Bool); package-level singletons importInProgress
+│                              + importProgress; importStatusHandler → JSON response shape
+│                              {imported,total,failed,done}; WithSCIMFetcher fluent setter;
+│                              resetImportState() test helper (in production file to avoid
+│                              duplicate-symbol build errors; no testing import)
     ├── matrix/                 ← Matrix Client-Server API handlers
     │   ├── login.go            ← POST /_matrix/client/v3/login (SSO + OIDC)
     │   ├── logout.go           ← POST /_matrix/client/v3/logout; NewLogoutHandlerWithCore cleans up
@@ -100,7 +115,14 @@ gateway/
     │   │                          indistinguishable from "not set"); WithConfigDB(repo) wires the direct
     │   │                          DB path; StubConfig gains OidcDirectoryEnabled bool + OidcDirectoryEndpoint
     │   │                          string (Story 14-2a); config.html renders toggle + conditional endpoint
-    │   │                          field (plain JS onchange — no Alpine.js in templates)
+    │   │                          field (plain JS onchange — no Alpine.js in templates);
+    │   │                          Story 14-3c: secret []byte field + WithSecret(secret) fluent setter
+    │   │                          for AES-256-GCM encryption of scim_bearer_token on save (CR-1);
+    │   │                          StubConfig gains ScimEnabled bool, ScimBaseURL string,
+    │   │                          ScimBearerTokenSet bool; UpdateConfigHandler parses scim_enabled/
+    │   │                          scim_base_url/scim_bearer_token; HTTPS validation at save time (CR-2);
+    │   │                          token encrypted via encryptAES256GCM before DB upsert; only persisted
+    │   │                          when form field is non-empty (leave-existing semantics)
     │   ├── page_data.go        ← PageData struct + newPageData() helper + SetBuildInfo();
     │   │                          BuildVersion/GitCommit/BuildTime fields on PageData; SetBuildInfo
     │   │                          called once from main.go; newPageData() used by all authenticated
@@ -129,7 +151,22 @@ gateway/
     │   │                          documented (Option B — private IP blocking tracked as follow-up);
     │   │                          Story 14-2c: IsEnabled() method exposes enabled flag for handler-level
     │   │                          distinction between "disabled (no calls)" vs "enabled but empty (possibly
-    │   │                          unreachable)"
+    │   │                          unreachable)";
+    │   │                          validateEndpoint() reused by scim_client.go (Story 14-3c)
+    │   ├── scim_client.go      ← SCIMClient (Story 14-3c / ADR-015 Protocol B): SCIM 2.0 RFC 7644
+    │   │                          paginated user fetch; SCIMClientConfig{BaseURL, BearerToken, Enabled,
+    │   │                          HTTPClient, Logger}; NewSCIMClient constructor with hardened default
+    │   │                          http.Client (no redirect, 10s timeout); IsEnabled() + FetchUsers();
+    │   │                          secretString CR-1: token only in Authorization header, never logged;
+    │   │                          validateEndpoint() CR-2: HTTPS-only before any outbound call;
+    │   │                          io.LimitReader 5 MB per page CR-4; 100k user total cap HR-1
+    │   │                          (checked via totalResults field AND running count);
+    │   │                          truncate() on all SCIM string fields HR-3;
+    │   │                          buildPageURL: base URL is SCIM service root, /Users appended if absent;
+    │   │                          scimSub() prefers userName → id (email-style sub from Azure AD/Okta);
+    │   │                          primaryEmail() prefers primary=true → first → empty;
+    │   │                          SSRF HR-2: private IPs not blocked (same accepted risk as OIDC dir);
+    │   │                          RFC 7644 pagination: 1-based startIndex, terminates on empty Resources
     │   └── templates/          ← Embedded HTML templates (go:embed);
     │       ├── claim-mapping.html ← Admin UI Claim Mapping settings page (Story 11-10):
     │       │                        DaisyUI form with datalist suggestions (sub/preferred_username/email)

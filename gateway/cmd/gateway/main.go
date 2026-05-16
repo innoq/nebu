@@ -456,6 +456,48 @@ func main() {
 	bootstrapHandler := admin.NewBootstrapHandler(checker, tmplHandler, bootstrapDB, []byte(internalSecret))
 	guard := admin.BootstrapGuard(checker)
 
+	// Story 14-3b / 14-3c: Wire OIDC directory fetcher and SCIM client into Bootstrap Step 4.
+	// Both services are optional — if config is missing or integration is disabled, Step 4
+	// renders with appropriate messaging (AC4).
+	// SCIM config is read from server_config at startup (may be empty on first boot — handled gracefully).
+	{
+		// Wire OIDC directory fetcher (Protocol A, Story 14-3b).
+		// Reads oidc_directory_enabled and oidc_directory_endpoint from server_config.
+		oidcDirEnabled := loadServerConfigBool(bootstrapDB, "oidc_directory_enabled")
+		oidcDirEndpoint := loadServerConfigStr(bootstrapDB, "oidc_directory_endpoint")
+		oidcDirToken := loadServerConfigStr(bootstrapDB, "oidc_directory_bearer_token") // may be empty
+		oidcFetcher := admin.NewOIDCDirectoryService(admin.OIDCDirectoryConfig{
+			Endpoint:    oidcDirEndpoint,
+			BearerToken: oidcDirToken,
+			Enabled:     oidcDirEnabled,
+		})
+		bootstrapHandler.WithImportServices(oidcFetcher, coreClient.CoreServiceClient(), serverName)
+
+		// Wire SCIM client (Protocol B, Story 14-3c / ADR-015).
+		// Reads scim_enabled, scim_base_url, scim_bearer_token (AES-256-GCM encrypted) from server_config.
+		// CR-1: token is decrypted from DB using internalSecret — never stored in plain text.
+		scimEnabled := loadServerConfigBool(bootstrapDB, "scim_enabled")
+		scimBaseURL := loadServerConfigStr(bootstrapDB, "scim_base_url")
+		scimEncToken := loadServerConfigStr(bootstrapDB, "scim_bearer_token")
+		scimBearerToken := ""
+		if scimEncToken != "" {
+			if decToken, decErr := admin.DecryptAES256GCM([]byte(internalSecret), scimEncToken); decErr == nil {
+				scimBearerToken = decToken
+			} else {
+				slog.Warn("main: failed to decrypt scim_bearer_token — SCIM import will be unavailable", "err", decErr)
+			}
+		}
+		scimClient := admin.NewSCIMClient(admin.SCIMClientConfig{
+			BaseURL:     scimBaseURL,
+			BearerToken: scimBearerToken,
+			Enabled:     scimEnabled,
+		})
+		bootstrapHandler.WithSCIMFetcher(scimClient)
+
+		// Story 14-3c: Wire secret into ConfigHandler so it can encrypt scim_bearer_token on save.
+		configHandler.WithSecret([]byte(internalSecret))
+	}
+
 	// Static assets — no guard (needed to render bootstrap page)
 	mux.HandleFunc("GET /admin/static/admin.css", admin.ServeCSS)
 	mux.HandleFunc("GET /admin/static/fonts/{filename}", admin.ServeFontFile)
@@ -474,6 +516,10 @@ func main() {
 	// headroom; legitimate admin clicking should never trip the limiter.
 	mux.Handle("GET /admin/bootstrap", adminRL(csrf(guard(http.HandlerFunc(bootstrapHandler.Handler)))))
 	mux.Handle("POST /admin/bootstrap", adminRL(bodyLimit64KiB(csrf(guard(http.HandlerFunc(bootstrapHandler.StepHandler))))))
+
+	// Story 14-3c: Import status polling endpoint — behind sessionGuard (CR-3).
+	// No CSRF required (GET, read-only).
+	mux.Handle("GET /api/v1/admin/bootstrap/import-status", sessionGuard(http.HandlerFunc(admin.ImportStatusHandler)))
 
 	// Claim selection — CSRF-protected (Story 5.13, AC3); also behind BootstrapGuard.
 	mux.Handle("POST /admin/bootstrap/select-claim", adminRL(bodyLimit64KiB(csrf(guard(http.HandlerFunc(adminAuth.ClaimSelectionHandler))))))
@@ -1375,6 +1421,26 @@ func extractOriginOrEmpty(issuer string) string {
 		return ""
 	}
 	return u.Scheme + "://" + u.Host
+}
+
+// loadServerConfigStr reads a single string value from the server_config table.
+// Returns "" if the key is missing or the query fails.
+// Used at startup to load optional integration config (SCIM, OIDC directory).
+func loadServerConfigStr(db *sql.DB, key string) string {
+	var val string
+	err := db.QueryRowContext(context.Background(),
+		`SELECT value FROM server_config WHERE key = $1`, key,
+	).Scan(&val)
+	if err != nil {
+		return ""
+	}
+	return val
+}
+
+// loadServerConfigBool reads a boolean value ("true"/"false") from server_config.
+// Returns false if the key is missing, the query fails, or the value is not "true".
+func loadServerConfigBool(db *sql.DB, key string) bool {
+	return loadServerConfigStr(db, key) == "true"
 }
 
 // loadAuditRetentionDays reads audit_log_retention_days from server_config.

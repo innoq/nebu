@@ -130,6 +130,12 @@ type StubConfig struct {
 	RetentionDays         int
 	OidcDirectoryEnabled  bool   // Story 14-2a: OIDC directory feature flag
 	OidcDirectoryEndpoint string // Story 14-2a: OIDC provider user-search endpoint URL
+	// Story 14-3c: SCIM 2.0 integration config.
+	// ScimBearerTokenSet is true when a non-empty token has been saved — the raw token is NEVER
+	// stored in StubConfig (CR-1: token must not appear in API responses or template context).
+	ScimEnabled        bool   // scim_enabled feature flag
+	ScimBaseURL        string // scim_base_url: HTTPS URL of the SCIM /Users endpoint
+	ScimBearerTokenSet bool   // true when scim_bearer_token is non-empty in DB (CR-1)
 }
 
 // stubConfig is the in-memory server config, mutated by UpdateConfigHandler (Story 7.10).

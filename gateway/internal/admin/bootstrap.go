@@ -103,6 +103,11 @@ type BootstrapHandler struct {
 	oidcFetcher OIDCDirectoryFetcher
 	core        BulkImportClient
 	serverName  string
+
+	// Step 4 (Story 14-3c): SCIM 2.0 fetcher. When set and IsEnabled() == true, SCIM
+	// takes priority over oidcFetcher for the action=import flow (AC1).
+	// Defined via WithSCIMFetcher (bootstrap_scim.go).
+	scimFetcher SCIMFetcher
 }
 
 // NewBootstrapHandler creates a BootstrapHandler with the given status checker, template handler, db, and secret.
@@ -140,11 +145,15 @@ func (h *BootstrapHandler) Handler(w http.ResponseWriter, r *http.Request) {
 	bootstrapPD.CSRFToken = CSRFTokenFromContext(r.Context())
 
 	// AC1 (Story 14-3b): support GET /admin/bootstrap?step=4 for the post-OIDC redirect.
+	// Story 14-3c: OIDCDirectoryEnabled is true when either the OIDC directory fetcher
+	// OR the SCIM fetcher is enabled — both protocols provide user-import capability.
 	if r.URL.Query().Get("step") == "4" {
+		oidcEnabled := h.oidcFetcher != nil && h.oidcFetcher.IsEnabled()
+		scimEnabled := h.scimFetcher != nil && h.scimFetcher.IsEnabled()
 		data := BootstrapPageData{
 			PageData:             bootstrapPD,
 			Step:                 4,
-			OIDCDirectoryEnabled: h.oidcFetcher != nil && h.oidcFetcher.IsEnabled(),
+			OIDCDirectoryEnabled: oidcEnabled || scimEnabled,
 		}
 		h.tmpl.render(w, "bootstrap", data)
 		return
@@ -323,11 +332,16 @@ func (h *BootstrapHandler) StepHandler(w http.ResponseWriter, r *http.Request) {
 		//   (no action)   — initial render of step 4.
 		action := r.FormValue("action")
 		data.Step = 4
-		data.OIDCDirectoryEnabled = h.oidcFetcher != nil && h.oidcFetcher.IsEnabled()
+		// Story 14-3c: OIDCDirectoryEnabled is true when either OIDC or SCIM is enabled.
+		oidcEnabled4 := h.oidcFetcher != nil && h.oidcFetcher.IsEnabled()
+		scimEnabled4 := h.scimFetcher != nil && h.scimFetcher.IsEnabled()
+		data.OIDCDirectoryEnabled = oidcEnabled4 || scimEnabled4
 
 		switch action {
 		case "preview":
 			// AC2: Fetch users and build preview table.
+			// Story 14-3c (MINOR-2 fix): use the SCIM-preferred fetcher selection logic for preview
+			// to avoid nil-dereference when oidcFetcher is nil but scimFetcher is enabled.
 			if !data.OIDCDirectoryEnabled {
 				// AC4: OIDC dir disabled — render with disabled state.
 				h.tmpl.render(w, "bootstrap", data)
@@ -336,10 +350,24 @@ func (h *BootstrapHandler) StepHandler(w http.ResponseWriter, r *http.Request) {
 			if h.serverName == "" {
 				slog.Error("step 4 preview: serverName is empty — Matrix User IDs will be malformed")
 			}
-			oidcUsers, err := h.oidcFetcher.FetchUsers(r.Context())
+			// SCIM takes priority over OIDC for preview (mirrors import action logic).
+			var previewFetcher interface {
+				FetchUsers(ctx context.Context) ([]OIDCDirectoryUser, error)
+			}
+			if h.scimFetcher != nil && h.scimFetcher.IsEnabled() {
+				previewFetcher = h.scimFetcher
+			} else if h.oidcFetcher != nil && h.oidcFetcher.IsEnabled() {
+				previewFetcher = h.oidcFetcher
+			}
+			if previewFetcher == nil {
+				data.ImportError = "Provider does not support user listing."
+				h.tmpl.render(w, "bootstrap", data)
+				return
+			}
+			oidcUsers, err := previewFetcher.FetchUsers(r.Context())
 			if err != nil {
-				slog.Error("step 4 preview: failed to fetch OIDC users", "err", err)
-				data.ImportError = "Failed to fetch users from OIDC provider."
+				slog.Error("step 4 preview: failed to fetch users", "err", err)
+				data.ImportError = "Failed to fetch users from provider."
 				h.tmpl.render(w, "bootstrap", data)
 				return
 			}
@@ -355,28 +383,58 @@ func (h *BootstrapHandler) StepHandler(w http.ResponseWriter, r *http.Request) {
 			data.ImportPreview = preview
 
 		case "import":
-			// AC3: Re-fetch users and call BulkImportUsers gRPC.
-			if !data.OIDCDirectoryEnabled {
+			// AC3 / HR-3: Singleton import lock — return HTTP 409 Conflict if an import is already running.
+			if !importInProgress.CompareAndSwap(false, true) {
+				http.Error(w, `{"error":"import already in progress"}`, http.StatusConflict)
+				return
+			}
+
+			// Determine which fetcher to use: SCIM takes priority over OIDC (AC1, Story 14-3c).
+			// A fetcher is "active" when it is non-nil and IsEnabled() returns true.
+			var activeFetcher interface {
+				FetchUsers(ctx context.Context) ([]OIDCDirectoryUser, error)
+			}
+			fetcherName := ""
+			if h.scimFetcher != nil && h.scimFetcher.IsEnabled() {
+				activeFetcher = h.scimFetcher
+				fetcherName = "scim"
+			} else if h.oidcFetcher != nil && h.oidcFetcher.IsEnabled() {
+				activeFetcher = h.oidcFetcher
+				fetcherName = "oidc"
+			}
+
+			if activeFetcher == nil {
+				importInProgress.Store(false)
 				data.ImportError = "Provider does not support user listing."
 				h.tmpl.render(w, "bootstrap", data)
 				return
 			}
 			if h.core == nil {
+				importInProgress.Store(false)
 				slog.Error("step 4 import: core gRPC client is nil")
 				data.ImportError = "Import service unavailable."
 				h.tmpl.render(w, "bootstrap", data)
 				return
 			}
-			oidcUsers, err := h.oidcFetcher.FetchUsers(r.Context())
+
+			users, err := activeFetcher.FetchUsers(r.Context())
 			if err != nil {
-				slog.Error("step 4 import: failed to fetch OIDC users", "err", err)
-				data.ImportError = "Failed to fetch users from OIDC provider."
+				importInProgress.Store(false)
+				slog.Error("step 4 import: failed to fetch users", "fetcher", fetcherName, "err", err)
+				data.ImportError = "Failed to fetch users from provider."
 				h.tmpl.render(w, "bootstrap", data)
 				return
 			}
+
+			// Initialise progress counters for the import run.
+			importProgress.imported.Store(0)
+			importProgress.total.Store(int32(len(users)))
+			importProgress.failed.Store(0)
+			importProgress.done.Store(false)
+
 			// Build OIDCUserClaims for each user.
-			userClaims := make([]*pb.OIDCUserClaims, 0, len(oidcUsers))
-			for _, u := range oidcUsers {
+			userClaims := make([]*pb.OIDCUserClaims, 0, len(users))
+			for _, u := range users {
 				localpart := sanitizeOIDCSub(u.Sub)
 				userClaims = append(userClaims, &pb.OIDCUserClaims{
 					UserId:      "@" + localpart + ":" + h.serverName,
@@ -387,11 +445,20 @@ func (h *BootstrapHandler) StepHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			resp, err := h.core.BulkImportUsers(r.Context(), &pb.BulkImportUsersRequest{Users: userClaims})
 			if err != nil {
+				importProgress.done.Store(true)
+				importInProgress.Store(false)
 				slog.Error("step 4 import: BulkImportUsers gRPC failed", "err", err)
 				data.ImportError = "Import request to core failed. Please try again."
 				h.tmpl.render(w, "bootstrap", data)
 				return
 			}
+
+			// Update final counters from the gRPC response.
+			importProgress.imported.Store(resp.GetImported())
+			importProgress.failed.Store(resp.GetFailed())
+			importProgress.done.Store(true)
+			importInProgress.Store(false)
+
 			data.ImportResult = &ImportResult{
 				Imported: resp.GetImported(),
 				Skipped:  resp.GetSkipped(),

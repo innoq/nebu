@@ -295,11 +295,12 @@ Implementation: `extractClaimFromMap(rawClaims map[string]interface{}, claimName
 
 **server_config RLS UPDATE Policy (Story 12.7 MEDIUM-5, extended Story 14-2a):**
 
-Migration 000046 replaces the blanket `config_update_all` policy (USING true — introduced in migration 000045 for OIDC claim upserts) with a key-scoped `config_update_mutable` policy. Migration 000048 (Story 14-2a) extends the allowlist with two new OIDC directory keys. Only the following keys are updatable by `nebu_app`:
+Migration 000046 replaces the blanket `config_update_all` policy (USING true — introduced in migration 000045 for OIDC claim upserts) with a key-scoped `config_update_mutable` policy. Migration 000048 (Story 14-2a) extends the allowlist with two new OIDC directory keys. Migration 000049 (Story 14-3c) extends with three SCIM 2.0 keys. Only the following keys are updatable by `nebu_app`:
 
 - `oidc_user_id_claim`, `oidc_displayname_claim`, `oidc_email_claim`, `admin_group_claim`
 - `oidc_issuer`, `oidc_client_id`, `oidc_client_secret`
 - `oidc_directory_enabled`, `oidc_directory_endpoint` _(added in migration 000048, Story 14-2a)_
+- `scim_enabled`, `scim_base_url`, `scim_bearer_token` _(added in migration 000049, Story 14-3c; bearer token is AES-256-GCM encrypted — raw value never stored in plaintext)_
 
 `server_name`, `bootstrap_completed`, and any future keys not in this allowlist are immutable at the DB level (defence-in-depth restoration from ADR G8).
 
@@ -345,9 +346,24 @@ Fields stored as booleans in `server_config` (e.g. `oidc_directory_enabled`) can
 
 - **Redirect chain**: `ClaimSelectionHandler` now redirects to `/admin/bootstrap?step=4` instead of `/admin/dashboard`. Step 4 renders an "Import from OIDC" button. The admin can "Skip and finish" → `/admin/dashboard` at any time.
 - **Interface abstraction**: `OIDCDirectoryFetcher` (IsEnabled/FetchUsers) and `BulkImportClient` (BulkImportUsers) interfaces defined in `bootstrap.go` allow test injection without a real HTTP server or gRPC connection. `WithImportServices(fetcher, core, serverName)` wires them at startup.
-- **Two sub-actions via form POST**: `action=preview` fetches OIDC users and renders the preview table (display name, email, computed Matrix User ID); `action=import` re-fetches (cache hit) + calls `BulkImportUsers` gRPC + renders imported/skipped/failed counts.
-- **AC4 disabled state**: when `oidcFetcher == nil || !oidcFetcher.IsEnabled()`, Step 4 renders with a disabled "Import from OIDC" button and the message "Provider does not support user listing".
+- **Two sub-actions via form POST**: `action=preview` fetches users (SCIM-preferred) and renders the preview table (display name, email, computed Matrix User ID); `action=import` re-fetches + calls `BulkImportUsers` gRPC + renders imported/skipped/failed counts.
+- **AC4 disabled state**: when neither OIDC nor SCIM is enabled, Step 4 renders with a disabled import button.
 - **Matrix User ID computation**: reuses `sanitizeOIDCSub(u.Sub)` from `users.go` (same package) to produce `@{localpart}:{serverName}` — identical to the preview shown in the Users page (Story 14-2c).
+
+**SCIM 2.0 User Fetch Pattern (Story 14-3c / ADR-015 Protocol B):**
+
+`SCIMClient` (`gateway/internal/admin/scim_client.go`) fetches users from a SCIM 2.0 `/Users` endpoint using RFC 7644 pagination. Key design decisions:
+
+- **Protocol priority**: when both `oidc_directory_enabled` and `scim_enabled` are true, SCIM takes priority over the OIDC directory for the `action=import` (and `action=preview`) flows in Bootstrap Step 4. This is enforced in `BootstrapHandler.StepHandler` via the SCIM-preferred fetcher selection pattern.
+- **SCIMFetcher interface**: mirrors `OIDCDirectoryFetcher` (IsEnabled/FetchUsers) so `BootstrapHandler` uses a unified interface for both protocols. `WithSCIMFetcher(f SCIMFetcher)` wires the client at startup.
+- **RFC 7644 pagination**: `startIndex` is 1-based; `count=100` per page; iteration terminates on empty `Resources[]`. `totalResults` is used for the early-abort cap check (HR-1).
+- **secretString CR-1**: bearer token stored as `secretString` — `.String()` returns `[REDACTED]`; `.value()` only called to set the `Authorization` header.
+- **Bearer token encryption at rest**: stored as AES-256-GCM (nonce || ciphertext, hex) in `server_config.scim_bearer_token`. Encrypted at config-save time (config.go) with the gateway internal secret; decrypted at startup (main.go) before wiring into `SCIMClient`.
+- **scim_base_url convention**: the stored URL is the SCIM service root (e.g. `https://idp.example.com/scim/v2`). `buildPageURL` appends `/Users` if not already present, then adds `startIndex`/`count` query params.
+- **userName as sub**: `scimSub()` prefers `userName` over `id` — Azure AD and Okta export email-style userNames that align with OIDC `sub` semantics. The sub value goes through `sanitizeOIDCSub` for Matrix localpart derivation (same path as OIDC directory).
+- **Import progress singleton**: `importInProgress atomic.Bool` + `importProgress *importProgressState` are package-level singletons. `CompareAndSwap(false, true)` before each import → HTTP 409 on concurrent attempt (HR-3). Counters (`imported`, `total`, `failed`, `done`) are `atomic.Int32`/`atomic.Bool` — safe to read from the polling endpoint without a lock.
+- **Progress endpoint**: `GET /api/v1/admin/bootstrap/import-status` (behind `sessionGuard`) returns `{imported, total, failed, done}` JSON. The Bootstrap Wizard Step 4 HTML polls this endpoint via `setInterval` every 2s using `fetch(credentials: 'same-origin')`.
+- **Synchronous import**: for S-size story scope, `BulkImportUsers` gRPC is called synchronously; counters advance from 0/N to imported/N/done in a single step after the RPC returns. The progress bar shows 0/N while the RPC is in flight, then reloads the page on `done=true`.
 
 **Media Event Content Pass-Through Contract (Story 12.6):**
 

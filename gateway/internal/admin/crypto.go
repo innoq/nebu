@@ -30,6 +30,13 @@ func encryptAES256GCM(secret []byte, plaintext string) (string, error) {
 	return hex.EncodeToString(ciphertext), nil
 }
 
+// DecryptAES256GCM is the exported variant of decryptAES256GCM.
+// Used by main.go to decrypt stored secrets (e.g. scim_bearer_token) using the
+// gateway internal secret. Prefer the unexported variant within the admin package.
+func DecryptAES256GCM(secret []byte, hexCiphertext string) (string, error) {
+	return decryptAES256GCM(secret, hexCiphertext)
+}
+
 // decryptAES256GCM decrypts a hex-encoded nonce||ciphertext produced by encryptAES256GCM.
 // The key is derived from secret via SHA-256.
 func decryptAES256GCM(secret []byte, hexCiphertext string) (string, error) {
