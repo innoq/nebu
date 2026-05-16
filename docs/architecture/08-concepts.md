@@ -307,6 +307,17 @@ Migration 000046 replaces the blanket `config_update_all` policy (USING true —
 
 Fields stored as booleans in `server_config` (e.g. `oidc_directory_enabled`) cannot be safely round-tripped via proto3 gRPC because `false` is the proto default and is indistinguishable from "not set". The pattern used: the REST API PATCH handler (`api.AdminServer`) holds a `ServerConfigRepository` and upserts directly. The Admin UI handler (`admin.ConfigHandler`) accepts a `ConfigKeyWriter` interface (set via `WithConfigDB`) and upserts directly for bool fields, while routing string fields through gRPC. This avoids inadvertent resets of boolean flags on unrelated gRPC calls.
 
+**OIDC Directory Service Pattern (Story 14-2b):**
+
+`OIDCDirectoryService` (`gateway/internal/admin/oidc_directory.go`) provides a secure, cached client for fetching user lists from an admin-configured OIDC directory endpoint. Key design decisions:
+
+- **secretString type**: the bearer token is wrapped in `type secretString string` with `String() "[REDACTED]"` — prevents accidental log exposure via `%+v` or slog auto-formatting (CR-3).
+- **HTTPS-only at call time**: `validateEndpoint` is called inside `FetchUsers` on every invocation, not just at config load. This is a defensive check: if the stored endpoint is later mutated to HTTP, the service fails hard rather than silently falling back (CR-1).
+- **No redirect following**: the default `http.Client` uses `CheckRedirect: ErrUseLastResponse`. This prevents an HTTP→HTTPS redirect from bypassing the HTTPS check, and prevents SSRF via provider-issued redirects to internal metadata endpoints (CR-2).
+- **Rate limit separation**: `Allow(sessionID string) bool` and `FetchUsers(ctx) ([]OIDCDirectoryUser, error)` are separate methods. Callers MUST call `Allow` before `FetchUsers` to enforce the per-session 5 req/s limit. The separation allows callers to short-circuit before cache or network access. Session IDs MUST come from the validated JWT (admin middleware), not from request headers (CR-5).
+- **singleflight + 30s cache**: concurrent cache misses collapse into one outbound call (MR-4). Cache key = SHA-256(endpoint + "|" + token) so rotating the bearer token invalidates the stale cache (MR-1).
+- **Graceful degradation**: runtime errors (unreachable host, non-200, JSON parse failure) are logged as warnings and swallowed — FetchUsers returns empty list, not error. Configuration errors (non-HTTPS) are propagated as errors.
+
 **Media Event Content Pass-Through Contract (Story 12.6):**
 
 `content.info` in `m.room.message` (and all other event types) is an **opaque JSON object** — the gateway passes it verbatim to Core, and Core stores it as JSONB without field inspection or modification. Client extension fields such as `blurhash` (used by Element Web for image loading placeholders) MUST be preserved through the full round-trip: gateway → gRPC → Core → DB → sync response.

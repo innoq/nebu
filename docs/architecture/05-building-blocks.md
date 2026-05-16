@@ -101,6 +101,16 @@ gateway/
     │   │                          ErrorMode bool suppresses footer on error pages;
     │   │                          ClaimMappingPageData (Story 11-10): OIDCUserIDClaim,
     │   │                          OIDCDisplaynameClaim, OIDCEmailClaim + per-field validation errors
+    │   ├── oidc_directory.go   ← OIDCDirectoryService (Story 14-2b): outbound HTTP client for OIDC
+    │   │                          user directory endpoint; secretString type masks bearer token in logs
+    │   │                          (CR-3); HTTPS-only validation at each call (CR-1); CheckRedirect
+    │   │                          ErrUseLastResponse (CR-2); io.LimitReader 10 MB cap (CR-4);
+    │   │                          30-second cache keyed on SHA-256(endpoint+token) (MR-1);
+    │   │                          singleflight.Group collapses concurrent refreshes (MR-4);
+    │   │                          per-session rate limiter via sync.Map[sessionID → *rate.Limiter]
+    │   │                          at 5 req/s (CR-5 — caller calls Allow(sessionID) before FetchUsers);
+    │   │                          explicit HTTP status handling (MR-3); HR-2 SSRF trust boundary
+    │   │                          documented (Option B — private IP blocking tracked as follow-up)
     │   └── templates/          ← Embedded HTML templates (go:embed);
     │       ├── claim-mapping.html ← Admin UI Claim Mapping settings page (Story 11-10):
     │       │                        DaisyUI form with datalist suggestions (sub/preferred_username/email)
