@@ -1290,3 +1290,41 @@ defmodule Core.SearchMessagesResponse do
   field :next_batch, 2, type: :string, json_name: "nextBatch"
   field :total_count, 3, type: :int32, json_name: "totalCount"
 end
+
+defmodule Core.OIDCUserClaims do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.OIDCUserClaims",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :user_id, 1, type: :string, json_name: "userId"
+  field :system_role, 2, type: :string, json_name: "systemRole"
+  field :display_name, 3, type: :string, json_name: "displayName"
+  field :email, 4, type: :string
+end
+
+defmodule Core.BulkImportUsersRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.BulkImportUsersRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :users, 1, repeated: true, type: Core.OIDCUserClaims
+end
+
+defmodule Core.BulkImportUsersResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.BulkImportUsersResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :imported, 1, type: :int32
+  field :skipped, 2, type: :int32
+  field :failed, 3, type: :int32
+end

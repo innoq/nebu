@@ -239,6 +239,11 @@ func (m *mockCoreClient) GetEvent(_ context.Context, _ *pb.GetEventRequest, _ ..
 	panic("unexpected call: GetEvent")
 }
 
+// Story 14-3a: BulkImportUsers stub — not called in compliance tests.
+func (m *mockCoreClient) BulkImportUsers(_ context.Context, _ *pb.BulkImportUsersRequest, _ ...grpc.CallOption) (*pb.BulkImportUsersResponse, error) {
+	panic("unexpected call: BulkImportUsers")
+}
+
 // ─── fakeDB driver ────────────────────────────────────────────────────────────
 //
 // A minimal database/sql/driver implementation that returns scripted rows for

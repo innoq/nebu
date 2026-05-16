@@ -274,7 +274,17 @@ core/apps/
 │       ├── token.ex            ← v1_<base64url(ts+cursor_map)> format
 │       ├── pg_store/postgres.ex ← persist_since_token/3 (legacy) + /4 (per-device);
 │       │                           get_since_token/1 + /2; invalidate_session/1 + /2
-│       └── session_supervisor.ex ← destroy_session/1 (all devices) + /2 (per-device)
+│       ├── session_supervisor.ex ← destroy_session/1 (all devices) + /2 (per-device)
+│       ├── bulk_importer.ex    ← Nebu.Session.BulkImporter (Story 14-3a): admin bulk user provisioning;
+│       │                           import_users([%{user_id, system_role, display_name, email}]) →
+│       │                           {:ok, %{imported, skipped, failed}}; delegates to lookup_module (DB
+│       │                           lookup: signing_key_id IS NOT NULL = skip), user_store_module (upsert),
+│       │                           provisioner_module (keypairs + PII encryption); identical flow to
+│       │                           TokenValidator.Postgres.provision_new_user; partial success: exceptions
+│       │                           in import_one/2 are rescued → :failed; batch continues
+│       └── bulk_importer/
+│           └── postgres.ex     ← Nebu.Session.BulkImporter.Postgres: lookup/1 checks signing_key_id
+│                                   IS NOT NULL → :already_provisioned | :not_provisioned | {:error, reason}
 ├── presence/         ← FR15: Presence status (online/offline/unavailable)
 ├── event_dispatcher/ ← EventBus gRPC streaming + pg Process Groups fanout + FTS search layer
 │   └── lib/nebu/
@@ -313,7 +323,12 @@ core/apps/
 │           │                      user_id sourced exclusively from trusted_identity(stream) metadata
 │           │                      (NEVER from request.user_id — security invariant); offset capped at
 │           │                      10_000 to prevent expensive deep-page queries; next_batch is
-│           │                      Base64(offset+limit) for cursor pagination (Story 11-3)
+│           │                      Base64(offset+limit) for cursor pagination (Story 11-3);
+│           │                      bulk_import_users/2 (Story 14-3a): admin bulk provisioning RPC;
+│           │                      delegates to configurable bulk_importer_module() → Nebu.Session.BulkImporter;
+│           │                      returns BulkImportUsersResponse{imported, skipped, failed}; partial success
+│           │                      (exception in import_one/2 rescued → :failed, batch continues);
+│           │                      configurable via :event_dispatcher, :bulk_importer_module
 │           ├── dispatcher.ex   ← Routes events to rooms + subscribers
 │           ├── bus.ex          ← gRPC ServerStream to Go Gateway
 │           └── search/
@@ -407,7 +422,8 @@ Key gRPC services: `SendEvent`, `CreateRoom`, `JoinRoom`, `GetMessages`, `GetRoo
 `InvalidateUserSessions` (per-device or full-user session cleanup, Story 9-22),
 `GetRelations` (thread relation events for a parent event_id, Story 9-28/9-29),
 `SearchMessages` (full-text search with membership enforcement, Story 11-3),
-`GetEvent` (single event fetch by event_id scoped to a room, membership-enforced, Story 11-8).
+`GetEvent` (single event fetch by event_id scoped to a room, membership-enforced, Story 11-8),
+`BulkImportUsers` (admin bulk provisioning of OIDC users, identical flow to first login, Story 14-3a).
 
 **`GetSyncDeltaRequest` fields (Story 9-22):**
 

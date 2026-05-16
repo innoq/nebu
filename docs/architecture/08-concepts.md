@@ -328,6 +328,17 @@ Fields stored as booleans in `server_config` (e.g. `oidc_directory_enabled`) can
 - **Non-blocking OIDC failure**: when the OIDC provider is unreachable, `FetchUsers` returns an empty list (logged internally). `ListHandler` detects this via `IsEnabled() && len(oidcUsers)==0` and sets `OIDCWarningBanner` — the Nebu DB list is still rendered.
 - **Rate-limit gate**: `Allow(sessionID)` is called before `FetchUsers`. If rate-limited, OIDC fetch is silently skipped (no warning banner — rate-limiting is defensive, not an availability signal).
 
+**Bulk User Provisioning Pattern (Story 14-3a):**
+
+`Nebu.Session.BulkImporter` provisions a list of OIDC users via the `BulkImportUsers` gRPC RPC. The provisioning flow is identical to first-login provisioning in `TokenValidator.Postgres.provision_new_user`. Key design decisions:
+
+- **Identical to first-login**: `BulkImporter` calls the same `UserStore.upsert_user/2` + `UserProvisioner.provision_user/4` functions as first login. Ed25519 signing keypairs and X25519 encryption keypairs are generated; `display_name` (Tier 1) and `email` (Tier 2) are encrypted identically.
+- **Duplicate detection**: a user whose `signing_key_id IS NOT NULL` in the `users` table is counted as `skipped` — not an error. The `UserProvisioner.Postgres` update SQL already uses `WHERE signing_key_id IS NULL` (idempotent guard), but BulkImporter avoids unnecessary keypair generation by checking first.
+- **Partial success**: `import_users/1` uses `Enum.reduce` across all users. Exceptions in `import_one/2` are rescued with `try/rescue` — the user is counted as `:failed` and the batch continues. The aggregate `{imported, skipped, failed}` is always returned.
+- **No bootstrap path**: bulk import always uses the provided `system_role` (Go gateway always sets "user"). The `BootstrapChecker.upsert_with_bootstrap` step from first-login is skipped (bootstrap is a one-time event that only triggers on the very first login to an empty instance).
+- **Trust model**: Core trusts the Go gateway (ADR G2). The gRPC handler does not re-validate admin role — the Go gateway enforces admin-only HTTP access before calling this RPC.
+- **Module injection**: all three dependencies (`lookup_module`, `user_store_module`, `provisioner_module`) are injectable via `Application.put_env` for test isolation. Default implementations use real PostgreSQL.
+
 **Media Event Content Pass-Through Contract (Story 12.6):**
 
 `content.info` in `m.room.message` (and all other event types) is an **opaque JSON object** — the gateway passes it verbatim to Core, and Core stores it as JSONB without field inspection or modification. Client extension fields such as `blurhash` (used by Element Web for image loading placeholders) MUST be preserved through the full round-trip: gateway → gRPC → Core → DB → sync response.

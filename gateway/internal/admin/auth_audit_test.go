@@ -229,6 +229,11 @@ func (m *mockCoreClient) GetEvent(_ context.Context, _ *pb.GetEventRequest, _ ..
 	panic("unexpected call: GetEvent")
 }
 
+// Story 14-3a: BulkImportUsers stub — not called in admin auth tests.
+func (m *mockCoreClient) BulkImportUsers(_ context.Context, _ *pb.BulkImportUsersRequest, _ ...grpc.CallOption) (*pb.BulkImportUsersResponse, error) {
+	panic("unexpected call: BulkImportUsers")
+}
+
 // lastReceived returns the most recently recorded request (nil if none).
 func (m *mockCoreClient) lastReceived() *pb.WriteAuditLogRequest {
 	m.mu.Lock()

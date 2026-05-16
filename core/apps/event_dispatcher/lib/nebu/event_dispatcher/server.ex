@@ -75,6 +75,12 @@ defmodule Nebu.EventDispatcher.Server do
     Application.get_env(:event_dispatcher, :search_db_module, Nebu.Search.DB)
   end
 
+  # ─── Configurable BulkImporter module for testability — Story 14-3a ──────────
+  # Override via Application.put_env(:event_dispatcher, :bulk_importer_module, FakeBulkImporter) in tests.
+  defp bulk_importer_module do
+    Application.get_env(:event_dispatcher, :bulk_importer_module, Nebu.Session.BulkImporter)
+  end
+
   def send_event(request, _stream) do
     room_id = request.room_id
     sender_id = request.sender_id
@@ -3082,6 +3088,35 @@ defmodule Nebu.EventDispatcher.Server do
           _ -> %{}
         end
       true -> %{}
+    end
+  end
+
+  # ─── BulkImportUsers — Story 14-3a: Admin bulk user provisioning ───────────────
+  #
+  # Delegates to the configurable BulkImporter module so the Go gateway can pre-provision
+  # OIDC users before first login. Each user is processed with the same flow as
+  # validate_token/2 (upsert user row + keypairs + encrypted PII).
+  #
+  # Partial success: imported + skipped + failed = len(request.users).
+  # No gRPC error is raised unless the BulkImporter raises an unexpected exception.
+  def bulk_import_users(%Core.BulkImportUsersRequest{} = request, _stream) do
+    users =
+      Enum.map(request.users, fn claims ->
+        %{
+          user_id: claims.user_id,
+          system_role: claims.system_role,
+          display_name: claims.display_name,
+          email: claims.email
+        }
+      end)
+
+    case bulk_importer_module().import_users(users) do
+      {:ok, %{imported: imported, skipped: skipped, failed: failed}} ->
+        %Core.BulkImportUsersResponse{
+          imported: imported,
+          skipped: skipped,
+          failed: failed
+        }
     end
   end
 end

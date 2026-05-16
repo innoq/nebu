@@ -47,6 +47,7 @@ defmodule Core.CoreService.Service do
   rpc :SearchMessages, Core.SearchMessagesRequest, Core.SearchMessagesResponse
   rpc :GetRelations, Core.GetRelationsRequest, Core.GetRelationsResponse
   rpc :GetEvent, Core.GetEventRequest, Core.GetEventResponse
+  rpc :BulkImportUsers, Core.BulkImportUsersRequest, Core.BulkImportUsersResponse
 end
 
 defmodule Core.CoreService.Stub do

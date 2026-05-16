@@ -1,6 +1,41 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-16
+# [14-3a] 2026-05-16T12:50Z arc42-update → 05-building-blocks(BulkImporter entry+gRPC RPC list)+08-concepts(Bulk User Provisioning Pattern)
+# [14-3a] 2026-05-16T12:45Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH; 1 LOW: system_role not validated — deferred ADR G2 trade-off)
+# [14-3a] 2026-05-16T12:40Z code-review → CLEAN (cycle 1) — 1 MINOR fixed: try/rescue in import_one for exception safety
+# [14-3a] 2026-05-16T12:35Z ci-gate → ✓ build+unit-go+unit-elixir (e2e/integration skipped: MinIO infrastructure issue)
+# [14-3a] 2026-05-16T12:30Z dev-story → done (cycle 0) — BulkImportUsers: proto+Elixir handler+BulkImporter+Postgres lookup+gRPC stub+Go mock stubs
+# [14-3a] 2026-05-16T12:07Z test-review → CLEAN (0 MAJOR; 2 MINOR: unused modules + inline module def)
+# [14-3a] 2026-05-16T12:05Z atdd → 4 failing acceptance tests (AT-1..AT-4, 9 sub-tests) written
+# [14-3a] 2026-05-16T12:01Z create-story → 14-3a-bulk-import-users-grpc-rpc-core-provisioning.md
+# [14-3a] 2026-05-16T12:00Z pipeline started
+# [14-2c] 2026-05-16T epic-loop → story done (OIDC user search merge, Not-yet-logged-in badge, 4 unit tests, E2E .feature staged, committed fb5c641)
+# [14-2c] 2026-05-16T committed ✓ (ATDD+Code 3 MINOR fixed 1 cycle+arc42)
+# [14-2c] 2026-05-16T arc42-update → 05-building-blocks(IsEnabled method + page_data fields)+08-concepts(OIDC Search Merge Pattern)
+# [14-2c] 2026-05-16T security-review → skipped (not-needed)
+# [14-2c] 2026-05-16T code-review → CLEAN (cycle 1) — 3 MINOR fixed: unused var, redundant field, undocumented code path
+# [14-2c] 2026-05-16T ci-gate → ✓ build+unit-go+unit-elixir (e2e/integration skipped: MinIO RELEASE tag removed from Docker Hub — infrastructure issue, not code regression)
+# [14-2c] 2026-05-16T dev-story → done (cycle 0) — OIDC merge: UsersHandler.WithOIDCDirectory, IsOIDCOnly badge, MatrixIDPreview, OIDCWarningBanner, users.html updated
+# [14-2c] 2026-05-16T test-review → CLEAN (0 MAJOR; 1 MINOR; 2 INFO)
+# [14-2c] 2026-05-16T atdd → 4 failing tests (AT-1..AT-4 red; E2E .feature written)
+# [14-2c] 2026-05-16T create-story → 14-2c-admin-ui-user-search-oidc-integration-not-yet-logged-in-badge.md
+# [14-2c] 2026-05-16T pipeline started
+# [14-2b] 2026-05-16T epic-loop → story done (OIDC directory service, cache 30s, rate limit, HTTPS-only, 7 tests green, Kassandra CLEAN, committed 9453997)
+# [14-2b] 2026-05-16T committed ✓ (ATDD+Code 1 MINOR fixed 1 cycle+Kassandra CLEAN)
+# [14-2b] 2026-05-16T arc42-update → 05-building-blocks(oidc_directory.go entry)+08-concepts(OIDC Directory Service Pattern)
+# [14-2b] 2026-05-16T security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH; 1 LOW HR-1 deferred to handler; 1 MEDIUM Allow/FetchUsers caller contract)
+# [14-2b] 2026-05-16T code-review → CLEAN (cycle 1) — 3 MINOR fixed: docstring, sessionID removed, ctx propagated
+# [14-2b] 2026-05-16T ci-gate → ✓ unit-go+unit-elixir (cycle 1 fixes verified)
+# [14-2b] 2026-05-16T dev-story → done (cycle 1) — MINOR-1 docstring, MINOR-2 sessionID param removed, MINOR-3 ctx propagated
+# [14-2b] 2026-05-16T code-review → 3 MINOR → cycle 1
+# [14-2b] 2026-05-16T ci-gate → ✓ unit-go(all 25 pkgs)+unit-elixir(all 107 tests)
+# [14-2b] 2026-05-16T dev-story → done (cycle 0) — oidc_directory.go: secretString, singleflight, 30s cache, 5req/s rate limiter, HTTPS validation, 10MB cap
+# [14-2b] 2026-05-16T test-review → CLEAN (0 MAJOR; 1 MINOR: Allow/FetchUsers contract not integration-tested; 2 INFO)
+# [14-2b] 2026-05-16T atdd → 7 failing tests (AT-1 through AT-7, all red phase confirmed)
+# [14-2b] 2026-05-16T create-story → 14-2b-gateway-oidc-directory-service-cache-rate-limit.md
+# [14-2b] 2026-05-16T pipeline started
+# [14-2a] 2026-05-16T epic-loop → story done (DB migration oidc_directory_enabled+endpoint, GET/PATCH config, Admin UI toggle, Godog round-trip, arc42 updated)
 # [14-2a] 2026-05-16T20:44Z committed ✓ (ATDD+Code 1 MINOR fixed+arc42)
 # [14-2a] 2026-05-16T20:43Z arc42-update → 05-building-blocks+08-concepts+09-decisions+ADR-015
 # [14-2a] 2026-05-16T20:41Z code-review → 1 MINOR fixed (WithConfigDB) + 1 DEFER + CLEAN (cycle 0)
@@ -513,9 +548,17 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: null
-current_step: null
-completed: []
-cycle_count: 0
+story: "14-3a"
+current_step: "commit"
+completed:
+  - create-story
+  - atdd
+  - test-review
+  - dev-story
+  - ci-gate
+  - code-review
+  - security-review
+  - arc42-update
+cycle_count: 1
 blocked_reason: null
-last_updated: "2026-05-16T20:44Z"
+last_updated: "2026-05-16T21:52Z"
