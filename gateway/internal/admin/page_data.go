@@ -98,7 +98,7 @@ type LoginPageData struct {
 }
 
 // BootstrapPageData holds data for the Bootstrap Wizard page.
-// Step is 1–3 (Steps 1-2: Instance + OIDC; Step 3: Claim Mapping; then OIDC redirect).
+// Step is 1–4 (Steps 1-2: Instance + OIDC; Step 3: Claim Mapping; Step 4: User Import).
 // All field values carry accumulated state.
 type BootstrapPageData struct {
 	PageData     // embed for BootstrapMode + ActiveNav
@@ -117,6 +117,34 @@ type BootstrapPageData struct {
 	OIDCUserIDClaim      string
 	OIDCDisplaynameClaim string
 	OIDCEmailClaim       string
+	// Step 4: User Import fields (Story 14-3b).
+	// OIDCDirectoryEnabled is true when the OIDC directory service is enabled; controls button state.
+	OIDCDirectoryEnabled bool
+	// ImportPreview holds the list of users fetched for the Step 4 preview table.
+	// Populated after action=preview; nil/empty = preview not yet triggered.
+	ImportPreview []ImportPreviewUser
+	// ImportResult holds the counts returned after action=import.
+	// nil = import not yet triggered.
+	ImportResult *ImportResult
+	// ImportError holds a human-readable error message shown in Step 4 when fetch/import fails.
+	ImportError string
+}
+
+// ImportPreviewUser is one row in the Step 4 user preview table (Story 14-3b).
+// All fields are display-only values — DisplayName and Email come from the OIDC directory,
+// MatrixUserID is computed as "@{sanitizeOIDCSub(sub)}:{serverName}".
+type ImportPreviewUser struct {
+	DisplayName  string
+	Email        string
+	MatrixUserID string
+}
+
+// ImportResult holds the counts returned by the BulkImportUsers gRPC call (Story 14-3b).
+// Displayed in the Step 4 result banner after a successful import.
+type ImportResult struct {
+	Imported int32
+	Skipped  int32
+	Failed   int32
 }
 
 // DiscoveredClaim is a single claim key+values pair extracted from an OIDC token

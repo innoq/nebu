@@ -1,5 +1,6 @@
 # generated: 2026-03-20
-# last_updated: 2026-05-16
+# last_updated: 2026-05-17
+# story 14-3b done (pipeline: ATDD+Code CLEAN (cycle 0)): 2026-05-17
 # story 14-3a done (pipeline: ATDD+Code 1 MINOR fixed 1 cycle+Kassandra CLEAN): 2026-05-16
 # story 14-2c done (pipeline: ATDD+Dev+Code 3 MINOR fixed 1 cycle — OIDC user search merge, Not yet logged in badge, warning banner): 2026-05-16
 # story 14-2b done (pipeline: ATDD+Code 1 MINOR cycle+Kassandra CLEAN): 2026-05-16
@@ -157,7 +158,7 @@ development_status:
   14-2b-gateway-oidc-directory-service-cache-rate-limit: done
   14-2c-admin-ui-user-search-oidc-integration-not-yet-logged-in: done
   14-3a-bulk-import-users-grpc-rpc-core-provisioning: done
-  14-3b-bootstrap-wizard-step4-ui-preview-import: backlog
+  14-3b-bootstrap-wizard-step4-ui-preview-import: done
   14-3c-scim-2-user-fetch-progress-tracking: backlog
   14-4-gdpr-right-to-erasure-end-to-end-verification: backlog
   epic-14-retrospective: optional

@@ -1070,7 +1070,10 @@ func (a *AdminAuth) ClaimSelectionHandler(w http.ResponseWriter, r *http.Request
 			Secure:   isRequestSecure(r),
 			SameSite: http.SameSiteLaxMode,
 		})
-		http.Redirect(w, r, "/admin/dashboard", http.StatusSeeOther)
+		// Story 14-3b: redirect to Bootstrap Wizard Step 4 (User Import) so the admin
+		// can pre-provision OIDC users before first use. "Skip and finish" on Step 4
+		// navigates to /admin/dashboard.
+		http.Redirect(w, r, "/admin/bootstrap?step=4", http.StatusSeeOther)
 		return
 	}
 
@@ -1095,7 +1098,8 @@ func (a *AdminAuth) ClaimSelectionHandler(w http.ResponseWriter, r *http.Request
 		Secure:   isRequestSecure(r),
 		SameSite: http.SameSiteLaxMode,
 	})
-	http.Redirect(w, r, "/admin/dashboard", http.StatusSeeOther)
+	// Story 14-3b: redirect to Bootstrap Wizard Step 4 (User Import) — same as SID path above.
+	http.Redirect(w, r, "/admin/bootstrap?step=4", http.StatusSeeOther)
 }
 
 // LogoutHandler handles GET /admin/logout.

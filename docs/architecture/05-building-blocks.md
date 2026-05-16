@@ -19,7 +19,12 @@ gateway/
 └── internal/
     ├── auth/                   ← OIDC token validation, bootstrap mode
     │   ├── oidc.go             ← go-oidc provider, token validation
-    │   └── bootstrap.go        ← First-admin bootstrap mode
+    │   └── bootstrap.go        ← First-admin bootstrap mode (Story 14-3b: extended with Step 4
+│                              User Import; BootstrapHandler gains oidcFetcher OIDCDirectoryFetcher,
+│                              core BulkImportClient, serverName; WithImportServices fluent setter;
+│                              GET ?step=4 renders import step; StepHandler case 4 handles
+│                              action=preview + action=import; OIDCDirectoryFetcher and
+│                              BulkImportClient interfaces defined here for testability)
     ├── matrix/                 ← Matrix Client-Server API handlers
     │   ├── login.go            ← POST /_matrix/client/v3/login (SSO + OIDC)
     │   ├── logout.go           ← POST /_matrix/client/v3/logout; NewLogoutHandlerWithCore cleans up
@@ -85,7 +90,9 @@ gateway/
     │   │                          oidc_user_id_claim, oidc_displayname_claim, oidc_email_claim inside the
     │   │                          same runInTx as admin_group_claim + bootstrap_completed (AC2);
     │   │                          ServerConfigReader interface extended with LoadClaimMapping +
-    │   │                          SaveClaimMapping methods on postgresServerConfigReader
+    │   │                          SaveClaimMapping methods on postgresServerConfigReader;
+    │   │                          Story 14-3b: post-bootstrap redirect changed from /admin/dashboard
+    │   │                          to /admin/bootstrap?step=4 (User Import wizard step)
     │   ├── config.go           ← ConfigHandler (Story 7.10/9.4/14-2a): GET/POST /admin/config;
     │   │                          serves server configuration page; gRPC path calls Core UpdateServerConfig
     │   │                          for string fields; direct DB upsert via ConfigKeyWriter interface for
@@ -104,7 +111,12 @@ gateway/
     │   │                          Story 14-2c: UserRowData gains IsOIDCOnly bool + MatrixIDPreview string
     │   │                          for OIDC-only users (never logged into Nebu); UsersPageData gains
     │   │                          OIDCWarning bool + OIDCWarningBanner AlertBannerData for non-blocking
-    │   │                          availability warning when OIDC directory is unreachable
+    │   │                          availability warning when OIDC directory is unreachable;
+    │   │                          Story 14-3b: BootstrapPageData extended with Step 4 fields —
+    │   │                          OIDCDirectoryEnabled bool, ImportPreview []ImportPreviewUser,
+    │   │                          ImportResult *ImportResult, ImportError string;
+    │   │                          ImportPreviewUser{DisplayName, Email, MatrixUserID} — one row in preview table;
+    │   │                          ImportResult{Imported, Skipped, Failed int32} — BulkImportUsers response counts
     │   ├── oidc_directory.go   ← OIDCDirectoryService (Story 14-2b): outbound HTTP client for OIDC
     │   │                          user directory endpoint; secretString type masks bearer token in logs
     │   │                          (CR-3); HTTPS-only validation at each call (CR-1); CheckRedirect

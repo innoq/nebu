@@ -10,7 +10,25 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"google.golang.org/grpc"
+
+	pb "github.com/nebu/nebu/internal/grpc/pb"
 )
+
+// OIDCDirectoryFetcher is the interface used by BootstrapHandler to access the OIDC directory.
+// It is satisfied by *OIDCDirectoryService (from oidc_directory.go).
+// Defined as a narrow interface here so tests can inject fakes without a real HTTP server.
+type OIDCDirectoryFetcher interface {
+	IsEnabled() bool
+	FetchUsers(ctx context.Context) ([]OIDCDirectoryUser, error)
+}
+
+// BulkImportClient is the interface used by BootstrapHandler to call the BulkImportUsers gRPC RPC.
+// It is satisfied by the generated CoreServiceClient from gateway/internal/grpc/pb.
+type BulkImportClient interface {
+	BulkImportUsers(ctx context.Context, req *pb.BulkImportUsersRequest, opts ...grpc.CallOption) (*pb.BulkImportUsersResponse, error)
+}
 
 // maskSecret returns a display-safe masked representation of the secret.
 // For secrets of 6+ chars: first 3 + "..." + last 3. Shorter: "***".
@@ -77,6 +95,14 @@ type BootstrapHandler struct {
 	persister  BootstrapPersister
 	draftStore BootstrapDraftStore
 	secret     []byte
+
+	// Step 4 (Story 14-3b): User Import services. Optional — nil = Step 4 renders with disabled button.
+	// oidcFetcher provides IsEnabled() and FetchUsers() for the preview step.
+	// core is the gRPC client for BulkImportUsers.
+	// serverName is the Matrix server name (e.g. "example.com") for Matrix User ID computation.
+	oidcFetcher OIDCDirectoryFetcher
+	core        BulkImportClient
+	serverName  string
 }
 
 // NewBootstrapHandler creates a BootstrapHandler with the given status checker, template handler, db, and secret.
@@ -90,12 +116,40 @@ func NewBootstrapHandler(checker BootstrapStatusChecker, tmpl *TemplateHandler, 
 	}
 }
 
-// Handler responds with the Bootstrap Wizard HTML page (step 1).
+// WithImportServices wires Step 4 (User Import) services into the handler.
+// Call after NewBootstrapHandler. Returns the handler for fluent chaining.
+//
+// oidcFetcher — provides IsEnabled() and FetchUsers() for the Step 4 preview;
+//               pass nil to render Step 4 with the disabled-button state (AC4).
+// core       — gRPC client for BulkImportUsers; pass nil to disable the import action.
+// serverName — Matrix server name (e.g. "example.com") used to compute @localpart:server Matrix IDs.
+func (h *BootstrapHandler) WithImportServices(oidcFetcher OIDCDirectoryFetcher, core BulkImportClient, serverName string) *BootstrapHandler {
+	h.oidcFetcher = oidcFetcher
+	h.core = core
+	h.serverName = serverName
+	return h
+}
+
+// Handler responds with the Bootstrap Wizard HTML page.
+// Normally renders Step 1. When ?step=4 is present in the query string,
+// renders Step 4 (User Import) — used after the OIDC callback redirect.
 func (h *BootstrapHandler) Handler(w http.ResponseWriter, r *http.Request) {
 	bootstrapPD := newPageData()
 	bootstrapPD.BootstrapMode = true
 	bootstrapPD.ActiveNav = "bootstrap"
 	bootstrapPD.CSRFToken = CSRFTokenFromContext(r.Context())
+
+	// AC1 (Story 14-3b): support GET /admin/bootstrap?step=4 for the post-OIDC redirect.
+	if r.URL.Query().Get("step") == "4" {
+		data := BootstrapPageData{
+			PageData:             bootstrapPD,
+			Step:                 4,
+			OIDCDirectoryEnabled: h.oidcFetcher != nil && h.oidcFetcher.IsEnabled(),
+		}
+		h.tmpl.render(w, "bootstrap", data)
+		return
+	}
+
 	data := BootstrapPageData{
 		PageData: bootstrapPD,
 		Step:     1,
@@ -133,7 +187,7 @@ func (h *BootstrapHandler) StepHandler(w http.ResponseWriter, r *http.Request) {
 	if goBack := r.FormValue("go_back"); goBack != "" {
 		var targetStep int
 		fmt.Sscan(goBack, &targetStep)
-		if targetStep >= 1 && targetStep <= 3 {
+		if targetStep >= 1 && targetStep <= 4 {
 			if targetStep == 2 {
 				// Re-read OIDC fields from draft so step 2 re-renders correctly.
 				if encSec, found, _ := h.draftStore.LoadDraft(r.Context(), "oidc_client_secret"); found && encSec != "" {
@@ -154,10 +208,10 @@ func (h *BootstrapHandler) StepHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Parse current step (wizard has 3 steps: 1=Instance, 2=OIDC, 3=Claim Mapping).
+	// Parse current step (wizard has 4 steps: 1=Instance, 2=OIDC, 3=Claim Mapping, 4=User Import).
 	var currentStep int
 	fmt.Sscan(r.FormValue("step"), &currentStep)
-	if currentStep < 1 || currentStep > 3 {
+	if currentStep < 1 || currentStep > 4 {
 		currentStep = 1
 	}
 
@@ -260,6 +314,90 @@ func (h *BootstrapHandler) StepHandler(w http.ResponseWriter, r *http.Request) {
 		// Redirect to OIDC login — the callback will show claim selection.
 		http.Redirect(w, r, "/admin/login/start?mode=bootstrap", http.StatusSeeOther)
 		return
+
+	case 4:
+		// Step 4: User Import (Story 14-3b).
+		// Handles two sub-actions:
+		//   action=preview — fetch users from OIDC dir, render preview table.
+		//   action=import  — re-fetch + call BulkImportUsers gRPC, render result.
+		//   (no action)   — initial render of step 4.
+		action := r.FormValue("action")
+		data.Step = 4
+		data.OIDCDirectoryEnabled = h.oidcFetcher != nil && h.oidcFetcher.IsEnabled()
+
+		switch action {
+		case "preview":
+			// AC2: Fetch users and build preview table.
+			if !data.OIDCDirectoryEnabled {
+				// AC4: OIDC dir disabled — render with disabled state.
+				h.tmpl.render(w, "bootstrap", data)
+				return
+			}
+			if h.serverName == "" {
+				slog.Error("step 4 preview: serverName is empty — Matrix User IDs will be malformed")
+			}
+			oidcUsers, err := h.oidcFetcher.FetchUsers(r.Context())
+			if err != nil {
+				slog.Error("step 4 preview: failed to fetch OIDC users", "err", err)
+				data.ImportError = "Failed to fetch users from OIDC provider."
+				h.tmpl.render(w, "bootstrap", data)
+				return
+			}
+			preview := make([]ImportPreviewUser, 0, len(oidcUsers))
+			for _, u := range oidcUsers {
+				localpart := sanitizeOIDCSub(u.Sub)
+				preview = append(preview, ImportPreviewUser{
+					DisplayName:  u.DisplayName,
+					Email:        u.Email,
+					MatrixUserID: "@" + localpart + ":" + h.serverName,
+				})
+			}
+			data.ImportPreview = preview
+
+		case "import":
+			// AC3: Re-fetch users and call BulkImportUsers gRPC.
+			if !data.OIDCDirectoryEnabled {
+				data.ImportError = "Provider does not support user listing."
+				h.tmpl.render(w, "bootstrap", data)
+				return
+			}
+			if h.core == nil {
+				slog.Error("step 4 import: core gRPC client is nil")
+				data.ImportError = "Import service unavailable."
+				h.tmpl.render(w, "bootstrap", data)
+				return
+			}
+			oidcUsers, err := h.oidcFetcher.FetchUsers(r.Context())
+			if err != nil {
+				slog.Error("step 4 import: failed to fetch OIDC users", "err", err)
+				data.ImportError = "Failed to fetch users from OIDC provider."
+				h.tmpl.render(w, "bootstrap", data)
+				return
+			}
+			// Build OIDCUserClaims for each user.
+			userClaims := make([]*pb.OIDCUserClaims, 0, len(oidcUsers))
+			for _, u := range oidcUsers {
+				localpart := sanitizeOIDCSub(u.Sub)
+				userClaims = append(userClaims, &pb.OIDCUserClaims{
+					UserId:      "@" + localpart + ":" + h.serverName,
+					SystemRole:  "user",
+					DisplayName: u.DisplayName,
+					Email:       u.Email,
+				})
+			}
+			resp, err := h.core.BulkImportUsers(r.Context(), &pb.BulkImportUsersRequest{Users: userClaims})
+			if err != nil {
+				slog.Error("step 4 import: BulkImportUsers gRPC failed", "err", err)
+				data.ImportError = "Import request to core failed. Please try again."
+				h.tmpl.render(w, "bootstrap", data)
+				return
+			}
+			data.ImportResult = &ImportResult{
+				Imported: resp.GetImported(),
+				Skipped:  resp.GetSkipped(),
+				Failed:   resp.GetFailed(),
+			}
+		}
 	}
 
 	h.tmpl.render(w, "bootstrap", data)

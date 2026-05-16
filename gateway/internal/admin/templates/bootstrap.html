@@ -4,12 +4,12 @@
 <div class="max-w-lg mx-auto">
   <h1 class="text-2xl font-bold mb-6">Bootstrap Setup</h1>
 
-  <!-- DaisyUI steps progress indicator -->
+  <!-- DaisyUI steps progress indicator (4 steps: Instance, OIDC, Claims, Import) -->
   <ul class="steps steps-horizontal w-full mb-8">
     <li class="step {{ if ge .Step 1 }}step-primary{{ end }}">Instance</li>
     <li class="step {{ if ge .Step 2 }}step-primary{{ end }}">OIDC</li>
     <li class="step {{ if ge .Step 3 }}step-primary{{ end }}">Claims</li>
-    <li class="step">Connect</li>
+    <li class="step {{ if ge .Step 4 }}step-primary{{ end }}">Import</li>
   </ul>
 
   <div class="card bg-base-200 shadow-md">
@@ -236,6 +236,96 @@
           <button type="submit" class="btn btn-primary">Connect with OIDC</button>
         </div>
       </form>
+      {{ end }}
+
+      {{ if eq .Step 4 }}
+      <!-- Step 4: User Import (Story 14-3b) -->
+      <h2 class="card-title">Step 4: User Import</h2>
+
+      {{ if .ImportError }}
+      <div role="alert" class="alert alert-error mb-4">
+        <span>{{ .ImportError }}</span>
+      </div>
+      {{ end }}
+
+      {{ if .ImportResult }}
+      <!-- Import result banner (shown after successful import) -->
+      <div role="status" class="alert alert-success mb-4">
+        <span>
+          Import complete:
+          <strong>{{ .ImportResult.Imported }} imported</strong>,
+          {{ .ImportResult.Skipped }} skipped,
+          {{ .ImportResult.Failed }} failed.
+        </span>
+      </div>
+      <div class="card-actions justify-end mt-4">
+        <a href="/admin/dashboard" class="btn btn-primary">Go to Dashboard</a>
+      </div>
+      {{ else }}
+      <!-- Import not yet triggered — show form section -->
+      {{ if .OIDCDirectoryEnabled }}
+        {{ if .ImportPreview }}
+        <!-- Preview table loaded — show table + "Import all" action -->
+        <div class="overflow-x-auto mb-4">
+          <table class="table table-zebra w-full text-sm">
+            <thead>
+              <tr>
+                <th>Display Name</th>
+                <th>Email</th>
+                <th>Matrix User ID</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{ range .ImportPreview }}
+              <tr>
+                <td>{{ .DisplayName }}</td>
+                <td>{{ .Email }}</td>
+                <td class="font-mono text-xs">{{ .MatrixUserID }}</td>
+              </tr>
+              {{ end }}
+            </tbody>
+          </table>
+        </div>
+        <form method="POST" action="/admin/bootstrap">
+          <input type="hidden" name="_csrf" value="{{ .CSRFToken }}">
+          <input type="hidden" name="step" value="4">
+          <input type="hidden" name="action" value="import">
+          <div class="card-actions justify-between">
+            <a href="/admin/dashboard" class="btn btn-outline">Skip and finish</a>
+            <button type="submit" class="btn btn-primary">Import all</button>
+          </div>
+        </form>
+        {{ else }}
+        <!-- Preview not yet triggered — show "Import from OIDC" button -->
+        <div role="note" class="alert alert-info mb-4">
+          <span class="text-sm">Click <strong>Import from OIDC</strong> to fetch the user list from your OIDC provider and preview which users will be pre-provisioned.</span>
+        </div>
+        <form method="POST" action="/admin/bootstrap">
+          <input type="hidden" name="_csrf" value="{{ .CSRFToken }}">
+          <input type="hidden" name="step" value="4">
+          <input type="hidden" name="action" value="preview">
+          <div class="card-actions justify-between">
+            <a href="/admin/dashboard" class="btn btn-outline">Skip and finish</a>
+            <button type="submit" class="btn btn-primary">Import from OIDC</button>
+          </div>
+        </form>
+        {{ end }}
+      {{ else }}
+      <!-- AC4: OIDC directory disabled — disabled button + explanatory message -->
+      <div role="note" class="alert alert-warning mb-4">
+        <span>Provider does not support user listing. Enable the OIDC directory integration in Server Config to use bulk import.</span>
+      </div>
+      <form method="POST" action="/admin/bootstrap">
+        <input type="hidden" name="_csrf" value="{{ .CSRFToken }}">
+        <input type="hidden" name="step" value="4">
+        <div class="card-actions justify-between">
+          <a href="/admin/dashboard" class="btn btn-outline">Skip and finish</a>
+          <button type="submit" class="btn btn-primary" disabled>Import from OIDC</button>
+        </div>
+      </form>
+      {{ end }}
+      {{ end }}
+
       {{ end }}
 
     </div>

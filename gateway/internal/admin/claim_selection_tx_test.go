@@ -354,7 +354,7 @@ func newTestAdminAuthForTXSuccess(t *testing.T, store *txAwareConfigStoreSuccess
 // When:   POST /admin/bootstrap/select-claim succeeds
 // Then:   (a) all three writes (config, claim, completion) are visible in committed state — AC1
 //         (b) draft was cleared inside the TX (clearDraftCalled=true)                      — AC4
-//         (c) HTTP 303 SeeOther redirect to /admin/dashboard
+//         (c) HTTP 303 SeeOther redirect to /admin/bootstrap?step=4 (Story 14-3b)
 // ---------------------------------------------------------------------------
 func TestClaimSelection_TXCommitsOnSuccess(t *testing.T) {
 	successStore := &txAwareConfigStoreSuccess{
@@ -371,14 +371,16 @@ func TestClaimSelection_TXCommitsOnSuccess(t *testing.T) {
 	rr := httptest.NewRecorder()
 	a.ClaimSelectionHandler(rr, req)
 
-	// AC1 success path: handler must redirect 303 to dashboard.
+	// AC1 success path: handler must redirect 303 to bootstrap step 4 (Story 14-3b).
+	// Previously redirected to /admin/dashboard; now goes to /admin/bootstrap?step=4
+	// so the admin can pre-provision OIDC users before first use.
 	if rr.Code != http.StatusSeeOther {
 		t.Errorf("AC1 FAIL: expected 303 SeeOther on success, got %d (body: %q)",
 			rr.Code, rr.Body.String())
 	}
 	location := rr.Header().Get("Location")
-	if location != "/admin/dashboard" {
-		t.Errorf("AC1 FAIL: expected redirect to /admin/dashboard, got %q", location)
+	if location != "/admin/bootstrap?step=4" {
+		t.Errorf("AC1 FAIL: expected redirect to /admin/bootstrap?step=4, got %q", location)
 	}
 
 	// AC1: oidc_issuer must be committed after successful TX.

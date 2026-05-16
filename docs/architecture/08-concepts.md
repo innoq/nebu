@@ -339,6 +339,16 @@ Fields stored as booleans in `server_config` (e.g. `oidc_directory_enabled`) can
 - **Trust model**: Core trusts the Go gateway (ADR G2). The gRPC handler does not re-validate admin role — the Go gateway enforces admin-only HTTP access before calling this RPC.
 - **Module injection**: all three dependencies (`lookup_module`, `user_store_module`, `provisioner_module`) are injectable via `Application.put_env` for test isolation. Default implementations use real PostgreSQL.
 
+**Bootstrap Wizard Step 4 — User Import UI Pattern (Story 14-3b):**
+
+`BootstrapHandler` extends the 3-step wizard with a Step 4 that lets admins pre-provision OIDC users immediately after claim selection. Key design decisions:
+
+- **Redirect chain**: `ClaimSelectionHandler` now redirects to `/admin/bootstrap?step=4` instead of `/admin/dashboard`. Step 4 renders an "Import from OIDC" button. The admin can "Skip and finish" → `/admin/dashboard` at any time.
+- **Interface abstraction**: `OIDCDirectoryFetcher` (IsEnabled/FetchUsers) and `BulkImportClient` (BulkImportUsers) interfaces defined in `bootstrap.go` allow test injection without a real HTTP server or gRPC connection. `WithImportServices(fetcher, core, serverName)` wires them at startup.
+- **Two sub-actions via form POST**: `action=preview` fetches OIDC users and renders the preview table (display name, email, computed Matrix User ID); `action=import` re-fetches (cache hit) + calls `BulkImportUsers` gRPC + renders imported/skipped/failed counts.
+- **AC4 disabled state**: when `oidcFetcher == nil || !oidcFetcher.IsEnabled()`, Step 4 renders with a disabled "Import from OIDC" button and the message "Provider does not support user listing".
+- **Matrix User ID computation**: reuses `sanitizeOIDCSub(u.Sub)` from `users.go` (same package) to produce `@{localpart}:{serverName}` — identical to the preview shown in the Users page (Story 14-2c).
+
 **Media Event Content Pass-Through Contract (Story 12.6):**
 
 `content.info` in `m.room.message` (and all other event types) is an **opaque JSON object** — the gateway passes it verbatim to Core, and Core stores it as JSONB without field inspection or modification. Client extension fields such as `blurhash` (used by Element Web for image loading placeholders) MUST be preserved through the full round-trip: gateway → gRPC → Core → DB → sync response.
