@@ -1,6 +1,7 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-16
+# [14-3c] 2026-05-17T11:15Z committed ✓ (ATDD+Code CLEAN 2 MINOR fixed+Kassandra CLEAN)
 # [14-3c] 2026-05-17T11:00Z arc42-update → 05-building-blocks + 08-concepts updated
 # [14-3c] 2026-05-17T10:30Z security-review → Kassandra CLEAN (0 findings)
 # [14-3c] 2026-05-17T10:00Z code-review → CLEAN (2 MINOR fixed, cycle 0)
@@ -570,17 +571,9 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: "14-3c"
-current_step: "commit"
-completed:
-  - create-story
-  - atdd
-  - test-review
-  - dev-story
-  - ci-gate
-  - code-review
-  - security-review
-  - arc42-update
+story: null
+current_step: null
+completed: []
 cycle_count: 0
 blocked_reason: null
-last_updated: "2026-05-16T23:04Z"
+last_updated: "2026-05-16T23:05Z"
