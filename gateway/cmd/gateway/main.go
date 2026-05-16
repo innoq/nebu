@@ -410,7 +410,11 @@ func main() {
 	mux.Handle("POST /admin/rooms/{roomId}/settings", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(roomsHandler.UpdateRoomSettingsHandler)))))
 	// Story 7.10: Server Configuration page.
 	// Story 9.4: pass gRPC client so handler uses real Core RPCs instead of stubs.
-	configHandler := admin.NewConfigHandler(tmplHandler, coreClient)
+	// Story 14-2a: WithConfigDB wires direct DB upsert for proto3 bool fields (oidc_directory_enabled).
+	// adminConfigRepo is a separate instance from the apihandler serverConfigRepo declared below — same
+	// DB, separate struct, avoids forward-reference issues since Admin UI routes are wired before API routes.
+	adminConfigRepo := apihandler.NewServerConfigRepo(bootstrapDB)
+	configHandler := admin.NewConfigHandler(tmplHandler, coreClient).WithConfigDB(adminConfigRepo)
 	mux.Handle("GET /admin/config", csrf(sessionGuard(http.HandlerFunc(configHandler.Handler))))
 	mux.Handle("POST /admin/config", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(configHandler.UpdateConfigHandler)))))
 

@@ -635,6 +635,9 @@ message ServerConfigProto {
   int32  room_default_max_members = 4;
   string room_default_visibility  = 5;
   int32  audit_log_retention_days = 6;
+  // Story 14-2a: OIDC Directory Integration (ADR-015 Protocol A)
+  bool   oidc_directory_enabled   = 7;
+  string oidc_directory_endpoint  = 8;
 }
 
 // GetServerConfig
@@ -652,6 +655,12 @@ message UpdateServerConfigRequest {
   // Story 14.1a: locked post-bootstrap (maps to DB key oidc_user_id_claim).
   // Once bootstrap_completed is set, any non-empty value raises FAILED_PRECONDITION.
   string matrix_user_id_claim     = 7;
+  // Story 14-2a: OIDC Directory Integration (ADR-015 Protocol A)
+  // Note: use optional wrapper fields since bool defaults to false and string to "".
+  // The Admin UI path uses direct DB upsert (not gRPC) for these fields, so the
+  // proto fields are added for completeness / future gRPC-path use.
+  bool   oidc_directory_enabled   = 8;
+  string oidc_directory_endpoint  = 9;
 }
 message UpdateServerConfigResponse { bool ok = 1; }
 

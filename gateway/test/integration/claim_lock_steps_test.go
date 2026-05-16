@@ -28,7 +28,7 @@ func theAdminPATCHesAdminConfigWithMatrixUserIDClaim(claimValue string) error {
 		return fmt.Errorf("admin API token not set — ensure 'the instance_admin kai is authenticated for admin API' ran first")
 	}
 	body := fmt.Sprintf(`{"matrix_user_id_claim":%q}`, claimValue)
-	return adminAPIDoRequest("PATCH", gatewayURL+"/api/v1/admin/config", adminAPIAdminToken, body)
+	return adminAPIDoRequest("PATCH", matrixURL+"/api/v1/admin/config", adminAPIAdminToken, body)
 }
 
 // initializeClaimLockSteps registers the claim-lock integration test step definitions.

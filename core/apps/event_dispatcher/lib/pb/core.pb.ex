@@ -1048,6 +1048,8 @@ defmodule Core.ServerConfigProto do
   field :room_default_max_members, 4, type: :int32, json_name: "roomDefaultMaxMembers"
   field :room_default_visibility, 5, type: :string, json_name: "roomDefaultVisibility"
   field :audit_log_retention_days, 6, type: :int32, json_name: "auditLogRetentionDays"
+  field :oidc_directory_enabled, 7, type: :bool, json_name: "oidcDirectoryEnabled"
+  field :oidc_directory_endpoint, 8, type: :string, json_name: "oidcDirectoryEndpoint"
 end
 
 defmodule Core.GetServerConfigRequest do
@@ -1085,6 +1087,8 @@ defmodule Core.UpdateServerConfigRequest do
   field :room_default_visibility, 5, type: :string, json_name: "roomDefaultVisibility"
   field :audit_log_retention_days, 6, type: :int32, json_name: "auditLogRetentionDays"
   field :matrix_user_id_claim, 7, type: :string, json_name: "matrixUserIdClaim"
+  field :oidc_directory_enabled, 8, type: :bool, json_name: "oidcDirectoryEnabled"
+  field :oidc_directory_endpoint, 9, type: :string, json_name: "oidcDirectoryEndpoint"
 end
 
 defmodule Core.UpdateServerConfigResponse do

@@ -82,6 +82,8 @@ func (s *AdminServer) GetAdminConfig(ctx context.Context, _ GetAdminConfigReques
 		roomDefaultMaxMembers: maxMembers,
 		roomDefaultVisibility: visibility,
 		auditLogRetentionDays: cfgData.AuditLogRetentionDays,
+		oidcDirectoryEnabled:  cfgData.OidcDirectoryEnabled,
+		oidcDirectoryEndpoint: cfgData.OidcDirectoryEndpoint,
 	}, nil
 }
 
@@ -160,6 +162,27 @@ func (s *AdminServer) PatchAdminConfig(ctx context.Context, req PatchAdminConfig
 			return nil, err
 		}
 		changedKeys = append(changedKeys, "audit_log_retention_days")
+	}
+
+	// Story 14-2a: OIDC directory integration fields (ADR-015 Protocol A).
+	// OidcDirectoryEnabled is a bool pointer — non-nil means the caller explicitly provided the value.
+	// Storing as "true"/"false" string in the key-value server_config table.
+	if body.OidcDirectoryEnabled != nil {
+		enabledStr := "false"
+		if *body.OidcDirectoryEnabled {
+			enabledStr = "true"
+		}
+		if err := s.ServerConfig.UpsertServerConfigKey(ctx, "oidc_directory_enabled", enabledStr); err != nil {
+			return nil, err
+		}
+		changedKeys = append(changedKeys, "oidc_directory_enabled")
+	}
+
+	if body.OidcDirectoryEndpoint != nil {
+		if err := s.ServerConfig.UpsertServerConfigKey(ctx, "oidc_directory_endpoint", *body.OidcDirectoryEndpoint); err != nil {
+			return nil, err
+		}
+		changedKeys = append(changedKeys, "oidc_directory_endpoint")
 	}
 
 	// matrix_user_id_claim goes through Core gRPC — Core owns the bootstrap-lock logic.
@@ -297,7 +320,7 @@ func encryptAES256GCMForAPI(secret []byte, plaintext string) (string, error) {
 // ── Story 6.10: GetAdminConfig / PatchAdminConfig response types ─────────────
 
 // adminConfigResponseBody is the JSON wire format for GET /admin/config and PATCH /admin/config.
-// All 6 fields are always present (omitempty is intentionally NOT used — tests verify all keys exist).
+// All fields are always present (omitempty is intentionally NOT used — tests verify all keys exist).
 // oidc_client_secret is intentionally absent from this struct (AC#1 security invariant).
 type adminConfigResponseBody struct {
 	InstanceName          string `json:"instance_name"`
@@ -306,6 +329,8 @@ type adminConfigResponseBody struct {
 	RoomDefaultMaxMembers int    `json:"room_default_max_members"`
 	RoomDefaultVisibility string `json:"room_default_visibility"`
 	AuditLogRetentionDays int    `json:"audit_log_retention_days"`
+	OidcDirectoryEnabled  bool   `json:"oidc_directory_enabled"`  // Story 14-2a
+	OidcDirectoryEndpoint string `json:"oidc_directory_endpoint"` // Story 14-2a
 }
 
 // getAdminConfigOKResponse — 200 OK for GET /admin/config.
@@ -317,6 +342,8 @@ type getAdminConfigOKResponse struct {
 	roomDefaultMaxMembers int
 	roomDefaultVisibility string
 	auditLogRetentionDays int
+	oidcDirectoryEnabled  bool   // Story 14-2a
+	oidcDirectoryEndpoint string // Story 14-2a
 }
 
 func (r *getAdminConfigOKResponse) VisitGetAdminConfigResponse(w http.ResponseWriter) error {
@@ -327,6 +354,8 @@ func (r *getAdminConfigOKResponse) VisitGetAdminConfigResponse(w http.ResponseWr
 		RoomDefaultMaxMembers: r.roomDefaultMaxMembers,
 		RoomDefaultVisibility: r.roomDefaultVisibility,
 		AuditLogRetentionDays: r.auditLogRetentionDays,
+		OidcDirectoryEnabled:  r.oidcDirectoryEnabled,
+		OidcDirectoryEndpoint: r.oidcDirectoryEndpoint,
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

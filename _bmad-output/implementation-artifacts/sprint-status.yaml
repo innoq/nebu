@@ -1,5 +1,6 @@
 # generated: 2026-03-20
-# last_updated: 2026-05-14
+# last_updated: 2026-05-16
+# story 14-2a done (pipeline: ATDD+Dev+Code CLEAN (1 MINOR fixed+1 DEFER)+arc42): 2026-05-16
 # story 13-11 done (pipeline: Makefile release+release-push, CI release stage (Kaniko SemVer tags), deploy docs — 2 MINOR cycles CLEAN): 2026-05-14
 # story 13-11 created (ready-for-dev): Versioning and Release Pipeline (make release + GitLab CI release stage): 2026-05-14
 # story 13-10 done (pipeline: 2 MINOR cycles fixed — dns_mode var, Route53+Stackit DNS, dex_subdomain_enabled): 2026-05-14
@@ -146,10 +147,10 @@ development_status:
   # Epic 14: Admin — Claim Lock, OIDC User Import, and GDPR Compliance
   # Pre-Epic-TODO: ADR-015 (OIDC User Directory Integration Strategy: SCIM vs. OIDC-API-Direkt)
   # ─────────────────────────────────────────────────────────────────────────
-  epic-14: backlog
+  epic-14: in-progress
   14-1a-core-matrix-user-id-claim-lock-failed-precondition: done
   14-1b-gateway-api-validation-admin-ui-readonly-display: done
-  14-2a-server-config-schema-oidc-directory-enabled-endpoint: backlog
+  14-2a-server-config-schema-oidc-directory-enabled-endpoint: done
   14-2b-gateway-oidc-directory-service-cache-rate-limit: backlog
   14-2c-admin-ui-user-search-oidc-integration-not-yet-logged-in: backlog
   14-3a-bulk-import-users-grpc-rpc-core-provisioning: backlog

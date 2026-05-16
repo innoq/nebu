@@ -4786,6 +4786,9 @@ type ServerConfigProto struct {
 	RoomDefaultMaxMembers int32                  `protobuf:"varint,4,opt,name=room_default_max_members,json=roomDefaultMaxMembers,proto3" json:"room_default_max_members,omitempty"`
 	RoomDefaultVisibility string                 `protobuf:"bytes,5,opt,name=room_default_visibility,json=roomDefaultVisibility,proto3" json:"room_default_visibility,omitempty"`
 	AuditLogRetentionDays int32                  `protobuf:"varint,6,opt,name=audit_log_retention_days,json=auditLogRetentionDays,proto3" json:"audit_log_retention_days,omitempty"`
+	// Story 14-2a: OIDC Directory Integration (ADR-015 Protocol A)
+	OidcDirectoryEnabled  bool   `protobuf:"varint,7,opt,name=oidc_directory_enabled,json=oidcDirectoryEnabled,proto3" json:"oidc_directory_enabled,omitempty"`
+	OidcDirectoryEndpoint string `protobuf:"bytes,8,opt,name=oidc_directory_endpoint,json=oidcDirectoryEndpoint,proto3" json:"oidc_directory_endpoint,omitempty"`
 	unknownFields         protoimpl.UnknownFields
 	sizeCache             protoimpl.SizeCache
 }
@@ -4860,6 +4863,20 @@ func (x *ServerConfigProto) GetAuditLogRetentionDays() int32 {
 		return x.AuditLogRetentionDays
 	}
 	return 0
+}
+
+func (x *ServerConfigProto) GetOidcDirectoryEnabled() bool {
+	if x != nil {
+		return x.OidcDirectoryEnabled
+	}
+	return false
+}
+
+func (x *ServerConfigProto) GetOidcDirectoryEndpoint() string {
+	if x != nil {
+		return x.OidcDirectoryEndpoint
+	}
+	return ""
 }
 
 // GetServerConfig
@@ -4955,8 +4972,14 @@ type UpdateServerConfigRequest struct {
 	// Story 14.1a: locked post-bootstrap (maps to DB key oidc_user_id_claim).
 	// Once bootstrap_completed is set, any non-empty value raises FAILED_PRECONDITION.
 	MatrixUserIdClaim string `protobuf:"bytes,7,opt,name=matrix_user_id_claim,json=matrixUserIdClaim,proto3" json:"matrix_user_id_claim,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// Story 14-2a: OIDC Directory Integration (ADR-015 Protocol A)
+	// Note: use optional wrapper fields since bool defaults to false and string to "".
+	// The Admin UI path uses direct DB upsert (not gRPC) for these fields, so the
+	// proto fields are added for completeness / future gRPC-path use.
+	OidcDirectoryEnabled  bool   `protobuf:"varint,8,opt,name=oidc_directory_enabled,json=oidcDirectoryEnabled,proto3" json:"oidc_directory_enabled,omitempty"`
+	OidcDirectoryEndpoint string `protobuf:"bytes,9,opt,name=oidc_directory_endpoint,json=oidcDirectoryEndpoint,proto3" json:"oidc_directory_endpoint,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *UpdateServerConfigRequest) Reset() {
@@ -5034,6 +5057,20 @@ func (x *UpdateServerConfigRequest) GetAuditLogRetentionDays() int32 {
 func (x *UpdateServerConfigRequest) GetMatrixUserIdClaim() string {
 	if x != nil {
 		return x.MatrixUserIdClaim
+	}
+	return ""
+}
+
+func (x *UpdateServerConfigRequest) GetOidcDirectoryEnabled() bool {
+	if x != nil {
+		return x.OidcDirectoryEnabled
+	}
+	return false
+}
+
+func (x *UpdateServerConfigRequest) GetOidcDirectoryEndpoint() string {
+	if x != nil {
+		return x.OidcDirectoryEndpoint
 	}
 	return ""
 }
@@ -6240,7 +6277,7 @@ const file_core_proto_rawDesc = "" +
 	"\x13GetAdminRoomRequest\x12\x17\n" +
 	"\aroom_id\x18\x01 \x01(\tR\x06roomId\"F\n" +
 	"\x14GetAdminRoomResponse\x12.\n" +
-	"\x04room\x18\x01 \x01(\v2\x1a.core.AdminRoomDetailProtoR\x04room\"\xa9\x02\n" +
+	"\x04room\x18\x01 \x01(\v2\x1a.core.AdminRoomDetailProtoR\x04room\"\x97\x03\n" +
 	"\x11ServerConfigProto\x12#\n" +
 	"\rinstance_name\x18\x01 \x01(\tR\finstanceName\x12\x1f\n" +
 	"\voidc_issuer\x18\x02 \x01(\tR\n" +
@@ -6248,10 +6285,12 @@ const file_core_proto_rawDesc = "" +
 	"\x0eoidc_client_id\x18\x03 \x01(\tR\foidcClientId\x127\n" +
 	"\x18room_default_max_members\x18\x04 \x01(\x05R\x15roomDefaultMaxMembers\x126\n" +
 	"\x17room_default_visibility\x18\x05 \x01(\tR\x15roomDefaultVisibility\x127\n" +
-	"\x18audit_log_retention_days\x18\x06 \x01(\x05R\x15auditLogRetentionDays\"\x18\n" +
+	"\x18audit_log_retention_days\x18\x06 \x01(\x05R\x15auditLogRetentionDays\x124\n" +
+	"\x16oidc_directory_enabled\x18\a \x01(\bR\x14oidcDirectoryEnabled\x126\n" +
+	"\x17oidc_directory_endpoint\x18\b \x01(\tR\x15oidcDirectoryEndpoint\"\x18\n" +
 	"\x16GetServerConfigRequest\"J\n" +
 	"\x17GetServerConfigResponse\x12/\n" +
-	"\x06config\x18\x01 \x01(\v2\x17.core.ServerConfigProtoR\x06config\"\xe2\x02\n" +
+	"\x06config\x18\x01 \x01(\v2\x17.core.ServerConfigProtoR\x06config\"\xd0\x03\n" +
 	"\x19UpdateServerConfigRequest\x12#\n" +
 	"\rinstance_name\x18\x01 \x01(\tR\finstanceName\x12\x1f\n" +
 	"\voidc_issuer\x18\x02 \x01(\tR\n" +
@@ -6260,7 +6299,9 @@ const file_core_proto_rawDesc = "" +
 	"\x18room_default_max_members\x18\x04 \x01(\x05R\x15roomDefaultMaxMembers\x126\n" +
 	"\x17room_default_visibility\x18\x05 \x01(\tR\x15roomDefaultVisibility\x127\n" +
 	"\x18audit_log_retention_days\x18\x06 \x01(\x05R\x15auditLogRetentionDays\x12/\n" +
-	"\x14matrix_user_id_claim\x18\a \x01(\tR\x11matrixUserIdClaim\",\n" +
+	"\x14matrix_user_id_claim\x18\a \x01(\tR\x11matrixUserIdClaim\x124\n" +
+	"\x16oidc_directory_enabled\x18\b \x01(\bR\x14oidcDirectoryEnabled\x126\n" +
+	"\x17oidc_directory_endpoint\x18\t \x01(\tR\x15oidcDirectoryEndpoint\",\n" +
 	"\x1aUpdateServerConfigResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\"x\n" +
 	"\x12UpgradeRoomRequest\x12\x1e\n" +

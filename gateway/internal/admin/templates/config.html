@@ -51,6 +51,36 @@
              required>
     </div>
 
+    {{/* ── Story 14-2a: OIDC Directory Integration ── */}}
+    <div class="form-control">
+      <label class="label cursor-pointer justify-start gap-4" for="oidc_directory_enabled">
+        <input type="checkbox" id="oidc_directory_enabled" name="oidc_directory_enabled"
+               class="checkbox"
+               {{ if .Config.OidcDirectoryEnabled }}checked{{ end }}
+               onchange="document.getElementById('oidc-directory-endpoint-section').style.display = this.checked ? 'block' : 'none'">
+        <span class="label-text">Enable OIDC User Directory Integration</span>
+      </label>
+      <p class="text-sm text-base-content/60 ml-10">
+        When enabled, the Admin UI user search includes OIDC users who have not yet logged in.
+      </p>
+    </div>
+
+    <div id="oidc-directory-endpoint-section"
+         style="{{ if not .Config.OidcDirectoryEnabled }}display:none{{ end }}"
+         class="form-control pl-4 border-l-2 border-primary/30">
+      <label class="label" for="oidc_directory_endpoint">
+        <span class="label-text">OIDC Directory Endpoint URL</span>
+      </label>
+      <input type="url" id="oidc_directory_endpoint" name="oidc_directory_endpoint"
+             value="{{ .Config.OidcDirectoryEndpoint }}"
+             class="input input-bordered w-full"
+             placeholder="https://idp.example.com/admin/users"
+             maxlength="2048">
+      <p class="text-sm text-base-content/60 mt-1">
+        URL of the OIDC provider's user-search endpoint (e.g. Dex /admin/users).
+      </p>
+    </div>
+
     <div class="flex justify-end mt-4">
       <button type="submit" class="btn btn-primary">Save</button>
     </div>

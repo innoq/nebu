@@ -2301,6 +2301,13 @@ defmodule Nebu.EventDispatcher.Server do
       |> maybe_add_change("room_default_visibility", req.room_default_visibility)
       |> maybe_add_int_change("audit_log_retention_days", req.audit_log_retention_days)
       |> maybe_add_change("oidc_user_id_claim", req.matrix_user_id_claim)
+      # Story 14-2a: oidc_directory_endpoint is a string — safe to use maybe_add_change
+      # (empty string = "do not update" convention). oidc_directory_enabled is a bool
+      # proto3 field — cannot distinguish false-from-unset, so it is persisted via the
+      # direct DB upsert path in the Go gateway PATCH handler. The proto field exists for
+      # completeness; the Core gRPC path does not process bool fields to avoid inadvertently
+      # overwriting the stored value with the proto default (false) on unrelated gRPC calls.
+      |> maybe_add_change("oidc_directory_endpoint", req.oidc_directory_endpoint)
 
     if changes == [] do
       %Core.UpdateServerConfigResponse{ok: true}

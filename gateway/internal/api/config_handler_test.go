@@ -276,6 +276,8 @@ func TestGetAdminConfig_OIDCClientSecretNeverInResponse(t *testing.T) {
 		"room_default_max_members",
 		"room_default_visibility",
 		"audit_log_retention_days",
+		"oidc_directory_enabled",
+		"oidc_directory_endpoint",
 	}
 	for _, field := range expectedFields {
 		if _, ok := resp[field]; !ok {
@@ -1010,5 +1012,146 @@ func TestPatchAdminConfig_MatrixUserIDClaim_PreBootstrap_Returns200(t *testing.T
 	if coreClient.capturedMatrixUserIDClaim != "preferred_username" {
 		t.Errorf("[AT#2/AC1] expected capturedMatrixUserIDClaim='preferred_username', got %q",
 			coreClient.capturedMatrixUserIDClaim)
+	}
+}
+
+// ── Story 14-2a: OIDC Directory Config — oidc_directory_enabled + oidc_directory_endpoint ──
+
+// TestGetAdminConfig_IncludesOidcDirectoryFields — AT#1/AC2 [P0]
+//
+// RED PHASE: fails until:
+//   - ServerConfigData gains OidcDirectoryEnabled bool + OidcDirectoryEndpoint string
+//   - GetServerConfig DB query includes 'oidc_directory_enabled' and 'oidc_directory_endpoint'
+//   - getAdminConfigOKResponse includes both new fields
+//   - adminConfigResponseBody includes both new JSON keys
+//
+// Verifies that GET /api/v1/admin/config always returns both oidc_directory_enabled
+// and oidc_directory_endpoint in the JSON response body (even with defaults).
+func TestGetAdminConfig_IncludesOidcDirectoryFields(t *testing.T) {
+	configRepo := &mockServerConfigRepository{
+		configData: &api.ServerConfigData{
+			InstanceName:          "Nebu Dev",
+			OIDCIssuer:            "https://dex.example.com",
+			OIDCClientID:          "nebu-admin",
+			AuditLogRetentionDays: 2555,
+			OidcDirectoryEnabled:  false, // RED: field does not exist yet
+			OidcDirectoryEndpoint: "",    // RED: field does not exist yet
+		},
+	}
+	roomRepo := &mockRoomDefaultsForConfig{getMaxMembers: 100, getVisibility: "private"}
+	w := doGetAdminConfig(t, configRepo, roomRepo, nil)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("[AT#1/AC2] expected 200, got %d", w.Code)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("[AT#1/AC2] failed to unmarshal response: %v", err)
+	}
+
+	// Both fields must always be present (no omitempty — existing pattern)
+	if _, ok := body["oidc_directory_enabled"]; !ok {
+		t.Error("[AT#1/AC2] expected 'oidc_directory_enabled' key in response JSON")
+	}
+	if _, ok := body["oidc_directory_endpoint"]; !ok {
+		t.Error("[AT#1/AC2] expected 'oidc_directory_endpoint' key in response JSON")
+	}
+	if body["oidc_directory_enabled"] != false {
+		t.Errorf("[AT#1/AC2] expected oidc_directory_enabled=false, got %v", body["oidc_directory_enabled"])
+	}
+	if body["oidc_directory_endpoint"] != "" {
+		t.Errorf("[AT#1/AC2] expected oidc_directory_endpoint='', got %v", body["oidc_directory_endpoint"])
+	}
+}
+
+// TestPatchAdminConfig_OidcDirectory_PersistsAndReturns — AT#2/AC3 [P0]
+//
+// RED PHASE: fails until:
+//   - PatchAdminConfigRequest gains OidcDirectoryEnabled *bool + OidcDirectoryEndpoint *string
+//   - PatchAdminConfig handler upserts 'oidc_directory_enabled' and 'oidc_directory_endpoint'
+//   - GetAdminConfig returns the updated values in the response
+//
+// Verifies that PATCH /api/v1/admin/config with oidc_directory_enabled + endpoint
+// calls UpsertServerConfigKey for both keys and returns them in the 200 response.
+func TestPatchAdminConfig_OidcDirectory_PersistsAndReturns(t *testing.T) {
+
+	enabled := true
+	endpoint := "https://idp.example.com/admin/users"
+
+	configRepo := &mockServerConfigRepository{
+		configData: &api.ServerConfigData{
+			InstanceName:          "Nebu Dev",
+			OIDCIssuer:            "https://dex.example.com",
+			OIDCClientID:          "nebu-admin",
+			AuditLogRetentionDays: 2555,
+			OidcDirectoryEnabled:  enabled,  // RED: field does not exist yet
+			OidcDirectoryEndpoint: endpoint, // RED: field does not exist yet
+		},
+	}
+	roomRepo := &mockRoomDefaultsForConfig{getMaxMembers: 100, getVisibility: "private"}
+	coreClient := &mockCoreClientForConfig{}
+
+	body := fmt.Sprintf(`{"oidc_directory_enabled": %v, "oidc_directory_endpoint": %q}`, enabled, endpoint)
+	w := doPatchAdminConfig(t, configRepo, roomRepo, coreClient, body)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("[AT#2/AC3] expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// UpsertServerConfigKey must have been called for both keys
+	if !configRepo.upsertCalled {
+		t.Fatal("[AT#2/AC3] expected UpsertServerConfigKey to be called")
+	}
+	if configRepo.capturedValues["oidc_directory_enabled"] != "true" {
+		t.Errorf("[AT#2/AC3] expected oidc_directory_enabled='true', got %q",
+			configRepo.capturedValues["oidc_directory_enabled"])
+	}
+	if configRepo.capturedValues["oidc_directory_endpoint"] != endpoint {
+		t.Errorf("[AT#2/AC3] expected oidc_directory_endpoint=%q, got %q",
+			endpoint, configRepo.capturedValues["oidc_directory_endpoint"])
+	}
+
+	// Response JSON must include the updated values
+	var respBody map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &respBody); err != nil {
+		t.Fatalf("[AT#2/AC3] failed to unmarshal response: %v", err)
+	}
+	if respBody["oidc_directory_enabled"] != true {
+		t.Errorf("[AT#2/AC3] expected oidc_directory_enabled=true in response, got %v", respBody["oidc_directory_enabled"])
+	}
+	if respBody["oidc_directory_endpoint"] != endpoint {
+		t.Errorf("[AT#2/AC3] expected oidc_directory_endpoint=%q in response, got %v", endpoint, respBody["oidc_directory_endpoint"])
+	}
+}
+
+// TestPatchAdminConfig_OidcDirectoryEnabled_False_Persists — AT#2b/AC3 [P1]
+//
+// RED PHASE: fails until PatchAdminConfig stores "false" correctly for OidcDirectoryEnabled.
+//
+// Edge case: explicitly setting oidc_directory_enabled to false stores "false" (not empty string).
+func TestPatchAdminConfig_OidcDirectoryEnabled_False_Persists(t *testing.T) {
+
+	disabled := false
+	configRepo := &mockServerConfigRepository{
+		configData: &api.ServerConfigData{
+			InstanceName:          "Nebu Dev",
+			AuditLogRetentionDays: 2555,
+			OidcDirectoryEnabled:  disabled, // RED: field does not exist yet
+			OidcDirectoryEndpoint: "",
+		},
+	}
+	roomRepo := &mockRoomDefaultsForConfig{getMaxMembers: 100, getVisibility: "private"}
+	coreClient := &mockCoreClientForConfig{}
+
+	body := `{"oidc_directory_enabled": false}`
+	w := doPatchAdminConfig(t, configRepo, roomRepo, coreClient, body)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("[AT#2b/AC3] expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if configRepo.capturedValues["oidc_directory_enabled"] != "false" {
+		t.Errorf("[AT#2b/AC3] expected oidc_directory_enabled='false', got %q",
+			configRepo.capturedValues["oidc_directory_enabled"])
 	}
 }

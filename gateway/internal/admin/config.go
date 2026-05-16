@@ -21,23 +21,43 @@ type AdminConfigClient interface {
 	UpdateServerConfig(ctx context.Context, req *pb.UpdateServerConfigRequest) (*pb.UpdateServerConfigResponse, error)
 }
 
+// ConfigKeyWriter is a minimal interface for writing individual server_config keys directly to the DB.
+// Used by UpdateConfigHandler to persist bool fields that cannot be safely round-tripped via proto3
+// (proto3 bool default false is indistinguishable from "not set", so the gRPC path cannot carry it).
+// Implemented by api.ServerConfigRepository (same UpsertServerConfigKey method signature).
+// In tests, pass nil — the handler falls back to stub mutation when configDB is nil.
+type ConfigKeyWriter interface {
+	UpsertServerConfigKey(ctx context.Context, key, value string) error
+}
+
 // ConfigHandler serves the Server Configuration page (Story 7.10).
 // Story 9.4: backed by real gRPC calls to the Elixir core when core is non-nil.
+// Story 14-2a: configDB is used for direct DB upsert of proto3 bool fields.
 // Falls back to stub data when core is nil (unit-test path).
 type ConfigHandler struct {
-	tmpl *TemplateHandler
-	core AdminConfigClient
+	tmpl     *TemplateHandler
+	core     AdminConfigClient
+	configDB ConfigKeyWriter // Story 14-2a: direct DB write for bool config keys
 }
 
 // NewConfigHandler creates a ConfigHandler with the given template handler and optional gRPC client.
 // Pass nil (or omit) for core to use stub data (unit-test path; stub fallback preserved for
 // backward compatibility with existing unit tests).
+// Pass configDB to enable direct DB persistence for proto3 bool fields (oidc_directory_enabled).
 func NewConfigHandler(tmpl *TemplateHandler, core ...AdminConfigClient) *ConfigHandler {
 	var c AdminConfigClient
 	if len(core) > 0 {
 		c = core[0]
 	}
 	return &ConfigHandler{tmpl: tmpl, core: c}
+}
+
+// WithConfigDB sets the DB writer for direct server_config key persistence.
+// Call after NewConfigHandler when a real DB connection is available.
+// Story 14-2a: needed to persist oidc_directory_enabled (proto3 bool — cannot use gRPC path).
+func (h *ConfigHandler) WithConfigDB(db ConfigKeyWriter) *ConfigHandler {
+	h.configDB = db
+	return h
 }
 
 // protoToStubConfig maps a ServerConfigProto to StubConfig for template rendering.
@@ -51,7 +71,9 @@ func protoToStubConfig(p *pb.ServerConfigProto) StubConfig {
 		MaxRoomsPerUser: int(p.GetRoomDefaultMaxMembers()),
 		RetentionDays:   int(p.GetAuditLogRetentionDays()),
 		// AllowRegistration has no proto equivalent; keep UI-only state from stub default.
-		AllowRegistration: stubConfig.AllowRegistration,
+		AllowRegistration:     stubConfig.AllowRegistration,
+		OidcDirectoryEnabled:  p.GetOidcDirectoryEnabled(),  // Story 14-2a
+		OidcDirectoryEndpoint: p.GetOidcDirectoryEndpoint(), // Story 14-2a
 	}
 }
 
@@ -116,6 +138,11 @@ func (h *ConfigHandler) UpdateConfigHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Parse OIDC directory fields from the form (Story 14-2a).
+	// The checkbox "oidc_directory_enabled" sends "on" when checked, absent when unchecked.
+	oidcDirectoryEnabled := r.FormValue("oidc_directory_enabled") == "on"
+	oidcDirectoryEndpoint := strings.TrimSpace(r.FormValue("oidc_directory_endpoint"))
+
 	if h.core != nil {
 		// gRPC path — enrich context with admin identity so Core audit log records actor_user_id.
 		grpcCtx := contextWithAdminIdentity(r.Context(), AdminSubFromContext(r.Context()))
@@ -123,6 +150,10 @@ func (h *ConfigHandler) UpdateConfigHandler(w http.ResponseWriter, r *http.Reque
 			InstanceName:            instanceName,
 			RoomDefaultMaxMembers:   int32(maxRooms),
 			AuditLogRetentionDays:   int32(retentionDays),
+			OidcDirectoryEndpoint:   oidcDirectoryEndpoint,
+			// OidcDirectoryEnabled is NOT set here: proto3 bool cannot distinguish false-from-unset.
+			// It is persisted via direct DB upsert below (configDB path) to avoid inadvertently
+			// overwriting the stored value with proto default (false) on unrelated gRPC calls.
 			// AllowRegistration: not in proto — UI-only field; no proto change needed for XS scope.
 			// NOTE: AllowRegistration has no corresponding field in UpdateServerConfigRequest.
 			// It remains a UI-only checkbox until the proto is extended in a follow-up story.
@@ -137,12 +168,28 @@ func (h *ConfigHandler) UpdateConfigHandler(w http.ResponseWriter, r *http.Reque
 			http.Redirect(w, r, "/admin/config?flash=Error+updating+config", http.StatusFound)
 			return
 		}
+		// Persist oidc_directory_enabled directly to DB (Story 14-2a):
+		// proto3 bool cannot safely round-trip via gRPC (false == unset), so we use a
+		// direct DB upsert. configDB is nil in unit tests (stub path handled below).
+		if h.configDB != nil {
+			enabledStr := "false"
+			if oidcDirectoryEnabled {
+				enabledStr = "true"
+			}
+			if dbErr := h.configDB.UpsertServerConfigKey(r.Context(), "oidc_directory_enabled", enabledStr); dbErr != nil {
+				slog.Error("admin: failed to persist oidc_directory_enabled", "err", dbErr)
+				http.Redirect(w, r, "/admin/config?flash=Error+updating+config", http.StatusFound)
+				return
+			}
+		}
 	} else {
 		// stub fallback (nil client, unit-test path)
 		stubConfig.InstanceName = instanceName
 		stubConfig.AllowRegistration = r.FormValue("allow_registration") == "on"
 		stubConfig.MaxRoomsPerUser = maxRooms
 		stubConfig.RetentionDays = retentionDays
+		stubConfig.OidcDirectoryEnabled = oidcDirectoryEnabled
+		stubConfig.OidcDirectoryEndpoint = oidcDirectoryEndpoint
 	}
 
 	http.Redirect(w, r, "/admin/config?flash=Config+updated", http.StatusFound)

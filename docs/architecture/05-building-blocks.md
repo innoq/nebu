@@ -86,6 +86,14 @@ gateway/
     │   │                          same runInTx as admin_group_claim + bootstrap_completed (AC2);
     │   │                          ServerConfigReader interface extended with LoadClaimMapping +
     │   │                          SaveClaimMapping methods on postgresServerConfigReader
+    │   ├── config.go           ← ConfigHandler (Story 7.10/9.4/14-2a): GET/POST /admin/config;
+    │   │                          serves server configuration page; gRPC path calls Core UpdateServerConfig
+    │   │                          for string fields; direct DB upsert via ConfigKeyWriter interface for
+    │   │                          proto3 bool fields (oidc_directory_enabled — proto3 default false
+    │   │                          indistinguishable from "not set"); WithConfigDB(repo) wires the direct
+    │   │                          DB path; StubConfig gains OidcDirectoryEnabled bool + OidcDirectoryEndpoint
+    │   │                          string (Story 14-2a); config.html renders toggle + conditional endpoint
+    │   │                          field (plain JS onchange — no Alpine.js in templates)
     │   ├── page_data.go        ← PageData struct + newPageData() helper + SetBuildInfo();
     │   │                          BuildVersion/GitCommit/BuildTime fields on PageData; SetBuildInfo
     │   │                          called once from main.go; newPageData() used by all authenticated

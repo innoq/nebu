@@ -293,14 +293,19 @@ uploader_user_id = formatMatrixUserID(subject, serverName)
 
 Implementation: `extractClaimFromMap(rawClaims map[string]interface{}, claimName string) (string, error)` — pure function in `media/internal/upload/upload.go`. The value goes through `sanitiseLocalpart` before storage. `OIDCTokenVerifier` is constructed with `NewOIDCTokenVerifier(idTokenVerifier, claimName)` in `initOIDCVerifierWith`.
 
-**server_config RLS UPDATE Policy (Story 12.7 MEDIUM-5):**
+**server_config RLS UPDATE Policy (Story 12.7 MEDIUM-5, extended Story 14-2a):**
 
-Migration 000046 replaces the blanket `config_update_all` policy (USING true — introduced in migration 000045 for OIDC claim upserts) with a key-scoped `config_update_mutable` policy. Only the following keys are updatable by `nebu_app`:
+Migration 000046 replaces the blanket `config_update_all` policy (USING true — introduced in migration 000045 for OIDC claim upserts) with a key-scoped `config_update_mutable` policy. Migration 000048 (Story 14-2a) extends the allowlist with two new OIDC directory keys. Only the following keys are updatable by `nebu_app`:
 
 - `oidc_user_id_claim`, `oidc_displayname_claim`, `oidc_email_claim`, `admin_group_claim`
 - `oidc_issuer`, `oidc_client_id`, `oidc_client_secret`
+- `oidc_directory_enabled`, `oidc_directory_endpoint` _(added in migration 000048, Story 14-2a)_
 
 `server_name`, `bootstrap_completed`, and any future keys not in this allowlist are immutable at the DB level (defence-in-depth restoration from ADR G8).
+
+**Proto3 Bool / Direct DB Upsert Pattern (Story 14-2a):**
+
+Fields stored as booleans in `server_config` (e.g. `oidc_directory_enabled`) cannot be safely round-tripped via proto3 gRPC because `false` is the proto default and is indistinguishable from "not set". The pattern used: the REST API PATCH handler (`api.AdminServer`) holds a `ServerConfigRepository` and upserts directly. The Admin UI handler (`admin.ConfigHandler`) accepts a `ConfigKeyWriter` interface (set via `WithConfigDB`) and upserts directly for bool fields, while routing string fields through gRPC. This avoids inadvertent resets of boolean flags on unrelated gRPC calls.
 
 **Media Event Content Pass-Through Contract (Story 12.6):**
 

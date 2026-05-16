@@ -123,4 +123,5 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	initializeClusteringSteps(sc)             // Core clustering failover step definitions (Story 13-6)
 	initializeOIDCDiscoverySteps(sc)          // MSC2965 OIDC discovery endpoints (Story 13-7)
 	initializeClaimLockSteps(sc)              // matrix_user_id_claim post-bootstrap lock (Story 14-1b)
+	initializeOidcDirectoryConfigSteps(sc)    // oidc_directory_enabled + endpoint config round-trip (Story 14-2a)
 }

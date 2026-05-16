@@ -34,6 +34,8 @@ type ServerConfigData struct {
 	OIDCIssuer            string
 	OIDCClientID          string
 	AuditLogRetentionDays int
+	OidcDirectoryEnabled  bool   // Story 14-2a: OIDC directory feature flag
+	OidcDirectoryEndpoint string // Story 14-2a: OIDC provider user-search endpoint URL
 }
 
 // dbServerConfigRepo is the real PostgreSQL implementation of ServerConfigRepository.
@@ -48,16 +50,21 @@ func NewServerConfigRepo(db *sql.DB) ServerConfigRepository {
 
 // GetServerConfig reads the readable server config keys from the server_config table.
 // Missing keys return their documented defaults:
-//   - instance_name      → ""
-//   - oidc_issuer        → ""
-//   - oidc_client_id     → ""
-//   - audit_log_retention_days → 2555 (7 years)
+//   - instance_name               → ""
+//   - oidc_issuer                 → ""
+//   - oidc_client_id              → ""
+//   - audit_log_retention_days    → 2555 (7 years)
+//   - oidc_directory_enabled      → false
+//   - oidc_directory_endpoint     → ""
 //
 // oidc_client_secret is intentionally NOT queried — it is a write-only field.
 func (r *dbServerConfigRepo) GetServerConfig(ctx context.Context) (*ServerConfigData, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT key, value FROM server_config
-		 WHERE key IN ('instance_name', 'oidc_issuer', 'oidc_client_id', 'audit_log_retention_days')`)
+		 WHERE key IN (
+		   'instance_name', 'oidc_issuer', 'oidc_client_id', 'audit_log_retention_days',
+		   'oidc_directory_enabled', 'oidc_directory_endpoint'
+		 )`)
 	if err != nil {
 		return nil, fmt.Errorf("GetServerConfig: %w", err)
 	}
@@ -80,6 +87,8 @@ func (r *dbServerConfigRepo) GetServerConfig(ctx context.Context) (*ServerConfig
 		OIDCIssuer:            vals["oidc_issuer"],
 		OIDCClientID:          vals["oidc_client_id"],
 		AuditLogRetentionDays: 2555, // default: 7 years
+		OidcDirectoryEnabled:  vals["oidc_directory_enabled"] == "true",
+		OidcDirectoryEndpoint: vals["oidc_directory_endpoint"],
 	}
 
 	if retStr, ok := vals["audit_log_retention_days"]; ok && retStr != "" {

@@ -1,6 +1,14 @@
 # Nebu Pipeline State — written by nebu-pipeline, read by all nebu agents
 # Do not edit manually during a pipeline run.
 # last_updated: 2026-05-16
+# [14-2a] 2026-05-16T20:43Z arc42-update → 05-building-blocks+08-concepts+09-decisions+ADR-015
+# [14-2a] 2026-05-16T20:41Z code-review → 1 MINOR fixed (WithConfigDB) + 1 DEFER + CLEAN (cycle 0)
+# [14-2a] 2026-05-16T20:26Z ci-gate → ✓ unit-go+unit-elixir+integration(oidc_directory PASS)
+# [14-2a] 2026-05-16T22:15Z test-review → CLEAN (0 MAJOR; 2 MINOR: migration test missing, false-scenario no readback)
+# [14-2a] 2026-05-16T22:10Z atdd → 8 failing tests (3 Go unit + 3 Godog integration + 3 Playwright E2E)
+# [14-2a] 2026-05-16T22:05Z create-story → 14-2a-server-config-schema-oidc-directory-enabled-endpoint.md
+# [14-2a] 2026-05-16T22:00Z pipeline started
+# [14-1b] 2026-05-16T epic-loop → story done (Gateway 400 mapping + Admin UI read-only + Godog 2 scenarios + security CLEAN)
 # [14-1b] 2026-05-16T21:45Z committed ✓ (ATDD+Code CLEAN 1 cycle+Kassandra CLEAN 1 LOW advisory — gRPC claim lock, read-only UI, bootstrap wizard info text)
 # [14-1b] 2026-05-16T21:44Z arc42-update → no structural changes (claim-lock pattern established in 14-1a, UI refinement only)
 # [14-1b] 2026-05-16T21:43Z security-review → Kassandra CLEAN (0 CRITICAL, 0 HIGH, 1 LOW advisory — no API-level format validation on claim value, admin-only endpoint acceptable)
@@ -504,8 +512,8 @@
 # [9-22] 2026-05-06T17:50Z code-review → CLEAN cycle 3 (4 MINOR accepted: cosmetic/new)
 # [9-22] 2026-05-06T17:30Z ci-gate → ✓ build+unit-go+unit-elixir+e2e+integration
 # [9-22] 2026-05-06T16:10Z code-review → 2 MAJOR 3 MINOR → cycle 3
-story: "14-1b"
-current_step: "done"
+story: "14-2a"
+current_step: "commit"
 completed:
   - create-story
   - atdd
@@ -518,4 +526,4 @@ completed:
   - commit
 cycle_count: 1
 blocked_reason: null
-last_updated: "2026-05-16T21:45Z"
+last_updated: "2026-05-16T20:43Z"
