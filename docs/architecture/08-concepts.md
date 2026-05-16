@@ -318,6 +318,16 @@ Fields stored as booleans in `server_config` (e.g. `oidc_directory_enabled`) can
 - **singleflight + 30s cache**: concurrent cache misses collapse into one outbound call (MR-4). Cache key = SHA-256(endpoint + "|" + token) so rotating the bearer token invalidates the stale cache (MR-1).
 - **Graceful degradation**: runtime errors (unreachable host, non-200, JSON parse failure) are logged as warnings and swallowed — FetchUsers returns empty list, not error. Configuration errors (non-HTTPS) are propagated as errors.
 
+**OIDC Directory User Search Merge Pattern (Story 14-2c):**
+
+`UsersHandler.ListHandler` merges Nebu DB users (from gRPC `ListAdminUsers`) with OIDC directory users (from `OIDCDirectoryService.FetchUsers`) when `oidc_directory_enabled=true`. Key design decisions:
+
+- **WithOIDCDirectory setter**: `UsersHandler` accepts an `*OIDCDirectoryService` via a fluent setter (`WithOIDCDirectory(svc, serverName)`). The handler field is nil by default — zero-config backward compatibility.
+- **Nebu DB wins on dedup**: OIDC users whose `sanitize(sub)` matches a Nebu `UserId` are dropped from the OIDC-only list. The Nebu DB entry always takes precedence.
+- **IsOIDCOnly flag**: `UserRowData.IsOIDCOnly=true` + `MatrixIDPreview` mark users present only in the OIDC directory. The preview is computed as `@{sanitize(sub)}:{serverName}` and is not persisted.
+- **Non-blocking OIDC failure**: when the OIDC provider is unreachable, `FetchUsers` returns an empty list (logged internally). `ListHandler` detects this via `IsEnabled() && len(oidcUsers)==0` and sets `OIDCWarningBanner` — the Nebu DB list is still rendered.
+- **Rate-limit gate**: `Allow(sessionID)` is called before `FetchUsers`. If rate-limited, OIDC fetch is silently skipped (no warning banner — rate-limiting is defensive, not an availability signal).
+
 **Media Event Content Pass-Through Contract (Story 12.6):**
 
 `content.info` in `m.room.message` (and all other event types) is an **opaque JSON object** — the gateway passes it verbatim to Core, and Core stores it as JSONB without field inspection or modification. Client extension fields such as `blurhash` (used by Element Web for image loading placeholders) MUST be preserved through the full round-trip: gateway → gRPC → Core → DB → sync response.

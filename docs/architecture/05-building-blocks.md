@@ -100,7 +100,11 @@ gateway/
     │   │                          handlers to pre-populate build info for the footer (Story 11-9);
     │   │                          ErrorMode bool suppresses footer on error pages;
     │   │                          ClaimMappingPageData (Story 11-10): OIDCUserIDClaim,
-    │   │                          OIDCDisplaynameClaim, OIDCEmailClaim + per-field validation errors
+    │   │                          OIDCDisplaynameClaim, OIDCEmailClaim + per-field validation errors;
+    │   │                          Story 14-2c: UserRowData gains IsOIDCOnly bool + MatrixIDPreview string
+    │   │                          for OIDC-only users (never logged into Nebu); UsersPageData gains
+    │   │                          OIDCWarning bool + OIDCWarningBanner AlertBannerData for non-blocking
+    │   │                          availability warning when OIDC directory is unreachable
     │   ├── oidc_directory.go   ← OIDCDirectoryService (Story 14-2b): outbound HTTP client for OIDC
     │   │                          user directory endpoint; secretString type masks bearer token in logs
     │   │                          (CR-3); HTTPS-only validation at each call (CR-1); CheckRedirect
@@ -110,7 +114,10 @@ gateway/
     │   │                          per-session rate limiter via sync.Map[sessionID → *rate.Limiter]
     │   │                          at 5 req/s (CR-5 — caller calls Allow(sessionID) before FetchUsers);
     │   │                          explicit HTTP status handling (MR-3); HR-2 SSRF trust boundary
-    │   │                          documented (Option B — private IP blocking tracked as follow-up)
+    │   │                          documented (Option B — private IP blocking tracked as follow-up);
+    │   │                          Story 14-2c: IsEnabled() method exposes enabled flag for handler-level
+    │   │                          distinction between "disabled (no calls)" vs "enabled but empty (possibly
+    │   │                          unreachable)"
     │   └── templates/          ← Embedded HTML templates (go:embed);
     │       ├── claim-mapping.html ← Admin UI Claim Mapping settings page (Story 11-10):
     │       │                        DaisyUI form with datalist suggestions (sub/preferred_username/email)

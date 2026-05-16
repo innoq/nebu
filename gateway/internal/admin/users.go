@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 
@@ -26,10 +27,13 @@ type AdminUsersClient interface {
 
 // UsersHandler serves the /admin/users master-detail page (Story 7.2, extended Story 7.5).
 // Story 9.2: backed by real gRPC calls to the Elixir core when core is non-nil.
+// Story 14-2c: oidcDir merges OIDC directory results with Nebu DB users.
 // Falls back to stub data when core is nil (unit-test path).
 type UsersHandler struct {
-	tmpl *TemplateHandler
-	core AdminUsersClient
+	tmpl       *TemplateHandler
+	core       AdminUsersClient
+	oidcDir    *OIDCDirectoryService // nil = OIDC directory disabled or not wired
+	serverName string               // Matrix server name for MatrixIDPreview (e.g. "example.com")
 }
 
 // NewUsersHandler constructs a UsersHandler with the given template handler and gRPC client.
@@ -41,6 +45,29 @@ func NewUsersHandler(tmpl *TemplateHandler, core ...AdminUsersClient) *UsersHand
 		c = core[0]
 	}
 	return &UsersHandler{tmpl: tmpl, core: c}
+}
+
+// WithOIDCDirectory wires an OIDCDirectoryService into the handler for OIDC-merged user search.
+// serverName is the Matrix server name (e.g. "example.com") used to compute MatrixIDPreview.
+// Returns the handler for fluent chaining.
+// Story 14-2c: caller MUST ensure the service is created with Enabled=true for OIDC merging
+// to occur; the handler checks the service's enabled flag implicitly via FetchUsers semantics.
+func (h *UsersHandler) WithOIDCDirectory(svc *OIDCDirectoryService, serverName string) *UsersHandler {
+	h.oidcDir = svc
+	h.serverName = serverName
+	return h
+}
+
+// sanitizeOIDCSub converts an OIDC sub claim to a safe Matrix localpart.
+// Matrix localparts allow: a-z, 0-9, ., _, =, -, /
+// All other characters (including uppercase) are lowercased first, then
+// any remaining non-allowed characters are replaced with _.
+// HR-3 from security guide: claim values are untrusted strings.
+var matrixLocalpartAllowed = regexp.MustCompile(`[^a-z0-9._=\-/]`)
+
+func sanitizeOIDCSub(sub string) string {
+	lower := strings.ToLower(sub)
+	return matrixLocalpartAllowed.ReplaceAllString(lower, "_")
 }
 
 // protoToStubUser maps an AdminUserProto to a StubUser for template rendering.
@@ -152,11 +179,91 @@ func (h *UsersHandler) ListHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Build UserRowData slice with pre-computed Badge for each user row.
+	// Story 14-2c: OIDC directory merge.
+	// Build a set of known Nebu user IDs for deduplication (sanitize(sub) vs UserId).
+	// Then fetch OIDC users and append OIDC-only entries not already in the Nebu DB set.
+	var oidcWarning bool
+	const oidcUnavailableMsg = "OIDC directory temporarily unavailable"
+	var oidcOnlyRows []UserRowData
+
+	if h.oidcDir != nil {
+		// CR-5 (Story 14.2b security requirement): call Allow() before FetchUsers().
+		// sessionID is the verified sub claim from the admin JWT (set by SessionGuard).
+		sessionID := AdminSubFromContext(r.Context())
+		if sessionID == "" {
+			sessionID = "anonymous" // fallback for unit test path without context
+		}
+
+		// Rate limit check (CR-5): if exceeded, skip OIDC fetch silently — no warning banner
+		// because rate-limiting is a per-session guard, not an availability signal.
+		// The next request within the session may succeed once the bucket refills.
+		if h.oidcDir.Allow(sessionID) {
+			oidcUsers, fetchErr := h.oidcDir.FetchUsers(r.Context())
+			if fetchErr != nil {
+				// Configuration error (e.g. non-HTTPS endpoint) — log and continue DB-only.
+				slog.Warn("admin: OIDC directory configuration error", "err", fetchErr)
+				oidcWarning = true
+			} else if len(oidcUsers) == 0 && h.oidcDir.IsEnabled() {
+				// FetchUsers returned empty from an enabled service — likely unreachable endpoint.
+				// The service already logged a warning internally; show banner to the user.
+				oidcWarning = true
+			}
+
+			if !oidcWarning {
+				// Build Nebu user ID set for deduplication: sanitize(sub) compared to UserId.
+				nebuUserIDs := make(map[string]struct{}, len(users))
+				for _, u := range users {
+					nebuUserIDs[sanitizeOIDCSub(u.ID)] = struct{}{}
+					// Also index the raw ID (exact match guard)
+					nebuUserIDs[u.ID] = struct{}{}
+				}
+
+				qLower := strings.ToLower(q)
+				for _, ou := range oidcUsers {
+					localpart := sanitizeOIDCSub(ou.Sub)
+					// Deduplication: skip if this sub maps to an existing Nebu user.
+					if _, exists := nebuUserIDs[localpart]; exists {
+						continue
+					}
+					if _, exists := nebuUserIDs[ou.Sub]; exists {
+						continue
+					}
+
+					// Apply search filter for OIDC-only users.
+					if qLower != "" {
+						displayNameMatch := strings.Contains(strings.ToLower(ou.DisplayName), qLower)
+						subMatch := strings.Contains(strings.ToLower(ou.Sub), qLower)
+						emailMatch := strings.Contains(strings.ToLower(ou.Email), qLower)
+						if !displayNameMatch && !subMatch && !emailMatch {
+							continue
+						}
+					}
+
+					matrixID := "@" + localpart + ":" + h.serverName
+					oidcOnlyRows = append(oidcOnlyRows, UserRowData{
+						StubUser: StubUser{
+							ID:          ou.Sub,
+							DisplayName: ou.DisplayName,
+							Email:       ou.Email,
+							Role:        "user", // OIDC-only users default to "user" role preview
+							Status:      "active",
+						},
+						Badge:           StatusBadgeData{Status: "pending", Label: "Not yet logged in"},
+						IsOIDCOnly:      true,
+						MatrixIDPreview: matrixID,
+					})
+				}
+			}
+		}
+	}
+
+	// Build UserRowData slice with pre-computed Badge for each Nebu DB user row.
 	rows := make([]UserRowData, len(users))
 	for i, u := range users {
 		rows[i] = toUserRowData(u)
 	}
+	// Append OIDC-only rows after Nebu DB rows.
+	rows = append(rows, oidcOnlyRows...)
 
 	usersListPD := newPageData()
 	usersListPD.ActiveNav = "users"
@@ -175,12 +282,18 @@ func (h *UsersHandler) ListHandler(w http.ResponseWriter, r *http.Request) {
 			Options:      []string{"all", "admin", "compliance_officer", "user"},
 			CurrentValue: role,
 		}},
-		TotalCount:  totalCount,
-		CurrentPage: 0,
-		HasMore:     hasMore,
-		NextPage:    nextPage,
-		EmptyState:  EmptyStateData{Heading: "No users found", Description: "Try adjusting your search or filter."},
-		CloseURL:    "/admin/users",
+		TotalCount:         totalCount,
+		CurrentPage:        0,
+		HasMore:            hasMore,
+		NextPage:           nextPage,
+		EmptyState:         EmptyStateData{Heading: "No users found", Description: "Try adjusting your search or filter."},
+		CloseURL:           "/admin/users",
+		OIDCWarning: oidcWarning,
+		OIDCWarningBanner: AlertBannerData{
+			Severity:    "warning",
+			Message:     oidcUnavailableMsg,
+			Dismissible: true,
+		},
 	}
 	h.tmpl.render(w, "users", data)
 }

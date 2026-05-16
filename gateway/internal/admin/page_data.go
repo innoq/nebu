@@ -156,9 +156,15 @@ type StubUser struct {
 // Embeds StubUser and adds a pre-computed Badge for the status_badge component,
 // normalising StubUser.Status "deactivated" → StatusBadgeData{Status: "inactive"}.
 // This avoids template FuncMap helpers — the handler populates Badge directly.
+//
+// Story 14-2c: IsOIDCOnly marks users present in the OIDC directory but absent from
+// Nebu DB. MatrixIDPreview holds the computed "@{localpart}:{serverName}" preview
+// for such users — they have no stored Matrix User ID yet.
 type UserRowData struct {
 	StubUser
-	Badge StatusBadgeData
+	Badge           StatusBadgeData
+	IsOIDCOnly      bool   // true = user exists only in OIDC dir, never logged into Nebu
+	MatrixIDPreview string // computed "@{localpart}:{serverName}" — only set when IsOIDCOnly
 }
 
 // UsersPageData holds data for the Users master-detail page (Story 7.5).
@@ -202,6 +208,11 @@ type UsersPageData struct {
 	ActiveUserRoleOptions []string
 	// ActiveUserRoleValue holds the current role for the pre-selected <option> (Story 7.7).
 	ActiveUserRoleValue string
+	// OIDCWarning is true when oidc_directory_enabled=true but the provider is temporarily unavailable.
+	// When true, OIDCWarningBanner holds the pre-populated AlertBannerData for the warning (Story 14-2c).
+	// Rendered as a non-blocking banner at the top of the users list — does not replace the user list.
+	OIDCWarning       bool
+	OIDCWarningBanner AlertBannerData
 }
 
 // StubRoom is a fake room record used for the Rooms master-detail page until

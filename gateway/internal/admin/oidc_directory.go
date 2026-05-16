@@ -176,6 +176,11 @@ func validateEndpoint(endpoint string) error {
 	return nil
 }
 
+// IsEnabled reports whether the OIDC directory integration is enabled.
+// Story 14-2c: used by UsersHandler.ListHandler to distinguish between
+// "disabled (no OIDC calls)" and "enabled but returned empty (possibly unreachable)".
+func (s *OIDCDirectoryService) IsEnabled() bool { return s.enabled }
+
 // Allow checks whether the given session ID is within the rate limit (CR-5, AC1).
 // Returns true if the request is allowed, false if rate-limited.
 // The session ID MUST be the verified session identifier from a validated JWT,

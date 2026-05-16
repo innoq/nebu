@@ -1,5 +1,6 @@
 # generated: 2026-03-20
 # last_updated: 2026-05-16
+# story 14-2c done (pipeline: ATDD+Dev+Code 3 MINOR fixed 1 cycle — OIDC user search merge, Not yet logged in badge, warning banner): 2026-05-16
 # story 14-2b done (pipeline: ATDD+Code 1 MINOR cycle+Kassandra CLEAN): 2026-05-16
 # story 14-2a done (pipeline: ATDD+Dev+Code CLEAN (1 MINOR fixed+1 DEFER)+arc42): 2026-05-16
 # story 13-11 done (pipeline: Makefile release+release-push, CI release stage (Kaniko SemVer tags), deploy docs — 2 MINOR cycles CLEAN): 2026-05-14
@@ -153,7 +154,7 @@ development_status:
   14-1b-gateway-api-validation-admin-ui-readonly-display: done
   14-2a-server-config-schema-oidc-directory-enabled-endpoint: done
   14-2b-gateway-oidc-directory-service-cache-rate-limit: done
-  14-2c-admin-ui-user-search-oidc-integration-not-yet-logged-in: backlog
+  14-2c-admin-ui-user-search-oidc-integration-not-yet-logged-in: done
   14-3a-bulk-import-users-grpc-rpc-core-provisioning: backlog
   14-3b-bootstrap-wizard-step4-ui-preview-import: backlog
   14-3c-scim-2-user-fetch-progress-tracking: backlog
