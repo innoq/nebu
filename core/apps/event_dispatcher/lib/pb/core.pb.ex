@@ -1300,7 +1300,6 @@ defmodule Core.OIDCUserClaims do
     syntax: :proto3
 
   field :user_id, 1, type: :string, json_name: "userId"
-  field :system_role, 2, type: :string, json_name: "systemRole"
   field :display_name, 3, type: :string, json_name: "displayName"
   field :email, 4, type: :string
 end

@@ -5946,13 +5946,16 @@ func (x *SearchMessagesResponse) GetTotalCount() int32 {
 //
 //	(e.g. "@alice:example.com") — computed by the Go gateway before sending.
 //
-// system_role: always "user" for bulk import (admin bootstrap path is not triggered).
+// system_role is intentionally ABSENT: the Core handler hard-codes "user" for all
+//
+//	bulk-imported accounts — callers must not control privilege escalation.
+//	(SEC Gate 2 F-2: removed to prevent privilege escalation via caller-supplied role.)
+//
 // display_name: from preferred_username OIDC claim (Tier 1 PII — encrypted in Core).
 // email: from email OIDC claim (Tier 2 PII — encrypted in Core via X25519 ECDH).
 type OIDCUserClaims struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	SystemRole    string                 `protobuf:"bytes,2,opt,name=system_role,json=systemRole,proto3" json:"system_role,omitempty"`
 	DisplayName   string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
 	Email         string                 `protobuf:"bytes,4,opt,name=email,proto3" json:"email,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -5992,13 +5995,6 @@ func (*OIDCUserClaims) Descriptor() ([]byte, []int) {
 func (x *OIDCUserClaims) GetUserId() string {
 	if x != nil {
 		return x.UserId
-	}
-	return ""
-}
-
-func (x *OIDCUserClaims) GetSystemRole() string {
-	if x != nil {
-		return x.SystemRole
 	}
 	return ""
 }
@@ -6555,13 +6551,11 @@ const file_core_proto_rawDesc = "" +
 	"\n" +
 	"next_batch\x18\x02 \x01(\tR\tnextBatch\x12\x1f\n" +
 	"\vtotal_count\x18\x03 \x01(\x05R\n" +
-	"totalCount\"\x83\x01\n" +
+	"totalCount\"u\n" +
 	"\x0eOIDCUserClaims\x12\x17\n" +
-	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x1f\n" +
-	"\vsystem_role\x18\x02 \x01(\tR\n" +
-	"systemRole\x12!\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12!\n" +
 	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayName\x12\x14\n" +
-	"\x05email\x18\x04 \x01(\tR\x05email\"D\n" +
+	"\x05email\x18\x04 \x01(\tR\x05emailJ\x04\b\x02\x10\x03R\vsystem_role\"D\n" +
 	"\x16BulkImportUsersRequest\x12*\n" +
 	"\x05users\x18\x01 \x03(\v2\x14.core.OIDCUserClaimsR\x05users\"g\n" +
 	"\x17BulkImportUsersResponse\x12\x1a\n" +

@@ -205,10 +205,12 @@ func TestBootstrapStep4_ImportCallsBulkImportAndShowsCounts(t *testing.T) {
 	if len(bulkClient.lastRequest.Users) != 2 {
 		t.Errorf("expected 2 users in BulkImportUsers request, got %d", len(bulkClient.lastRequest.Users))
 	}
-	// Verify system_role is "user" for all bulk-imported users
+	// system_role is no longer in the proto (SEC Gate 2 F-2: field removed).
+	// Core hard-codes "user" server-side; the gateway does not send the field.
+	// Verify the request users are present with correct user_id and display_name.
 	for i, u := range bulkClient.lastRequest.Users {
-		if u.SystemRole != "user" {
-			t.Errorf("user[%d].SystemRole must be 'user' for bulk import, got %q", i, u.SystemRole)
+		if u.UserId == "" {
+			t.Errorf("user[%d].UserId must not be empty", i)
 		}
 	}
 

@@ -11,6 +11,10 @@ defmodule Nebu.Session.BulkImporterTest do
   #   AT-3: bulk import 10 users (8 new + 2 existing) → {:ok, %{imported: 8, skipped: 2, failed: 0}}
   #   AT-4: keypair generation correctness (key algorithm + size validated)
   #
+  # SEC Gate 2 security regression tests (F-2 + F-3):
+  #   AT-SEC-1: system_role from caller is ignored — provisioned user always gets "user"
+  #   AT-SEC-2: bulk_import_users/2 emits "users_bulk_imported" audit log entry
+  #
   # BulkImporter module expected location:
   #   core/apps/session_manager/lib/nebu/session/bulk_importer.ex
   #
@@ -248,6 +252,108 @@ defmodule Nebu.Session.BulkImporterTest do
       assert key_size == 32
 
       Application.delete_env(:signature, :pii_encryption_key)
+    end
+  end
+
+  # ─── AT-SEC-1: system_role hard-coded to "user" in gRPC handler ───────────────
+  #
+  # SEC Gate 2, F-2: the Server.bulk_import_users/2 handler MUST hard-code
+  # system_role = "user" regardless of what the caller sends. This test passes
+  # system_role: "instance_admin" in the proto request and verifies that:
+  #   a) upsert_user is called (import succeeds)
+  #   b) the role passed to upsert_user is "user", not "instance_admin"
+  #
+  # The CapturingUserStore records the role argument to upsert_user for assertion.
+
+  defmodule CapturingUserStore do
+    @behaviour Nebu.Session.UserStore
+
+    @impl Nebu.Session.UserStore
+    def upsert_user(user_id, system_role) do
+      :ets.insert(:bulk_import_test, {{:role, user_id}, system_role})
+      {:ok, user_id}
+    end
+  end
+
+  # SpyAuditWriter — shared by both SEC tests.
+  # Sends received log calls to the registered test PID via Application config.
+  defmodule SpyAuditWriter do
+    def log(actor, action, target_type, target_id, metadata, outcome, _error_detail \\ nil) do
+      test_pid = Application.get_env(:compliance, :__audit_test_pid__)
+      if test_pid && Process.alive?(test_pid) do
+        send(test_pid, {:audit_log, actor, action, target_type, target_id, metadata, outcome})
+      end
+      :ok
+    end
+  end
+
+  describe "Server.bulk_import_users/2 — SEC Gate 2 security regressions" do
+    setup do
+      test_pid = self()
+
+      Application.put_env(:session_manager, :bulk_importer_user_store_module, CapturingUserStore)
+      # Inject SpyAuditWriter so audit calls don't reach Nebu.Repo (which is not started in unit tests).
+      Application.put_env(:compliance, :audit_writer, SpyAuditWriter)
+      Application.put_env(:compliance, :__audit_test_pid__, test_pid)
+
+      on_exit(fn ->
+        Application.delete_env(:session_manager, :bulk_importer_user_store_module)
+        Application.delete_env(:compliance, :audit_writer)
+        Application.delete_env(:compliance, :__audit_test_pid__)
+      end)
+    end
+
+    test "AT-SEC-1: system_role is always 'user' regardless of caller-supplied value" do
+      # Even if a caller sends system_role: "instance_admin" in the proto request,
+      # the handler must hard-code "user" and never pass the caller value to upsert_user.
+      # Note: system_role field was removed from OIDCUserClaims in the proto (F-2 fix),
+      # so callers cannot even set it — this test verifies the handler hard-codes "user"
+      # via BulkImporter.import_users, which receives the role from the server handler.
+      request = %Core.BulkImportUsersRequest{
+        users: [
+          %Core.OIDCUserClaims{
+            user_id: "@attacker:nebu.local",
+            display_name: "Attacker",
+            email: "attacker@evil.example"
+          }
+        ]
+      }
+
+      stream = %{http_request_headers: %{"x-user-id" => "@gateway:internal"}}
+
+      response = Nebu.EventDispatcher.Server.bulk_import_users(request, stream)
+
+      assert response.imported == 1
+
+      # Verify that the role stored in ETS is "user" (hard-coded by the handler)
+      case :ets.lookup(:bulk_import_test, {:role, "@attacker:nebu.local"}) do
+        [{{:role, _}, role}] ->
+          assert role == "user",
+                 "Expected system_role='user' but got #{inspect(role)} — privilege escalation not blocked!"
+
+        [] ->
+          flunk("upsert_user was not called — import did not execute")
+      end
+    end
+
+    test "AT-SEC-2: bulk_import_users/2 emits 'users_bulk_imported' audit log entry" do
+      request = %Core.BulkImportUsersRequest{
+        users: [
+          %Core.OIDCUserClaims{
+            user_id: "@carol:nebu.local",
+            display_name: "Carol",
+            email: "carol@example.com"
+          }
+        ]
+      }
+
+      stream = %{http_request_headers: %{"x-user-id" => "@gateway:internal"}}
+      Nebu.EventDispatcher.Server.bulk_import_users(request, stream)
+
+      assert_receive {:audit_log, "@gateway:internal", "users_bulk_imported", "users", "bulk",
+                      %{imported: 1, skipped: 0, failed: 0}, "success"},
+                     1000,
+                     "Expected 'users_bulk_imported' audit entry but none was received"
     end
   end
 end

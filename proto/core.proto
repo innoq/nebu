@@ -780,12 +780,16 @@ message SearchMessagesResponse {
 // OIDCUserClaims — one user's OIDC claim map for bulk import.
 // user_id: Matrix user ID derived from the configured matrix_user_id_claim
 //          (e.g. "@alice:example.com") — computed by the Go gateway before sending.
-// system_role: always "user" for bulk import (admin bootstrap path is not triggered).
+// system_role is intentionally ABSENT: the Core handler hard-codes "user" for all
+//   bulk-imported accounts — callers must not control privilege escalation.
+//   (SEC Gate 2 F-2: removed to prevent privilege escalation via caller-supplied role.)
 // display_name: from preferred_username OIDC claim (Tier 1 PII — encrypted in Core).
 // email: from email OIDC claim (Tier 2 PII — encrypted in Core via X25519 ECDH).
 message OIDCUserClaims {
   string user_id      = 1;
-  string system_role  = 2;
+  // field 2 (system_role) reserved — removed for security; Core hard-codes "user"
+  reserved 2;
+  reserved "system_role";
   string display_name = 3;
   string email        = 4;
 }

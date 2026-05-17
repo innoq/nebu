@@ -81,9 +81,13 @@ func (h *GdprDeleteHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Step 3: Self-delete guard — four-eyes approval required
-	callerSub, _ := r.Context().Value(middleware.ContextKeySub).(string)
-	if userID == callerSub {
+	// Step 3: Self-delete guard — four-eyes approval required.
+	// Compare against ContextKeyUserID (Matrix user ID @localpart:server) — not
+	// ContextKeySub (raw OIDC sub e.g. "kai"), because the path parameter userId
+	// is always in Matrix format. Using ContextKeySub would never match and would
+	// silently bypass the guard in production (SEC Gate 2, F-1).
+	callerUserID, _ := r.Context().Value(middleware.ContextKeyUserID).(string)
+	if userID == callerUserID {
 		writeComplianceError(w, http.StatusForbidden, "M_FORBIDDEN", "self-deletion requires four-eyes approval from a second admin")
 		return
 	}
@@ -117,7 +121,7 @@ func (h *GdprDeleteHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	// Keys may also already be null if a prior deletion was partially completed.
 	const gdprDeletionReason = "GDPR Article 17 Right to Erasure — automated deletion"
 	_, keysErr := h.CoreClient.DeleteUserKeys(r.Context(), &pb.DeleteUserKeysRequest{
-		AdminUserId:  callerSub,
+		AdminUserId:  callerUserID,
 		TargetUserId: userID,
 		Reason:       gdprDeletionReason,
 	})
@@ -144,7 +148,7 @@ func (h *GdprDeleteHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 	auditCtx, auditCancel := context.WithTimeout(context.Background(), auditTimeout)
 	defer auditCancel()
-	_ = auditpkg.LogEvent(auditCtx, h.CoreClient, callerSub,
+	_ = auditpkg.LogEvent(auditCtx, h.CoreClient, callerUserID,
 		"gdpr_deletion", "user", userID,
 		map[string]any{"keys_deleted": keysDeletedStatus},
 		"success", "")

@@ -438,7 +438,8 @@ func (h *BootstrapHandler) StepHandler(w http.ResponseWriter, r *http.Request) {
 				localpart := sanitizeOIDCSub(u.Sub)
 				userClaims = append(userClaims, &pb.OIDCUserClaims{
 					UserId:      "@" + localpart + ":" + h.serverName,
-					SystemRole:  "user",
+					// SystemRole is intentionally absent: Core hard-codes "user" for all
+					// bulk-imported accounts (SEC Gate 2 F-2 — field removed from proto).
 					DisplayName: u.DisplayName,
 					Email:       u.Email,
 				})

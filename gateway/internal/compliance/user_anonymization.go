@@ -98,8 +98,12 @@ func (h *AnonymizationHandler) AnonymizeUser(w http.ResponseWriter, r *http.Requ
 
 	// FB-58-03: self-anonymize guard — admin cannot anonymize themselves.
 	// Requires four-eyes approval (a second admin must initiate).
-	callerSub, _ := r.Context().Value(middleware.ContextKeySub).(string)
-	if userID == callerSub {
+	// Compare against ContextKeyUserID (Matrix user ID @localpart:server) — not
+	// ContextKeySub (raw OIDC sub e.g. "kai"), because the path parameter userId
+	// is always in Matrix format. Using ContextKeySub would never match and would
+	// silently bypass the guard in production (SEC Gate 2, F-1 pre-existing).
+	callerUserID, _ := r.Context().Value(middleware.ContextKeyUserID).(string)
+	if userID == callerUserID {
 		writeComplianceError(w, http.StatusForbidden, "M_FORBIDDEN", "self-anonymize requires four-eyes approval")
 		return
 	}
@@ -201,10 +205,10 @@ func (h *AnonymizationHandler) AnonymizeUser(w http.ResponseWriter, r *http.Requ
 	}
 
 	// Step 7: Audit emission — never-raise, 500ms timeout (AC5)
-	// callerSub already declared above (FB-58-03 self-anonymize check).
+	// callerUserID already declared above (FB-58-03 self-anonymize check).
 	auditCtx, auditCancel := context.WithTimeout(context.Background(), auditTimeout)
 	defer auditCancel()
-	_ = auditpkg.LogEvent(auditCtx, h.CoreClient, callerSub,
+	_ = auditpkg.LogEvent(auditCtx, h.CoreClient, callerUserID,
 		"user_anonymized", "user", userID,
 		map[string]any{},
 		"success", "")

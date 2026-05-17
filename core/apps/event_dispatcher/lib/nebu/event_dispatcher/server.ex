@@ -3097,14 +3097,24 @@ defmodule Nebu.EventDispatcher.Server do
   # OIDC users before first login. Each user is processed with the same flow as
   # validate_token/2 (upsert user row + keypairs + encrypted PII).
   #
+  # Security hardening (SEC Gate 2, F-2 + F-3):
+  #   1. trusted_identity extracted from gRPC stream metadata — caller must be identified.
+  #   2. system_role is hard-coded to "user" — the proto field was removed; callers
+  #      cannot escalate privileges by sending a different role on the wire.
+  #   3. Audit log emitted after every call (F-3) — aggregate entry per bulk operation.
+  #
   # Partial success: imported + skipped + failed = len(request.users).
   # No gRPC error is raised unless the BulkImporter raises an unexpected exception.
-  def bulk_import_users(%Core.BulkImportUsersRequest{} = request, _stream) do
+  def bulk_import_users(%Core.BulkImportUsersRequest{} = request, stream) do
+    {actor_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
+
     users =
       Enum.map(request.users, fn claims ->
         %{
           user_id: claims.user_id,
-          system_role: claims.system_role,
+          # Hard-code "user" — never accept a caller-supplied system_role.
+          # The system_role field was removed from the proto (SEC Gate 2, F-2).
+          system_role: "user",
           display_name: claims.display_name,
           email: claims.email
         }
@@ -3112,6 +3122,23 @@ defmodule Nebu.EventDispatcher.Server do
 
     case bulk_importer_module().import_users(users) do
       {:ok, %{imported: imported, skipped: skipped, failed: failed}} ->
+        # F-3: emit aggregate audit entry — never-raise (ignore return value).
+        _audit_result =
+          audit_writer_module().log(
+            actor_id,
+            "users_bulk_imported",
+            "users",
+            "bulk",
+            %{
+              imported: imported,
+              skipped: skipped,
+              failed: failed,
+              # Cap to 100 user_ids to prevent multi-MB audit rows on large imports.
+              user_ids: request.users |> Enum.map(& &1.user_id) |> Enum.take(100)
+            },
+            "success"
+          )
+
         %Core.BulkImportUsersResponse{
           imported: imported,
           skipped: skipped,

@@ -207,12 +207,12 @@ func TestGdprDeleteHandler_HappyPath(t *testing.T) {
 		DB:         openGdprFakeDB(t, true),
 	}
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/users/user123", bytes.NewBufferString("{}"))
-	req = req.WithContext(context.WithValue(
-		context.WithValue(req.Context(), middleware.ContextKeySystemRole, "instance_admin"),
-		middleware.ContextKeySub, "admin_user",
-	))
-	req.SetPathValue("userId", "user123")
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/users/@target:example.com", bytes.NewBufferString("{}"))
+	ctx := context.WithValue(req.Context(), middleware.ContextKeySystemRole, "instance_admin")
+	ctx = context.WithValue(ctx, middleware.ContextKeySub, "admin_user")
+	ctx = context.WithValue(ctx, middleware.ContextKeyUserID, "@admin:example.com")
+	req = req.WithContext(ctx)
+	req.SetPathValue("userId", "@target:example.com")
 	req.Header.Set("Content-Type", "application/json")
 
 	rr := httptest.NewRecorder()
@@ -229,8 +229,8 @@ func TestGdprDeleteHandler_HappyPath(t *testing.T) {
 	if resp["status"] != "gdpr_deleted" {
 		t.Errorf("expected status=gdpr_deleted, got %q", resp["status"])
 	}
-	if resp["user_id"] != "user123" {
-		t.Errorf("expected user_id=user123, got %q", resp["user_id"])
+	if resp["user_id"] != "@target:example.com" {
+		t.Errorf("expected user_id=@target:example.com, got %q", resp["user_id"])
 	}
 
 	// Verify "gdpr_deletion" audit action was emitted
@@ -258,12 +258,12 @@ func TestGdprDeleteHandler_NonAdmin_Returns403(t *testing.T) {
 		DB:         openGdprFakeDB(t, true),
 	}
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/users/user123", nil)
-	req = req.WithContext(context.WithValue(
-		context.WithValue(req.Context(), middleware.ContextKeySystemRole, "user"),
-		middleware.ContextKeySub, "regular_user",
-	))
-	req.SetPathValue("userId", "user123")
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/users/@target:example.com", nil)
+	ctx := context.WithValue(req.Context(), middleware.ContextKeySystemRole, "user")
+	ctx = context.WithValue(ctx, middleware.ContextKeySub, "regular_user")
+	ctx = context.WithValue(ctx, middleware.ContextKeyUserID, "@regular:example.com")
+	req = req.WithContext(ctx)
+	req.SetPathValue("userId", "@target:example.com")
 
 	rr := httptest.NewRecorder()
 	handler.DeleteUser(rr, req)
@@ -286,12 +286,12 @@ func TestGdprDeleteHandler_UnknownUser_Returns404(t *testing.T) {
 		DB:         openGdprFakeDB(t, false),
 	}
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/users/unknown", nil)
-	req = req.WithContext(context.WithValue(
-		context.WithValue(req.Context(), middleware.ContextKeySystemRole, "instance_admin"),
-		middleware.ContextKeySub, "admin_user",
-	))
-	req.SetPathValue("userId", "unknown")
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/users/@unknown:example.com", nil)
+	ctx := context.WithValue(req.Context(), middleware.ContextKeySystemRole, "instance_admin")
+	ctx = context.WithValue(ctx, middleware.ContextKeySub, "admin_user")
+	ctx = context.WithValue(ctx, middleware.ContextKeyUserID, "@admin:example.com")
+	req = req.WithContext(ctx)
+	req.SetPathValue("userId", "@unknown:example.com")
 
 	rr := httptest.NewRecorder()
 	handler.DeleteUser(rr, req)
@@ -310,6 +310,15 @@ func TestGdprDeleteHandler_UnknownUser_Returns404(t *testing.T) {
 }
 
 // ─── AT-7: Self-delete returns 403 ────────────────────────────────────────────
+//
+// Uses realistic production identifier shapes:
+//   callerSub (ContextKeySub)    = raw OIDC sub e.g. "kai" (issued by Dex/Keycloak)
+//   callerUserID (ContextKeyUserID) = Matrix user ID "@kai:example.com" (pre-computed by middleware)
+//   userId path param           = Matrix user ID "@kai:example.com"
+//
+// The guard MUST compare ContextKeyUserID against userId — not ContextKeySub.
+// A comparison against ContextKeySub would never match and silently bypass the guard
+// (F-1: SEC Gate 2 finding). This test pins the fix.
 
 func TestGdprDeleteHandler_SelfDelete_Returns403(t *testing.T) {
 	mock := &gdprDeleteMockCoreClient{}
@@ -319,19 +328,56 @@ func TestGdprDeleteHandler_SelfDelete_Returns403(t *testing.T) {
 		DB:         openGdprFakeDB(t, true),
 	}
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/users/self_admin", nil)
-	// callerSub == userId → self-delete guard fires
-	req = req.WithContext(context.WithValue(
-		context.WithValue(req.Context(), middleware.ContextKeySystemRole, "instance_admin"),
-		middleware.ContextKeySub, "self_admin",
-	))
-	req.SetPathValue("userId", "self_admin")
+	// callerSub is the raw OIDC sub — different shape from the Matrix user ID.
+	// callerUserID is the pre-computed Matrix user ID that matches the path param.
+	callerSub := "kai"
+	callerUserID := "@kai:example.com"
+	targetUserID := "@kai:example.com" // same person → self-delete
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/users/"+targetUserID, nil)
+	ctx := context.WithValue(req.Context(), middleware.ContextKeySystemRole, "instance_admin")
+	ctx = context.WithValue(ctx, middleware.ContextKeySub, callerSub)
+	ctx = context.WithValue(ctx, middleware.ContextKeyUserID, callerUserID)
+	req = req.WithContext(ctx)
+	req.SetPathValue("userId", targetUserID)
 
 	rr := httptest.NewRecorder()
 	handler.DeleteUser(rr, req)
 
 	if rr.Code != http.StatusForbidden {
 		t.Errorf("expected 403 for self-delete, got %d; body: %s", rr.Code, rr.Body.String())
+	}
+}
+
+// ─── AT-7b: Admin deleting a different user is allowed ────────────────────────
+//
+// Regression: admin @kai:example.com deleting @alice:example.com must NOT be
+// blocked by the self-delete guard. Mirrors the AT-7 identifier shapes.
+
+func TestGdprDeleteHandler_AdminDeletesOther_Returns200(t *testing.T) {
+	mock := &gdprDeleteMockCoreClient{}
+
+	handler := &compliance.GdprDeleteHandler{
+		CoreClient: mock,
+		DB:         openGdprFakeDB(t, true),
+	}
+
+	callerSub := "kai"
+	callerUserID := "@kai:example.com"
+	targetUserID := "@alice:example.com" // different person → allowed
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/users/"+targetUserID, nil)
+	ctx := context.WithValue(req.Context(), middleware.ContextKeySystemRole, "instance_admin")
+	ctx = context.WithValue(ctx, middleware.ContextKeySub, callerSub)
+	ctx = context.WithValue(ctx, middleware.ContextKeyUserID, callerUserID)
+	req = req.WithContext(ctx)
+	req.SetPathValue("userId", targetUserID)
+
+	rr := httptest.NewRecorder()
+	handler.DeleteUser(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected 200 for admin deleting another user, got %d; body: %s", rr.Code, rr.Body.String())
 	}
 }
 
@@ -350,12 +396,12 @@ func TestGdprDeleteHandler_AuditFailure_Still200(t *testing.T) {
 		DB:         openGdprFakeDB(t, true),
 	}
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/users/user999", bytes.NewBufferString("{}"))
-	req = req.WithContext(context.WithValue(
-		context.WithValue(req.Context(), middleware.ContextKeySystemRole, "instance_admin"),
-		middleware.ContextKeySub, "admin_user",
-	))
-	req.SetPathValue("userId", "user999")
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/users/@target999:example.com", bytes.NewBufferString("{}"))
+	ctx := context.WithValue(req.Context(), middleware.ContextKeySystemRole, "instance_admin")
+	ctx = context.WithValue(ctx, middleware.ContextKeySub, "admin_user")
+	ctx = context.WithValue(ctx, middleware.ContextKeyUserID, "@admin:example.com")
+	req = req.WithContext(ctx)
+	req.SetPathValue("userId", "@target999:example.com")
 	req.Header.Set("Content-Type", "application/json")
 
 	rr := httptest.NewRecorder()
