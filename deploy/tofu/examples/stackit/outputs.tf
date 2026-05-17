@@ -32,3 +32,8 @@ output "dns_name" {
   description = "Floating IP address to register in your external DNS server when dns_mode = 'external'. Create an A-record pointing your domain to this IP address. When dns_mode = 'default', Stackit DNS is managing this automatically."
   value       = stackit_public_ip.nebu.ip
 }
+
+output "tls_certificate_expiry" {
+  description = "Let's Encrypt certificate expiry date. null when enable_tls = false. Run `tofu apply` before this date (min_days_remaining = 30 triggers automatic renewal)."
+  value       = try(acme_certificate.nebu[0].certificate_not_after, null)
+}

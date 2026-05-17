@@ -6,6 +6,14 @@ terraform {
       source  = "stackitcloud/stackit"
       version = "~> 0.95"
     }
+    acme = {
+      source  = "vancluever/acme"
+      version = "~> 2.0"
+    }
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.0"
+    }
   }
 
   # Backend: Stackit Object Storage (S3-compatible). Configure before use.
@@ -27,6 +35,60 @@ provider "stackit" {
   service_account_key_path = var.stackit_key_path
   # beta feature: enable_beta_resources = true required for PROTOCOL_HTTPS ALB listener
   enable_beta_resources = true
+}
+
+# Let's Encrypt ACME provider.
+# Use acme_staging = true during initial testing to avoid LE production rate limits.
+provider "acme" {
+  server_url = var.acme_staging ? "https://acme-staging-v02.api.letsencrypt.org/directory" : "https://acme-v02.api.letsencrypt.org/directory"
+}
+
+# ── Let's Encrypt / ACME ─────────────────────────────────────────────────────
+# All three resources are skipped when enable_tls = false.
+# DNS-01 challenge writes TXT records into the Stackit DNS zone — requires dns_mode = "default".
+# Lego env vars for Stackit: https://go-acme.github.io/lego/dns/stackit/
+
+resource "tls_private_key" "acme_account" {
+  count     = var.enable_tls ? 1 : 0
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
+
+resource "acme_registration" "nebu" {
+  count           = var.enable_tls ? 1 : 0
+  account_key_pem = tls_private_key.acme_account[0].private_key_pem
+  email_address   = var.acme_email
+
+  lifecycle {
+    precondition {
+      condition     = length(var.acme_email) > 0
+      error_message = "acme_email must be set when enable_tls = true."
+    }
+    precondition {
+      condition     = var.dns_mode == "default"
+      error_message = "enable_tls = true requires dns_mode = 'default' — the ACME DNS-01 challenge needs a Stackit DNS zone."
+    }
+  }
+}
+
+resource "acme_certificate" "nebu" {
+  count                     = var.enable_tls ? 1 : 0
+  account_key_pem           = acme_registration.nebu[0].account_key_pem
+  common_name               = var.server_name
+  min_days_remaining        = 30
+
+  dns_challenge {
+    provider = "stackit"
+    # Lego reads these as environment variables during the DNS-01 challenge.
+    # STACKIT_SERVICE_ACCOUNT_KEY_PATH points to the same SA key used by the stackit provider.
+    config = {
+      STACKIT_PROJECT_ID               = var.stackit_project_id
+      STACKIT_SERVICE_ACCOUNT_KEY_PATH = var.stackit_key_path
+    }
+  }
+
+  # The DNS zone must exist before lego can create the TXT challenge record.
+  depends_on = [stackit_dns_zone.nebu]
 }
 
 # ── Network ─────────────────────────────────────────────────────────────────
@@ -61,8 +123,26 @@ resource "stackit_security_group_rule" "inbound_https" {
   }
 }
 
-# Inbound: Matrix API port from anywhere (ALB → VM)
+# Inbound: HTTP (port 80) for HTTP→HTTPS redirect via nginx — only when TLS is enabled.
+resource "stackit_security_group_rule" "inbound_http" {
+  count             = var.enable_tls ? 1 : 0
+  project_id        = var.stackit_project_id
+  security_group_id = stackit_security_group.nebu.security_group_id
+  direction         = "ingress"
+  protocol = {
+    name = "tcp"
+  }
+  port_range = {
+    min = 80
+    max = 80
+  }
+}
+
+# Inbound: Matrix API port from anywhere (ALB → VM).
+# When TLS is disabled, the ALB targets port 8008 directly.
+# When TLS is enabled, the ALB targets port 443 (nginx), so 8008 stays internal.
 resource "stackit_security_group_rule" "inbound_matrix" {
+  count             = var.enable_tls ? 0 : 1
   project_id        = var.stackit_project_id
   security_group_id = stackit_security_group.nebu.security_group_id
   direction         = "ingress"
@@ -75,10 +155,12 @@ resource "stackit_security_group_rule" "inbound_matrix" {
   }
 }
 
-# Inbound: Dex OIDC port (dex mode only — browser follows OIDC redirects to port 5556).
+# Inbound: Dex OIDC port (dex mode only, TLS disabled only).
+# When TLS is enabled, nginx proxies /dex/ → localhost:5556, so port 5556 stays internal.
+# When TLS is disabled, browser follows OIDC redirects directly to port 5556.
 # Restricted to dex_allowed_cidr (default 0.0.0.0/0 for demo; restrict to your IP/VPN range in shared environments).
 resource "stackit_security_group_rule" "inbound_dex" {
-  count             = var.oidc_mode == "dex" ? 1 : 0
+  count             = var.oidc_mode == "dex" && !var.enable_tls ? 1 : 0
   project_id        = var.stackit_project_id
   security_group_id = stackit_security_group.nebu.security_group_id
   direction         = "ingress"
@@ -132,14 +214,22 @@ resource "stackit_key_pair" "nebu" {
 # ── OIDC Profile ─────────────────────────────────────────────────────────────
 
 locals {
-  # When oidc_mode = "dex", the issuer is the Dex sidecar exposed on port 5556 of the VM's public IP.
-  # The gateway resolves Dex via a Docker hairpin (host IP → port 5556 → Dex container).
-  # Standard Linux SNAT/masquerade handles this — no additional routing configuration needed.
-  # Dex's issuer in config.yaml is also set to http://<server_name>:5556/dex so iss validation passes.
-  # Port 5556 is opened in the SG (inbound_dex rule) so browsers can follow OIDC redirects directly.
-  # Future: when TLS is configured, switch to host-based nginx routing (dex.<server_name>) instead.
-  # When oidc_mode = "external", the operator provides the issuer explicitly.
-  effective_oidc_issuer = var.oidc_mode == "dex" ? "http://${var.server_name}:5556/dex" : var.oidc_issuer
+  # When enable_tls = true, nginx fronts port 443 and proxies /dex/ to localhost:5556.
+  # Dex's issuer becomes https://<server_name>/dex (path-based routing via nginx).
+  # When enable_tls = false, Dex is reached directly on port 5556 (plain HTTP).
+  dex_issuer = var.enable_tls ? "https://${var.server_name}/dex" : "http://${var.server_name}:5556/dex"
+
+  effective_oidc_issuer = var.oidc_mode == "dex" ? local.dex_issuer : var.oidc_issuer
+
+  # URL scheme + optional port suffix for redirect URIs injected into Dex's staticClients.
+  # When TLS is enabled, nginx handles port 443 → gateway:8008 (no explicit port in URIs).
+  gateway_scheme = var.enable_tls ? "https" : "http"
+  gateway_port   = var.enable_tls ? "" : ":8008"
+
+  # Certificate content — empty strings when enable_tls = false.
+  # try() suppresses the index-out-of-bounds error when acme_certificate.nebu has count = 0.
+  tls_cert = try(acme_certificate.nebu[0].certificate_pem, "")
+  tls_key  = try(acme_certificate.nebu[0].private_key_pem, "")
 }
 
 # ── VM ───────────────────────────────────────────────────────────────────────
@@ -172,20 +262,17 @@ resource "stackit_server" "nebu" {
   # The stackit_postgresflex_user.nebu.password is stored in state — ensure state encryption is enabled.
   # Never commit .tfstate files. See the backend "s3" block above for the recommended configuration.
   #
-  # cloud-init bootstrap: installs Docker, writes /opt/nebu/ layout, starts nebu.service.
+  # cloud-init bootstrap: installs Docker (+ nginx when enable_tls = true), writes /opt/nebu/ layout, starts nebu.service.
   # All secrets are injected from OpenTofu variables — no hardcoded values in the template.
   #
-  # Traffic flow when oidc_mode = "dex":
+  # Traffic flow when enable_tls = false, oidc_mode = "dex":
   #   Browser → ALB:443 (TCP passthrough) → gateway:8008 (host port, bound directly)
   #   Gateway OIDC discovery (hairpin): gateway → http://<server_name>:5556/dex (host IP → Dex container)
-  #     Standard Linux SNAT/masquerade handles the hairpin — no extra routing needed.
   #   Browser OIDC redirect: browser → http://<server_name>:5556/dex/auth (SG port 5556 open)
-  # Traffic flow when oidc_mode = "external":
-  #   ALB:443 (TCP passthrough) → gateway:8008 (host)
-  #   Gateway OIDC discovery: gateway → <oidc_issuer> (external HTTPS provider)
-  # No ALB target port change is needed — both modes use port 8008 on the host.
-  # TODO (future): when TLS is configured, implement host-based routing via nginx
-  #   (dex.<server_name>:443 → dex, <server_name>:443 → gateway) in a follow-up story.
+  # Traffic flow when enable_tls = true:
+  #   Browser → ALB:443 (TCP passthrough) → VM:443 (nginx, TLS termination) → localhost:8008 (gateway)
+  #   Browser → ALB:80  (TCP passthrough) → VM:80  (nginx, 301 → https://<server_name>)
+  #   When oidc_mode = "dex": nginx also proxies /dex/ → localhost:5556 (Dex, plain HTTP on loopback)
   user_data = base64encode(templatefile("${path.module}/cloud-init.tftpl", {
     internal_secret          = var.internal_secret
     oidc_client_secret       = var.oidc_client_secret
@@ -200,7 +287,12 @@ resource "stackit_server" "nebu" {
     pg_port     = stackit_postgresflex_user.nebu.port
     pg_user     = stackit_postgresflex_user.nebu.username
     pg_password = stackit_postgresflex_user.nebu.password
-    # kc_user and kc_password are removed — Keycloak is no longer deployed
+    # TLS — cert and key are empty strings when enable_tls = false (nginx block is skipped in template)
+    enable_tls     = var.enable_tls
+    tls_cert       = local.tls_cert
+    tls_key        = local.tls_key
+    gateway_scheme = local.gateway_scheme
+    gateway_port   = local.gateway_port
   }))
 
   lifecycle {
@@ -270,6 +362,66 @@ resource "stackit_public_ip" "nebu" {
 # Handles TLS termination and health checks at ALB level.
 # beta feature: enable_beta_resources = true required in provider block
 
+locals {
+  # ALB listeners and target pools vary by TLS mode.
+  # enable_tls = false: single HTTPS listener → gateway:8008 (TCP passthrough).
+  # enable_tls = true:  port 443 (TCP passthrough → nginx:443) + port 80 (TCP → nginx:80 for redirect).
+  _alb_vm_targets = [
+    {
+      display_name = stackit_server.nebu.name
+      ip           = stackit_network_interface.nebu.ipv4
+    },
+  ]
+  _alb_health_check = {
+    # Stackit ALB health checks are TCP-based only.
+    healthy_threshold   = 3
+    interval            = "10s"
+    interval_jitter     = "3s"
+    timeout             = "5s"
+    unhealthy_threshold = 3
+  }
+
+  alb_listeners = concat(
+    [
+      {
+        display_name = "https-443"
+        port         = 443
+        protocol     = "PROTOCOL_TCP"
+        target_pool  = "matrix-api"
+      },
+    ],
+    var.enable_tls ? [
+      {
+        display_name = "http-80"
+        port         = 80
+        protocol     = "PROTOCOL_TCP"
+        target_pool  = "http-redirect"
+      },
+    ] : []
+  )
+
+  alb_target_pools = concat(
+    [
+      {
+        name = "matrix-api"
+        # When TLS is enabled, nginx listens on port 443 and terminates TLS.
+        # When TLS is disabled, the ALB connects directly to the gateway on port 8008.
+        target_port         = var.enable_tls ? 443 : 8008
+        targets             = local._alb_vm_targets
+        active_health_check = local._alb_health_check
+      },
+    ],
+    var.enable_tls ? [
+      {
+        name                = "http-redirect"
+        target_port         = 80
+        targets             = local._alb_vm_targets
+        active_health_check = local._alb_health_check
+      },
+    ] : []
+  )
+}
+
 resource "stackit_loadbalancer" "nebu" {
   project_id       = var.stackit_project_id
   name             = "nebu-${var.environment}-alb"
@@ -283,41 +435,8 @@ resource "stackit_loadbalancer" "nebu" {
     },
   ]
 
-  listeners = [
-    {
-      display_name = "https-443"
-      port         = 443
-      # Current: PROTOCOL_TCP (passthrough — TLS terminated by the gateway on port 8008).
-      # Upgrade path: when stackit provider >= 0.96 exposes PROTOCOL_HTTPS in its stable schema,
-      # change protocol to "PROTOCOL_HTTPS" and add certificate_reference.name = var.stackit_tls_certificate_arn.
-      # That also requires enable_beta_resources = true in the provider block (already set above).
-      protocol    = "PROTOCOL_TCP"
-      target_pool = "matrix-api"
-    },
-  ]
-
-  target_pools = [
-    {
-      name        = "matrix-api"
-      target_port = 8008
-      targets = [
-        {
-          display_name = stackit_server.nebu.name
-          ip           = stackit_network_interface.nebu.ipv4
-        },
-      ]
-      active_health_check = {
-        # Note: Stackit ALB health checks are TCP-based only (no HTTP path checks).
-        # The health check verifies TCP connectivity on port 8008.
-        # For application-level health checking, monitor via /metrics or application logs.
-        healthy_threshold   = 3
-        interval            = "10s"
-        interval_jitter     = "3s"
-        timeout             = "5s"
-        unhealthy_threshold = 3
-      }
-    },
-  ]
+  listeners    = local.alb_listeners
+  target_pools = local.alb_target_pools
 
   options = {
     private_network_only = false

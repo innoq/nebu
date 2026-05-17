@@ -57,12 +57,22 @@ variable "ubuntu_image_id" {
   # Example (eu01, 2024): "59838a89-51b1-4892-b57f-b3caf598ee2f"
 }
 
-variable "stackit_tls_certificate_arn" {
-  description = "Stackit-managed TLS certificate ARN (name) for HTTPS termination at the ALB. Must be set to a valid certificate before `tofu apply` in production. Empty string is accepted for `tofu validate` only."
+variable "enable_tls" {
+  description = "When true, provisions a Let's Encrypt certificate via ACME DNS-01 challenge and configures nginx on the VM for TLS termination. Requires dns_mode = 'default' (Stackit DNS zone must exist for the DNS-01 challenge). Set acme_staging = true during testing to avoid LE rate limits."
+  type        = bool
+  default     = false
+}
+
+variable "acme_email" {
+  description = "Email address for Let's Encrypt ACME account registration. Required when enable_tls = true. Used for certificate expiry notifications."
   type        = string
   default     = ""
-  # Note: obtain a certificate via the STACKIT portal under Load Balancing > Certificates,
-  # then set this to the certificate name returned by the API.
+}
+
+variable "acme_staging" {
+  description = "When true, uses the Let's Encrypt staging environment (https://acme-staging-v02.api.letsencrypt.org). Staging certificates are not trusted by browsers but have no rate limits — use for initial testing. Switch to false for production."
+  type        = bool
+  default     = false
 }
 
 # ── PostgresFlex sizing variables ─────────────────────────────────────────────
