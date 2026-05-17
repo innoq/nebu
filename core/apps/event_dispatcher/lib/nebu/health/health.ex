@@ -3,7 +3,8 @@ defmodule Nebu.Health do
   Health check module for the Nebu Elixir core.
 
   Returns a health map with overall status, load_factor, version, node name,
-  and per-component statuses. Used by the HTTP health endpoint on port 4000.
+  cluster_nodes (Story 13-6), and per-component statuses.
+  Used by the HTTP health endpoint on port 4000.
   """
 
   @version "0.1.0"
@@ -15,6 +16,9 @@ defmodule Nebu.Health do
   - "UP"       — all components healthy
   - "DEGRADED" — at least one component degraded, none down
   - "DOWN"     — at least one critical component down
+
+  `cluster_nodes` lists all known Erlang nodes connected to this node
+  (Story 13-6 AC4 / Godog cluster smoke check). Empty list in single-node mode.
   """
   def check do
     components = %{
@@ -28,6 +32,7 @@ defmodule Nebu.Health do
       load_factor: 1.0,
       version: @version,
       node: to_string(node()),
+      cluster_nodes: cluster_nodes(),
       components: components
     }
   end
@@ -41,6 +46,13 @@ defmodule Nebu.Health do
       "DEGRADED" in statuses -> "DEGRADED"
       true -> "UP"
     end
+  end
+
+  # Story 13-6: Returns a list of connected Erlang node names as strings.
+  # In single-node mode (no libcluster), Node.list() returns [].
+  # In a 2-node cluster, returns the peer node(s), e.g. ["nebu@core2"].
+  defp cluster_nodes do
+    Node.list() |> Enum.map(&to_string/1)
   end
 
   # MVP stubs — real checks wired in Epic 2/4 stories

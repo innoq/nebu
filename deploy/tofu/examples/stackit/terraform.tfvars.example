@@ -1,0 +1,118 @@
+# Copy this file to terraform.tfvars and fill in the values.
+# Do NOT commit terraform.tfvars — it contains secrets.
+
+# Required: your STACKIT project UUID (visible in the STACKIT portal)
+stackit_project_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+# Required: path to your STACKIT service account key JSON file
+# Download from: STACKIT portal → IAM → Service Accounts → Keys → Create Key (JSON)
+# Keep this file out of version control.
+stackit_key_path = "/path/to/stackit-sa-key.json"
+
+# Required: contents of your SSH public key (e.g. ~/.ssh/id_ed25519.pub)
+ssh_public_key = "ssh-ed25519 AAAA... operator@example.com"
+
+# Required: Ubuntu 24.04 LTS image ID for your STACKIT region.
+# Look up the current ID: STACKIT portal → Compute → Images → Ubuntu 24.04 LTS
+ubuntu_image_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+# Required for production (HTTPS at ALB):
+# Name of the Stackit-managed TLS certificate for ALB HTTPS termination.
+# Obtain via: STACKIT portal → Load Balancing → Certificates → Upload/Create
+# Leave empty for `tofu validate` only — must be set before `tofu apply`.
+stackit_tls_certificate_arn = ""
+
+# Optional: deployment environment label (used in resource names)
+environment = "dev"
+
+# Optional: STACKIT region
+region = "eu01"
+
+# Optional: availability zone within the region
+availability_zone = "eu01-1"
+
+# Optional: network CIDR block
+network_cidr = "10.0.0.0/24"
+
+# Optional: VM machine type (run `stackit compute server machine-types list` for options)
+vm_plan_id = "g2i.2"
+
+# ── PostgresFlex managed database ────────────────────────────────────────────
+
+# Optional: number of PostgresFlex replicas (1 = dev/testing, 3 = production HA recommended)
+postgres_replicas = 1
+
+# Optional: CPU cores for the PostgresFlex instance flavor
+postgres_cpu = 1
+
+# Optional: RAM in GB for the PostgresFlex instance flavor
+postgres_ram = 4
+
+# Optional: storage size in GB for the PostgresFlex instance
+# Production recommendation: start with 50 GB and enable autoscaling via the STACKIT portal.
+postgres_storage_size = 20
+
+# ── cloud-init / bootstrap ────────────────────────────────────────────────────
+# Note: db_password is no longer required — database credentials are auto-generated
+# by PostgresFlex and injected into cloud-init via OpenTofu computed attributes.
+
+# Required: shared PSK for gateway ↔ core node registration (ADR-008).
+# Generate with: openssl rand -hex 32
+internal_secret = "<REPLACE_WITH_RANDOM_SECRET>"
+
+# ── OIDC Profile ────────────────────────────────────────────────────────────
+# Choose 'dex' to deploy a bundled Dex IdP sidecar (test/demo environments).
+# Choose 'external' to use an external OIDC provider you manage (production).
+#
+# WARNING (dex mode): Dex runs on plain HTTP (port 5556). Auth codes, tokens, and
+# session cookies are transmitted unencrypted over the public network. Use dex mode
+# ONLY in isolated test/demo environments — NEVER for production deployments.
+oidc_mode = "external"  # or: "dex"
+
+# Required only when oidc_mode = "external".
+# When oidc_mode = "dex", this value is ignored (issuer = http://<server_name>:5556/dex).
+oidc_issuer = "https://auth.example.com/realms/nebu"
+
+# Required. When oidc_mode = "dex": embedded into Dex staticClients config (same value used by
+# both gateway and Dex). When oidc_mode = "external": must match the client secret registered in
+# your external OIDC provider. Minimum 16 characters.
+oidc_client_secret = "<REPLACE_WITH_OIDC_CLIENT_SECRET>"
+
+# Required when oidc_mode = "dex". bcrypt hash for the Dex static user (operator@example.com).
+# Generate with: htpasswd -bnBC 12 '' 'yourpassword' | tr -d ':' | sed 's/$2y/$2a/'
+# Tip: $2y$ output from htpasswd is also accepted directly (no sed needed).
+dex_static_password_hash = "<REPLACE_WITH_BCRYPT_HASH>"
+
+# CIDR range allowed to reach Dex on port 5556 (only used in dex mode).
+# Default 0.0.0.0/0 allows all — restrict to your IP or VPN CIDR in shared environments.
+# dex_allowed_cidr = "0.0.0.0/0"  # e.g. "203.0.113.1/32" for a single developer IP
+
+# Required: public domain name of the Nebu instance (used as NEBU_SERVER_NAME)
+server_name = "chat.example.com"
+
+# Required: container image registry prefix.
+# The release pipeline pushes images as:
+#   <image_registry>/nebu-gateway:<nebu_version>
+#   <image_registry>/nebu-core:<nebu_version>
+# Set this to your fork's registry path (e.g. registry.gitlab.com/myorg/open-chat).
+image_registry = "registry.gitlab.com/myorg/open-chat"
+
+# Required: SemVer tag without the 'v' prefix (e.g. "1.0.0" for Git tag v1.0.0).
+# Never use "latest" — the module validates this and will reject it.
+nebu_version = "1.0.0"
+
+# ── DNS ──────────────────────────────────────────────────────────────────────
+# dns_mode = "default" creates Stackit DNS zone + A-record for server_name → floating IP.
+# Requires Stackit DNS service to be enabled in your project.
+# If the DNS zone for server_name already exists, import it before apply:
+#   tofu import stackit_dns_zone.nebu <zone_id>
+# dns_mode = "external" (default) skips DNS creation — register the 'dns_name' output
+# (floating IP) as an A-record in your DNS provider.
+dns_mode = "external"  # or: "default"
+
+# When dns_mode = "default", creates dex.<server_name> A-record → same floating IP.
+# Only useful when oidc_mode = "dex" and planning host-based routing for Dex.
+# dex_subdomain_enabled = false
+
+# Contact email for the Stackit DNS zone (optional, recommended for production).
+# dns_contact_email = ""

@@ -159,6 +159,12 @@ service CoreService {
   // user_id in the request is for documentation/auditing only — the handler MUST use
   // x-user-id from gRPC metadata, never from the request body.
   rpc SearchMessages(SearchMessagesRequest) returns (SearchMessagesResponse);
+
+  // BulkImportUsers — Story 14-3a: provisions OIDC users with the same flow as first login.
+  // Each entry is processed in sequence; duplicates (signing_key_id IS NOT NULL) are skipped.
+  // Returns aggregate counts: imported + skipped + failed = len(users).
+  // Partial success is allowed — an error on one user does not abort others.
+  rpc BulkImportUsers(BulkImportUsersRequest) returns (BulkImportUsersResponse);
 }
 
 // Shared event type used across multiple RPCs
@@ -635,6 +641,9 @@ message ServerConfigProto {
   int32  room_default_max_members = 4;
   string room_default_visibility  = 5;
   int32  audit_log_retention_days = 6;
+  // Story 14-2a: OIDC Directory Integration (ADR-015 Protocol A)
+  bool   oidc_directory_enabled   = 7;
+  string oidc_directory_endpoint  = 8;
 }
 
 // GetServerConfig
@@ -649,6 +658,15 @@ message UpdateServerConfigRequest {
   int32  room_default_max_members = 4;
   string room_default_visibility  = 5;
   int32  audit_log_retention_days = 6;
+  // Story 14.1a: locked post-bootstrap (maps to DB key oidc_user_id_claim).
+  // Once bootstrap_completed is set, any non-empty value raises FAILED_PRECONDITION.
+  string matrix_user_id_claim     = 7;
+  // Story 14-2a: OIDC Directory Integration (ADR-015 Protocol A)
+  // Note: use optional wrapper fields since bool defaults to false and string to "".
+  // The Admin UI path uses direct DB upsert (not gRPC) for these fields, so the
+  // proto fields are added for completeness / future gRPC-path use.
+  bool   oidc_directory_enabled   = 8;
+  string oidc_directory_endpoint  = 9;
 }
 message UpdateServerConfigResponse { bool ok = 1; }
 
@@ -755,4 +773,38 @@ message SearchMessagesResponse {
   repeated SearchResult results     = 1;
   string                next_batch  = 2;  // empty when no more results
   int32                 total_count = 3;  // approximate total matching events (for UI display)
+}
+
+// ── Story 14-3a: BulkImportUsers messages ────────────────────────────────────
+
+// OIDCUserClaims — one user's OIDC claim map for bulk import.
+// user_id: Matrix user ID derived from the configured matrix_user_id_claim
+//          (e.g. "@alice:example.com") — computed by the Go gateway before sending.
+// system_role is intentionally ABSENT: the Core handler hard-codes "user" for all
+//   bulk-imported accounts — callers must not control privilege escalation.
+//   (SEC Gate 2 F-2: removed to prevent privilege escalation via caller-supplied role.)
+// display_name: from preferred_username OIDC claim (Tier 1 PII — encrypted in Core).
+// email: from email OIDC claim (Tier 2 PII — encrypted in Core via X25519 ECDH).
+message OIDCUserClaims {
+  string user_id      = 1;
+  // field 2 (system_role) reserved — removed for security; Core hard-codes "user"
+  reserved 2;
+  reserved "system_role";
+  string display_name = 3;
+  string email        = 4;
+}
+
+// BulkImportUsersRequest — Story 14-3a
+message BulkImportUsersRequest {
+  repeated OIDCUserClaims users = 1;
+}
+
+// BulkImportUsersResponse — Story 14-3a
+// imported: users newly created in this call (user record + keypairs + encrypted PII).
+// skipped: users already in DB with full keypairs (signing_key_id IS NOT NULL) — no-op.
+// failed: users that encountered a DB or crypto error (partial success, not an abort).
+message BulkImportUsersResponse {
+  int32 imported = 1;
+  int32 skipped  = 2;
+  int32 failed   = 3;
 }

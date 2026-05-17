@@ -120,4 +120,9 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	initializeSearchSteps(sc)                  // search Gherkin E2E step definitions (Story 11.6)
 	initializeGetRoomEventSteps(sc)            // GET /rooms/{roomId}/event/{eventId} step definitions (Story 11-8)
 	initializeClaimMappingSteps(sc)            // OIDC claim mapping step definitions (Story 11-10)
+	initializeClusteringSteps(sc)             // Core clustering failover step definitions (Story 13-6)
+	initializeOIDCDiscoverySteps(sc)          // MSC2965 OIDC discovery endpoints (Story 13-7)
+	initializeClaimLockSteps(sc)              // matrix_user_id_claim post-bootstrap lock (Story 14-1b)
+	initializeOidcDirectoryConfigSteps(sc)    // oidc_directory_enabled + endpoint config round-trip (Story 14-2a)
+	initializeGdprDeletionSteps(sc)           // GDPR right to erasure end-to-end (Story 14-4)
 }

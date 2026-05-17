@@ -1048,6 +1048,8 @@ defmodule Core.ServerConfigProto do
   field :room_default_max_members, 4, type: :int32, json_name: "roomDefaultMaxMembers"
   field :room_default_visibility, 5, type: :string, json_name: "roomDefaultVisibility"
   field :audit_log_retention_days, 6, type: :int32, json_name: "auditLogRetentionDays"
+  field :oidc_directory_enabled, 7, type: :bool, json_name: "oidcDirectoryEnabled"
+  field :oidc_directory_endpoint, 8, type: :string, json_name: "oidcDirectoryEndpoint"
 end
 
 defmodule Core.GetServerConfigRequest do
@@ -1084,6 +1086,9 @@ defmodule Core.UpdateServerConfigRequest do
   field :room_default_max_members, 4, type: :int32, json_name: "roomDefaultMaxMembers"
   field :room_default_visibility, 5, type: :string, json_name: "roomDefaultVisibility"
   field :audit_log_retention_days, 6, type: :int32, json_name: "auditLogRetentionDays"
+  field :matrix_user_id_claim, 7, type: :string, json_name: "matrixUserIdClaim"
+  field :oidc_directory_enabled, 8, type: :bool, json_name: "oidcDirectoryEnabled"
+  field :oidc_directory_endpoint, 9, type: :string, json_name: "oidcDirectoryEndpoint"
 end
 
 defmodule Core.UpdateServerConfigResponse do
@@ -1284,4 +1289,41 @@ defmodule Core.SearchMessagesResponse do
   field :results, 1, repeated: true, type: Core.SearchResult
   field :next_batch, 2, type: :string, json_name: "nextBatch"
   field :total_count, 3, type: :int32, json_name: "totalCount"
+end
+
+defmodule Core.OIDCUserClaims do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.OIDCUserClaims",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :user_id, 1, type: :string, json_name: "userId"
+  field :display_name, 3, type: :string, json_name: "displayName"
+  field :email, 4, type: :string
+end
+
+defmodule Core.BulkImportUsersRequest do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.BulkImportUsersRequest",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :users, 1, repeated: true, type: Core.OIDCUserClaims
+end
+
+defmodule Core.BulkImportUsersResponse do
+  @moduledoc false
+
+  use Protobuf,
+    full_name: "core.BulkImportUsersResponse",
+    protoc_gen_elixir_version: "0.16.0",
+    syntax: :proto3
+
+  field :imported, 1, type: :int32
+  field :skipped, 2, type: :int32
+  field :failed, 3, type: :int32
 end

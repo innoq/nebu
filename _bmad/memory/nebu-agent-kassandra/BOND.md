@@ -11,6 +11,10 @@
 ## Accepted Risks
 {Formally acknowledged security trade-offs with date, justification, and owner sign-off. These are not re-flagged as findings.}
 
+| Risk | Justification | Accepted by | Date |
+|------|--------------|-------------|------|
+| M_USER_DEACTIVATED confirms account existence to authenticated callers | Matrix CS API v1.18 spec requires M_USER_DEACTIVATED for deactivated accounts; accessible only to callers with valid OIDC JWT; consistent with Synapse/Dendrite behavior | Kassandra (Story 14.4 security review) | 2026-05-17 |
+
 ## Sensitive Surfaces
 {Parts of the codebase that deserve extra scrutiny: auth handlers, token comparison, admin endpoints, migration files, gRPC stream endpoints.}
 

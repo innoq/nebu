@@ -410,7 +410,11 @@ func main() {
 	mux.Handle("POST /admin/rooms/{roomId}/settings", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(roomsHandler.UpdateRoomSettingsHandler)))))
 	// Story 7.10: Server Configuration page.
 	// Story 9.4: pass gRPC client so handler uses real Core RPCs instead of stubs.
-	configHandler := admin.NewConfigHandler(tmplHandler, coreClient)
+	// Story 14-2a: WithConfigDB wires direct DB upsert for proto3 bool fields (oidc_directory_enabled).
+	// adminConfigRepo is a separate instance from the apihandler serverConfigRepo declared below — same
+	// DB, separate struct, avoids forward-reference issues since Admin UI routes are wired before API routes.
+	adminConfigRepo := apihandler.NewServerConfigRepo(bootstrapDB)
+	configHandler := admin.NewConfigHandler(tmplHandler, coreClient).WithConfigDB(adminConfigRepo)
 	mux.Handle("GET /admin/config", csrf(sessionGuard(http.HandlerFunc(configHandler.Handler))))
 	mux.Handle("POST /admin/config", bodyLimit64KiB(csrf(sessionGuard(http.HandlerFunc(configHandler.UpdateConfigHandler)))))
 
@@ -452,6 +456,50 @@ func main() {
 	bootstrapHandler := admin.NewBootstrapHandler(checker, tmplHandler, bootstrapDB, []byte(internalSecret))
 	guard := admin.BootstrapGuard(checker)
 
+	// Story 14-3b / 14-3c: Wire OIDC directory fetcher and SCIM client into Bootstrap Step 4.
+	// Both services are optional — if config is missing or integration is disabled, Step 4
+	// renders with appropriate messaging (AC4).
+	// SCIM config is read from server_config at startup (may be empty on first boot — handled gracefully).
+	{
+		// Wire OIDC directory fetcher (Protocol A, Story 14-3b).
+		// Reads oidc_directory_enabled and oidc_directory_endpoint from server_config.
+		oidcDirEnabled := loadServerConfigBool(bootstrapDB, "oidc_directory_enabled")
+		oidcDirEndpoint := loadServerConfigStr(bootstrapDB, "oidc_directory_endpoint")
+		// F-5: oidc_directory_bearer_token is intentionally not loaded — the OIDC directory
+		// protocol is unauthenticated in this implementation. A token field would require
+		// AES-256-GCM encryption at rest (see scim_bearer_token pattern). Until that storage
+		// path is implemented, reading a plaintext token from DB is unsafe.
+		oidcFetcher := admin.NewOIDCDirectoryService(admin.OIDCDirectoryConfig{
+			Endpoint: oidcDirEndpoint,
+			Enabled:  oidcDirEnabled,
+		})
+		bootstrapHandler.WithImportServices(oidcFetcher, coreClient.CoreServiceClient(), serverName)
+
+		// Wire SCIM client (Protocol B, Story 14-3c / ADR-015).
+		// Reads scim_enabled, scim_base_url, scim_bearer_token (AES-256-GCM encrypted) from server_config.
+		// CR-1: token is decrypted from DB using internalSecret — never stored in plain text.
+		scimEnabled := loadServerConfigBool(bootstrapDB, "scim_enabled")
+		scimBaseURL := loadServerConfigStr(bootstrapDB, "scim_base_url")
+		scimEncToken := loadServerConfigStr(bootstrapDB, "scim_bearer_token")
+		scimBearerToken := ""
+		if scimEncToken != "" {
+			if decToken, decErr := admin.DecryptAES256GCM([]byte(internalSecret), scimEncToken); decErr == nil {
+				scimBearerToken = decToken
+			} else {
+				slog.Warn("main: failed to decrypt scim_bearer_token — SCIM import will be unavailable", "err", decErr)
+			}
+		}
+		scimClient := admin.NewSCIMClient(admin.SCIMClientConfig{
+			BaseURL:     scimBaseURL,
+			BearerToken: scimBearerToken,
+			Enabled:     scimEnabled,
+		})
+		bootstrapHandler.WithSCIMFetcher(scimClient)
+
+		// Story 14-3c: Wire secret into ConfigHandler so it can encrypt scim_bearer_token on save.
+		configHandler.WithSecret([]byte(internalSecret))
+	}
+
 	// Static assets — no guard (needed to render bootstrap page)
 	mux.HandleFunc("GET /admin/static/admin.css", admin.ServeCSS)
 	mux.HandleFunc("GET /admin/static/fonts/{filename}", admin.ServeFontFile)
@@ -470,6 +518,10 @@ func main() {
 	// headroom; legitimate admin clicking should never trip the limiter.
 	mux.Handle("GET /admin/bootstrap", adminRL(csrf(guard(http.HandlerFunc(bootstrapHandler.Handler)))))
 	mux.Handle("POST /admin/bootstrap", adminRL(bodyLimit64KiB(csrf(guard(http.HandlerFunc(bootstrapHandler.StepHandler))))))
+
+	// Story 14-3c: Import status polling endpoint — behind sessionGuard (CR-3).
+	// No CSRF required (GET, read-only).
+	mux.Handle("GET /api/v1/admin/bootstrap/import-status", sessionGuard(http.HandlerFunc(admin.ImportStatusHandler)))
 
 	// Claim selection — CSRF-protected (Story 5.13, AC3); also behind BootstrapGuard.
 	mux.Handle("POST /admin/bootstrap/select-claim", adminRL(bodyLimit64KiB(csrf(guard(http.HandlerFunc(adminAuth.ClaimSelectionHandler))))))
@@ -591,15 +643,16 @@ func main() {
 		w.Write([]byte(`{"capabilities":{"m.change_password":{"enabled":false},"m.room_versions":{"default":"10","available":{"6":"stable","10":"stable"}}}}`))
 	})))
 
-	// MSC2965 OIDC-native auth metadata — not supported; return explicit 404 so
-	// Element Web falls back to the standard m.login.sso flow instead of caching
-	// a silent failure and breaking subsequent login attempts in non-private windows.
-	// looseRL: unauthenticated metadata endpoint.
-	mux.Handle("GET /_matrix/client/unstable/org.matrix.msc2965/auth_metadata", looseRL(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte(`{"errcode":"M_UNRECOGNIZED","error":"MSC2965 OIDC-native auth is not supported by this server. Use m.login.sso."}`))
-	})))
+	// Story 13-7: MSC2965 OIDC Discovery Endpoints — auth_issuer + auth_metadata.
+	// Both the unstable MSC2965 path and the stable v1 path are registered.
+	// All four routes are unauthenticated (looseRL).
+	oidcHTTPClient := &http.Client{Timeout: 10 * time.Second}
+	authIssuerHandler := matrix.AuthIssuerHandler(&cfg)
+	authMetadataHandler := matrix.AuthMetadataHandler(&cfg, oidcHTTPClient)
+	mux.Handle("GET /_matrix/client/unstable/org.matrix.msc2965/auth_issuer", looseRL(authIssuerHandler))
+	mux.Handle("GET /_matrix/client/v1/auth_issuer", looseRL(authIssuerHandler))
+	mux.Handle("GET /_matrix/client/unstable/org.matrix.msc2965/auth_metadata", looseRL(authMetadataHandler))
+	mux.Handle("GET /_matrix/client/v1/auth_metadata", looseRL(authMetadataHandler))
 
 	// Story 7-30: Push Rules API — GET/PUT/DELETE /pushrules + Pushers.
 	// Replaces the empty stub with a full database-backed implementation.
@@ -1249,6 +1302,17 @@ func main() {
 	mux.Handle("POST /api/v1/admin/users/{userId}/anonymize",
 		complianceRL(jwtWithStatusCheck(http.HandlerFunc(anonymizationHandler.AnonymizeUser))))
 
+	// Story 14.4 — GDPR Right to Erasure
+	// Route namespace: /api/v1/admin/* — instance_admin only, role gate inside handler.
+	// Orchestrates: DeactivateUser + DeleteUserKeys + anonymize + audit "gdpr_deletion".
+	gdprDeleteHandler := &compliance.GdprDeleteHandler{
+		DB:          complianceDB,
+		CoreClient:  coreClient.CoreServiceClient(),
+		StoragePath: os.Getenv("NEBU_MEDIA_STORAGE_PATH"),
+	}
+	mux.Handle("DELETE /api/v1/admin/users/{userId}",
+		complianceRL(bodyLimit64KiB(jwtWithStatusCheck(http.HandlerFunc(gdprDeleteHandler.DeleteUser)))))
+
 	// POST /rooms/{roomId}/leave — leave a room (calls Elixir LeaveRoom gRPC)
 	mux.Handle("POST /_matrix/client/v3/rooms/{roomId}/leave",
 		bodyLimit1MiB(jwtWithStatusCheck(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1325,8 +1389,10 @@ func main() {
 	// cross-origin without being silently blocked.
 	oidcIssuerOrigin := extractOriginOrEmpty(cfg.OIDCIssuer)
 	adminHandler := admin.SecurityHeadersMiddleware(oidcIssuerOrigin)(mux)
+	// F-6: extend SecurityHeadersMiddleware to cover the JSON API surface under /api/v1/admin/*
+	// (GDPR delete, import-status) in addition to the HTML surface under /admin/*.
 	mainHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/admin") {
+		if strings.HasPrefix(r.URL.Path, "/admin") || strings.HasPrefix(r.URL.Path, "/api/v1/admin") {
 			adminHandler.ServeHTTP(w, r)
 			return
 		}
@@ -1370,6 +1436,26 @@ func extractOriginOrEmpty(issuer string) string {
 		return ""
 	}
 	return u.Scheme + "://" + u.Host
+}
+
+// loadServerConfigStr reads a single string value from the server_config table.
+// Returns "" if the key is missing or the query fails.
+// Used at startup to load optional integration config (SCIM, OIDC directory).
+func loadServerConfigStr(db *sql.DB, key string) string {
+	var val string
+	err := db.QueryRowContext(context.Background(),
+		`SELECT value FROM server_config WHERE key = $1`, key,
+	).Scan(&val)
+	if err != nil {
+		return ""
+	}
+	return val
+}
+
+// loadServerConfigBool reads a boolean value ("true"/"false") from server_config.
+// Returns false if the key is missing, the query fails, or the value is not "true".
+func loadServerConfigBool(db *sql.DB, key string) bool {
+	return loadServerConfigStr(db, key) == "true"
 }
 
 // loadAuditRetentionDays reads audit_log_retention_days from server_config.

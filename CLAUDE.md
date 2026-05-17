@@ -123,6 +123,8 @@ Environment variables for gateway (prefix: `NEBU_`):
 - `POST /_matrix/client/v3/rooms/{roomId}/receipt/{receiptType}/{eventId}`
 - `GET/PUT /_matrix/client/v3/profile/{userId}`
 - `GET  /_matrix/client/v3/presence/{userId}/status`
+- `GET  /_matrix/client/unstable/org.matrix.msc2965/auth_issuer` (MSC2965 OIDC discovery — also stable `v1/` path)
+- `GET  /_matrix/client/unstable/org.matrix.msc2965/auth_metadata` (MSC2965 OIDC discovery — also stable `v1/` path)
 
 **Intentionally excluded:** All `/_matrix/federation/*`, `/_matrix/identity/*`, `/_matrix/key/*` (no federation by design).
 
@@ -145,6 +147,8 @@ ADRs are tracked in `docs/architecture/adr/`:
 | 010 | Full-Text Search strategy (deferred) |
 | 011 | Managed E2EE key escrow (server-side decryption model) |
 | 012 | Upstream repo = reference implementation only; no official deployments; example-only CI credentials |
+| 014 | Deployment strategy and IaC: OpenTofu (MPL-2.0) with AWS (ECS Fargate), Stackit (VMs + Docker Compose + ALB), Kubernetes/Helm |
+| 015 | OIDC User Directory Integration: two complementary protocols — OIDC directory endpoint (Dex/Keycloak, user search) + SCIM 2.0 RFC 7644 (Azure AD/Okta, bulk import) |
 
 ## BMAD Workflow
 

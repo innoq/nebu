@@ -51,6 +51,92 @@
              required>
     </div>
 
+    {{/* ── Story 14-2a: OIDC Directory Integration ── */}}
+    <div class="form-control">
+      <label class="label cursor-pointer justify-start gap-4" for="oidc_directory_enabled">
+        <input type="checkbox" id="oidc_directory_enabled" name="oidc_directory_enabled"
+               class="checkbox"
+               {{ if .Config.OidcDirectoryEnabled }}checked{{ end }}
+               onchange="document.getElementById('oidc-directory-endpoint-section').style.display = this.checked ? 'block' : 'none'">
+        <span class="label-text">Enable OIDC User Directory Integration</span>
+      </label>
+      <p class="text-sm text-base-content/60 ml-10">
+        When enabled, the Admin UI user search includes OIDC users who have not yet logged in.
+      </p>
+    </div>
+
+    <div id="oidc-directory-endpoint-section"
+         style="{{ if not .Config.OidcDirectoryEnabled }}display:none{{ end }}"
+         class="form-control pl-4 border-l-2 border-primary/30">
+      <label class="label" for="oidc_directory_endpoint">
+        <span class="label-text">OIDC Directory Endpoint URL</span>
+      </label>
+      <input type="url" id="oidc_directory_endpoint" name="oidc_directory_endpoint"
+             value="{{ .Config.OidcDirectoryEndpoint }}"
+             class="input input-bordered w-full"
+             placeholder="https://idp.example.com/admin/users"
+             maxlength="2048">
+      <p class="text-sm text-base-content/60 mt-1">
+        URL of the OIDC provider's user-search endpoint (e.g. Dex /admin/users).
+      </p>
+    </div>
+
+    {{/* ── Story 14-3c: SCIM 2.0 Integration ── */}}
+    <div class="divider mt-4">SCIM 2.0 User Import</div>
+
+    <div class="form-control">
+      <label class="label cursor-pointer justify-start gap-4" for="scim_enabled">
+        <input type="checkbox" id="scim_enabled" name="scim_enabled"
+               class="checkbox"
+               {{ if .Config.ScimEnabled }}checked{{ end }}
+               onchange="document.getElementById('scim-config-section').style.display = this.checked ? 'block' : 'none'">
+        <span class="label-text">Enable SCIM 2.0 User Import</span>
+      </label>
+      <p class="text-sm text-base-content/60 ml-10">
+        When enabled, Bootstrap Wizard Step 4 can import users from a SCIM 2.0 provider (Azure AD, Okta).
+        Takes priority over OIDC directory when both are enabled.
+      </p>
+    </div>
+
+    <div id="scim-config-section"
+         style="{{ if not .Config.ScimEnabled }}display:none{{ end }}"
+         class="form-control pl-4 border-l-2 border-primary/30 space-y-3">
+      <div class="form-control">
+        <label class="label" for="scim_base_url">
+          <span class="label-text">SCIM Base URL</span>
+        </label>
+        <input type="url" id="scim_base_url" name="scim_base_url"
+               value="{{ .Config.ScimBaseURL }}"
+               class="input input-bordered w-full"
+               placeholder="https://idp.example.com/scim/v2"
+               maxlength="2048">
+        <p class="text-sm text-base-content/60 mt-1">
+          HTTPS URL of the SCIM 2.0 service root. The client appends <code>/Users</code> for pagination.
+          Must use HTTPS (CR-2).
+        </p>
+      </div>
+
+      <div class="form-control">
+        <label class="label" for="scim_bearer_token">
+          <span class="label-text">SCIM Bearer Token</span>
+          {{ if .Config.ScimBearerTokenSet }}
+          <span class="label-text-alt badge badge-success badge-sm">Token set</span>
+          {{ end }}
+        </label>
+        {{/* CR-1: password input with no value — never render the raw token.
+             If a token is already configured, show [SET] as placeholder.
+             To change the token, enter a new value. Leave empty to keep existing token. */}}
+        <input type="password" id="scim_bearer_token" name="scim_bearer_token"
+               class="input input-bordered w-full"
+               placeholder="{{ if .Config.ScimBearerTokenSet }}[SET] — enter new value to change{{ else }}Enter SCIM bearer token{{ end }}"
+               autocomplete="new-password"
+               maxlength="4096">
+        <p class="text-sm text-base-content/60 mt-1">
+          Leave empty to keep the existing token. The raw token is never displayed (CR-1).
+        </p>
+      </div>
+    </div>
+
     <div class="flex justify-end mt-4">
       <button type="submit" class="btn btn-primary">Save</button>
     </div>

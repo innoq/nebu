@@ -64,15 +64,22 @@ func (h *ClaimMappingHandler) Handler(w http.ResponseWriter, r *http.Request) {
 		userIDClaim, displaynameClaim, emailClaim = uid, dn, em
 	}
 
+	// Detect bootstrap state: if bootstrap_completed key is set, lock the user-ID claim field.
+	bootstrapCompleted := false
+	if v, err := h.configReader.LoadServerConfigKey(r.Context(), "bootstrap_completed"); err == nil && v != "" {
+		bootstrapCompleted = true
+	}
+
 	pd := newPageData()
 	pd.ActiveNav = "claim-mapping"
 	pd.CSRFToken = CSRFTokenFromContext(r.Context())
 	data := ClaimMappingPageData{
-		PageData:         pd,
-		UserIDClaim:      userIDClaim,
-		DisplaynameClaim: displaynameClaim,
-		EmailClaim:       emailClaim,
-		Flash:            flash,
+		PageData:           pd,
+		UserIDClaim:        userIDClaim,
+		DisplaynameClaim:   displaynameClaim,
+		EmailClaim:         emailClaim,
+		Flash:              flash,
+		BootstrapCompleted: bootstrapCompleted,
 	}
 	h.tmpl.render(w, "claim-mapping", data)
 }
@@ -91,12 +98,36 @@ func (h *ClaimMappingHandler) UpdateHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	userIDClaim := strings.TrimSpace(r.FormValue("oidc_user_id_claim"))
 	displaynameClaim := strings.TrimSpace(r.FormValue("oidc_displayname_claim"))
 	emailClaim := strings.TrimSpace(r.FormValue("oidc_email_claim"))
 
+	// Defense in depth: if bootstrap is complete, preserve the existing oidc_user_id_claim
+	// regardless of what the form posted. The template already hides the input, so this is
+	// a safeguard against direct POST requests bypassing the UI.
+	bootstrapCompleted := false
+	if v, err := h.configReader.LoadServerConfigKey(r.Context(), "bootstrap_completed"); err == nil && v != "" {
+		bootstrapCompleted = true
+	}
+
+	var userIDClaim string
+	if bootstrapCompleted {
+		// Load the locked value from DB — if this fails, abort rather than saving an empty claim.
+		// Saving an empty oidc_user_id_claim would break all future logins; abort is safer.
+		uid, _, _, err := h.configReader.LoadClaimMapping(r.Context())
+		if err != nil {
+			slog.Error("claim_mapping UpdateHandler: failed to load locked oidc_user_id_claim post-bootstrap", "err", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		userIDClaim = uid
+	} else {
+		userIDClaim = strings.TrimSpace(r.FormValue("oidc_user_id_claim"))
+	}
+
 	errors := make(map[string]string)
-	validateClaimField(userIDClaim, "oidc_user_id_claim", errors)
+	if !bootstrapCompleted {
+		validateClaimField(userIDClaim, "oidc_user_id_claim", errors)
+	}
 	validateClaimField(displaynameClaim, "oidc_displayname_claim", errors)
 	validateClaimField(emailClaim, "oidc_email_claim", errors)
 
@@ -105,11 +136,12 @@ func (h *ClaimMappingHandler) UpdateHandler(w http.ResponseWriter, r *http.Reque
 		pd.ActiveNav = "claim-mapping"
 		pd.CSRFToken = CSRFTokenFromContext(r.Context())
 		data := ClaimMappingPageData{
-			PageData:         pd,
-			UserIDClaim:      userIDClaim,
-			DisplaynameClaim: displaynameClaim,
-			EmailClaim:       emailClaim,
-			Errors:           errors,
+			PageData:           pd,
+			UserIDClaim:        userIDClaim,
+			DisplaynameClaim:   displaynameClaim,
+			EmailClaim:         emailClaim,
+			Errors:             errors,
+			BootstrapCompleted: bootstrapCompleted,
 		}
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		h.tmpl.render(w, "claim-mapping", data)

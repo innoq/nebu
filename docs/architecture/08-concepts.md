@@ -43,6 +43,14 @@ invalidated JWT (bypassing the SSO nonce check). Status `403 M_FORBIDDEN` (not `
 intentional: `POST /login` is an authentication *attempt*, not a session validation request.
 `LoginHandler.store` is nil-safe — deployments without a denylist skip the check.
 
+**Deactivated User Login Rejection (Story 14.4):**
+
+`PostLogin` calls `ValidateToken` gRPC which checks `is_active` in the DB. When the Elixir
+core returns `PERMISSION_DENIED` with message `"user account is deactivated"`, `PostLogin`
+responds `403 M_USER_DEACTIVATED` (Matrix CS API v1.18 required errcode). This covers the
+case where a user was deleted via GDPR erasure but attempts to re-authenticate via OIDC.
+All other `ValidateToken` errors remain `500 M_UNKNOWN` (defensive — no internals leaked).
+
 **Cache-Control: no-store on SSO Redirect (Story 11-7):**
 
 `GetSSORedirect` sets `Cache-Control: no-store` before the `http.Redirect` call. This
@@ -118,12 +126,30 @@ original exception. A nested `try/rescue` around the audit write itself ensures 
 audit writer never masks the original error. This guarantees that any partially-applied operation
 leaves a forensic record even when the gRPC call ultimately returns an error to the client.
 
+## GDPR Article 17 Right to Erasure — Deletion Orchestration (Story 14.4)
+
+`DELETE /api/v1/admin/users/{userId}` — instance_admin only (four-eyes: caller ≠ target).
+
+The `GdprDeleteHandler` (`gateway/internal/compliance/gdpr_delete.go`) chains the existing building blocks into a single atomic-from-the-caller's-perspective pipeline:
+
+1. **DeactivateUser gRPC** — `is_active=false` + all sessions destroyed (NOT_FOUND → 404 stops pipeline; AlreadyExists → idempotent continue)
+2. **DeleteUserKeys gRPC** — `private_key = NULL` for signing + encryption keys (best-effort: failure logged, pipeline continues)
+3. **DB anonymization TX** — `profiles.displayname = 'Deleted User'`, `profiles.avatar_url = NULL`, `users.anonymized_at = <unix_ms>` (failure → 500, PII erasure MUST NOT be silently skipped)
+4. **Audit emit** — `gdpr_deletion` event with `keys_deleted: "confirmed"|"failed_best_effort"` metadata (never-raise: audit failure does not block 200)
+5. **200** `{"user_id": "...", "status": "gdpr_deleted"}`
+
+**Login behavior after deletion:** `POST /_matrix/client/v3/login` — when `ValidateToken` gRPC returns `PERMISSION_DENIED` with message containing `"deactivated"`, the gateway responds `403 M_USER_DEACTIVATED` (Matrix CS API v1.18 compliant).
+
+**Room history preservation:** Messages in room event timelines are NOT deleted — per Matrix spec and GDPR recital 65 (legitimate archive interest). The sender's profile is anonymized; message content remains.
+
+Runbook: `docs/compliance/gdpr-deletion-runbook.md`
+
 ## Three PII Tiers
 
 | Tier | Data | At Rest | GDPR Deletion |
 |---|---|---|---|
-| Operational PII | Display name, avatar | Encrypted at rest | Overwrite with "Deleted User [id]" |
-| Sensitive PII | Email, IdP subject | Encrypted with user's X25519 key | Delete private key → irrecoverable |
+| Operational PII | Display name, avatar | Encrypted at rest | Overwrite with "Deleted User" (via `GdprDeleteHandler`, Story 14.4) |
+| Sensitive PII | Email, IdP subject | Encrypted with user's X25519 key | Delete private key → irrecoverable (via `DeleteUserKeys`, Story 5.7) |
 | Message Content | Chat messages | Plain in DB (audit requirement) | Not deleted; sender anonymized |
 
 ## Per-Device Sync Token Isolation (Story 9-22)
@@ -293,14 +319,77 @@ uploader_user_id = formatMatrixUserID(subject, serverName)
 
 Implementation: `extractClaimFromMap(rawClaims map[string]interface{}, claimName string) (string, error)` — pure function in `media/internal/upload/upload.go`. The value goes through `sanitiseLocalpart` before storage. `OIDCTokenVerifier` is constructed with `NewOIDCTokenVerifier(idTokenVerifier, claimName)` in `initOIDCVerifierWith`.
 
-**server_config RLS UPDATE Policy (Story 12.7 MEDIUM-5):**
+**server_config RLS UPDATE Policy (Story 12.7 MEDIUM-5, extended Story 14-2a):**
 
-Migration 000046 replaces the blanket `config_update_all` policy (USING true — introduced in migration 000045 for OIDC claim upserts) with a key-scoped `config_update_mutable` policy. Only the following keys are updatable by `nebu_app`:
+Migration 000046 replaces the blanket `config_update_all` policy (USING true — introduced in migration 000045 for OIDC claim upserts) with a key-scoped `config_update_mutable` policy. Migration 000048 (Story 14-2a) extends the allowlist with two new OIDC directory keys. Migration 000049 (Story 14-3c) extends with three SCIM 2.0 keys. Only the following keys are updatable by `nebu_app`:
 
 - `oidc_user_id_claim`, `oidc_displayname_claim`, `oidc_email_claim`, `admin_group_claim`
 - `oidc_issuer`, `oidc_client_id`, `oidc_client_secret`
+- `oidc_directory_enabled`, `oidc_directory_endpoint` _(added in migration 000048, Story 14-2a)_
+- `scim_enabled`, `scim_base_url`, `scim_bearer_token` _(added in migration 000049, Story 14-3c; bearer token is AES-256-GCM encrypted — raw value never stored in plaintext)_
 
 `server_name`, `bootstrap_completed`, and any future keys not in this allowlist are immutable at the DB level (defence-in-depth restoration from ADR G8).
+
+**Proto3 Bool / Direct DB Upsert Pattern (Story 14-2a):**
+
+Fields stored as booleans in `server_config` (e.g. `oidc_directory_enabled`) cannot be safely round-tripped via proto3 gRPC because `false` is the proto default and is indistinguishable from "not set". The pattern used: the REST API PATCH handler (`api.AdminServer`) holds a `ServerConfigRepository` and upserts directly. The Admin UI handler (`admin.ConfigHandler`) accepts a `ConfigKeyWriter` interface (set via `WithConfigDB`) and upserts directly for bool fields, while routing string fields through gRPC. This avoids inadvertent resets of boolean flags on unrelated gRPC calls.
+
+**OIDC Directory Service Pattern (Story 14-2b):**
+
+`OIDCDirectoryService` (`gateway/internal/admin/oidc_directory.go`) provides a secure, cached client for fetching user lists from an admin-configured OIDC directory endpoint. Key design decisions:
+
+- **secretString type**: the bearer token is wrapped in `type secretString string` with `String() "[REDACTED]"` — prevents accidental log exposure via `%+v` or slog auto-formatting (CR-3).
+- **HTTPS-only at call time**: `validateEndpoint` is called inside `FetchUsers` on every invocation, not just at config load. This is a defensive check: if the stored endpoint is later mutated to HTTP, the service fails hard rather than silently falling back (CR-1).
+- **No redirect following**: the default `http.Client` uses `CheckRedirect: ErrUseLastResponse`. This prevents an HTTP→HTTPS redirect from bypassing the HTTPS check, and prevents SSRF via provider-issued redirects to internal metadata endpoints (CR-2).
+- **Rate limit separation**: `Allow(sessionID string) bool` and `FetchUsers(ctx) ([]OIDCDirectoryUser, error)` are separate methods. Callers MUST call `Allow` before `FetchUsers` to enforce the per-session 5 req/s limit. The separation allows callers to short-circuit before cache or network access. Session IDs MUST come from the validated JWT (admin middleware), not from request headers (CR-5).
+- **singleflight + 30s cache**: concurrent cache misses collapse into one outbound call (MR-4). Cache key = SHA-256(endpoint + "|" + token) so rotating the bearer token invalidates the stale cache (MR-1).
+- **Graceful degradation**: runtime errors (unreachable host, non-200, JSON parse failure) are logged as warnings and swallowed — FetchUsers returns empty list, not error. Configuration errors (non-HTTPS) are propagated as errors.
+
+**OIDC Directory User Search Merge Pattern (Story 14-2c):**
+
+`UsersHandler.ListHandler` merges Nebu DB users (from gRPC `ListAdminUsers`) with OIDC directory users (from `OIDCDirectoryService.FetchUsers`) when `oidc_directory_enabled=true`. Key design decisions:
+
+- **WithOIDCDirectory setter**: `UsersHandler` accepts an `*OIDCDirectoryService` via a fluent setter (`WithOIDCDirectory(svc, serverName)`). The handler field is nil by default — zero-config backward compatibility.
+- **Nebu DB wins on dedup**: OIDC users whose `sanitize(sub)` matches a Nebu `UserId` are dropped from the OIDC-only list. The Nebu DB entry always takes precedence.
+- **IsOIDCOnly flag**: `UserRowData.IsOIDCOnly=true` + `MatrixIDPreview` mark users present only in the OIDC directory. The preview is computed as `@{sanitize(sub)}:{serverName}` and is not persisted.
+- **Non-blocking OIDC failure**: when the OIDC provider is unreachable, `FetchUsers` returns an empty list (logged internally). `ListHandler` detects this via `IsEnabled() && len(oidcUsers)==0` and sets `OIDCWarningBanner` — the Nebu DB list is still rendered.
+- **Rate-limit gate**: `Allow(sessionID)` is called before `FetchUsers`. If rate-limited, OIDC fetch is silently skipped (no warning banner — rate-limiting is defensive, not an availability signal).
+
+**Bulk User Provisioning Pattern (Story 14-3a):**
+
+`Nebu.Session.BulkImporter` provisions a list of OIDC users via the `BulkImportUsers` gRPC RPC. The provisioning flow is identical to first-login provisioning in `TokenValidator.Postgres.provision_new_user`. Key design decisions:
+
+- **Identical to first-login**: `BulkImporter` calls the same `UserStore.upsert_user/2` + `UserProvisioner.provision_user/4` functions as first login. Ed25519 signing keypairs and X25519 encryption keypairs are generated; `display_name` (Tier 1) and `email` (Tier 2) are encrypted identically.
+- **Duplicate detection**: a user whose `signing_key_id IS NOT NULL` in the `users` table is counted as `skipped` — not an error. The `UserProvisioner.Postgres` update SQL already uses `WHERE signing_key_id IS NULL` (idempotent guard), but BulkImporter avoids unnecessary keypair generation by checking first.
+- **Partial success**: `import_users/1` uses `Enum.reduce` across all users. Exceptions in `import_one/2` are rescued with `try/rescue` — the user is counted as `:failed` and the batch continues. The aggregate `{imported, skipped, failed}` is always returned.
+- **No bootstrap path**: bulk import always uses the provided `system_role` (Go gateway always sets "user"). The `BootstrapChecker.upsert_with_bootstrap` step from first-login is skipped (bootstrap is a one-time event that only triggers on the very first login to an empty instance).
+- **Trust model**: Core trusts the Go gateway (ADR G2). The gRPC handler does not re-validate admin role — the Go gateway enforces admin-only HTTP access before calling this RPC.
+- **Module injection**: all three dependencies (`lookup_module`, `user_store_module`, `provisioner_module`) are injectable via `Application.put_env` for test isolation. Default implementations use real PostgreSQL.
+
+**Bootstrap Wizard Step 4 — User Import UI Pattern (Story 14-3b):**
+
+`BootstrapHandler` extends the 3-step wizard with a Step 4 that lets admins pre-provision OIDC users immediately after claim selection. Key design decisions:
+
+- **Redirect chain**: `ClaimSelectionHandler` now redirects to `/admin/bootstrap?step=4` instead of `/admin/dashboard`. Step 4 renders an "Import from OIDC" button. The admin can "Skip and finish" → `/admin/dashboard` at any time.
+- **Interface abstraction**: `OIDCDirectoryFetcher` (IsEnabled/FetchUsers) and `BulkImportClient` (BulkImportUsers) interfaces defined in `bootstrap.go` allow test injection without a real HTTP server or gRPC connection. `WithImportServices(fetcher, core, serverName)` wires them at startup.
+- **Two sub-actions via form POST**: `action=preview` fetches users (SCIM-preferred) and renders the preview table (display name, email, computed Matrix User ID); `action=import` re-fetches + calls `BulkImportUsers` gRPC + renders imported/skipped/failed counts.
+- **AC4 disabled state**: when neither OIDC nor SCIM is enabled, Step 4 renders with a disabled import button.
+- **Matrix User ID computation**: reuses `sanitizeOIDCSub(u.Sub)` from `users.go` (same package) to produce `@{localpart}:{serverName}` — identical to the preview shown in the Users page (Story 14-2c).
+
+**SCIM 2.0 User Fetch Pattern (Story 14-3c / ADR-015 Protocol B):**
+
+`SCIMClient` (`gateway/internal/admin/scim_client.go`) fetches users from a SCIM 2.0 `/Users` endpoint using RFC 7644 pagination. Key design decisions:
+
+- **Protocol priority**: when both `oidc_directory_enabled` and `scim_enabled` are true, SCIM takes priority over the OIDC directory for the `action=import` (and `action=preview`) flows in Bootstrap Step 4. This is enforced in `BootstrapHandler.StepHandler` via the SCIM-preferred fetcher selection pattern.
+- **SCIMFetcher interface**: mirrors `OIDCDirectoryFetcher` (IsEnabled/FetchUsers) so `BootstrapHandler` uses a unified interface for both protocols. `WithSCIMFetcher(f SCIMFetcher)` wires the client at startup.
+- **RFC 7644 pagination**: `startIndex` is 1-based; `count=100` per page; iteration terminates on empty `Resources[]`. `totalResults` is used for the early-abort cap check (HR-1).
+- **secretString CR-1**: bearer token stored as `secretString` — `.String()` returns `[REDACTED]`; `.value()` only called to set the `Authorization` header.
+- **Bearer token encryption at rest**: stored as AES-256-GCM (nonce || ciphertext, hex) in `server_config.scim_bearer_token`. Encrypted at config-save time (config.go) with the gateway internal secret; decrypted at startup (main.go) before wiring into `SCIMClient`.
+- **scim_base_url convention**: the stored URL is the SCIM service root (e.g. `https://idp.example.com/scim/v2`). `buildPageURL` appends `/Users` if not already present, then adds `startIndex`/`count` query params.
+- **userName as sub**: `scimSub()` prefers `userName` over `id` — Azure AD and Okta export email-style userNames that align with OIDC `sub` semantics. The sub value goes through `sanitizeOIDCSub` for Matrix localpart derivation (same path as OIDC directory).
+- **Import progress singleton**: `importInProgress atomic.Bool` + `importProgress *importProgressState` are package-level singletons. `CompareAndSwap(false, true)` before each import → HTTP 409 on concurrent attempt (HR-3). Counters (`imported`, `total`, `failed`, `done`) are `atomic.Int32`/`atomic.Bool` — safe to read from the polling endpoint without a lock.
+- **Progress endpoint**: `GET /api/v1/admin/bootstrap/import-status` (behind `sessionGuard`) returns `{imported, total, failed, done}` JSON. The Bootstrap Wizard Step 4 HTML polls this endpoint via `setInterval` every 2s using `fetch(credentials: 'same-origin')`.
+- **Synchronous import**: for S-size story scope, `BulkImportUsers` gRPC is called synchronously; counters advance from 0/N to imported/N/done in a single step after the RPC returns. The progress bar shows 0/N while the RPC is in flight, then reloads the page on `done=true`.
 
 **Media Event Content Pass-Through Contract (Story 12.6):**
 

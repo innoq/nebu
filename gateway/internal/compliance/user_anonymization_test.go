@@ -233,6 +233,10 @@ func newAnonRequest(t *testing.T, userID, systemRole, sub string) *http.Request 
 	ctx := r.Context()
 	ctx = context.WithValue(ctx, middleware.ContextKeySystemRole, systemRole)
 	ctx = context.WithValue(ctx, middleware.ContextKeySub, sub)
+	// ContextKeyUserID holds the pre-computed Matrix user ID used by the self-anonymize guard.
+	// The caller sub is typically a raw OIDC sub (e.g. "admin-sub-1"); construct a distinct
+	// Matrix user ID for the admin so it doesn't accidentally match the target userId.
+	ctx = context.WithValue(ctx, middleware.ContextKeyUserID, "@"+sub+":example.com")
 	return r.WithContext(ctx)
 }
 
@@ -1112,13 +1116,15 @@ func TestAnonymizeUser_TxRollbackOnUsersUpdateFailure(t *testing.T) {
 }
 
 // TestAnonymizeUser_SelfAnonymize_Returns403 verifies that a caller cannot anonymize
-// themselves: callerSub == userId must be rejected with 403 M_FORBIDDEN.
+// themselves: callerUserID == userId must be rejected with 403 M_FORBIDDEN.
 //
-// Given: instance_admin caller, userId == callerSub (same person)
-// When:  POST /api/v1/admin/users/{userId}/anonymize
-// Then:  403 M_FORBIDDEN — "self-anonymize requires four-eyes approval"
+// Uses realistic production identifier shapes (SEC Gate 2, F-1 fix):
+//   callerSub (ContextKeySub)       = raw OIDC sub e.g. "self-admin" (issued by Dex/Keycloak)
+//   callerUserID (ContextKeyUserID) = Matrix user ID "@self-admin:server.example"
+//   userId path param               = Matrix user ID "@self-admin:server.example"
 //
-// RED: handler currently does NOT check callerSub == userId → returns 200 until 5.29b.
+// The guard compares ContextKeyUserID against userId — NOT ContextKeySub.
+// Using ContextKeySub would never match in production (different identifier shapes).
 func TestAnonymizeUser_SelfAnonymize_Returns403(t *testing.T) {
 	db := openAnonDB(t, true /* profileFound */, "mxc://server.local/mediaSelf")
 	client := &mockCoreClient{}
@@ -1131,7 +1137,9 @@ func TestAnonymizeUser_SelfAnonymize_Returns403(t *testing.T) {
 		FileRemover: fr,
 	}
 
-	// callerSub == userId — self-anonymize scenario.
+	// callerUserID == userId — self-anonymize scenario using production identifier shapes.
+	const callerSub = "self-admin"              // raw OIDC sub (different shape)
+	const callerUserID = "@self-admin:server.example" // Matrix user ID (matches path param)
 	const selfUserID = "@self-admin:server.example"
 
 	w := httptest.NewRecorder()
@@ -1143,15 +1151,15 @@ func TestAnonymizeUser_SelfAnonymize_Returns403(t *testing.T) {
 
 	ctx := r.Context()
 	ctx = context.WithValue(ctx, middleware.ContextKeySystemRole, "instance_admin")
-	ctx = context.WithValue(ctx, middleware.ContextKeySub, selfUserID) // SAME as userId
+	ctx = context.WithValue(ctx, middleware.ContextKeySub, callerSub)
+	ctx = context.WithValue(ctx, middleware.ContextKeyUserID, callerUserID) // SAME as userId
 	r = r.WithContext(ctx)
 
 	h.AnonymizeUser(w, r)
 
-	// RED-PHASE ASSERTION: will fail until self-anonymize guard is implemented.
 	if w.Code != http.StatusForbidden {
-		t.Fatalf("expected 403 M_FORBIDDEN for self-anonymize (callerSub == userId), got %d — body: %s"+
-			" — Story 5.29b AC8 not yet implemented", w.Code, w.Body.String())
+		t.Fatalf("expected 403 M_FORBIDDEN for self-anonymize (callerUserID == userId), got %d — body: %s",
+			w.Code, w.Body.String())
 	}
 
 	var resp map[string]string

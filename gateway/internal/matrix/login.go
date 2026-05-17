@@ -8,12 +8,16 @@ import (
 	"log/slog"
 	"net/http"
 
+	"strings"
+
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/nebu/nebu/internal/auth"
 	coregrpc "github.com/nebu/nebu/internal/grpc"
 	pb "github.com/nebu/nebu/internal/grpc/pb"
 	"github.com/nebu/nebu/internal/middleware"
 	"github.com/nebu/nebu/internal/validate"
+	"google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
 )
 
 // UserIDClaimLoader is a function type that returns the configured oidc_user_id_claim
@@ -240,6 +244,15 @@ func (h *LoginHandler) PostLogin(w http.ResponseWriter, r *http.Request) {
 		Email:       email,
 	})
 	if err != nil {
+		// Map gRPC PERMISSION_DENIED with "deactivated" in the message to 403 M_USER_DEACTIVATED.
+		// The Elixir core raises PermissionDenied when is_active=false on the user record.
+		// All other errors remain 500 M_UNKNOWN (defensive: avoid leaking internals).
+		st, _ := grpcstatus.FromError(err)
+		if st.Code() == codes.PermissionDenied && strings.Contains(strings.ToLower(st.Message()), "deactivated") {
+			slog.Warn("PostLogin: rejected deactivated user", "user_id", userID)
+			writeMatrixError(w, http.StatusForbidden, "M_USER_DEACTIVATED", "This account has been deactivated")
+			return
+		}
 		slog.Error("ValidateToken gRPC failed", "err", err, "user_id", userID)
 		writeMatrixError(w, http.StatusInternalServerError, "M_UNKNOWN", "Internal server error")
 		return

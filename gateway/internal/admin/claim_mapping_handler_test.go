@@ -24,6 +24,9 @@ type recordingServerConfigReader struct {
 	savedDisplaynameClaim string
 	savedEmailClaim       string
 	saveCalled            bool
+	// bootstrapCompleted simulates post-bootstrap state for Story 14-1b tests.
+	// When true, LoadServerConfigKey("bootstrap_completed") returns "true".
+	bootstrapCompleted bool
 }
 
 func (r *recordingServerConfigReader) LoadOIDCConfig(_ context.Context) (string, string, string, error) {
@@ -52,7 +55,10 @@ func (r *recordingServerConfigReader) SaveClaimMapping(_ context.Context, uid, d
 	return nil
 }
 
-func (r *recordingServerConfigReader) LoadServerConfigKey(_ context.Context, _ string) (string, error) {
+func (r *recordingServerConfigReader) LoadServerConfigKey(_ context.Context, key string) (string, error) {
+	if key == "bootstrap_completed" && r.bootstrapCompleted {
+		return "true", nil
+	}
 	return "", nil
 }
 
@@ -322,5 +328,78 @@ func TestClaimMappingHandler_PostValid_DotInClaimName(t *testing.T) {
 	}
 	if reader.savedEmailClaim != "user.email" {
 		t.Errorf("expected savedEmailClaim = 'user.email', got %q", reader.savedEmailClaim)
+	}
+}
+
+// ── Story 14-1b: AT#3 — POST-bootstrap GET shows read-only + info banner ───────
+
+// newClaimMappingHandlerForBootstrap creates a ClaimMappingHandler backed by a
+// recordingServerConfigReader with bootstrapCompleted=true (post-bootstrap state).
+func newClaimMappingHandlerForBootstrap(t *testing.T) (*ClaimMappingHandler, *recordingServerConfigReader) {
+	t.Helper()
+	tmpl, err := NewTemplateHandler()
+	if err != nil {
+		t.Fatalf("NewTemplateHandler: %v", err)
+	}
+	reader := &recordingServerConfigReader{bootstrapCompleted: true}
+	return NewClaimMappingHandler(tmpl, reader), reader
+}
+
+// TestClaimMappingHandler_GetPostBootstrap_ShowsReadOnly covers AT#3 (AC2) [P0]:
+// After bootstrap, GET /admin/config/claim-mapping must NOT render an editable
+// name="oidc_user_id_claim" input, and must show the info banner
+// "This claim cannot be changed after bootstrap."
+//
+// RED PHASE — fails until ClaimMappingHandler detects bootstrap_completed.
+func TestClaimMappingHandler_GetPostBootstrap_ShowsReadOnly(t *testing.T) {
+	h, _ := newClaimMappingHandlerForBootstrap(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/config/claim-mapping", nil)
+	w := httptest.NewRecorder()
+	h.Handler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("[AT#3/AC2] expected HTTP 200, got %d", w.Code)
+	}
+	body := w.Body.String()
+
+	// The editable input must NOT be present (bootstrap lock active).
+	if strings.Contains(body, `name="oidc_user_id_claim"`) {
+		t.Error("[AT#3/AC2] expected NO editable name=\"oidc_user_id_claim\" input when bootstrap is completed")
+	}
+
+	// The info banner must be shown.
+	if !strings.Contains(body, "This claim cannot be changed after bootstrap") {
+		t.Error("[AT#3/AC2] expected info banner 'This claim cannot be changed after bootstrap' in body")
+	}
+}
+
+// ── Story 14-1b: AT#4 — PRE-bootstrap GET shows editable input ──────────────
+
+// TestClaimMappingHandler_GetPreBootstrap_ShowsEditableInput covers AT#4 (AC2) [P0]:
+// Before bootstrap, GET /admin/config/claim-mapping must render an editable
+// name="oidc_user_id_claim" input.
+//
+// This is a non-regression test — the existing pre-bootstrap behavior must be preserved.
+func TestClaimMappingHandler_GetPreBootstrap_ShowsEditableInput(t *testing.T) {
+	h := newClaimMappingHandler(t) // bootstrapCompleted=false (default)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/config/claim-mapping", nil)
+	w := httptest.NewRecorder()
+	h.Handler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("[AT#4/AC2] expected HTTP 200, got %d", w.Code)
+	}
+	body := w.Body.String()
+
+	// The editable input must be present (pre-bootstrap: field is editable).
+	if !strings.Contains(body, `name="oidc_user_id_claim"`) {
+		t.Error("[AT#4/AC2] expected editable name=\"oidc_user_id_claim\" input before bootstrap")
+	}
+
+	// The lock banner must NOT be present.
+	if strings.Contains(body, "This claim cannot be changed after bootstrap") {
+		t.Error("[AT#4/AC2] expected NO lock banner before bootstrap")
 	}
 }

@@ -18,6 +18,10 @@ Individual ADR files live in [`docs/architecture/adr/`](adr/).
 | [ADR-009](adr/ADR-009-openapi-spec-first.md) | OpenAPI Spec-First with oapi-codegen | Accepted | 2026-03-18 |
 | [ADR-010](adr/ADR-010-fts-strategy.md) | Full-Text Search Strategy | Accepted | 2026-05-08 |
 | [ADR-011](adr/ADR-011-managed-e2ee-key-escrow.md) | Managed E2EE Key Escrow | Proposed | — |
+| [ADR-012](adr/ADR-012-upstream-repo-no-deployments-example-credentials.md) | Upstream Repo Contains Example-Only Credentials — No Official Deployments | Accepted | 2026-05-04 |
+| [ADR-013](adr/ADR-013-minio-object-storage.md) | MinIO as S3-Compatible Object Store for MVP | Accepted | 2026-05-12 |
+| [ADR-014](adr/ADR-014-deployment-strategy-iac.md) | Deployment Strategy and Infrastructure-as-Code | Accepted | — |
+| [ADR-015](adr/ADR-015-oidc-user-directory-integration.md) | OIDC User Directory Integration Strategy (Protocol A + B) | Accepted | 2026-05-16 |
 
 ## Decision Drivers
 

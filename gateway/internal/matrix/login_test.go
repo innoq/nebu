@@ -39,6 +39,11 @@ func (m *mockCoreClient) GetEvent(_ context.Context, _ *pb.GetEventRequest, _ ..
 	panic("unexpected call: GetEvent")
 }
 
+// Story 14-3a: BulkImportUsers stub — not called in login tests.
+func (m *mockCoreClient) BulkImportUsers(_ context.Context, _ *pb.BulkImportUsersRequest, _ ...grpc.CallOption) (*pb.BulkImportUsersResponse, error) {
+	panic("unexpected call: BulkImportUsers")
+}
+
 func setupOIDCServer(t *testing.T) (*httptest.Server, *rsa.PrivateKey) {
 	t.Helper()
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)

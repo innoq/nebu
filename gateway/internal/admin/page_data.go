@@ -98,7 +98,7 @@ type LoginPageData struct {
 }
 
 // BootstrapPageData holds data for the Bootstrap Wizard page.
-// Step is 1–3 (Steps 1-2: Instance + OIDC; Step 3: Claim Mapping; then OIDC redirect).
+// Step is 1–4 (Steps 1-2: Instance + OIDC; Step 3: Claim Mapping; Step 4: User Import).
 // All field values carry accumulated state.
 type BootstrapPageData struct {
 	PageData     // embed for BootstrapMode + ActiveNav
@@ -117,6 +117,34 @@ type BootstrapPageData struct {
 	OIDCUserIDClaim      string
 	OIDCDisplaynameClaim string
 	OIDCEmailClaim       string
+	// Step 4: User Import fields (Story 14-3b).
+	// OIDCDirectoryEnabled is true when the OIDC directory service is enabled; controls button state.
+	OIDCDirectoryEnabled bool
+	// ImportPreview holds the list of users fetched for the Step 4 preview table.
+	// Populated after action=preview; nil/empty = preview not yet triggered.
+	ImportPreview []ImportPreviewUser
+	// ImportResult holds the counts returned after action=import.
+	// nil = import not yet triggered.
+	ImportResult *ImportResult
+	// ImportError holds a human-readable error message shown in Step 4 when fetch/import fails.
+	ImportError string
+}
+
+// ImportPreviewUser is one row in the Step 4 user preview table (Story 14-3b).
+// All fields are display-only values — DisplayName and Email come from the OIDC directory,
+// MatrixUserID is computed as "@{sanitizeOIDCSub(sub)}:{serverName}".
+type ImportPreviewUser struct {
+	DisplayName  string
+	Email        string
+	MatrixUserID string
+}
+
+// ImportResult holds the counts returned by the BulkImportUsers gRPC call (Story 14-3b).
+// Displayed in the Step 4 result banner after a successful import.
+type ImportResult struct {
+	Imported int32
+	Skipped  int32
+	Failed   int32
 }
 
 // DiscoveredClaim is a single claim key+values pair extracted from an OIDC token
@@ -156,9 +184,15 @@ type StubUser struct {
 // Embeds StubUser and adds a pre-computed Badge for the status_badge component,
 // normalising StubUser.Status "deactivated" → StatusBadgeData{Status: "inactive"}.
 // This avoids template FuncMap helpers — the handler populates Badge directly.
+//
+// Story 14-2c: IsOIDCOnly marks users present in the OIDC directory but absent from
+// Nebu DB. MatrixIDPreview holds the computed "@{localpart}:{serverName}" preview
+// for such users — they have no stored Matrix User ID yet.
 type UserRowData struct {
 	StubUser
-	Badge StatusBadgeData
+	Badge           StatusBadgeData
+	IsOIDCOnly      bool   // true = user exists only in OIDC dir, never logged into Nebu
+	MatrixIDPreview string // computed "@{localpart}:{serverName}" — only set when IsOIDCOnly
 }
 
 // UsersPageData holds data for the Users master-detail page (Story 7.5).
@@ -202,6 +236,11 @@ type UsersPageData struct {
 	ActiveUserRoleOptions []string
 	// ActiveUserRoleValue holds the current role for the pre-selected <option> (Story 7.7).
 	ActiveUserRoleValue string
+	// OIDCWarning is true when oidc_directory_enabled=true but the provider is temporarily unavailable.
+	// When true, OIDCWarningBanner holds the pre-populated AlertBannerData for the warning (Story 14-2c).
+	// Rendered as a non-blocking banner at the top of the users list — does not replace the user list.
+	OIDCWarning       bool
+	OIDCWarningBanner AlertBannerData
 }
 
 // StubRoom is a fake room record used for the Rooms master-detail page until
@@ -302,11 +341,15 @@ type RoleMappingPageData struct {
 // Flash is populated when ?flash= query param is present (PRG pattern).
 type ClaimMappingPageData struct {
 	PageData
-	UserIDClaim      string
-	DisplaynameClaim string
-	EmailClaim       string
-	Errors           map[string]string
-	Flash            AlertBannerData
+	UserIDClaim        string
+	DisplaynameClaim   string
+	EmailClaim         string
+	Errors             map[string]string
+	Flash              AlertBannerData
+	// BootstrapCompleted is true when the bootstrap_completed key is set in server_config.
+	// When true, the claim-mapping template renders oidc_user_id_claim as read-only text
+	// and shows an info banner — the field cannot be changed post-bootstrap (Story 14-1b).
+	BootstrapCompleted bool
 }
 
 // CompliancePageData holds data for the Compliance Access Requests page (Story 7.11).

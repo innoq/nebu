@@ -1,0 +1,73 @@
+# docker-compose.scale.yml — Multi-gateway + multi-core scale override
+#
+# Story 13-5 AC3: Runs 2 gateway instances sharing Core at core:9000.
+# Story 13-6 AC5: Adds a second Core node (core2) that joins the Horde cluster
+#                 via libcluster Epmd strategy using CLUSTER_NODES env var.
+#
+# Usage (gateway scale only):
+#   docker compose -f docker-compose.yml -f docker-compose.scale.yml up --scale gateway=2
+#
+# Usage (2-core cluster + scaled gateways):
+#   docker compose -f docker-compose.yml -f docker-compose.scale.yml up -d
+#
+# Note: When scaling to 2+ gateway replicas the published host port is removed to
+# avoid port conflicts.  Place an external load balancer (nginx, haproxy,
+# or the ALB/Stackit ALB from ADR-014) in front of the gateway replicas.
+# For local k6 load testing, attach k6 to the nebu_default network and
+# point BASE_URL at a specific container's internal address, or add a
+# reverse-proxy sidecar. See k6/README.md for examples.
+
+name: nebu
+
+services:
+  # ─── Core 1 (base service override) ────────────────────────────────────────
+  # Override the base core service to enable distributed Erlang with a named node.
+  core:
+    environment:
+      RELEASE_NODE: "nebu@core"
+      RELEASE_DISTRIBUTION: "name"
+      # core2 is defined below; core1 does not need to list peers — libcluster Gossip
+      # discovers nodes dynamically via multicast within the Docker network.
+      CLUSTER_STRATEGY: "gossip"
+
+  # ─── Core 2 (second clustering node) ────────────────────────────────────────
+  # Story 13-6 AC5: second Core node that joins the Horde cluster via libcluster.
+  core2:
+    build:
+      context: ./core
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
+        BUILD_TIME: ${BUILD_TIME:-unknown}
+        RELEASE_VERSION: ${RELEASE_VERSION:-unknown}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    secrets: [internal_secret]
+    environment:
+      NEBU_DB_URL: "postgresql://nebu_app:nebu_app_dev_pw@postgres:5432/nebu"
+      DATABASE_URL: "ecto://nebu_app:nebu_app_dev_pw@postgres:5432/nebu"
+      NEBU_INTERNAL_SECRET_FILE: "/run/secrets/internal_secret"
+      NEBU_GATEWAY_INTERNAL_URL: "http://gateway:8008"
+      NEBU_SERVER_NAME: "localhost"
+      NEBU_PII_ENCRYPTION_KEY: "${NEBU_PII_ENCRYPTION_KEY:-6465766b65793030303030303030303030303030303030303030303030303030}"
+      RELEASE_NODE: "nebu@core2"
+      RELEASE_DISTRIBUTION: "name"
+      # Connect to core1 via Epmd peer list; Gossip multicast also discovers dynamically.
+      CLUSTER_NODES: "nebu@core"
+      CLUSTER_STRATEGY: "gossip"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # ─── Gateway override ───────────────────────────────────────────────────────
+  gateway:
+    # Remove the fixed host-port binding so Docker Compose can start N replicas
+    # without "address already in use" conflicts.
+    ports: []
+    # Both replicas share the same Core gRPC address and internal secret.
+    environment:
+      NEBU_CORE_GRPC_ADDR: "core:9000"
+      NEBU_INTERNAL_SECRET_FILE: "/run/secrets/internal_secret"

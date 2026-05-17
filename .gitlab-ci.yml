@@ -19,8 +19,11 @@ variables:
 
 # Suppress duplicate pipelines: when a branch has an open MR, only the MR
 # pipeline runs. Without this, every push fires both a branch and an MR pipeline.
+# Tag pipelines (v*.*.* SemVer) are always allowed — they trigger the release stage.
 workflow:
   rules:
+    # RC/beta tags (v1.0.0-rc1) are intentionally excluded — only stable SemVer triggers release.
+    - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/'
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'
       when: never
@@ -40,8 +43,10 @@ stages:
   - unit
   - scan
   - verify
+  - validate-iac
   - build
   - integration
+  - release
 
 # ─── CI Image Builds ──────────────────────────────────────────────────────────
 # Kaniko builds container images without a Docker daemon.
@@ -397,3 +402,127 @@ integration-test-k8s:
      - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
        when: manual
        allow_failure: true
+
+# ─── IaC Validation ───────────────────────────────────────────────────────────
+# Story 13-1 AC6: Validates OpenTofu formatting and syntax on every push that
+# touches deploy/. No cloud credentials required — tofu validate checks HCL
+# syntax and type correctness only, without connecting to any provider.
+
+validate-iac:
+  stage: validate-iac
+  image: ghcr.io/opentofu/opentofu:1.9
+  cache:
+    key: "tofu-${CI_COMMIT_REF_SLUG}"
+    paths:
+      - deploy/tofu/examples/aws/.terraform/
+      - deploy/tofu/examples/stackit/.terraform/
+      - deploy/tofu/examples/k8s/.terraform/
+  script:
+    - echo "==> OpenTofu version"
+    - tofu version
+    - echo "==> Checking HCL formatting (tofu fmt -check -recursive)"
+    - tofu fmt -check -recursive deploy/tofu/
+    - echo "==> Validating deploy/tofu/examples/aws"
+    - (cd deploy/tofu/examples/aws && tofu init -backend=false && tofu validate)
+    - echo "==> Validating deploy/tofu/examples/stackit"
+    - (cd deploy/tofu/examples/stackit && tofu init -backend=false && tofu validate)
+    - echo "==> Validating deploy/tofu/examples/k8s"
+    - (cd deploy/tofu/examples/k8s && tofu init -backend=false && tofu validate)
+    - echo "==> IaC validation passed."
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - deploy/**/*
+    - if: '$CI_COMMIT_BRANCH =~ /^feature\//'
+      changes:
+        - deploy/**/*
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - deploy/**/*
+
+# Story 13-4a: Helm chart lint and template render check.
+# Uses alpine/helm which ships only helm — separate job from validate-iac (different image).
+# AC1: helm lint 0 warnings; AC2: helm template renders valid YAML.
+validate-helm:
+  stage: validate-iac
+  image: alpine/helm:3.17
+  script:
+    - echo "==> Helm version"
+    - helm version
+    - echo "==> Linting deploy/helm/nebu/"
+    - helm lint deploy/helm/nebu/ --set gateway.image.tag=validate --set core.image.tag=validate --set media.image.tag=validate
+    - echo "==> Template render check deploy/helm/nebu/"
+    - helm template nebu deploy/helm/nebu/ --set gateway.image.tag=validate --set core.image.tag=validate --set media.image.tag=validate > /dev/null
+    - echo "==> Helm validation passed."
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - deploy/**/*
+    - if: '$CI_COMMIT_BRANCH =~ /^feature\//'
+      changes:
+        - deploy/**/*
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - deploy/**/*
+
+# ─── Release Image Builds ─────────────────────────────────────────────────────
+# Triggered exclusively by SemVer Git tags (e.g. git tag v1.0.0 && git push origin v1.0.0).
+# Produces versioned images: <CI_REGISTRY_IMAGE>/nebu-gateway:<semver> and nebu-core:<semver>.
+# These images are referenced by operators via nebu_version in OpenTofu variables or
+# gateway.image.tag / core.image.tag in Helm values.
+#
+# Image naming: nebu-gateway / nebu-core (not gateway / core as in SHA-tagged build images).
+# The SHA-tagged images (build-gateway-image / build-core-image) are kept unchanged —
+# they feed integration-test-k8s and must not be modified.
+#
+# --cache=false: avoid reusing branch-build Kaniko cache layers in release builds (deterministic, reproducible production images).
+
+release-gateway-image:
+  <<: *build_ci_image
+  stage: release
+  interruptible: false
+  needs: []  # run independent of branch-only build/integration jobs
+  script:
+    - RELEASE_VERSION="${CI_COMMIT_TAG#v}" && /kaniko/executor
+      --context "${CI_PROJECT_DIR}/gateway"
+      --dockerfile gateway/Dockerfile
+      --destination "${CI_REGISTRY_IMAGE}/nebu-gateway:${RELEASE_VERSION}"
+      --build-arg "GIT_COMMIT=${CI_COMMIT_SHA}"
+      --build-arg "BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      --build-arg "RELEASE_VERSION=${RELEASE_VERSION}"
+      --cache=false
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/'
+
+release-core-image:
+  <<: *build_ci_image
+  stage: release
+  interruptible: false
+  needs: []  # run independent of branch-only build/integration jobs
+  script:
+    - RELEASE_VERSION="${CI_COMMIT_TAG#v}" && /kaniko/executor
+      --context "${CI_PROJECT_DIR}/core"
+      --dockerfile core/Dockerfile
+      --destination "${CI_REGISTRY_IMAGE}/nebu-core:${RELEASE_VERSION}"
+      --build-arg "GIT_COMMIT=${CI_COMMIT_SHA}"
+      --build-arg "BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      --build-arg "RELEASE_VERSION=${RELEASE_VERSION}"
+      --cache=false
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/'
+release-media-image:
+  <<: *build_ci_image
+  stage: release
+  interruptible: false
+  needs: []     # run independent of branch-only build/integration jobs
+  script:
+    - RELEASE_VERSION="${CI_COMMIT_TAG#v}" && /kaniko/executor
+      --context "${CI_PROJECT_DIR}/media"
+      --dockerfile media/Dockerfile
+      --destination "${CI_REGISTRY_IMAGE}/nebu-media:${RELEASE_VERSION}"
+      --build-arg "GIT_COMMIT=${CI_COMMIT_SHA}"
+      --build-arg "BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      --build-arg "RELEASE_VERSION=${RELEASE_VERSION}"
+      --cache=false
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/'

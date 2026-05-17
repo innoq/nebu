@@ -19,7 +19,27 @@ gateway/
 └── internal/
     ├── auth/                   ← OIDC token validation, bootstrap mode
     │   ├── oidc.go             ← go-oidc provider, token validation
-    │   └── bootstrap.go        ← First-admin bootstrap mode
+    │   └── bootstrap.go        ← First-admin bootstrap mode (Story 14-3b: extended with Step 4
+│                              User Import; BootstrapHandler gains oidcFetcher OIDCDirectoryFetcher,
+│                              core BulkImportClient, serverName; WithImportServices fluent setter;
+│                              GET ?step=4 renders import step; StepHandler case 4 handles
+│                              action=preview + action=import; OIDCDirectoryFetcher and
+│                              BulkImportClient interfaces defined here for testability;
+│                              Story 14-3c: scimFetcher SCIMFetcher field added; SCIM takes
+│                              priority over OIDC when both enabled (AC1); singleton importInProgress
+│                              atomic.Bool guard → HTTP 409 on concurrent import (HR-3);
+│                              importProgress *importProgressState updated atomically during import;
+│                              OIDCDirectoryEnabled = oidcEnabled || scimEnabled in Handler and
+│                              StepHandler step 4; preview action uses SCIM-preferred fetcher
+│                              selection (MINOR-2 fix))
+│   └── bootstrap_scim.go      ← Story 14-3c: SCIM 2.0 extensions to BootstrapHandler;
+│                              SCIMFetcher interface (mirrors OIDCDirectoryFetcher);
+│                              importProgressState struct (imported/total/failed atomic.Int32
+│                              + done atomic.Bool); package-level singletons importInProgress
+│                              + importProgress; importStatusHandler → JSON response shape
+│                              {imported,total,failed,done}; WithSCIMFetcher fluent setter;
+│                              resetImportState() test helper (in production file to avoid
+│                              duplicate-symbol build errors; no testing import)
     ├── matrix/                 ← Matrix Client-Server API handlers
     │   ├── login.go            ← POST /_matrix/client/v3/login (SSO + OIDC)
     │   ├── logout.go           ← POST /_matrix/client/v3/logout; NewLogoutHandlerWithCore cleans up
@@ -62,6 +82,12 @@ gateway/
     │   │                          maps gRPC PERMISSION_DENIED → 403 M_FORBIDDEN (non-member),
     │   │                          NOT_FOUND → 404 M_NOT_FOUND; returns Matrix event JSON via
     │   │                          protoEventToMatrix (shared with other event handlers)
+    │   ├── oidc_discovery.go   ← MSC2965 OIDC discovery endpoints (Story 13-7):
+    │   │                          AuthIssuerHandler — GET auth_issuer returns {"issuer":"<cfg.OIDCIssuer>"};
+    │   │                          AuthMetadataHandler — GET auth_metadata proxies OIDC provider's
+    │   │                          /.well-known/openid-configuration; 5-minute TTL cache (metadataCache,
+    │   │                          sync.RWMutex); 503 M_UNAVAILABLE on provider error; registered on
+    │   │                          both unstable/org.matrix.msc2965/ and stable v1/ paths; unauthenticated
     │   └── ...                 ← typing, receipts, messages, keys
     ├── admin/                  ← Admin UI (Go Templates + SSR) + Admin API
     │   ├── api.go              ← /api/v1/* Router (oapi-codegen StrictHandler)
@@ -79,14 +105,68 @@ gateway/
     │   │                          oidc_user_id_claim, oidc_displayname_claim, oidc_email_claim inside the
     │   │                          same runInTx as admin_group_claim + bootstrap_completed (AC2);
     │   │                          ServerConfigReader interface extended with LoadClaimMapping +
-    │   │                          SaveClaimMapping methods on postgresServerConfigReader
+    │   │                          SaveClaimMapping methods on postgresServerConfigReader;
+    │   │                          Story 14-3b: post-bootstrap redirect changed from /admin/dashboard
+    │   │                          to /admin/bootstrap?step=4 (User Import wizard step)
+    │   ├── config.go           ← ConfigHandler (Story 7.10/9.4/14-2a): GET/POST /admin/config;
+    │   │                          serves server configuration page; gRPC path calls Core UpdateServerConfig
+    │   │                          for string fields; direct DB upsert via ConfigKeyWriter interface for
+    │   │                          proto3 bool fields (oidc_directory_enabled — proto3 default false
+    │   │                          indistinguishable from "not set"); WithConfigDB(repo) wires the direct
+    │   │                          DB path; StubConfig gains OidcDirectoryEnabled bool + OidcDirectoryEndpoint
+    │   │                          string (Story 14-2a); config.html renders toggle + conditional endpoint
+    │   │                          field (plain JS onchange — no Alpine.js in templates);
+    │   │                          Story 14-3c: secret []byte field + WithSecret(secret) fluent setter
+    │   │                          for AES-256-GCM encryption of scim_bearer_token on save (CR-1);
+    │   │                          StubConfig gains ScimEnabled bool, ScimBaseURL string,
+    │   │                          ScimBearerTokenSet bool; UpdateConfigHandler parses scim_enabled/
+    │   │                          scim_base_url/scim_bearer_token; HTTPS validation at save time (CR-2);
+    │   │                          token encrypted via encryptAES256GCM before DB upsert; only persisted
+    │   │                          when form field is non-empty (leave-existing semantics)
     │   ├── page_data.go        ← PageData struct + newPageData() helper + SetBuildInfo();
     │   │                          BuildVersion/GitCommit/BuildTime fields on PageData; SetBuildInfo
     │   │                          called once from main.go; newPageData() used by all authenticated
     │   │                          handlers to pre-populate build info for the footer (Story 11-9);
     │   │                          ErrorMode bool suppresses footer on error pages;
     │   │                          ClaimMappingPageData (Story 11-10): OIDCUserIDClaim,
-    │   │                          OIDCDisplaynameClaim, OIDCEmailClaim + per-field validation errors
+    │   │                          OIDCDisplaynameClaim, OIDCEmailClaim + per-field validation errors;
+    │   │                          Story 14-2c: UserRowData gains IsOIDCOnly bool + MatrixIDPreview string
+    │   │                          for OIDC-only users (never logged into Nebu); UsersPageData gains
+    │   │                          OIDCWarning bool + OIDCWarningBanner AlertBannerData for non-blocking
+    │   │                          availability warning when OIDC directory is unreachable;
+    │   │                          Story 14-3b: BootstrapPageData extended with Step 4 fields —
+    │   │                          OIDCDirectoryEnabled bool, ImportPreview []ImportPreviewUser,
+    │   │                          ImportResult *ImportResult, ImportError string;
+    │   │                          ImportPreviewUser{DisplayName, Email, MatrixUserID} — one row in preview table;
+    │   │                          ImportResult{Imported, Skipped, Failed int32} — BulkImportUsers response counts
+    │   ├── oidc_directory.go   ← OIDCDirectoryService (Story 14-2b): outbound HTTP client for OIDC
+    │   │                          user directory endpoint; secretString type masks bearer token in logs
+    │   │                          (CR-3); HTTPS-only validation at each call (CR-1); CheckRedirect
+    │   │                          ErrUseLastResponse (CR-2); io.LimitReader 10 MB cap (CR-4);
+    │   │                          30-second cache keyed on SHA-256(endpoint+token) (MR-1);
+    │   │                          singleflight.Group collapses concurrent refreshes (MR-4);
+    │   │                          per-session rate limiter via sync.Map[sessionID → *rate.Limiter]
+    │   │                          at 5 req/s (CR-5 — caller calls Allow(sessionID) before FetchUsers);
+    │   │                          explicit HTTP status handling (MR-3); HR-2 SSRF trust boundary
+    │   │                          documented (Option B — private IP blocking tracked as follow-up);
+    │   │                          Story 14-2c: IsEnabled() method exposes enabled flag for handler-level
+    │   │                          distinction between "disabled (no calls)" vs "enabled but empty (possibly
+    │   │                          unreachable)";
+    │   │                          validateEndpoint() reused by scim_client.go (Story 14-3c)
+    │   ├── scim_client.go      ← SCIMClient (Story 14-3c / ADR-015 Protocol B): SCIM 2.0 RFC 7644
+    │   │                          paginated user fetch; SCIMClientConfig{BaseURL, BearerToken, Enabled,
+    │   │                          HTTPClient, Logger}; NewSCIMClient constructor with hardened default
+    │   │                          http.Client (no redirect, 10s timeout); IsEnabled() + FetchUsers();
+    │   │                          secretString CR-1: token only in Authorization header, never logged;
+    │   │                          validateEndpoint() CR-2: HTTPS-only before any outbound call;
+    │   │                          io.LimitReader 5 MB per page CR-4; 100k user total cap HR-1
+    │   │                          (checked via totalResults field AND running count);
+    │   │                          truncate() on all SCIM string fields HR-3;
+    │   │                          buildPageURL: base URL is SCIM service root, /Users appended if absent;
+    │   │                          scimSub() prefers userName → id (email-style sub from Azure AD/Okta);
+    │   │                          primaryEmail() prefers primary=true → first → empty;
+    │   │                          SSRF HR-2: private IPs not blocked (same accepted risk as OIDC dir);
+    │   │                          RFC 7644 pagination: 1-based startIndex, terminates on empty Resources
     │   └── templates/          ← Embedded HTML templates (go:embed);
     │       ├── claim-mapping.html ← Admin UI Claim Mapping settings page (Story 11-10):
     │       │                        DaisyUI form with datalist suggestions (sub/preferred_username/email)
@@ -118,7 +198,10 @@ gateway/
     │                              string (Story 11-10): per-request DB lookup for oidc_user_id_claim;
     │                              nil loader falls back to "name" claim (backward-compat)
     ├── registry/               ← Elixir node registry (/internal/nodes/*)
-    ├── compliance/             ← Compliance API handlers (four-eyes, export, anonymize)
+    ├── compliance/             ← Compliance API handlers (four-eyes, export, anonymize, GDPR deletion)
+    │   │                          GdprDeleteHandler (Story 14.4): DELETE /api/v1/admin/users/{userId}
+    │   │                          Orchestrates: DeactivateUser gRPC → DeleteUserKeys gRPC (best-effort) →
+    │   │                          anonymizeUser TX → gdpr_deletion audit (never-raise) → 200
     ├── health/                 ← /health + /ready handlers; info.go adds GET /info
     │   │                          (NewInfoHandler — static JSON, no DB/gRPC, zero allocs per request;
     │   │                          component/version/gitCommit/buildTime set via ldflags at Docker build
@@ -243,7 +326,17 @@ core/apps/
 │       ├── token.ex            ← v1_<base64url(ts+cursor_map)> format
 │       ├── pg_store/postgres.ex ← persist_since_token/3 (legacy) + /4 (per-device);
 │       │                           get_since_token/1 + /2; invalidate_session/1 + /2
-│       └── session_supervisor.ex ← destroy_session/1 (all devices) + /2 (per-device)
+│       ├── session_supervisor.ex ← destroy_session/1 (all devices) + /2 (per-device)
+│       ├── bulk_importer.ex    ← Nebu.Session.BulkImporter (Story 14-3a): admin bulk user provisioning;
+│       │                           import_users([%{user_id, system_role, display_name, email}]) →
+│       │                           {:ok, %{imported, skipped, failed}}; delegates to lookup_module (DB
+│       │                           lookup: signing_key_id IS NOT NULL = skip), user_store_module (upsert),
+│       │                           provisioner_module (keypairs + PII encryption); identical flow to
+│       │                           TokenValidator.Postgres.provision_new_user; partial success: exceptions
+│       │                           in import_one/2 are rescued → :failed; batch continues
+│       └── bulk_importer/
+│           └── postgres.ex     ← Nebu.Session.BulkImporter.Postgres: lookup/1 checks signing_key_id
+│                                   IS NOT NULL → :already_provisioned | :not_provisioned | {:error, reason}
 ├── presence/         ← FR15: Presence status (online/offline/unavailable)
 ├── event_dispatcher/ ← EventBus gRPC streaming + pg Process Groups fanout + FTS search layer
 │   └── lib/nebu/
@@ -282,7 +375,12 @@ core/apps/
 │           │                      user_id sourced exclusively from trusted_identity(stream) metadata
 │           │                      (NEVER from request.user_id — security invariant); offset capped at
 │           │                      10_000 to prevent expensive deep-page queries; next_batch is
-│           │                      Base64(offset+limit) for cursor pagination (Story 11-3)
+│           │                      Base64(offset+limit) for cursor pagination (Story 11-3);
+│           │                      bulk_import_users/2 (Story 14-3a): admin bulk provisioning RPC;
+│           │                      delegates to configurable bulk_importer_module() → Nebu.Session.BulkImporter;
+│           │                      returns BulkImportUsersResponse{imported, skipped, failed}; partial success
+│           │                      (exception in import_one/2 rescued → :failed, batch continues);
+│           │                      configurable via :event_dispatcher, :bulk_importer_module
 │           ├── dispatcher.ex   ← Routes events to rooms + subscribers
 │           ├── bus.ex          ← gRPC ServerStream to Go Gateway
 │           └── search/
@@ -376,7 +474,8 @@ Key gRPC services: `SendEvent`, `CreateRoom`, `JoinRoom`, `GetMessages`, `GetRoo
 `InvalidateUserSessions` (per-device or full-user session cleanup, Story 9-22),
 `GetRelations` (thread relation events for a parent event_id, Story 9-28/9-29),
 `SearchMessages` (full-text search with membership enforcement, Story 11-3),
-`GetEvent` (single event fetch by event_id scoped to a room, membership-enforced, Story 11-8).
+`GetEvent` (single event fetch by event_id scoped to a room, membership-enforced, Story 11-8),
+`BulkImportUsers` (admin bulk provisioning of OIDC users, identical flow to first login, Story 14-3a).
 
 **`GetSyncDeltaRequest` fields (Story 9-22):**
 

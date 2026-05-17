@@ -75,6 +75,12 @@ defmodule Nebu.EventDispatcher.Server do
     Application.get_env(:event_dispatcher, :search_db_module, Nebu.Search.DB)
   end
 
+  # ─── Configurable BulkImporter module for testability — Story 14-3a ──────────
+  # Override via Application.put_env(:event_dispatcher, :bulk_importer_module, FakeBulkImporter) in tests.
+  defp bulk_importer_module do
+    Application.get_env(:event_dispatcher, :bulk_importer_module, Nebu.Session.BulkImporter)
+  end
+
   def send_event(request, _stream) do
     room_id = request.room_id
     sender_id = request.sender_id
@@ -2280,6 +2286,18 @@ defmodule Nebu.EventDispatcher.Server do
   def update_server_config(%Core.UpdateServerConfigRequest{} = req, stream) do
     {actor_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
 
+    # Story 14.1a: enforce claim lock — matrix_user_id_claim cannot be changed
+    # after bootstrap_completed is set in server_config.
+    if req.matrix_user_id_claim != "" do
+      {:ok, config} = admin_db_module().get_server_config()
+
+      if Map.get(config, "bootstrap_completed") != nil do
+        raise GRPC.RPCError,
+          status: GRPC.Status.failed_precondition(),
+          message: "matrix_user_id_claim cannot be changed after bootstrap"
+      end
+    end
+
     changes =
       []
       |> maybe_add_change("instance_name", req.instance_name)
@@ -2288,6 +2306,14 @@ defmodule Nebu.EventDispatcher.Server do
       |> maybe_add_int_change("room_default_max_members", req.room_default_max_members)
       |> maybe_add_change("room_default_visibility", req.room_default_visibility)
       |> maybe_add_int_change("audit_log_retention_days", req.audit_log_retention_days)
+      |> maybe_add_change("oidc_user_id_claim", req.matrix_user_id_claim)
+      # Story 14-2a: oidc_directory_endpoint is a string — safe to use maybe_add_change
+      # (empty string = "do not update" convention). oidc_directory_enabled is a bool
+      # proto3 field — cannot distinguish false-from-unset, so it is persisted via the
+      # direct DB upsert path in the Go gateway PATCH handler. The proto field exists for
+      # completeness; the Core gRPC path does not process bool fields to avoid inadvertently
+      # overwriting the stored value with the proto default (false) on unrelated gRPC calls.
+      |> maybe_add_change("oidc_directory_endpoint", req.oidc_directory_endpoint)
 
     if changes == [] do
       %Core.UpdateServerConfigResponse{ok: true}
@@ -3062,6 +3088,62 @@ defmodule Nebu.EventDispatcher.Server do
           _ -> %{}
         end
       true -> %{}
+    end
+  end
+
+  # ─── BulkImportUsers — Story 14-3a: Admin bulk user provisioning ───────────────
+  #
+  # Delegates to the configurable BulkImporter module so the Go gateway can pre-provision
+  # OIDC users before first login. Each user is processed with the same flow as
+  # validate_token/2 (upsert user row + keypairs + encrypted PII).
+  #
+  # Security hardening (SEC Gate 2, F-2 + F-3):
+  #   1. trusted_identity extracted from gRPC stream metadata — caller must be identified.
+  #   2. system_role is hard-coded to "user" — the proto field was removed; callers
+  #      cannot escalate privileges by sending a different role on the wire.
+  #   3. Audit log emitted after every call (F-3) — aggregate entry per bulk operation.
+  #
+  # Partial success: imported + skipped + failed = len(request.users).
+  # No gRPC error is raised unless the BulkImporter raises an unexpected exception.
+  def bulk_import_users(%Core.BulkImportUsersRequest{} = request, stream) do
+    {actor_id, _system_role} = Nebu.Grpc.Metadata.trusted_identity(stream)
+
+    users =
+      Enum.map(request.users, fn claims ->
+        %{
+          user_id: claims.user_id,
+          # Hard-code "user" — never accept a caller-supplied system_role.
+          # The system_role field was removed from the proto (SEC Gate 2, F-2).
+          system_role: "user",
+          display_name: claims.display_name,
+          email: claims.email
+        }
+      end)
+
+    case bulk_importer_module().import_users(users) do
+      {:ok, %{imported: imported, skipped: skipped, failed: failed}} ->
+        # F-3: emit aggregate audit entry — never-raise (ignore return value).
+        _audit_result =
+          audit_writer_module().log(
+            actor_id,
+            "users_bulk_imported",
+            "users",
+            "bulk",
+            %{
+              imported: imported,
+              skipped: skipped,
+              failed: failed,
+              # Cap to 100 user_ids to prevent multi-MB audit rows on large imports.
+              user_ids: request.users |> Enum.map(& &1.user_id) |> Enum.take(100)
+            },
+            "success"
+          )
+
+        %Core.BulkImportUsersResponse{
+          imported: imported,
+          skipped: skipped,
+          failed: failed
+        }
     end
   end
 end

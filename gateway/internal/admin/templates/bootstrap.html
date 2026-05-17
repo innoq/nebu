@@ -4,12 +4,12 @@
 <div class="max-w-lg mx-auto">
   <h1 class="text-2xl font-bold mb-6">Bootstrap Setup</h1>
 
-  <!-- DaisyUI steps progress indicator -->
+  <!-- DaisyUI steps progress indicator (4 steps: Instance, OIDC, Claims, Import) -->
   <ul class="steps steps-horizontal w-full mb-8">
     <li class="step {{ if ge .Step 1 }}step-primary{{ end }}">Instance</li>
     <li class="step {{ if ge .Step 2 }}step-primary{{ end }}">OIDC</li>
     <li class="step {{ if ge .Step 3 }}step-primary{{ end }}">Claims</li>
-    <li class="step">Connect</li>
+    <li class="step {{ if ge .Step 4 }}step-primary{{ end }}">Import</li>
   </ul>
 
   <div class="card bg-base-200 shadow-md">
@@ -148,6 +148,10 @@
           <span>💡 Choose carefully — the Matrix User ID Source Claim is hard to change after your first users log in.</span>
         </div>
 
+        <div role="alert" class="alert alert-info mb-4">
+          <span class="text-sm">The Matrix User ID claim cannot be changed after completing setup.</span>
+        </div>
+
         <div class="form-control mb-4">
           <label class="label" for="oidc_user_id_claim">
             <span class="label-text">Matrix User ID Source Claim</span>
@@ -234,9 +238,200 @@
       </form>
       {{ end }}
 
+      {{ if eq .Step 4 }}
+      <!-- Step 4: User Import (Story 14-3b / Story 14-3c) -->
+      <h2 class="card-title">Step 4: User Import</h2>
+
+      {{ if .ImportError }}
+      <div role="alert" class="alert alert-error mb-4">
+        <span>{{ .ImportError }}</span>
+      </div>
+      {{ end }}
+
+      {{ if .ImportResult }}
+      <!-- Import result banner (shown after successful import) -->
+      <div role="status" class="alert alert-success mb-4">
+        <span>
+          Import complete:
+          <strong>{{ .ImportResult.Imported }} imported</strong>,
+          {{ .ImportResult.Skipped }} skipped,
+          {{ .ImportResult.Failed }} failed.
+        </span>
+      </div>
+      <div class="card-actions justify-end mt-4">
+        <a href="/admin/dashboard" class="btn btn-primary">Go to Dashboard</a>
+      </div>
+      {{ else }}
+      <!-- Import not yet triggered — show form section -->
+      {{ if .OIDCDirectoryEnabled }}
+        {{ if .ImportPreview }}
+        <!-- Preview table loaded — show table + "Import from SCIM" or "Import all" action -->
+        <div class="overflow-x-auto mb-4">
+          <table class="table table-zebra w-full text-sm">
+            <thead>
+              <tr>
+                <th>Display Name</th>
+                <th>Email</th>
+                <th>Matrix User ID</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{ range .ImportPreview }}
+              <tr>
+                <td>{{ .DisplayName }}</td>
+                <td>{{ .Email }}</td>
+                <td class="font-mono text-xs">{{ .MatrixUserID }}</td>
+              </tr>
+              {{ end }}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Story 14-3c: Progress bar + live count (shown during SCIM import) -->
+        <div id="import-progress-section" class="mb-4" style="display:none">
+          <p class="text-sm text-base-content/70 mb-1">
+            Importing users…
+            <span id="import-count">0</span> / <span id="import-total">0</span>
+          </p>
+          <progress class="progress progress-primary w-full" id="import-progress-bar" value="0" max="100"></progress>
+        </div>
+
+        <form id="import-form" method="POST" action="/admin/bootstrap">
+          <input type="hidden" name="_csrf" value="{{ .CSRFToken }}">
+          <input type="hidden" name="step" value="4">
+          <input type="hidden" name="action" value="import">
+          <div class="card-actions justify-between">
+            <a href="/admin/dashboard" class="btn btn-outline">Skip and finish</a>
+            <button type="submit" id="import-btn" class="btn btn-primary">Import from SCIM</button>
+          </div>
+        </form>
+        {{ else }}
+        <!-- Preview not yet triggered — show "Import from OIDC" button -->
+        <div role="note" class="alert alert-info mb-4">
+          <span class="text-sm">Click <strong>Import from OIDC</strong> to fetch the user list from your OIDC provider and preview which users will be pre-provisioned.</span>
+        </div>
+        <form method="POST" action="/admin/bootstrap">
+          <input type="hidden" name="_csrf" value="{{ .CSRFToken }}">
+          <input type="hidden" name="step" value="4">
+          <input type="hidden" name="action" value="preview">
+          <div class="card-actions justify-between">
+            <a href="/admin/dashboard" class="btn btn-outline">Skip and finish</a>
+            <button type="submit" class="btn btn-primary">Import from OIDC</button>
+          </div>
+        </form>
+        {{ end }}
+      {{ else }}
+      <!-- AC4: OIDC directory disabled — disabled button + explanatory message -->
+      <!-- Story 14-3c: The "Provider does not support user listing" message is preserved
+           for backward compatibility (AT-4 from Story 14-3b). SCIM is configured via
+           Server Config — when enabled, OIDCDirectoryEnabled is set to true by the handler. -->
+      <div role="note" class="alert alert-warning mb-4">
+        <span>Provider does not support user listing. Enable the OIDC directory or SCIM integration in Server Config to use bulk import.</span>
+      </div>
+      <form method="POST" action="/admin/bootstrap">
+        <input type="hidden" name="_csrf" value="{{ .CSRFToken }}">
+        <input type="hidden" name="step" value="4">
+        <div class="card-actions justify-between">
+          <a href="/admin/dashboard" class="btn btn-outline">Skip and finish</a>
+          <button type="submit" class="btn btn-primary" disabled>Import from SCIM</button>
+        </div>
+      </form>
+      {{ end }}
+      {{ end }}
+
+      {{ end }}
+
     </div>
   </div>
 </div>
 {{ end }}
 
-{{ define "scripts" }}{{ end }}
+{{ define "scripts" }}
+{{/* Story 14-3c: SCIM import progress polling JS.
+     Fires when the "Import from SCIM" button is clicked.
+     Shows the progress bar, submits the form via fetch (non-blocking),
+     then polls /api/v1/admin/bootstrap/import-status every 2 seconds.
+     MINOR-3 fix: uses fetch + polling instead of waitForTimeout. */}}
+<script>
+(function() {
+  'use strict';
+
+  const importForm = document.getElementById('import-form');
+  const importBtn  = document.getElementById('import-btn');
+  const progressSection = document.getElementById('import-progress-section');
+  const progressBar     = document.getElementById('import-progress-bar');
+  const importCount     = document.getElementById('import-count');
+  const importTotal     = document.getElementById('import-total');
+
+  if (!importForm || !importBtn) return; // not on Step 4 with SCIM form
+
+  const POLL_INTERVAL_MS = 2000;
+  const STATUS_URL = '/api/v1/admin/bootstrap/import-status';
+
+  let pollTimer = null;
+
+  function stopPolling() {
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
+
+  function updateProgress(data) {
+    const total    = data.total    || 0;
+    const imported = data.imported || 0;
+
+    if (importCount) importCount.textContent = String(imported);
+    if (importTotal) importTotal.textContent  = String(total);
+
+    if (progressBar) {
+      progressBar.max   = total > 0 ? total : 100;
+      progressBar.value = imported;
+    }
+
+    if (data.done) {
+      stopPolling();
+      // Reload the page to show the ImportResult banner from the server.
+      window.location.reload();
+    }
+  }
+
+  function startPolling() {
+    pollTimer = setInterval(function() {
+      fetch(STATUS_URL, { credentials: 'same-origin' })
+        .then(function(r) { return r.json(); })
+        .then(updateProgress)
+        .catch(function(err) {
+          console.warn('import-status poll failed:', err);
+        });
+    }, POLL_INTERVAL_MS);
+  }
+
+  importForm.addEventListener('submit', function(event) {
+    event.preventDefault(); // prevent full-page navigation
+
+    // Show progress UI
+    if (progressSection) progressSection.style.display = 'block';
+    if (importBtn) {
+      importBtn.disabled = true;
+      importBtn.textContent = 'Importing…';
+    }
+
+    // Start polling immediately before the import even starts,
+    // so any racing status responses are captured.
+    startPolling();
+
+    // Submit the form via fetch (fire-and-forget — progress comes from polling).
+    const formData = new FormData(importForm);
+    fetch(importForm.action, {
+      method: 'POST',
+      body: new URLSearchParams(formData),
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+    }).catch(function(err) {
+      console.warn('import submit failed:', err);
+    });
+  });
+}());
+</script>
+{{ end }}

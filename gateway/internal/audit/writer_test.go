@@ -191,6 +191,11 @@ func (m *mockCoreClient) GetEvent(_ context.Context, _ *pb.GetEventRequest, _ ..
 	panic("unexpected call: GetEvent")
 }
 
+// Story 14-3a: BulkImportUsers stub — not called in audit tests.
+func (m *mockCoreClient) BulkImportUsers(_ context.Context, _ *pb.BulkImportUsersRequest, _ ...grpc.CallOption) (*pb.BulkImportUsersResponse, error) {
+	panic("unexpected call: BulkImportUsers")
+}
+
 // ─── AC11 Test 5: LogEvent_Success ───────────────────────────────────────────
 //
 // Given: Mock CoreServiceClient.WriteAuditLog returns {Ok: true}, nil

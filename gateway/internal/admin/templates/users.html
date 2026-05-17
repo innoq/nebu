@@ -15,18 +15,32 @@
     </form>
   </div>
 
+  {{/* Story 14-2c: non-blocking OIDC directory unavailability warning */}}
+  {{ if .OIDCWarning }}
+  <div class="px-4 pt-2">
+    {{ template "alert_banner" .OIDCWarningBanner }}
+  </div>
+  {{ end }}
+
   <div class="flex-1 overflow-y-auto">
     {{ if .Users }}
     <ul role="listbox" aria-label="Users" data-loading-skeleton class="p-2">
       {{ range .Users }}
       <li>
+        {{- /* Story 14-2c: OIDC-only users link to their sub as userId preview (no detail panel yet) */}}
         <a href="/admin/users/{{ .ID }}"
            role="option"
            aria-selected="{{ if eq .ID $.ActiveItemID }}true{{ else }}false{{ end }}"
            class="flex items-center gap-3 px-3 py-3 rounded text-sm
                   {{ if eq .ID $.ActiveItemID }}active bg-primary text-primary-content border-l-[3px] border-primary{{ else }}text-base-content hover:bg-base-300{{ end }}
                   focus:outline-none focus:ring-2 focus:ring-primary">
-          <span class="font-medium flex-1 truncate">{{ .DisplayName }}</span>
+          <span class="flex flex-col flex-1 min-w-0">
+            <span class="font-medium truncate">{{ .DisplayName }}</span>
+            {{- /* Story 14-2c: show computed Matrix User ID preview for OIDC-only users */}}
+            {{ if .IsOIDCOnly }}
+            <span class="text-xs text-base-content/50 truncate">{{ .MatrixIDPreview }}</span>
+            {{ end }}
+          </span>
           {{ if eq .ID $.ActiveItemID }}
           <span class="badge badge-outline badge-ghost badge-sm"></span>
           {{ else }}

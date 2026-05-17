@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nebu.fullname" . }}-media
+  labels:
+    {{- include "nebu.labels" . | nindent 4 }}
+    app.kubernetes.io/component: media
+spec:
+  replicas: {{ .Values.media.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "nebu.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: media
+  template:
+    metadata:
+      labels:
+        {{- include "nebu.labels" . | nindent 8 }}
+        app.kubernetes.io/component: media
+    spec:
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: media
+          image: "{{ .Values.image.registry }}/nebu-media:{{ required "media.image.tag must be set (use --set media.image.tag=X.Y.Z)" .Values.media.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: matrix
+              containerPort: 8009
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "nebu.fullname" . }}-config
+            {{- if .Values.existingSecret.name }}
+            - secretRef:
+                name: {{ .Values.existingSecret.name }}
+            {{- end }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.media.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8008
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8008
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

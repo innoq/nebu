@@ -114,6 +114,11 @@ func (m *mockCoreClient) GetEvent(_ context.Context, _ *pb.GetEventRequest, _ ..
 	panic("unexpected call: GetEvent")
 }
 
+// Story 14-3a: BulkImportUsers stub — not called in users handler tests.
+func (m *mockCoreClient) BulkImportUsers(_ context.Context, _ *pb.BulkImportUsersRequest, _ ...grpc.CallOption) (*pb.BulkImportUsersResponse, error) {
+	panic("unexpected call: BulkImportUsers")
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 // noopJWTMiddlewareForUsers injects an instance_admin role and a test actor
