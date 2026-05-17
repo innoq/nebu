@@ -148,6 +148,7 @@ ADRs are tracked in `docs/architecture/adr/`:
 | 011 | Managed E2EE key escrow (server-side decryption model) |
 | 012 | Upstream repo = reference implementation only; no official deployments; example-only CI credentials |
 | 014 | Deployment strategy and IaC: OpenTofu (MPL-2.0) with AWS (ECS Fargate), Stackit (VMs + Docker Compose + ALB), Kubernetes/Helm |
+| 015 | OIDC User Directory Integration: two complementary protocols — OIDC directory endpoint (Dex/Keycloak, user search) + SCIM 2.0 RFC 7644 (Azure AD/Okta, bulk import) |
 
 ## BMAD Workflow
 

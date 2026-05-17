@@ -22,8 +22,21 @@ Media Gateway (Epic 12) — missing (post-epic open follow-ups):
 Threading (Epic 9):
 - `GET /_matrix/client/v1/rooms/{roomId}/relations/{eventId}/m.thread` — required for thread panel; status unknown (check before threading epic).
 
+Room Moderation (Epics 7/15) — implemented:
+- `POST /kick`, `POST /ban`, `POST /unban`, `POST /forget` — ModerationHandler, story 7-22
+- `POST /leave` — inline handler
+- `POST /invite` — InviteUserHandler
+- `POST /join/{roomIdOrAlias}`, `POST /rooms/{roomId}/join` — JoinRoomHandler
+- `PUT /state/m.room.power_levels` → dedicated SetPowerLevels gRPC branch in SetRoomStateHandler
+
+Room Moderation (Epic 15) — MISSING (Story 15-11 scope):
+- `PUT /_matrix/client/v3/rooms/{roomId}/redact/{eventId}/{txnId}` — P0 MISSING, needs full end-to-end (Gateway + gRPC RPC + Core)
+
 ## Known Spec Decisions
 _Deliberate implementation choices — accepted deviations, spec ambiguity resolutions. Not re-flagged as findings._
+
+### State events return empty event_id (MVP)
+All `PUT /state/{eventType}` responses return `{"event_id":""}` — Core generates IDs but Gateway drops them. This is a MUST violation; Story 15-11 should fix it. Not yet an accepted deviation — it is a known bug to be resolved.
 
 ## Spec Quirks for This Codebase
 
