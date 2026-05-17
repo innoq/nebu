@@ -465,11 +465,13 @@ func main() {
 		// Reads oidc_directory_enabled and oidc_directory_endpoint from server_config.
 		oidcDirEnabled := loadServerConfigBool(bootstrapDB, "oidc_directory_enabled")
 		oidcDirEndpoint := loadServerConfigStr(bootstrapDB, "oidc_directory_endpoint")
-		oidcDirToken := loadServerConfigStr(bootstrapDB, "oidc_directory_bearer_token") // may be empty
+		// F-5: oidc_directory_bearer_token is intentionally not loaded — the OIDC directory
+		// protocol is unauthenticated in this implementation. A token field would require
+		// AES-256-GCM encryption at rest (see scim_bearer_token pattern). Until that storage
+		// path is implemented, reading a plaintext token from DB is unsafe.
 		oidcFetcher := admin.NewOIDCDirectoryService(admin.OIDCDirectoryConfig{
-			Endpoint:    oidcDirEndpoint,
-			BearerToken: oidcDirToken,
-			Enabled:     oidcDirEnabled,
+			Endpoint: oidcDirEndpoint,
+			Enabled:  oidcDirEnabled,
 		})
 		bootstrapHandler.WithImportServices(oidcFetcher, coreClient.CoreServiceClient(), serverName)
 
@@ -1387,8 +1389,10 @@ func main() {
 	// cross-origin without being silently blocked.
 	oidcIssuerOrigin := extractOriginOrEmpty(cfg.OIDCIssuer)
 	adminHandler := admin.SecurityHeadersMiddleware(oidcIssuerOrigin)(mux)
+	// F-6: extend SecurityHeadersMiddleware to cover the JSON API surface under /api/v1/admin/*
+	// (GDPR delete, import-status) in addition to the HTML surface under /admin/*.
 	mainHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/admin") {
+		if strings.HasPrefix(r.URL.Path, "/admin") || strings.HasPrefix(r.URL.Path, "/api/v1/admin") {
 			adminHandler.ServeHTTP(w, r)
 			return
 		}

@@ -17,6 +17,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -179,7 +180,14 @@ func (s *AdminServer) PatchAdminConfig(ctx context.Context, req PatchAdminConfig
 	}
 
 	if body.OidcDirectoryEndpoint != nil {
-		if err := s.ServerConfig.UpsertServerConfigKey(ctx, "oidc_directory_endpoint", *body.OidcDirectoryEndpoint); err != nil {
+		ep := *body.OidcDirectoryEndpoint
+		// F-4: validate HTTPS at write time, not only at FetchUsers call time (SSRF guard).
+		if ep != "" {
+			if u, err := url.Parse(ep); err != nil || u.Scheme != "https" {
+				return &patchAdminConfig400Resp{msg: "oidc_directory_endpoint must use HTTPS"}, nil
+			}
+		}
+		if err := s.ServerConfig.UpsertServerConfigKey(ctx, "oidc_directory_endpoint", ep); err != nil {
 			return nil, err
 		}
 		changedKeys = append(changedKeys, "oidc_directory_endpoint")

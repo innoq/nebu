@@ -1125,6 +1125,50 @@ func TestPatchAdminConfig_OidcDirectory_PersistsAndReturns(t *testing.T) {
 	}
 }
 
+// TestPatchAdminConfig_OidcDirectoryEndpoint_NonHTTPS_Returns400 — F-4 regression [P0]
+//
+// F-4 (SEC Gate 2, Epic 14): PatchAdminConfig must reject non-HTTPS oidc_directory_endpoint
+// at write time, not lazily at FetchUsers call time (SSRF guard).
+// A non-HTTPS URL must return 400 M_BAD_JSON before any UpsertServerConfigKey call.
+func TestPatchAdminConfig_OidcDirectoryEndpoint_NonHTTPS_Returns400(t *testing.T) {
+	roomRepo := &mockRoomDefaultsForConfig{getMaxMembers: 100, getVisibility: "private"}
+	coreClient := &mockCoreClientForConfig{}
+
+	for _, tc := range []struct {
+		name string
+		ep   string
+	}{
+		{"http scheme", "http://169.254.169.254/latest/meta-data/"},
+		{"plain host no scheme", "169.254.169.254"},
+		{"ftp scheme", "ftp://internal.corp/secrets"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			configRepo := &mockServerConfigRepository{
+				configData: &api.ServerConfigData{
+					InstanceName:          "Nebu Dev",
+					AuditLogRetentionDays: 2555,
+				},
+			}
+			body := fmt.Sprintf(`{"oidc_directory_endpoint": %q}`, tc.ep)
+			w := doPatchAdminConfig(t, configRepo, roomRepo, coreClient, body)
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("[F-4] expected 400 for non-HTTPS endpoint %q, got %d: %s",
+					tc.ep, w.Code, w.Body.String())
+			}
+			var resp map[string]any
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("[F-4] response not JSON: %v", err)
+			}
+			if errObj, ok := resp["error"].(map[string]any); !ok || errObj["code"] != "M_BAD_JSON" {
+				t.Errorf("[F-4] expected M_BAD_JSON error, got %v", resp)
+			}
+			if configRepo.upsertCalled {
+				t.Error("[F-4] UpsertServerConfigKey must not be called for invalid endpoint")
+			}
+		})
+	}
+}
+
 // TestPatchAdminConfig_OidcDirectoryEnabled_False_Persists — AT#2b/AC3 [P1]
 //
 // RED PHASE: fails until PatchAdminConfig stores "false" correctly for OidcDirectoryEnabled.
