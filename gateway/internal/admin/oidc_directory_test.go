@@ -243,11 +243,8 @@ func TestOIDCDirectoryService_BearerTokenNotLogged(t *testing.T) {
 func TestOIDCDirectoryService_ResponseSizeLimit(t *testing.T) {
 	const limitBytes = 10 * 1024 * 1024 // 10 MB
 
-	var warningLogged atomic.Bool
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
-
-	_ = warningLogged // used via buf check below
 
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
