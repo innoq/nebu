@@ -6,14 +6,6 @@ terraform {
       source  = "stackitcloud/stackit"
       version = "~> 0.95"
     }
-    acme = {
-      source  = "vancluever/acme"
-      version = "~> 2.0"
-    }
-    tls = {
-      source  = "hashicorp/tls"
-      version = "~> 4.0"
-    }
   }
 
   # Backend: Stackit Object Storage (S3-compatible). Configure before use.
@@ -35,60 +27,6 @@ provider "stackit" {
   service_account_key_path = var.stackit_key_path
   # beta feature: enable_beta_resources = true required for PROTOCOL_HTTPS ALB listener
   enable_beta_resources = true
-}
-
-# Let's Encrypt ACME provider.
-# Use acme_staging = true during initial testing to avoid LE production rate limits.
-provider "acme" {
-  server_url = var.acme_staging ? "https://acme-staging-v02.api.letsencrypt.org/directory" : "https://acme-v02.api.letsencrypt.org/directory"
-}
-
-# ── Let's Encrypt / ACME ─────────────────────────────────────────────────────
-# All three resources are skipped when enable_tls = false.
-# DNS-01 challenge writes TXT records into the Stackit DNS zone — requires dns_mode = "default".
-# Lego env vars for Stackit: https://go-acme.github.io/lego/dns/stackit/
-
-resource "tls_private_key" "acme_account" {
-  count     = var.enable_tls ? 1 : 0
-  algorithm = "RSA"
-  rsa_bits  = 4096
-}
-
-resource "acme_registration" "nebu" {
-  count           = var.enable_tls ? 1 : 0
-  account_key_pem = tls_private_key.acme_account[0].private_key_pem
-  email_address   = var.acme_email
-
-  lifecycle {
-    precondition {
-      condition     = length(var.acme_email) > 0
-      error_message = "acme_email must be set when enable_tls = true."
-    }
-    precondition {
-      condition     = var.dns_mode == "default"
-      error_message = "enable_tls = true requires dns_mode = 'default' — the ACME DNS-01 challenge needs a Stackit DNS zone."
-    }
-  }
-}
-
-resource "acme_certificate" "nebu" {
-  count                     = var.enable_tls ? 1 : 0
-  account_key_pem           = acme_registration.nebu[0].account_key_pem
-  common_name               = var.server_name
-  min_days_remaining        = 30
-
-  dns_challenge {
-    provider = "stackit"
-    # Lego reads these as environment variables during the DNS-01 challenge.
-    # STACKIT_SERVICE_ACCOUNT_KEY_PATH points to the same SA key used by the stackit provider.
-    config = {
-      STACKIT_PROJECT_ID               = var.stackit_project_id
-      STACKIT_SERVICE_ACCOUNT_KEY_PATH = var.stackit_key_path
-    }
-  }
-
-  # The DNS zone must exist before lego can create the TXT challenge record.
-  depends_on = [stackit_dns_zone.nebu]
 }
 
 # ── Network ─────────────────────────────────────────────────────────────────
@@ -214,7 +152,8 @@ resource "stackit_key_pair" "nebu" {
 # ── OIDC Profile ─────────────────────────────────────────────────────────────
 
 locals {
-  # When enable_tls = true, nginx fronts port 443 and proxies /dex/ to localhost:5556.
+  # When enable_tls = true, certbot provisions a Let's Encrypt cert on first boot via HTTP-01 challenge.
+  # nginx proxies /dex/ → localhost:5556 when oidc_mode = "dex".
   # Dex's issuer becomes https://<server_name>/dex (path-based routing via nginx).
   # When enable_tls = false, Dex is reached directly on port 5556 (plain HTTP).
   dex_issuer = var.enable_tls ? "https://${var.server_name}/dex" : "http://${var.server_name}:5556/dex"
@@ -222,14 +161,11 @@ locals {
   effective_oidc_issuer = var.oidc_mode == "dex" ? local.dex_issuer : var.oidc_issuer
 
   # URL scheme + optional port suffix for redirect URIs injected into Dex's staticClients.
-  # When TLS is enabled, nginx handles port 443 → gateway:8008 (no explicit port in URIs).
   gateway_scheme = var.enable_tls ? "https" : "http"
   gateway_port   = var.enable_tls ? "" : ":8008"
 
-  # Certificate content — empty strings when enable_tls = false.
-  # try() suppresses the index-out-of-bounds error when acme_certificate.nebu has count = 0.
-  tls_cert = try(acme_certificate.nebu[0].certificate_pem, "")
-  tls_key  = try(acme_certificate.nebu[0].private_key_pem, "")
+  # Logs — hostname extracted from Stackit Logs ingest_url (empty when enable_logs = false).
+  logs_ingest_host = try(regex("https://([^/]+)", stackit_logs_instance.nebu[0].ingest_url)[0], "")
 }
 
 # ── VM ───────────────────────────────────────────────────────────────────────
@@ -287,12 +223,17 @@ resource "stackit_server" "nebu" {
     pg_port     = stackit_postgresflex_user.nebu.port
     pg_user     = stackit_postgresflex_user.nebu.username
     pg_password = stackit_postgresflex_user.nebu.password
-    # TLS — cert and key are empty strings when enable_tls = false (nginx block is skipped in template)
+    # TLS — certbot on the VM handles cert issuance/renewal via HTTP-01 challenge
     enable_tls     = var.enable_tls
-    tls_cert       = local.tls_cert
-    tls_key        = local.tls_key
+    acme_email     = var.acme_email
+    acme_staging   = var.acme_staging
     gateway_scheme = local.gateway_scheme
     gateway_port   = local.gateway_port
+    # Logging — Fluent Bit ships nebu.service journal logs to Stackit Logs (Loki)
+    enable_logs       = var.enable_logs
+    logs_ingest_host  = local.logs_ingest_host
+    logs_bearer_token = try(stackit_logs_access_token.nebu[0].access_token, "")
+    environment       = var.environment
   }))
 
   lifecycle {
@@ -479,4 +420,27 @@ resource "stackit_dns_record_set" "dex" {
   type       = "A"
   records    = [stackit_public_ip.nebu.ip]
   ttl        = 300
+}
+
+# ── Stackit Logs ──────────────────────────────────────────────────────────────
+# Managed Loki-based log aggregation. Fluent Bit on the VM ships nebu.service logs here.
+# After first apply: Portal → Logs → instance → Access tokens → Create (Read+Write role).
+# Then either set logs_bearer_token in terraform.tfvars and re-apply, or SSH into the VM
+# and run: /opt/nebu/configure-fluent-bit.sh <token>
+
+resource "stackit_logs_instance" "nebu" {
+  count          = var.enable_logs ? 1 : 0
+  project_id     = var.stackit_project_id
+  region         = var.region
+  display_name   = "nebu-${var.environment}-logs"
+  retention_days = var.logs_retention_days
+}
+
+resource "stackit_logs_access_token" "nebu" {
+  count        = var.enable_logs ? 1 : 0
+  project_id   = var.stackit_project_id
+  instance_id  = stackit_logs_instance.nebu[0].instance_id
+  region       = var.region
+  display_name = "nebu-${var.environment}-fluent-bit"
+  permissions  = ["write"]
 }

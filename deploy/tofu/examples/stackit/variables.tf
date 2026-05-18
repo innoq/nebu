@@ -70,7 +70,7 @@ variable "acme_email" {
 }
 
 variable "acme_staging" {
-  description = "When true, uses the Let's Encrypt staging environment (https://acme-staging-v02.api.letsencrypt.org). Staging certificates are not trusted by browsers but have no rate limits — use for initial testing. Switch to false for production."
+  description = "When true, passes --test-cert to certbot (Let's Encrypt staging). Staging certs are not trusted by browsers but have no rate limits — use for initial testing. Switch to false for production certs."
   type        = bool
   default     = false
 }
@@ -84,9 +84,9 @@ variable "postgres_replicas" {
 }
 
 variable "postgres_cpu" {
-  description = "CPU cores for the PostgresFlex instance flavor."
+  description = "CPU cores for the PostgresFlex instance flavor. Available Stackit flavors: 2/4, 2/16, 4/8, 4/32, 8/16, 16/32, 16/128 (CPU/RAM GB)."
   type        = number
-  default     = 1
+  default     = 2
 }
 
 variable "postgres_ram" {
@@ -218,3 +218,18 @@ variable "dns_contact_email" {
   type        = string
   default     = ""
 }
+
+# ── Logging variables ─────────────────────────────────────────────────────────
+
+variable "enable_logs" {
+  description = "When true, creates a Stackit Logs instance and installs Fluent Bit on the VM to forward nebu.service journal logs to it."
+  type        = bool
+  default     = false
+}
+
+variable "logs_retention_days" {
+  description = "Log retention in days for the Stackit Logs instance."
+  type        = number
+  default     = 7
+}
+

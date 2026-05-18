@@ -33,7 +33,12 @@ output "dns_name" {
   value       = stackit_public_ip.nebu.ip
 }
 
-output "tls_certificate_expiry" {
-  description = "Let's Encrypt certificate expiry date. null when enable_tls = false. Run `tofu apply` before this date (min_days_remaining = 30 triggers automatic renewal)."
-  value       = try(acme_certificate.nebu[0].certificate_not_after, null)
+output "tls_info" {
+  description = "TLS status. When enable_tls = true, certbot manages cert renewal automatically via its systemd timer. Check cert expiry on the VM: sudo certbot certificates"
+  value       = var.enable_tls ? "certbot-managed (HTTP-01, auto-renews via systemd timer)" : "disabled"
+}
+
+output "logs_ingest_url" {
+  description = "Stackit Logs Loki push endpoint. After apply: Portal → Logs → instance → Access tokens → Create (Read+Write role). Then SSH into the VM and run: /opt/nebu/configure-fluent-bit.sh <token>"
+  value       = var.enable_logs ? stackit_logs_instance.nebu[0].ingest_url : "disabled"
 }
