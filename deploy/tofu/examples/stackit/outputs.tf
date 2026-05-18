@@ -38,6 +38,12 @@ output "tls_info" {
   value       = var.enable_tls ? "certbot-managed (HTTP-01, auto-renews via systemd timer)" : "disabled"
 }
 
+output "nebu_migrate_password" {
+  description = "Auto-generated password for the nebu_migrate PostgresFlex user (DDL migration runner). Needed to update NEBU_DB_URL_MIGRATE on an existing VM after tofu apply."
+  value       = stackit_postgresflex_user.nebu_migrate.password
+  sensitive   = true
+}
+
 output "logs_ingest_url" {
   description = "Stackit Logs Loki push endpoint. After apply: Portal → Logs → instance → Access tokens → Create (Read+Write role). Then SSH into the VM and run: /opt/nebu/configure-fluent-bit.sh <token>"
   value       = var.enable_logs ? stackit_logs_instance.nebu[0].ingest_url : "disabled"

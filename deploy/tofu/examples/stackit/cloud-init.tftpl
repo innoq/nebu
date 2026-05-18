@@ -1,6 +1,6 @@
 #cloud-config
 # Nebu bootstrap — cloud-init template rendered by OpenTofu templatefile().
-# Variables injected at apply time; no hardcoded secrets.
+# Variables injected at apply time; no hardcoded secrets. zez
 # cloud-init reference: https://cloudinit.readthedocs.io/
 
 package_update: true
@@ -36,13 +36,14 @@ write_files:
     owner: root:root
     permissions: "0600"
     content: |
-      NEBU_DB_URL=postgresql://${pg_user}:${pg_password}@${pg_host}:${pg_port}/nebu
-      NEBU_DB_URL_MIGRATE=postgresql://${pg_user}:${pg_password}@${pg_host}:${pg_port}/nebu
+      NEBU_DB_URL=postgresql://${pg_user}:${pg_password}@${pg_host}:${pg_port}/nebu?sslmode=require
+      NEBU_DB_URL_MIGRATE=postgresql://${pg_migrate_user}:${pg_migrate_password}@${pg_host}:${pg_port}/nebu?sslmode=require
       NEBU_OIDC_ISSUER=${oidc_issuer}
       NEBU_OIDC_CLIENT_SECRET=${oidc_client_secret}
       NEBU_SERVER_NAME=${server_name}
       NEBU_IMAGE_REGISTRY=${image_registry}
       NEBU_VERSION=${nebu_version}
+      NEBU_PII_ENCRYPTION_KEY=${pii_encryption_key}
 
 %{ if oidc_mode == "dex" ~}
   # ── /opt/nebu/dex/config.yaml ──────────────────────────────────────────────
@@ -51,7 +52,7 @@ write_files:
   # Static user: operator@example.com — see RUNBOOK.md 'OIDC Profiles' to rotate the password hash.
   - path: /opt/nebu/dex/config.yaml
     owner: root:root
-    permissions: "0600"
+    permissions: "0644"
     content: |
       issuer: "${oidc_issuer}"
 
@@ -172,7 +173,9 @@ write_files:
           # No depends_on: postgres — managed PostgresFlex is always available
           secrets: [internal_secret]
           environment:
-            NEBU_DB_URL: $${NEBU_DB_URL}
+            # Postgrex (Elixir) requires ?ssl=true; Go's pgx uses ?sslmode=require (set in .env).
+            # This environment override takes precedence over env_file for the core service.
+            NEBU_DB_URL: "postgresql://${pg_user}:${pg_password}@${pg_host}:${pg_port}/nebu?ssl=true"
             NEBU_INTERNAL_SECRET_FILE: "/run/secrets/internal_secret"
             NEBU_SERVER_NAME: $${NEBU_SERVER_NAME}
           env_file:

@@ -114,6 +114,17 @@ variable "internal_secret" {
   }
 }
 
+variable "pii_encryption_key" {
+  description = "32-byte AES key for PII field encryption in the Elixir core (NEBU_PII_ENCRYPTION_KEY). Must be exactly 64 hex characters. Generate with: openssl rand -hex 32"
+  type        = string
+  sensitive   = true
+
+  validation {
+    condition     = length(var.pii_encryption_key) == 64 && can(regex("^[0-9a-f]+$", var.pii_encryption_key))
+    error_message = "pii_encryption_key must be exactly 64 lowercase hex characters. Use 'openssl rand -hex 32' to generate."
+  }
+}
+
 variable "oidc_client_secret" {
   description = "Required. When oidc_mode = 'dex': embedded into Dex staticClients config (same value used by both gateway and Dex). When oidc_mode = 'external': must match the client secret registered in your external OIDC provider. Minimum 16 characters."
   type        = string
