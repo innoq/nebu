@@ -24,7 +24,7 @@ defmodule Nebu.Event.MixProject do
 
   defp deps do
     [
-      {:grpc, "~> 0.8"},
+      {:grpc, "~> 1.0"},
       {:jason, "~> 1.4"},
       {:session_manager, in_umbrella: true},
       {:room_manager, in_umbrella: true},
