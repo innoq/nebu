@@ -1,4 +1,13 @@
+<!-- mirror-header:start -->
+> **Read-only mirror is now: <https://github.com/nebu-chat/nebu>.** The canonical repository of Nebu lives on openCoDE:
+> **<https://gitlab.opencode.de/nebu/nebu-server>**.
+> Development, issues, merge requests and CI all happen there. This GitHub
+> repository is synchronised automatically from `main` and is not built here —
+> please file issues and contributions upstream.
+<!-- mirror-header:end -->
+
 # Nebu
+
 
 <!-- markdownlint-disable MD013 MD042 MD051 -->
 <!-- Repo status -->
